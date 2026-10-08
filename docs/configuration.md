@@ -121,15 +121,17 @@ pins `--context` (and `--kubeconfig` when known) on every command it runs.
 
 ### `mutations`
 
-Read by the mutation engine (milestone M3); validated now so a file written
-today keeps working.
+Read by the approve block (native mutations from Explore, lens chips and the
+palette, mutating quick actions, and shell-guard requests).
 
 | Key | Type | Default | Effect |
 | --- | --- | --- | --- |
-| `enabled` | boolean | `true` | `false` hides every mutating action (apply, delete, rollout restart, scale, debug containers, CronJob run-now). |
+| `enabled` | boolean | `true` | `false` hides every mutating action (Explore `ctrl+d`/`ctrl+r`/`shift+s`, the lens Delete/Restart/Scale chips, debug containers, CronJob run-now) and makes the approve block refuse: native requests cannot be confirmed and shell-guard requests are denied with the reason, so the guarded command exits 1 without running. |
 | `interactive_guard` | boolean | `false` | Marks the opt-in shell guard as wanted; the guard functions themselves are installed separately. |
 | `require_target_confirmation` | boolean | `true` | Mutations need the target context confirmed (named by `--context` or chosen and confirmed in Explore), never inferred from the current context alone. |
 | `allow_failed_preview_override` | boolean | `false` | `true` allows confirming a mutation whose server dry-run or diff failed. |
+| `preview_timeout_ms` | integer 1000-600000 | `30000` | Each preview step (`current-context`, `config view`, server dry-run, `kubectl diff`, target reads, file digests) is killed after this many milliseconds and shown as failed. |
+| `execute_timeout_ms` | integer 1000-3600000 | `300000` | A confirmed native mutation is killed after this many milliseconds. A mutation cannot be cancelled once it started; the result shows that it timed out and the cluster state must be checked with Requery. |
 
 ### `security`
 
@@ -178,7 +180,9 @@ you do not change; missing keys keep their defaults.
     "enabled": true,
     "interactive_guard": false,
     "require_target_confirmation": true,
-    "allow_failed_preview_override": false
+    "allow_failed_preview_override": false,
+    "preview_timeout_ms": 30000,
+    "execute_timeout_ms": 300000
   },
   "security": {
     "show_secret_values": false,

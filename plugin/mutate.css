@@ -1,0 +1,58 @@
+/* Kube Approve block (mutation preview and confirmation). Grid, chips and
+   the header bar come from kube-lens.css; this sheet adds the warning
+   header rule, the confirm/cancel buttons and the help layer. */
+
+[data-role="kube-lens.approve-header"] {
+	padding-bottom: 6px;
+	border-bottom: 2px solid var(--warn);
+}
+
+[data-role="kube-lens.approve-header"] [data-role="kube-lens.bar"] {
+	align-items: center;
+}
+
+[data-role="kube-lens.approve-buttons"] {
+	margin-top: 6px;
+	align-items: center;
+}
+
+.kl-mbtn {
+	padding: 3px 14px;
+	border: 1px solid var(--l2);
+	border-radius: 6px;
+	background: var(--l1);
+	color: var(--t1);
+	cursor: pointer;
+}
+
+.kl-mbtn-primary {
+	background: var(--accent-fill);
+	border-color: var(--accent-fill);
+	color: #fff;
+	font-weight: 600;
+}
+
+.kl-mbtn-danger {
+	background: var(--bad-fill);
+	border-color: var(--bad-fill);
+	color: #fff;
+	font-weight: 600;
+}
+
+.kl-mbtn-off {
+	opacity: 0.45;
+	cursor: not-allowed;
+}
+
+[data-role="kube-lens.approve-blocked"] .sf-text,
+[data-role="kube-lens.error"] .sf-text {
+	white-space: pre-wrap;
+}
+
+[data-role="kube-lens.approve-layer"] {
+	max-width: 760px;
+	padding: 12px 16px;
+	background: var(--card);
+	border: 1px solid var(--l2);
+	border-radius: 8px;
+}
