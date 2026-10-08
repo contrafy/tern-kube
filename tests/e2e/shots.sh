@@ -1,6 +1,8 @@
 # Screenshots for docs/screenshots/m1-<view>-<theme>-<size>.png,
-# m2-<view>-<theme>-wide.png and m3-{result,guard}-<theme>-wide.png (sourced
-# by scripts/e2e.sh --shots). Every shot is of the live sandbox window with
+# m2-<view>-<theme>-wide.png, m3-{result,guard,diff-expanded}-<theme>-wide.png,
+# m3b-<view>-<theme>-wide.png and m4-settings-<theme>-wide.png (sourced by
+# scripts/e2e.sh --shots). E2E_SHOTS limits the groups (space-separated:
+# m1 m2 m3 m3b m4; default all). Every shot is of the live sandbox window with
 # the plugin loaded; check each PNG by eye before committing.
 
 shots_dir="$E2E_REPO/docs/screenshots"
@@ -133,6 +135,65 @@ shots_m3() {
 	reset_pane
 }
 
+m3b_shot() { # m3b_shot VIEW
+	dev shot "m3b-$1-$theme-wide" "$shots_dir/m3b-$1-$theme-wide.png" >/dev/null || fail "shot m3b $1"
+}
+
+# Diff vs manifest, drift report, export preview and the git step against a
+# throwaway repository (as in scenario 23).
+shots_m3b() {
+	reset_pane
+	gns=tern-test-gitops-ui
+	grepo=$E2E_SB/shots-gitops-repo
+	rm -rf "$grepo" && mkdir -p "$grepo/apps"
+	cp "$E2E_REPO"/tests/e2e/gitops/ui/*.yaml "$grepo/apps/"
+	git -C "$grepo" init -q -b main
+	git -C "$grepo" -c user.name=e2e -c user.email=e2e@example.invalid add -A
+	git -C "$grepo" -c user.name=e2e -c user.email=e2e@example.invalid commit -q -m init
+	kc create namespace "$gns" --dry-run=client -o yaml | kc apply -f - >/dev/null
+	kc apply -f "$grepo/apps/web.yaml" -f "$grepo/apps/service.yaml" >/dev/null
+	kc -n "$gns" patch configmap web-config --type merge -p '{"data":{"mode":"debug"}}' >/dev/null
+	kc -n "$gns" create configmap kl-e2e-stray --from-literal=a=b >/dev/null 2>&1
+	sh_line "cd '$grepo'"
+	lens "kubectl --context kind-kube-lens-dev get configmap web-config -n $gns"
+	click_text web-config '.kl-grid .kl-c'
+	click_text 'Diff vs manifest' '[data-role="kube-lens.inspector"] .sf-act'
+	explore_open && E2E_WAIT=30 xwait "MODIFY" || return
+	m3b_shot diff
+	xkey ctrl+g
+	E2E_WAIT=30 xwait "Drift sources" || return
+	xkey enter
+	E2E_WAIT=30 xwait "Missing in cluster" || return
+	m3b_shot drift
+	explore_close
+	lens "kubectl --context kind-kube-lens-dev get configmap kl-e2e-stray -n $gns"
+	click_text kl-e2e-stray '.kl-grid .kl-c'
+	click_text 'Explore live' '[data-role="kube-lens.inspector"] .sf-act'
+	explore_open && xwait "kl-e2e-stray" || return
+	xkey E
+	E2E_WAIT=20 xwait "Write 4 files" || return
+	m3b_shot export
+	explore_close
+	kc delete namespace "$gns" --ignore-not-found --wait=false >/dev/null 2>&1
+	rm -rf "$grepo"
+	sh_line "cd '$E2E_REPO'"
+	reset_pane
+}
+
+shots_m4() {
+	reset_pane
+	ctl plugins run plugin.kube-lens.settings >/dev/null
+	E2E_WAIT=15 wait_for "the settings block" has "[data-surface='plugin.kube-lens.settings']" || return
+	sleep 1
+	dev shot "m4-settings-$theme-wide" "$shots_dir/m4-settings-$theme-wide.png" >/dev/null || fail "shot m4 settings"
+	ctl key escape >/dev/null
+	reset_pane
+}
+
+wants() {
+	case " ${E2E_SHOTS:-m1 m2 m3 m3b m4} " in *" $1 "*) true ;; *) false ;; esac
+}
+
 echo "SHOTS -> $shots_dir"
 for theme in light dark; do
 	ctl theme light "$theme" >/dev/null
@@ -140,13 +201,16 @@ for theme in light dark; do
 		if [ $size = wide ]; then
 			ctl resize 1280 860 >/dev/null
 		else
+			wants m1 || continue
 			ctl resize 600 860 >/dev/null
 		fi
 		sleep 0.8
-		shots_views
+		wants m1 && shots_views
 		if [ $size = wide ]; then
-			shots_explore
-			shots_m3
+			wants m2 && shots_explore
+			wants m3 && shots_m3
+			wants m3b && shots_m3b
+			wants m4 && shots_m4
 		fi
 	done
 done
