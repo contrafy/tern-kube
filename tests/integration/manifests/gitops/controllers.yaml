@@ -1,0 +1,102 @@
+# Controller objects only (no controllers run): status is patched in by
+# scripts/fixtures/capture-drift.sh from gitops/status/*.json.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: guestbook
+  namespace: tern-test-gitops
+spec:
+  project: default
+  source:
+    repoURL: git@github.com:contrafy/tern-kube-lens.git
+    path: tests/integration/manifests/gitops/workloads
+    targetRevision: HEAD
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: tern-test-gitops
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: guestbook-drifted
+  namespace: tern-test-gitops
+spec:
+  project: default
+  sources:
+    - repoURL: https://charts.example.com
+      chart: guestbook
+      targetRevision: 1.2.3
+    - repoURL: https://github.com/contrafy/tern-kube-lens
+      path: tests/integration/manifests/drift/baseline
+      targetRevision: master
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: tern-test-drift
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: charted
+  namespace: tern-test-gitops
+spec:
+  project: default
+  source:
+    repoURL: https://charts.example.com
+    chart: podinfo
+    targetRevision: 6.7.0
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: tern-test-gitops
+---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: GitRepository
+metadata:
+  name: kube-lens
+  namespace: tern-test-gitops
+spec:
+  interval: 5m
+  url: https://github.com/contrafy/tern-kube-lens.git
+  ref:
+    branch: master
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: apps
+  namespace: tern-test-gitops
+spec:
+  interval: 10m
+  path: ./tests/integration/manifests/gitops/workloads
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: kube-lens
+  targetNamespace: tern-test-gitops
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: drift
+  namespace: tern-test-gitops
+spec:
+  interval: 10m
+  path: ./tests/integration/manifests/drift/baseline
+  prune: false
+  sourceRef:
+    kind: GitRepository
+    name: kube-lens
+    namespace: tern-test-gitops
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: podinfo
+  namespace: tern-test-gitops
+spec:
+  interval: 10m
+  chart:
+    spec:
+      chart: ./charts/podinfo
+      sourceRef:
+        kind: GitRepository
+        name: kube-lens

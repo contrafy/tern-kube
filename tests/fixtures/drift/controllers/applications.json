@@ -1,0 +1,133 @@
+{
+    "apiVersion": "v1",
+    "items": [
+        {
+            "apiVersion": "argoproj.io/v1alpha1",
+            "kind": "Application",
+            "metadata": {
+                "annotations": {
+                    "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"argoproj.io/v1alpha1\",\"kind\":\"Application\",\"metadata\":{\"annotations\":{},\"name\":\"charted\",\"namespace\":\"tern-test-gitops\"},\"spec\":{\"destination\":{\"namespace\":\"tern-test-gitops\",\"server\":\"https://kubernetes.default.svc\"},\"project\":\"default\",\"source\":{\"chart\":\"podinfo\",\"repoURL\":\"https://charts.example.com\",\"targetRevision\":\"6.7.0\"}}}\n"
+                },
+                "creationTimestamp": "2026-10-08T17:13:43Z",
+                "generation": 2,
+                "name": "charted",
+                "namespace": "tern-test-gitops",
+                "resourceVersion": "17056",
+                "uid": "16d38326-26aa-4817-a569-f53b78bd71b2"
+            },
+            "spec": {
+                "destination": {
+                    "namespace": "tern-test-gitops",
+                    "server": "https://kubernetes.default.svc"
+                },
+                "project": "default",
+                "source": {
+                    "chart": "podinfo",
+                    "repoURL": "https://charts.example.com",
+                    "targetRevision": "6.7.0"
+                }
+            },
+            "status": {
+                "health": {
+                    "status": "Missing"
+                },
+                "sourceType": "Helm",
+                "sync": {
+                    "status": "Unknown"
+                }
+            }
+        },
+        {
+            "apiVersion": "argoproj.io/v1alpha1",
+            "kind": "Application",
+            "metadata": {
+                "annotations": {
+                    "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"argoproj.io/v1alpha1\",\"kind\":\"Application\",\"metadata\":{\"annotations\":{},\"name\":\"guestbook\",\"namespace\":\"tern-test-gitops\"},\"spec\":{\"destination\":{\"namespace\":\"tern-test-gitops\",\"server\":\"https://kubernetes.default.svc\"},\"project\":\"default\",\"source\":{\"path\":\"tests/integration/manifests/gitops/workloads\",\"repoURL\":\"git@github.com:contrafy/tern-kube-lens.git\",\"targetRevision\":\"HEAD\"}}}\n"
+                },
+                "creationTimestamp": "2026-10-08T17:13:43Z",
+                "generation": 2,
+                "name": "guestbook",
+                "namespace": "tern-test-gitops",
+                "resourceVersion": "17054",
+                "uid": "607228c4-a028-4db3-9019-757394f9160b"
+            },
+            "spec": {
+                "destination": {
+                    "namespace": "tern-test-gitops",
+                    "server": "https://kubernetes.default.svc"
+                },
+                "project": "default",
+                "source": {
+                    "path": "tests/integration/manifests/gitops/workloads",
+                    "repoURL": "git@github.com:contrafy/tern-kube-lens.git",
+                    "targetRevision": "HEAD"
+                }
+            },
+            "status": {
+                "health": {
+                    "status": "Healthy"
+                },
+                "sourceType": "Directory",
+                "sync": {
+                    "revision": "4f2a9c1e8b7d6a5f4e3d2c1b0a9f8e7d6c5b4a39",
+                    "status": "Synced"
+                }
+            }
+        },
+        {
+            "apiVersion": "argoproj.io/v1alpha1",
+            "kind": "Application",
+            "metadata": {
+                "annotations": {
+                    "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"argoproj.io/v1alpha1\",\"kind\":\"Application\",\"metadata\":{\"annotations\":{},\"name\":\"guestbook-drifted\",\"namespace\":\"tern-test-gitops\"},\"spec\":{\"destination\":{\"namespace\":\"tern-test-drift\",\"server\":\"https://kubernetes.default.svc\"},\"project\":\"default\",\"sources\":[{\"chart\":\"guestbook\",\"repoURL\":\"https://charts.example.com\",\"targetRevision\":\"1.2.3\"},{\"path\":\"tests/integration/manifests/drift/baseline\",\"repoURL\":\"https://github.com/contrafy/tern-kube-lens\",\"targetRevision\":\"master\"}]}}\n"
+                },
+                "creationTimestamp": "2026-10-08T17:13:43Z",
+                "generation": 2,
+                "name": "guestbook-drifted",
+                "namespace": "tern-test-gitops",
+                "resourceVersion": "17055",
+                "uid": "235a9342-dd73-4d68-b37f-dfc7658716b1"
+            },
+            "spec": {
+                "destination": {
+                    "namespace": "tern-test-drift",
+                    "server": "https://kubernetes.default.svc"
+                },
+                "project": "default",
+                "sources": [
+                    {
+                        "chart": "guestbook",
+                        "repoURL": "https://charts.example.com",
+                        "targetRevision": "1.2.3"
+                    },
+                    {
+                        "path": "tests/integration/manifests/drift/baseline",
+                        "repoURL": "https://github.com/contrafy/tern-kube-lens",
+                        "targetRevision": "master"
+                    }
+                ]
+            },
+            "status": {
+                "health": {
+                    "message": "Deployment web has 0/1 ready replicas",
+                    "status": "Degraded"
+                },
+                "sourceTypes": [
+                    "Helm",
+                    "Directory"
+                ],
+                "sync": {
+                    "revisions": [
+                        "1.2.3",
+                        "4f2a9c1e8b7d6a5f4e3d2c1b0a9f8e7d6c5b4a39"
+                    ],
+                    "status": "OutOfSync"
+                }
+            }
+        }
+    ],
+    "kind": "List",
+    "metadata": {
+        "resourceVersion": ""
+    }
+}

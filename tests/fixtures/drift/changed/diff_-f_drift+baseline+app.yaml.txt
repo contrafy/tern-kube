@@ -1,0 +1,33 @@
+diff -u -N /tmp/LIVE-4062572419/apps.v1.Deployment.tern-test-drift.web /tmp/MERGED-396410523/apps.v1.Deployment.tern-test-drift.web
+--- /tmp/LIVE-4062572419/apps.v1.Deployment.tern-test-drift.web	2026-10-08 12:13:43
++++ /tmp/MERGED-396410523/apps.v1.Deployment.tern-test-drift.web	2026-10-08 12:13:43
+@@ -6,7 +6,7 @@
+     kubectl.kubernetes.io/last-applied-configuration: |
+       {"apiVersion":"apps/v1","kind":"Deployment","metadata":{"annotations":{},"labels":{"app":"web"},"name":"web","namespace":"tern-test-drift"},"spec":{"replicas":1,"selector":{"matchLabels":{"app":"web"}},"template":{"metadata":{"labels":{"app":"web"}},"spec":{"containers":[{"image":"registry.k8s.io/pause:3.10","name":"web","resources":{"limits":{"memory":"16Mi"},"requests":{"cpu":"5m","memory":"8Mi"}}}],"serviceAccountName":"web"}}}}
+   creationTimestamp: "2026-10-08T17:13:42Z"
+-  generation: 2
++  generation: 3
+   labels:
+     app: web
+   name: web
+@@ -15,7 +15,7 @@
+   uid: 3787b574-396f-457c-84aa-80ebcae1f24f
+ spec:
+   progressDeadlineSeconds: 600
+-  replicas: 2
++  replicas: 1
+   revisionHistoryLimit: 10
+   selector:
+     matchLabels:
+diff -u -N /tmp/LIVE-4062572419/v1.ConfigMap.tern-test-drift.app-config /tmp/MERGED-396410523/v1.ConfigMap.tern-test-drift.app-config
+--- /tmp/LIVE-4062572419/v1.ConfigMap.tern-test-drift.app-config	2026-10-08 12:13:43
++++ /tmp/MERGED-396410523/v1.ConfigMap.tern-test-drift.app-config	2026-10-08 12:13:43
+@@ -1,7 +1,7 @@
+ apiVersion: v1
+ data:
+   CACHE_TTL: 60s
+-  LOG_LEVEL: debug
++  LOG_LEVEL: info
+ kind: ConfigMap
+ metadata:
+   annotations:

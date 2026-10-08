@@ -1,0 +1,10 @@
+diff -u -N /tmp/LIVE-1/v1.ConfigMap.ns.a /tmp/MERGED-2/v1.ConfigMap.ns.a
+--- /tmp/LIVE-1/v1.ConfigMap.ns.a	2026-01-01 00:00:00
++++ /tmp/MERGED-2/v1.ConfigMap.ns.a	2026-01-01 00:00:00
+@@ -1,2 +1,4 @@
+ data:
+-  x: 1
++++ looks like a header
++diff -u -N /a /b
++--- also content
+

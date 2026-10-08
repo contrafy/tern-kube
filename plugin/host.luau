@@ -116,7 +116,7 @@ local function copyAction(state: LensState, value: string, cx: EffectCx)
 	cx:toast("success", "Copied", text)
 end
 
-local function exploreAction(state: LensState, key: string, cx: EffectCx)
+local function exploreAction(state: LensState, key: string, cx: EffectCx, route: string?)
 	local capture = captureOf(state)
 	if capture == nil then
 		return
@@ -127,7 +127,11 @@ local function exploreAction(state: LensState, key: string, cx: EffectCx)
 	end
 	-- window.luau's route.link claims every kube-lens:// URL; an unclaimed
 	-- one would fall through to the OS and show a system dialog.
-	cx:open(Command.exploreUrl(capture.invocation, row.ref))
+	local cwd = state.run.cwd
+	cx:open(Command.exploreUrl(capture.invocation, row.ref, {
+		route = route,
+		cwd = if cwd and string.sub(cwd, 1, 1) == "/" then cwd else nil,
+	}))
 end
 
 -- Inspector quick-action chips carry a kube-lens://act/ link built by
@@ -226,7 +230,12 @@ tern.lens.define("kubectl", {
 			elseif ev.act == "copy" then
 				copyAction(state, value, cx)
 			elseif ev.act == "explore" then
-				exploreAction(state, value, cx)
+				exploreAction(state, value, cx, nil)
+			elseif ev.act == "explore-route" then
+				local route, key = string.match(value, "^(%a+)|(.+)$")
+				if (route == "manifest" or route == "diff") and key then
+					exploreAction(state, key, cx, route)
+				end
 			elseif ev.act == "act" then
 				quickAction(value, cx)
 			elseif ev.act == "mutate" then

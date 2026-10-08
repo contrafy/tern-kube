@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ui-pending
+  namespace: tern-test-gitops-ui
+data:
+  note: declared in git, not applied yet

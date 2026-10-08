@@ -1,0 +1,2 @@
+kubectl: Client Version: v1.34.1 Kustomize Version: v5.7.1 
+helm: v3.22.0+g144ca65

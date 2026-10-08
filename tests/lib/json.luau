@@ -81,8 +81,15 @@ end
 
 local parseValue: (text: string, pos: number) -> (any, number)
 
+-- Set while decodeTracking runs: records every decoded array so callers can
+-- tell `[]` from `{}` the way Tern's array tag does.
+local tracked: { [any]: true }? = nil
+
 local function parseArray(text: string, pos: number): ({ any }, number)
 	local result = {}
+	if tracked then
+		tracked[result] = true
+	end
 	local i = skipWhitespace(text, pos + 1)
 	if string.sub(text, i, i) == "]" then
 		return result, i + 1
@@ -169,7 +176,19 @@ local function decode(text: string): any
 	return value
 end
 
+local function decodeTracking(text: string): (any, { [any]: true })
+	local arrays: { [any]: true } = {}
+	tracked = arrays
+	local ok, value = pcall(decode, text)
+	tracked = nil
+	if not ok then
+		error(value, 0)
+	end
+	return value, arrays
+end
+
 return {
 	decode = decode,
+	decodeTracking = decodeTracking,
 	null = null,
 }

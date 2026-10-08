@@ -1,0 +1,12 @@
+apiVersion: lens.example.com/v1alpha1
+kind: Widget
+metadata:
+  name: gauge
+  namespace: tern-test-drift
+  labels:
+    app: widgets
+spec:
+  color: red
+  size: 7
+  owner: team-platform
+  enabled: true

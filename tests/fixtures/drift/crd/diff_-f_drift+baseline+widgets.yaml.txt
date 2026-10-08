@@ -1,0 +1,22 @@
+diff -u -N /tmp/LIVE-3801357579/lens.example.com.v1alpha1.Widget.tern-test-drift.gauge /tmp/MERGED-1625832851/lens.example.com.v1alpha1.Widget.tern-test-drift.gauge
+--- /tmp/LIVE-3801357579/lens.example.com.v1alpha1.Widget.tern-test-drift.gauge	2026-10-08 12:13:43
++++ /tmp/MERGED-1625832851/lens.example.com.v1alpha1.Widget.tern-test-drift.gauge	2026-10-08 12:13:43
+@@ -5,7 +5,7 @@
+     kubectl.kubernetes.io/last-applied-configuration: |
+       {"apiVersion":"lens.example.com/v1alpha1","kind":"Widget","metadata":{"annotations":{},"labels":{"app":"widgets"},"name":"gauge","namespace":"tern-test-drift"},"spec":{"color":"red","enabled":true,"owner":"team-platform","size":7}}
+   creationTimestamp: "2026-10-08T17:13:42Z"
+-  generation: 2
++  generation: 3
+   labels:
+     app: widgets
+   name: gauge
+@@ -13,7 +13,7 @@
+   resourceVersion: "17023"
+   uid: b9b24c08-fbbe-4386-b41a-1618e487bbce
+ spec:
+-  color: orange
++  color: red
+   enabled: true
+   owner: team-platform
+-  size: 9
++  size: 7

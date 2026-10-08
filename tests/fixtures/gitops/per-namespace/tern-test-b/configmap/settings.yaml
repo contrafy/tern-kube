@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: settings
+  namespace: tern-test-b
+data:
+  mode: plain

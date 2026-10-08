@@ -1,0 +1,50 @@
+diff -u -N /tmp/LIVE-3655326373/lens.example.com.v1alpha1.Widget.tern-test-drift.dial.v2 /tmp/MERGED-2925032841/lens.example.com.v1alpha1.Widget.tern-test-drift.dial.v2
+--- /tmp/LIVE-3655326373/lens.example.com.v1alpha1.Widget.tern-test-drift.dial.v2	2026-10-08 12:13:43
++++ /tmp/MERGED-2925032841/lens.example.com.v1alpha1.Widget.tern-test-drift.dial.v2	2026-10-08 12:13:43
+@@ -0,0 +1,15 @@
++apiVersion: lens.example.com/v1alpha1
++kind: Widget
++metadata:
++  creationTimestamp: "2026-10-08T17:13:43Z"
++  generation: 1
++  labels:
++    app: widgets
++  name: dial.v2
++  namespace: tern-test-drift
++  uid: 4ee36965-2b52-4ae5-886d-bcd0487797a5
++spec:
++  color: black
++  enabled: false
++  owner: team-platform
++  size: 2
+diff -u -N /tmp/LIVE-3655326373/rbac.authorization.k8s.io.v1.ClusterRole..tern-test-drift-reader /tmp/MERGED-2925032841/rbac.authorization.k8s.io.v1.ClusterRole..tern-test-drift-reader
+--- /tmp/LIVE-3655326373/rbac.authorization.k8s.io.v1.ClusterRole..tern-test-drift-reader	2026-10-08 12:13:43
++++ /tmp/MERGED-2925032841/rbac.authorization.k8s.io.v1.ClusterRole..tern-test-drift-reader	2026-10-08 12:13:43
+@@ -0,0 +1,14 @@
++apiVersion: rbac.authorization.k8s.io/v1
++kind: ClusterRole
++metadata:
++  creationTimestamp: "2026-10-08T17:13:43Z"
++  name: tern-test-drift-reader
++  uid: 3fee52b8-db66-4ad6-801c-6a1da745af59
++rules:
++- apiGroups:
++  - ""
++  resources:
++  - configmaps
++  verbs:
++  - get
++  - list
+diff -u -N /tmp/LIVE-3655326373/v1.ConfigMap.tern-test-drift.only-in-git /tmp/MERGED-2925032841/v1.ConfigMap.tern-test-drift.only-in-git
+--- /tmp/LIVE-3655326373/v1.ConfigMap.tern-test-drift.only-in-git	2026-10-08 12:13:43
++++ /tmp/MERGED-2925032841/v1.ConfigMap.tern-test-drift.only-in-git	2026-10-08 12:13:43
+@@ -0,0 +1,9 @@
++apiVersion: v1
++data:
++  FEATURE_FLAG: "on"
++kind: ConfigMap
++metadata:
++  creationTimestamp: "2026-10-08T17:13:43Z"
++  name: only-in-git
++  namespace: tern-test-drift
++  uid: d3efaed5-956f-4d12-9211-ce2eb487f929

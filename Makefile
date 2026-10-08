@@ -50,8 +50,9 @@ fmt: tools
 fmt-check: tools
 	$(STYLUA) --check $(LUAU_DIRS)
 
+# Transcripts recorded by tests/integration/mutate are gitignored, not sources.
 typecheck: tools fixtures
-	$(LUAU_LSP) analyze --platform=standard --definitions=@tern=$(TERN_DEFS) $(LUAU_DIRS)
+	$(LUAU_LSP) analyze --platform=standard --definitions=@tern=$(TERN_DEFS) --ignore='**/.transcripts/**' $(LUAU_DIRS)
 
 check: fmt-check lint typecheck test-runner-selfcheck test bench
 
@@ -69,3 +70,7 @@ guard-flags-check:
 
 test-shell-guard: guard-flags-check
 	@LUAU=$(LUAU) sh tests/shell/guard/run.sh
+
+.PHONY: test-shell-drift
+test-shell-drift:
+	@LUAU=$(LUAU) sh tests/shell/drift/run.sh

@@ -35,5 +35,12 @@
   },
   "kubectl": "kubectl",
   "kubeconfig": null,
-  "gitops": {}
+  "gitops": {
+    "helm": [],
+    "max_files": 2000,
+    "max_bytes": 33554432,
+    "max_file_bytes": 1048576,
+    "render_kustomize": true,
+    "gh": "gh"
+  }
 }

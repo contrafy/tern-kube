@@ -1,0 +1,12 @@
+diff -u -N /tmp/LIVE-3386255112/v1.Namespace..tern-test-drift /tmp/MERGED-3401779644/v1.Namespace..tern-test-drift
+--- /tmp/LIVE-3386255112/v1.Namespace..tern-test-drift	2026-10-08 12:13:44
++++ /tmp/MERGED-3401779644/v1.Namespace..tern-test-drift	2026-10-08 12:13:44
+@@ -8,7 +8,7 @@
+   labels:
+     kubernetes.io/metadata.name: tern-test-drift
+     lens.example.com/fixture-world: "true"
+-    team: payments
++    team: platform
+   name: tern-test-drift
+   resourceVersion: "17024"
+   uid: c82c8d97-9118-4409-b9fb-8b78af2b7f24

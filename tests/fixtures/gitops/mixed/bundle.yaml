@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: a
+  namespace: tern-test-mixed
+data:
+  mode: plain
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: b
+  namespace: tern-test-mixed
+data:
+  mode: plain

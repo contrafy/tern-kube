@@ -53,7 +53,7 @@ the rest of the file still applies:
 | Unknown key, at any level | ignored | warning |
 | `schema_version` newer than this kube-lens | known keys apply, unknown keys are ignored | warning |
 | `explore.auto_refresh` set to `true` | kept `false` | warning |
-| Keys inside `gitops` | ignored until the GitOps milestone | info |
+| Invalid entry in `gitops.helm` or `gitops.unmanaged_kinds` | that entry is dropped, the others kept | error |
 
 Example messages:
 
@@ -82,7 +82,7 @@ without a fractional part, within the stated range.
 | `schema_version` | integer >= 1 | `1` | Version of this file's format. kube-lens understands version 1. A newer value is accepted with a warning: keys this version knows apply, the rest are ignored. |
 | `kubectl` | string: program name on `PATH` or absolute path (`~/` allowed) | `"kubectl"` | The kubectl binary Explore and quick actions run. The daemon's `PATH` is not your shell's, so an absolute path is the reliable choice. Relative paths with a `/` are rejected because the daemon's working directory is not yours. |
 | `kubeconfig` | string: absolute path (`~/` allowed), or `null` | `null` | Kubeconfig passed as `--kubeconfig` when an Explore link does not name one. |
-| `gitops` | object | `{}` | Reserved for the GitOps milestone (manifest index, drift, export). Accepted and ignored; keys inside are not validated yet. |
+| `gitops` | object | see [`gitops`](#gitops) | Manifest index, drift, export and the git flow in Explore ([gitops.md](gitops.md)). |
 
 Effective `kubectl` program, first match wins: the Tern kv key `kubectl`
 (set by tests and the settings flow), then `kubectl` from this file when it
@@ -153,6 +153,22 @@ actions. They never type into existing panes.
 | `logs_tail` | integer 1-100000 | `200` | Lines of history the Logs action shows before following (`kubectl logs -f --tail=<n>`). |
 | `debug_image` | container image reference without spaces | `"busybox:1.36"` | Image for the debug actions (`kubectl debug ... --image=<image>`). These mutate the cluster and go through the confirmation tier. |
 
+### `gitops`
+
+Read by Explore's GitOps views ([gitops.md](gitops.md)). The manifest index
+is built only when one of them needs it, from the repository that contains
+Explore's working directory.
+
+| Key | Type | Default | Effect |
+| --- | --- | --- | --- |
+| `helm` | list of `{"chart", "release", "namespace"?, "values"?}` | `[]` | Helm releases rendered with `helm template <release> <chart> [-n namespace] [-f values]...` for diff and drift (only when `helm` is on the daemon's `PATH`). `chart` and `values` are absolute, `~/`, or relative to the repository root; `release` and `namespace` are lowercase DNS labels. Charts are never exported. |
+| `unmanaged_kinds` | non-empty list of kinds (`"Deployment"`, `"widgets.example.com"`), or omitted | omitted | Kinds the drift report lists to find unmanaged objects. Omitted: the namespaced kinds the source declares. |
+| `max_files` | integer 1-20000 | `2000` | Manifest files indexed per scan (`git ls-files` order; kustomizations first). |
+| `max_bytes` | integer 1048576-268435456 | `33554432` | Total bytes read per scan. |
+| `max_file_bytes` | integer 4096-16777216 | `1048576` | Larger files are skipped. |
+| `render_kustomize` | boolean | `true` | Render top-level kustomizations with `kubectl kustomize` while indexing, so overlays map to live names. |
+| `gh` | string: program name on `PATH` or absolute path | `"gh"` | GitHub CLI for the optional `gh pr create` step; offered only when `gh auth status` succeeds. |
+
 ## Complete example
 
 This is `examples/config.json`: every key at its default. Delete the keys
@@ -196,7 +212,14 @@ you do not change; missing keys keep their defaults.
   },
   "kubectl": "kubectl",
   "kubeconfig": null,
-  "gitops": {}
+  "gitops": {
+    "helm": [],
+    "max_files": 2000,
+    "max_bytes": 33554432,
+    "max_file_bytes": 1048576,
+    "render_kustomize": true,
+    "gh": "gh"
+  }
 }
 ```
 

@@ -1,0 +1,9 @@
+--- /tmp/LIVE-1/v1.Pod.ns.a	2026-01-01
++++ /tmp/MERGED-2/v1.Pod.ns.a	2026-01-01
+@@ -1 +1 @@
+-a
++b
+--- /tmp/LIVE-1/v1.Pod.ns.b	2026-01-01
++++ /tmp/MERGED-2/v1.Pod.ns.b	2026-01-01
+@@ -0,0 +1 @@
++c

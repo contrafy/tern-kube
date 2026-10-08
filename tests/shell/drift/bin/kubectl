@@ -1,0 +1,77 @@
+#!/bin/sh
+# Fake kubectl for tests/shell/drift. Appends its argv (one `[arg]` per word)
+# to $FAKE_DIR/argv and replays canned output from $FAKE_DIR:
+#   context            `config current-context` (absent: exit 1)
+#   diff, diff.exit, diff.err   `diff` stdout, exit status, stderr
+#   manifest.tsv       `apply --dry-run=client -o go-template=...` output
+#   get/KIND.NS        `get KIND -n NS -o go-template=...` (NS `_` without -n)
+# Any verb that could mutate exits 99 and leaves a MUTATION line in argv.
+d=${FAKE_DIR:?FAKE_DIR not set}
+{
+	printf 'kubectl'
+	for a in "$@"; do
+		printf ' [%s]' "$a"
+	done
+	printf '\n'
+	if [ -n "${KUBECTL_EXTERNAL_DIFF+set}" ]; then
+		printf 'LEAK KUBECTL_EXTERNAL_DIFF=%s\n' "$KUBECTL_EXTERNAL_DIFF"
+	fi
+} >>"$d/argv"
+
+while [ $# -gt 0 ]; do
+	case $1 in
+	--kubeconfig | --context) shift 2 ;;
+	*) break ;;
+	esac
+done
+
+case ${1:-} in
+config)
+	[ "${2:-}" = current-context ] && [ -f "$d/context" ] || exit 1
+	cat "$d/context"
+	;;
+diff)
+	for a in "$@"; do
+		case $a in
+		*/rendered.yaml) cp "$a" "$d/rendered.seen" ;;
+		esac
+	done
+	[ -f "$d/diff.err" ] && cat "$d/diff.err" >&2
+	[ -f "$d/diff" ] && cat "$d/diff"
+	exit "$(cat "$d/diff.exit" 2>/dev/null || echo 0)"
+	;;
+apply)
+	for a in "$@"; do
+		[ "$a" = --dry-run=client ] && {
+			cat "$d/manifest.tsv"
+			exit 0
+		}
+	done
+	echo "MUTATION apply without --dry-run=client" >>"$d/argv"
+	exit 99
+	;;
+get)
+	kind=$2
+	ns=_
+	shift 2
+	while [ $# -gt 0 ]; do
+		case $1 in
+		-n)
+			ns=$2
+			shift
+			;;
+		esac
+		shift
+	done
+	f=$d/get/$kind.$ns
+	[ -f "$f" ] || {
+		echo "error: the server doesn't have a resource type \"$kind\"" >&2
+		exit 1
+	}
+	cat "$f"
+	;;
+*)
+	echo "MUTATION or unexpected verb: $*" >>"$d/argv"
+	exit 99
+	;;
+esac

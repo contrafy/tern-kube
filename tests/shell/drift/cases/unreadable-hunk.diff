@@ -1,0 +1,9 @@
+diff -u -N /tmp/L/v1.Pod.ns.a /tmp/M/v1.Pod.ns.a
+--- /tmp/L/v1.Pod.ns.a
++++ /tmp/M/v1.Pod.ns.a
+@@ -x +y @@
+-a
+@@ -1,2 +1,2 @@ trailing section text
+ a
+-b
++c
