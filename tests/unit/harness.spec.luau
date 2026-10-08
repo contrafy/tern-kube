@@ -1,0 +1,96 @@
+--!strict
+local json = require("../lib/json")
+local t = require("../lib/test")
+local describe, it, expect = t.describe, t.it, t.expect
+
+describe("expect", function()
+	it("passes matching assertions", function()
+		expect(1 + 1).toBe(2)
+		expect({ a = { 1, 2 }, b = "x" }).toEqual({ b = "x", a = { 1, 2 } })
+		expect(nil).toBeNil()
+		expect("kubectl apply").toContain("apply")
+		local mixed: { any } = { "a", { b = 1 } }
+		expect(mixed).toContain({ b = 1 })
+		expect(function()
+			error("boom")
+		end).toThrow("boom")
+	end)
+
+	-- Assertions must raise in-process, otherwise a broken matcher would let
+	-- every spec pass silently.
+	it("raises on mismatches with the differing path", function()
+		expect(function()
+			expect(1).toBe(2)
+		end).toThrow("expected 1 to be 2")
+		expect(function()
+			expect({ a = { 1, 2 } }).toEqual({ a = { 1, 3 } })
+		end).toThrow("values differ at <root>.a[2]")
+		expect(function()
+			expect({ a = 1, extra = true }).toEqual({ a = 1 })
+		end).toThrow("<root>.extra")
+		expect(function()
+			expect(false).toBeNil()
+		end).toThrow("expected nil")
+		expect(function()
+			expect("abc").toContain("z")
+		end).toThrow("to contain")
+		expect(function()
+			expect(function() end).toThrow()
+		end).toThrow("expected function to throw")
+		expect(function()
+			expect(function()
+				error("other")
+			end).toThrow("boom")
+		end).toThrow("expected error containing")
+	end)
+
+	it("treats tables by identity in toBe", function()
+		expect(function()
+			expect({}).toBe({})
+		end).toThrow("to be")
+	end)
+end)
+
+describe("json.decode", function()
+	-- tern.json.decode drops null object members; plugin code must therefore
+	-- treat absent and null fields identically, and fixtures must match.
+	it("drops null object members", function()
+		local value = json.decode('{"a": null, "b": 1, "c": {"d": null}}')
+		expect(value).toEqual({ b = 1, c = {} })
+	end)
+
+	it("keeps null array items as the null sentinel", function()
+		local value = json.decode("[1, null, 3]")
+		local expected: { any } = { 1, json.null, 3 }
+		expect(value).toEqual(expected)
+		expect(value[2]).toBe(json.null)
+	end)
+
+	it("decodes arrays as plain sequences", function()
+		local value = json.decode('{"items": [{"name": "a"}, {"name": "b"}], "empty": []}')
+		expect(#value.items).toBe(2)
+		expect(value.items[2].name).toBe("b")
+		expect(value.empty).toEqual({})
+	end)
+
+	it("decodes scalars and escapes", function()
+		expect(json.decode('"a\\n\\u00e9\\ud83d\\ude00"')).toBe("a\n\195\169\240\159\152\128")
+		expect(json.decode("-1.5e2")).toBe(-150)
+		expect(json.decode("true")).toBe(true)
+		expect(json.decode("null")).toBe(json.null)
+	end)
+
+	it("rejects malformed input", function()
+		expect(function()
+			json.decode('{"a": 1,}')
+		end).toThrow("expected object key")
+		expect(function()
+			json.decode("[1] x")
+		end).toThrow("trailing data")
+		expect(function()
+			json.decode('"open')
+		end).toThrow("unterminated string")
+	end)
+end)
+
+return nil
