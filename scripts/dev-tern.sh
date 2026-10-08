@@ -6,11 +6,13 @@
 #   start [--fake] [--print]  run the sandbox window in the foreground (keep it
 #                     in a long-lived terminal/service). Shells and the daemon
 #                     always get KUBECONFIG=.sandbox/kubeconfig and a neutral
-#                     zsh (sandbox ZDOTDIR, no user rc files). Default: the
-#                     real kubectl, refused unless that kubeconfig's context is
-#                     kind-kube-lens-dev. --fake puts tests/bin (fake kubectl
-#                     and kubecolor) first on PATH. In a pane, `kl_fake [DIR]`
-#                     and `kl_real` switch. --print shows the environment
+#                     zsh (sandbox ZDOTDIR, no user rc files); the daemon reads
+#                     kube-lens config from <sandbox>/xdg, never the user's.
+#                     Default: the real kubectl, refused unless that
+#                     kubeconfig's context is kind-kube-lens-dev. --fake puts
+#                     tests/bin (fake kubectl and kubecolor) first on PATH. In
+#                     a pane, `kl_fake [DIR]` and `kl_real` switch. --print
+#                     shows the environment
 #   link [DIR]        point <sandbox>/cfg/plugins/kube-lens.path at plugin/
 #                     (or DIR, e.g. a snapshot copy) and reload the daemon
 #   unlink            remove the link and reload
@@ -139,6 +141,9 @@ start)
 	export STENCIL_LOG="$window_log"
 	export KUBECONFIG="$kubeconfig"
 	export KUBERC=off
+	# kube-lens reads $XDG_CONFIG_HOME/kube-lens/config.json; scenarios write it.
+	export XDG_CONFIG_HOME="$sb/xdg"
+	mkdir -p "$XDG_CONFIG_HOME/kube-lens"
 	unset KUBECTL_EXTERNAL_DIFF KUBE_LENS_FAKE_FIXTURES KUBE_LENS_FAKE_ROWS
 	export ZDOTDIR="$zdot"
 	export SHELL=/bin/zsh

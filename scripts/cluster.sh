@@ -1,7 +1,8 @@
 #!/bin/sh
 # Disposable kind cluster for kube-lens development and fixture capture.
 #
-#   scripts/cluster.sh create           create (or adopt) kind cluster kube-lens-dev
+#   scripts/cluster.sh create           create (or adopt) kind cluster kube-lens-dev and
+#                                       apply the quick-action toolbox (tern-test-mutate)
 #   scripts/cluster.sh delete           delete it
 #   scripts/cluster.sh kubeconfig-path  print the sandbox kubeconfig after verifying it
 #   scripts/cluster.sh status           show cluster, context and node state
@@ -74,6 +75,14 @@ verify() {
 	esac
 }
 
+# Shell/logs/port-forward target for the quick-action e2e scenarios
+# (Deployment + Service kl-qa-shell). Idempotent.
+apply_toolbox() {
+	kc apply -f "$ROOT/tests/integration/manifests/mutate/namespace.yaml" >/dev/null
+	kc apply -f "$ROOT/tests/integration/manifests/qa/toolbox.yaml" >/dev/null
+	kc rollout status deployment/kl-qa-shell -n tern-test-mutate --timeout=180s >/dev/null
+}
+
 cmd_create() {
 	mkdir -p "$SANDBOX"
 	chmod 700 "$SANDBOX"
@@ -92,6 +101,7 @@ cmd_create() {
 	chmod 600 "$KUBECONFIG_PATH"
 	verify
 	kc wait --for=condition=Ready node --all --timeout=180s >/dev/null
+	apply_toolbox
 	printf 'cluster %s ready; KUBECONFIG=%s\n' "$CLUSTER" "$KUBECONFIG_PATH"
 }
 
