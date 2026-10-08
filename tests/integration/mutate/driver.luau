@@ -9,7 +9,7 @@
 --   * `kl_state` assignments describing the session (phase, tier, token, ...);
 -- and writes the rendered view as text to <work>/view.txt via stdout markers.
 --
---   .tools/bin/luau tests/integration/mutate/driver.luau -a <work dir under repo>
+--   .tools/bin/luau tests/integration/mutate/driver.luau -a <scenario> <effects done>  (loads .transcripts/<scenario>.luau)
 local Command = require("../../../plugin/lib/kubectl/command")
 local N = require("../../lib/nodes")
 local Render = require("../../../plugin/lib/mutation/render")
@@ -29,7 +29,7 @@ local function unhex(h: string?): string
 	end))
 end
 
-local transcript = (require :: any)("../../../" .. work .. "/transcript")
+local transcript = (require :: any)("./.transcripts/" .. work)
 
 local init = transcript.init
 local s, effects = Session.init({

@@ -1,6 +1,42 @@
-# Live: on a list longer than the block (all namespaces, 25+ pods) the
-# keyboard selection stays inside the visible rows: G and gg move the
-# window, and the rows beyond it are announced as clickable indicators.
+# Live: on a list longer than the block (all namespaces) the keyboard
+# selection stays inside the visible rows: G and gg move the window, and the
+# rows beyond it are announced as clickable indicators. The scenario brings
+# its own pods (kl-e2e-many: pause replicas in tern-test-mutate, enough to
+# overflow the window on their own, rows being at least 16 px high) and
+# deletes them on exit, so ambient pod counts never matter.
+height=$(ctl dump 'body' | jq -r '.header.viewport.height')
+many=$(((${height%.*} + 15) / 16))
+many_cleanup() {
+	kc -n "$MNS" delete deploy/kl-e2e-many --ignore-not-found --wait=true >/dev/null 2>&1
+	kc -n "$MNS" wait --for=delete pod -l app=kl-e2e-many --timeout=60s >/dev/null 2>&1
+}
+trap many_cleanup EXIT
+kc apply -f - >/dev/null <<EOF
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kl-e2e-many
+  namespace: $MNS
+spec:
+  replicas: $many
+  selector: {matchLabels: {app: kl-e2e-many}}
+  template:
+    metadata: {labels: {app: kl-e2e-many}}
+    spec:
+      terminationGracePeriodSeconds: 0
+      containers:
+        - name: pause
+          image: registry.k8s.io/pause:3.10
+          imagePullPolicy: IfNotPresent
+          resources:
+            requests: {cpu: 1m, memory: 4Mi}
+            limits: {cpu: 5m, memory: 8Mi}
+EOF
+many_listed() {
+	[ "$(kc -n "$MNS" get pods -l app=kl-e2e-many -o name | wc -l | tr -d ' ')" -ge "$many" ]
+}
+E2E_WAIT=60 wait_for "$many kl-e2e-many pods" many_listed || return
+
 lens 'kubectl get pods -n tern-test-apps'
 native
 click_text db-0 '.kl-grid .kl-c'
@@ -14,8 +50,7 @@ xwait 'all namespaces' '[data-role="kube-lens.explore-namespaces"] *'
 xkey g g enter
 xwait 'pods' '[data-role="kube-lens.explore-list"] *'
 total=$(xtext '[data-role="kube-lens.explore-list"] *' | sed -n 's/.*[^0-9]\([0-9][0-9]*\) pods.*/\1/p')
-[ "${total:-0}" -ge 25 ] || fail "expected 25+ pods in all namespaces, got ${total:-none}"
-height=$(ctl dump 'body' | jq -r '.header.viewport.height')
+[ "${total:-0}" -gt "$many" ] || fail "expected more than $many pods in all namespaces, got ${total:-none}"
 
 # visible_sel: the selected row's first cell lies inside the window.
 visible_sel() {

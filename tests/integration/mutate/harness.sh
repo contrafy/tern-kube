@@ -168,9 +168,15 @@ kl_effect() { # INDEX TYPE ...
 }
 
 kl_pump() {
+	# Luau's require resolves neither symlinked directories (.sandbox may be
+	# one) nor paths above the filesystem root, so the driver loads a copy of
+	# the transcript from the gitignored .transcripts/ next to itself.
+	kl_mods=$KL_REPO/tests/integration/mutate/.transcripts
+	mkdir -p "$kl_mods"
 	while :; do
 		before=$KL_DONE
-		"$KL_LUAU" "$KL_REPO/tests/integration/mutate/driver.luau" -a "$KL_ROOT/$KL_NAME" "$KL_DONE" >"$KL_W/driver.out" 2>"$KL_W/driver.err" || {
+		cp "$KL_W/transcript.luau" "$kl_mods/$KL_NAME.luau"
+		"$KL_LUAU" "$KL_REPO/tests/integration/mutate/driver.luau" -a "$KL_NAME" "$KL_DONE" >"$KL_W/driver.out" 2>"$KL_W/driver.err" || {
 			echo "driver failed:" >&2
 			cat "$KL_W/driver.err" >&2
 			return 1

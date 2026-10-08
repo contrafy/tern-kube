@@ -41,7 +41,8 @@ scale() { # REPLICAS
 
 scale 2 || return
 contains "guard mode" "$(atext)" "Shell guard approval"
-contains "requesting pane" "$(atext)" "shell pane $guard_pane in $E2E_REPO"
+# The guard records its physical cwd (`pwd -P`): /tmp is /private/tmp on macOS.
+contains "requesting pane" "$(atext)" "shell pane $guard_pane in $(cd "$E2E_REPO" && pwd -P)"
 xkey t
 xkey enter
 approve_closed || return
