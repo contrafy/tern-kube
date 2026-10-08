@@ -6,7 +6,7 @@ original output one click away (**Raw**).
 
 ![Pods with the inline inspector open](docs/screenshots/m1-inspector-dark-wide.png)
 
-> Public beta, in active development. See [Status](#status).
+> Public beta, in active development. See [Features](#features) for what is done and what v1.0 adds.
 
 - **Click a column** to sort. Ages, quantities, ratios and restarts sort by
   value, not text.
@@ -90,37 +90,114 @@ Details: [docs/gitops.md](docs/gitops.md).
 ## Install
 
 ```sh
-git clone https://github.com/contrafy/tern-kube
-tern plugin link tern-kube/plugin
+tern plugin install github.com/contrafy/tern-kube/plugin
 ```
 
 Requires Tern 0.6.2 or later with shell integration and native command
 output on (`command_lenses`, the default), and `kubectl` on your `PATH`.
+Tested on macOS; Tern on Linux and remote hosts is not verified yet (see
+[Features](#features)).
 
-zsh expands aliases before Tern sees the command, so `alias k=kubectl`
-works as is. In bash and fish, opt in per alias:
+The shell guard, `tern-kube-drift` and the bash/fish alias helper live
+outside the plugin; clone the repository for those:
 
 ```sh
-tern-kube/scripts/tern-kube-aliases add k
+git clone https://github.com/contrafy/tern-kube
+tern-kube/scripts/tern-kube-aliases add k   # bash/fish only; zsh expands aliases itself
 ```
 
 Settings: **Tern Kube: Settings** in the palette, or edit
 `~/.config/tern-kube/config.json` ([configuration](docs/configuration.md)).
 
-To remove: `tern plugin unlink tern-kube`.
+To remove: `tern plugin remove tern-kube`.
 
-## Status
+## Features
 
-- [x] Generic lens: tables, describe, top, YAML/JSON, mutation results
-- [x] Explore: live view with relations, keyboard navigation, and one-key
-      shell, logs and port-forward in a split
-- [x] Mutations with server dry-run, per-resource diff and risk-tiered
-      confirmation; opt-in zsh/bash/fish guard for typed commands
-- [x] GitOps: open and diff a resource's manifest, drift reports
-      (YAML, Kustomize, Helm, Argo CD/Flux aware), export, CI drift check
-- [x] Settings file and settings block
-- [x] CI on macOS arm64 and Linux x86_64
-- [ ] First tagged release
+v1.0 is when every row reads done. Release history: [CHANGELOG.md](CHANGELOG.md).
+
+| Feature | Status |
+| --- | --- |
+| **Lens** | |
+| `get`, `describe`, `top`, mutation results as native views | done |
+| Claims `kubectl` and `kubecolor`, also after global flags | done |
+| Typed column sort; status, namespace, kind, Problems filters | done |
+| Inline row inspector and full Inspect view | done |
+| Copy name, id, `describe`/`logs`/`get -o yaml` command | done |
+| `describe` cards with events; YAML list; JSON tree | done |
+| Secrets masked; raw fallback for watches, jsonpath, huge output | done |
+| Narrow-window columns; view state survives plugin reload | done |
+| Native `kubectl logs` lens | planned |
+| **Explore** | |
+| Live block with pinned context and its provenance | done |
+| k9s-style keys; context, namespace and kind pickers | done |
+| Describe, object, last 500 log lines | done |
+| Relations graph with provenance | done |
+| Namespace events timeline | planned |
+| Helm releases with history | planned |
+| Compare one object across contexts | planned |
+| **Quick actions** | |
+| Pod shell; workloads pick a ready pod | done |
+| Follow logs; workloads by selector, all containers | done |
+| Port-forward with port picker and local port suggestion | done |
+| Debug container, node debug pod, CronJob run now | done |
+| New split (right, down) or tab; context and kubeconfig pinned | done |
+| **Changes (mutations)** | |
+| Delete, rollout restart, scale from Explore keys or lens chips | done |
+| **Tern Kube: Apply file or directory**, Kustomize included | done |
+| Approve block: server dry run, per-resource `kubectl diff` | done |
+| Risk tiers; re-verifies argv, target and files before running | done |
+| JSON-lines audit log | done |
+| `rollout undo`/`pause`/`resume`, `patch`, `label`, `annotate` | planned |
+| `cordon`, `uncordon`, `drain`; `edit` as preview then apply | planned |
+| Helm rollback through the approve block | planned |
+| **Shell guard** | |
+| Opt-in for zsh, bash and fish; one POSIX `sh` core | done |
+| Guards `apply`, `delete`, `scale`, `rollout restart` | done |
+| Fails closed outside Tern, on timeout or mismatch | done |
+| Guards the planned verbs above | planned |
+| **GitOps** | |
+| Manifest index: YAML, Kustomize, configured Helm releases | done |
+| Open manifest at its line; diff vs live object | done |
+| Drift report: changed, missing, unmanaged; apply via approve | done |
+| Argo CD / Flux owner, sync and health status | done |
+| Export clean manifests; Secrets as placeholders | done |
+| Branch and commit; push and `gh pr create` opt-in | done |
+| `tern-kube-drift` CLI (text, Markdown, JSON) and CI example | done |
+| Helm values diff and chart auto-detect | planned |
+| Compare one source against several clusters | planned |
+| **Settings and config** | |
+| Versioned JSON at `~/.config/tern-kube/config.json` | done |
+| **Tern Kube: Settings**: validation, reset, status checks | done |
+| Opt-in bash/fish alias claims (`tern-kube-aliases`) | done |
+| Mutation and live-query switches, timeouts, limits | done |
+| **Platform** | |
+| Tern on macOS; CI on macOS arm64 and Linux x86_64 | done |
+| Tern on Linux | planned |
+| Remote SSH hosts | planned |
+| fish as login shell | planned |
+
+| Kind | Lens | Relations | Shell/logs | Port-fwd | Restart/scale | Delete | Manifest |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Pods | done | done | done | done | - | done | done |
+| Deployments | done | done | done | done | done | done | done |
+| StatefulSets | done | done | done | - | done | done | done |
+| DaemonSets | done | done | done | - | done | done | done |
+| ReplicaSets | done | done | done | - | done | done | done |
+| Jobs | done | done | done | - | - | done | done |
+| CronJobs | done | done | - | - | - | done | done |
+| Services | done | done | - | done | - | done | done |
+| Ingresses | done | done | - | - | - | done | done |
+| Nodes | done | partial | done | - | - | done | - |
+| Namespaces | done | - | - | - | - | done | done |
+| ConfigMaps | done | partial | - | - | - | done | done |
+| Secrets | done | partial | - | - | - | done | done |
+| Events | done | - | - | - | - | - | - |
+| Custom resources | done | partial | - | - | - | done | done |
+| Helm releases | - | planned | - | - | - | - | partial |
+
+`-`: not applicable or outside v1.0. partial: Nodes, ConfigMaps and Secrets
+appear only as relations of Pods; custom resources show owners only; Helm
+releases diff and drift but do not export. Node shell is a debug pod.
 
 ## Development
 
@@ -128,6 +205,7 @@ To remove: `tern plugin unlink tern-kube`.
 make bootstrap   # pinned tools into .tools/
 make check       # format, lint, typecheck, unit tests, benchmark
 make e2e         # drives an isolated Tern window; needs Docker
+tern plugin link plugin   # load the checkout in place; reloads on save
 ```
 
 `make e2e` runs against a disposable [kind](https://kind.sigs.k8s.io)
