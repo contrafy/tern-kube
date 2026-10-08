@@ -5,6 +5,7 @@
 
 local Capture = require("../lens/capture")
 local Command = require("../kubectl/command")
+local Link = require("../mutation/link")
 local Quick = require("../actions/quick")
 local Grid = require("./grid")
 local Objtree = require("./objtree")
@@ -23,7 +24,9 @@ type ViewState = Viewstate.ViewState
 
 export type Counts = { shown: number, matched: number, total: number }
 -- pageSize: rows drawn per page (config general.max_rendered_rows).
-export type Options = { pageSize: number? }
+-- mutations: config mutations.enabled; offers the mutating chips (Delete,
+-- Restart, Scale, debug, CronJob run-now), each previewed in the approve block.
+export type Options = { pageSize: number?, mutations: boolean? }
 
 local M = {}
 
@@ -205,9 +208,16 @@ function M.servicePorts(cell: string): { number }
 	return out
 end
 
--- Shell / Logs / Port-forward chips; each opens a new split through the
--- window's route.link. They never touch the view state.
-local function quickChips(capture: Capture, tbl: SnapshotTable, row: ResourceRow, ref: Types.ResourceRef): { Node }
+-- Shell / Logs / Port-forward chips (plus debug and CronJob run-now when
+-- mutations are enabled); each opens a new split through the window's
+-- route.link. They never touch the view state.
+local function quickChips(
+	capture: Capture,
+	tbl: SnapshotTable,
+	row: ResourceRow,
+	ref: Types.ResourceRef,
+	mutations: boolean
+): { Node }
 	local ports: { number }? = nil
 	local index = columnIndex(tbl, "PORT(S)")
 	if ref.kind == "Service" and index then
@@ -219,6 +229,7 @@ local function quickChips(capture: Capture, tbl: SnapshotTable, row: ResourceRow
 		Quick.chipsFor(ref.kind, ref, { context = inv.context, kubeconfig = inv.kubeconfig }, {
 			source = "lens",
 			ports = ports,
+			allowMutations = mutations,
 		})
 	do
 		table.insert(
@@ -233,7 +244,36 @@ local function quickChips(capture: Capture, tbl: SnapshotTable, row: ResourceRow
 	return out
 end
 
-local function actionChips(capture: Capture, tbl: SnapshotTable, row: ResourceRow, vs: ViewState): { Node }
+-- Delete / Restart / Scale chips: kube-lens://mutate links the window routes
+-- to the approve block, which previews before anything runs.
+local function mutationChips(capture: Capture, ref: Types.ResourceRef): { Node }
+	local inv = capture.invocation
+	local origin: Link.Origin = {
+		context = inv.context,
+		source = if inv.context then "flag" else nil,
+		kubeconfig = inv.kubeconfig,
+	}
+	local out: { Node } = {}
+	for _, m in Link.chips(ref, origin) do
+		table.insert(
+			out,
+			ui.badge(
+				m.label,
+				"warning",
+				{ title = m.title, actions = { click = "mutate=" .. m.url }, role = "kube-lens.mutate" }
+			)
+		)
+	end
+	return out
+end
+
+local function actionChips(
+	capture: Capture,
+	tbl: SnapshotTable,
+	row: ResourceRow,
+	vs: ViewState,
+	mutations: boolean
+): { Node }
 	local out: { Node } = {}
 	if not vs.full then
 		table.insert(
@@ -250,8 +290,13 @@ local function actionChips(capture: Capture, tbl: SnapshotTable, row: ResourceRo
 				actions = { click = "explore=" .. row.key },
 			})
 		)
-		for _, n in quickChips(capture, tbl, row, ref) do
+		for _, n in quickChips(capture, tbl, row, ref, mutations) do
 			table.insert(out, n)
+		end
+		if mutations then
+			for _, n in mutationChips(capture, ref) do
+				table.insert(out, n)
+			end
 		end
 		local inv = capture.invocation
 		local opts = { containers = containersOf(tbl, row) }
@@ -289,10 +334,16 @@ local function cellItems(tbl: SnapshotTable, row: ResourceRow): { { { ui.SpanLik
 	return items
 end
 
-local function inspector(capture: Capture, tbl: SnapshotTable, row: ResourceRow, vs: ViewState): Node
+local function inspector(
+	capture: Capture,
+	tbl: SnapshotTable,
+	row: ResourceRow,
+	vs: ViewState,
+	mutations: boolean
+): Node
 	return ui.col({
 		ui.kv(cellItems(tbl, row)),
-		ui.row(actionChips(capture, tbl, row, vs), { wrap = true }),
+		ui.row(actionChips(capture, tbl, row, vs, mutations), { wrap = true }),
 	}, { role = "kube-lens.inspector" })
 end
 
@@ -310,7 +361,7 @@ local function sourceLines(capture: Capture, row: ResourceRow): string?
 	return if #out > 0 then table.concat(out, "\n") else nil
 end
 
-function M.inspectView(capture: Capture, tbl: SnapshotTable, row: ResourceRow, vs: ViewState): Node
+function M.inspectView(capture: Capture, tbl: SnapshotTable, row: ResourceRow, vs: ViewState, mutations: boolean?): Node
 	local back = Viewstate.action(Viewstate.back(vs))
 	local name = if row.ref then row.ref.name else row.cells[1] or row.key
 	local crumbs = ui.row({
@@ -322,7 +373,7 @@ function M.inspectView(capture: Capture, tbl: SnapshotTable, row: ResourceRow, v
 	}, { key = "crumbs", role = "kube-lens.breadcrumb" })
 	local children: { Node } = {
 		crumbs,
-		ui.row(actionChips(capture, tbl, row, vs), { key = "actions", wrap = true }),
+		ui.row(actionChips(capture, tbl, row, vs, mutations == true), { key = "actions", wrap = true }),
 		ui.section({ "Columns" }, { ui.kv(cellItems(tbl, row)) }, { key = "cells" }),
 	}
 	local source = sourceLines(capture, row)
@@ -365,6 +416,7 @@ end
 
 function M.render(capture: Capture, vs: ViewState, opts: Options?): (Node?, Counts)
 	local size = if opts and opts.pageSize and opts.pageSize >= 1 then opts.pageSize else M.PAGE_SIZE
+	local mutations = opts ~= nil and opts.mutations == true
 	local snapshot = capture.snapshot
 	local tables: { SnapshotTable } = if snapshot then snapshot.tables else {}
 	local total = 0
@@ -378,7 +430,7 @@ function M.render(capture: Capture, vs: ViewState, opts: Options?): (Node?, Coun
 	if vs.full and vs.open then
 		local row, tbl = Capture.findRow(capture, vs.open)
 		if row and tbl then
-			return M.inspectView(capture, tbl, row, vs), { shown = 1, matched = 1, total = total }
+			return M.inspectView(capture, tbl, row, vs, mutations), { shown = 1, matched = 1, total = total }
 		end
 	end
 
@@ -461,7 +513,7 @@ function M.render(capture: Capture, vs: ViewState, opts: Options?): (Node?, Coun
 				sortAction = sortAction,
 				inspector = function(rowKey: string): Node?
 					local row = Capture.findRow(capture, rowKey)
-					return if row then inspector(capture, tbl, row, vs) else nil
+					return if row then inspector(capture, tbl, row, vs, mutations) else nil
 				end,
 			})
 		)

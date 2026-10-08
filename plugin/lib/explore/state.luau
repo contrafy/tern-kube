@@ -17,6 +17,7 @@ local Command = require("../kubectl/command")
 local Config = require("../config")
 local Json = require("../parse/json")
 local Kinds = require("../kubectl/kinds")
+local Link = require("../mutation/link")
 local Query = require("./query")
 local Quick = require("../actions/quick")
 local Redact = require("../model/redact")
@@ -1270,6 +1271,34 @@ local function quick(s: State, action: string, effects: { Effect })
 	openQuick(s, action, ref, opts, effects)
 end
 
+-- ctrl+d / ctrl+r / shift+s and the matching chips: open the approve block
+-- for the focused object; it previews and confirms, Explore never mutates.
+local function mutate(s: State, op: string, effects: { Effect })
+	if not s.config.mutations.enabled then
+		table.insert(effects, toast("error", "Mutations are disabled", "mutations.enabled is false in the config"))
+		return
+	end
+	if not M.resolved(s) then
+		table.insert(effects, toast("error", "No cluster target yet", "Pick a context first (c)"))
+		return
+	end
+	local ref = M.focusRef(s)
+	if ref == nil then
+		table.insert(effects, toast("error", "Select an object first"))
+		return
+	end
+	local url, err = Link.forRef(op :: Link.Op, ref, {
+		context = s.target.context,
+		source = Link.sourceOf(s.target.contextSource, s.target.confirmed),
+		kubeconfig = s.target.kubeconfig,
+	})
+	if url == nil then
+		table.insert(effects, toast("error", "Cannot " .. op .. " " .. ref.kind, err))
+		return
+	end
+	table.insert(effects, { t = "open", url = url })
+end
+
 -- Keys -----------------------------------------------------------------------
 
 local FILTERABLE: { [string]: boolean } =
@@ -1360,10 +1389,16 @@ local function onKey(s: State, key: Key, effects: { Effect }): boolean
 		move(s, 1)
 	elseif ch == "k" or name == "up" then
 		move(s, -1)
-	elseif name == "pagedown" or (key.ctrl and name == "d") then
+	elseif name == "pagedown" or (key.ctrl and name == "f") then
 		move(s, M.viewport(s.rows, s.config.general.max_rendered_rows))
-	elseif name == "pageup" or (key.ctrl and name == "u") then
+	elseif name == "pageup" or (key.ctrl and (name == "b" or name == "u")) then
 		move(s, -M.viewport(s.rows, s.config.general.max_rendered_rows))
+	elseif key.ctrl and name == "d" then
+		mutate(s, "delete", effects)
+	elseif key.ctrl and name == "r" then
+		mutate(s, "restart", effects)
+	elseif ch == "S" or (name == "s" and key.shift) then
+		mutate(s, "scale", effects)
 	elseif name == "home" then
 		move(s, nil, 1)
 	elseif name == "end" then
@@ -1459,6 +1494,8 @@ local function onAction(s: State, act: string, value: string, effects: { Effect 
 		copyWhat(s, value, effects)
 	elseif act == "quick" then
 		quick(s, value, effects)
+	elseif act == "mutate" then
+		mutate(s, value, effects)
 	elseif act == "container" or act == "previous" then
 		local r = top(s)
 		if r.kind ~= "logs" then

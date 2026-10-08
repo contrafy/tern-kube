@@ -9,6 +9,7 @@ local Command = require("../kubectl/command")
 local DescribeView = require("../render/describe_view")
 local Grid = require("../render/grid")
 local ObjTree = require("../render/objtree")
+local Link = require("../mutation/link")
 local Query = require("./query")
 local Quick = require("../actions/quick")
 local Redact = require("../model/redact")
@@ -430,6 +431,8 @@ local function actionChips(s: State, ref: Ref): Node
 	if ref.kind ~= "Pod" and workload then
 		info.pod = info.pod or "?"
 	end
+	local mutations = s.config.mutations.enabled
+	info.allowMutations = mutations
 	for _, action in Quick.available(ref.kind, ref, info :: any) do
 		if not action.mutates and QUICK_KEYS[action.id] then
 			table.insert(
@@ -438,6 +441,32 @@ local function actionChips(s: State, ref: Ref): Node
 					key = "q-" .. action.id,
 					tone = "accent",
 					title = "Opens a new split running the kubectl command",
+				})
+			)
+		elseif action.mutates then
+			table.insert(
+				chips,
+				chip(action.label, "quick=" .. action.id, {
+					key = "q-" .. action.id,
+					tone = "warning",
+					title = "Previews in the approve block; confirm to open a new split running it",
+				})
+			)
+		end
+	end
+	if mutations then
+		local origin: Link.Origin = {
+			context = s.target.context,
+			source = Link.sourceOf(s.target.contextSource, s.target.confirmed),
+			kubeconfig = s.target.kubeconfig,
+		}
+		for _, m in Link.chips(ref, origin) do
+			table.insert(
+				chips,
+				chip(m.label .. " (" .. m.key .. ")", "mutate=" .. m.op, {
+					key = "m-" .. m.op,
+					tone = "warning",
+					title = m.title,
 				})
 			)
 		end
@@ -762,7 +791,7 @@ end
 
 local HINTS: { [string]: string } = {
 	list = "j/k move · enter open · / filter · d describe · y object · R relations · s shell · l logs · F port-forward · : kinds · ? help",
-	detail = "enter relations · d describe · L logs · s shell · l follow logs · F port-forward · Y copy command · esc back",
+	detail = "enter relations · d describe · L logs · s shell · l follow logs · F port-forward · ctrl+d delete · ctrl+r restart · S scale · esc back",
 	relations = "j/k move · enter open · / filter · r refresh · esc back",
 	describe = "y object · R relations · r refresh · esc back",
 	logs = "r refresh · l follow in split · esc back",
@@ -796,6 +825,7 @@ end
 M.KEYS = {
 	{ "j / k, down / up", "Move the selection", "Click a row" },
 	{ "gg / G", "First / last row", "" },
+	{ "pagedown / pageup", "Move by a window (also ctrl+f / ctrl+b)", "" },
 	{ "enter", "Open the selected object (in an object: its relations)", "Click a row" },
 	{ "esc / backspace", "Back; at the root clear the filter, then close", "Breadcrumbs" },
 	{ "/", "Filter rows (enter keeps, esc ends editing)", "Click the filter" },
@@ -810,6 +840,9 @@ M.KEYS = {
 	{ "s", "Shell in a new split (workloads: a ready pod)", "Shell" },
 	{ "l", "Follow logs in a new split", "Follow logs" },
 	{ "shift+f", "Port-forward in a new split", "Port-forward" },
+	{ "ctrl+d", "Delete: preview, then typed confirmation in the approve block", "Delete" },
+	{ "ctrl+r", "Rollout restart (deployments, statefulsets, daemonsets): preview, then confirm", "Restart" },
+	{ "shift+s", "Scale: asks for replicas, previews, then confirm", "Scale" },
 	{ "Y", "Copy the kubectl command of this view", "Copy command" },
 	{ "?", "This help", "?" },
 }

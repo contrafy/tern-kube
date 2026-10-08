@@ -3,6 +3,7 @@
 -- inspector, Inspect shows everything about one row, pages cap rendering,
 -- and every click carries the rest of the view state along.
 local Capture = require("../../../plugin/lib/lens/capture")
+local Link = require("../../../plugin/lib/mutation/link")
 local Quick = require("../../../plugin/lib/actions/quick")
 local TableView = require("../../../plugin/lib/render/table_view")
 local json = require("../../lib/json")
@@ -300,6 +301,82 @@ describe("table view quick-action chips", function()
 		expect(TableView.servicePorts("5432/TCP")).toEqual({ 5432 })
 		expect(TableView.servicePorts("<none>")).toEqual({})
 		expect(TableView.servicePorts("99999/TCP")).toEqual({})
+	end)
+end)
+
+-- With mutations enabled (config mutations.enabled), the inspector also
+-- offers Delete / Restart / Scale and the mutating quick actions. Their only
+-- payload is a link the approve block validates and previews: a chip can at
+-- most ask for a preview of an ordinary command on that one object.
+describe("table view mutation chips", function()
+	local function inspector(c: Capture.Capture, key: string, mutations: boolean?): any
+		local node = TableView.render(c, vsm.opened(vsm.default(), key), { mutations = mutations })
+		return nodes.find(node :: any, nodes.role("kube-lens.inspector")) :: any
+	end
+
+	local function mutateChips(insp: any): { [string]: Link.Request }
+		local out: { [string]: Link.Request } = {}
+		for _, chip in nodes.findAll(insp, nodes.role("kube-lens.mutate")) do
+			local action = nodes.action(chip) :: string
+			expect(string.sub(action, 1, 7 + #Link.SCHEME)).toBe("mutate=" .. Link.SCHEME)
+			local req, err = Link.decode(string.sub(action, 8))
+			assert(req, err)
+			out[nodes.ownText(chip)] = req
+		end
+		return out
+	end
+
+	local function quickLabels(insp: any): { string }
+		local out: { string } = {}
+		for _, chip in nodes.findAll(insp, nodes.role("kube-lens.quick")) do
+			table.insert(out, nodes.ownText(chip))
+		end
+		table.sort(out)
+		return out
+	end
+
+	it("a deployment row offers Delete, Restart and Scale for that object", function()
+		local chips =
+			mutateChips(inspector(build("ns-apps/get_deployments"), "apps/Deployment/tern-test-apps/web", true))
+		expect(chips.Delete.op).toBe("delete")
+		expect(chips.Delete.kind).toBe("deployment.apps")
+		expect(chips.Delete.name).toBe("web")
+		expect(chips.Delete.namespace).toBe("tern-test-apps")
+		expect(chips.Restart.op).toBe("restart")
+		expect(chips.Scale.op).toBe("scale")
+		expect(chips.Scale.replicas).toBeNil()
+		expect(chips.Delete.context).toBeNil()
+	end)
+
+	it("a pod row offers Delete and Debug but neither Restart nor Scale", function()
+		local insp = inspector(build("ns-apps/get_pods"), "/Pod/tern-test-apps/db-0", true)
+		local chips = mutateChips(insp)
+		expect(chips.Delete.kind).toBe("pod")
+		expect(chips.Restart).toBeNil()
+		expect(chips.Scale).toBeNil()
+		expect(quickLabels(insp)).toEqual({ "Debug", "Logs", "Port-forward", "Shell" })
+	end)
+
+	it("a CronJob row offers Run now", function()
+		local insp = inspector(build("ns-batch/get_cronjobs"), "batch/CronJob/tern-test-batch/nightly-report", true)
+		expect(table.find(quickLabels(insp), "Run now") ~= nil).toBe(true)
+	end)
+
+	it("pins the lensed command's --context as a flag-sourced target", function()
+		local f = runs.load("ns-apps/get_deployments")
+		local args = { "--context", "kind-kube-lens-dev" }
+		table.move(f.run.args, 1, #f.run.args, #args + 1, args)
+		local c = Capture.build({ program = f.run.program, args = args }, f.lines, f.status, { decode = json.decode })
+		for _, req in mutateChips(inspector(c, "apps/Deployment/tern-test-apps/web", true)) do
+			expect(req.context).toBe("kind-kube-lens-dev")
+			expect(req.source).toBe("flag")
+		end
+	end)
+
+	it("offers no mutating chip when mutations are disabled", function()
+		local insp = inspector(build("ns-apps/get_pods"), "/Pod/tern-test-apps/db-0", false)
+		expect(#nodes.findAll(insp, nodes.role("kube-lens.mutate"))).toBe(0)
+		expect(quickLabels(insp)).toEqual({ "Logs", "Port-forward", "Shell" })
 	end)
 end)
 

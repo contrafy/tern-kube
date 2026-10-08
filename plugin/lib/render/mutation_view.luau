@@ -22,6 +22,26 @@ type ViewState = Viewstate.ViewState
 local M = {}
 
 M.BANNER = "Result of an executed command (not a preview)"
+M.GUARD_BANNER = "Stopped by the kube-lens shell guard; nothing was executed"
+
+-- shell/kube-lens-guard's final line when it did not run kubectl: a denial
+-- (with or without the block's reason), a Ctrl-C cancel, or any refusal.
+local GUARD_STOPS = {
+	"^kube%-lens guard: denied in Tern[;:]",
+	"^kube%-lens guard: cancelled; nothing was executed%.",
+	"^kube%-lens guard: nothing was executed%.",
+}
+
+local function guardStop(lines: { string }): string?
+	for _, line in lines do
+		for _, pattern in GUARD_STOPS do
+			if string.find(line, pattern) then
+				return string.sub(line, #"kube-lens guard: " + 1)
+			end
+		end
+	end
+	return nil
+end
 
 local HEADERS = { "KIND", "NAME", "NAMESPACE", "ACTION" }
 local TYPES: { Types.ColumnType } = { "text", "text", "text", "text" }
@@ -142,6 +162,15 @@ local function statusBadge(status: number?): Node
 end
 
 local function banner(capture: Capture, results: { MutationResult }): Node
+	local stop = if #results == 0 then guardStop(capture.lines) else nil
+	if stop then
+		return ui.row({
+			ui.badge("Not executed", "warning"),
+			ui.text({ ui.span(M.GUARD_BANNER, "strong") }),
+			statusBadge(capture.status),
+			ui.muted(stop),
+		}, { role = "kube-lens.mutation-banner", wrap = true })
+	end
 	local children: { Node } = {
 		ui.badge("Executed", "info"),
 		ui.text({ ui.span(M.BANNER, "strong") }),

@@ -245,6 +245,45 @@ describe("explore state: quick actions", function()
 		expect(#opens).toBe(1)
 		expect(opens[1].url :: string).toContain("pod=web-65d7d99975-")
 	end)
+
+	-- Explore never mutates by itself: the keys only open the approve block
+	-- through a kube-lens://mutate link naming the focused object and the
+	-- pinned context, which the block previews before anything runs.
+	it("ctrl+d, ctrl+r and shift+s open mutate links for the focused object", function()
+		local s = W.open({ context = W.CTX, namespace = W.NS, kind = "Deployment" })
+		s = W.keys(s, { "/", "w", "e", "b", "enter", "enter" })
+		local _, del = State.update(s, W.key("d", { ctrl = true }))
+		expect(del[1].t).toBe("open")
+		local url = del[1].url :: string
+		expect(string.sub(url, 1, 28)).toBe("kube-lens://mutate?op=delete")
+		expect(url).toContain("kind=deployment.apps&name=web&namespace=" .. W.NS)
+		expect(url).toContain("context=" .. W.CTX .. "&source=flag")
+		local _, restart = State.update(s, W.key("r", { ctrl = true }))
+		expect(restart[1].url :: string).toContain("op=restart")
+		local _, scale = State.update(s, W.key("S", { text = "S", shift = true }))
+		expect(scale[1].url :: string).toContain("op=scale")
+		expect((string.find(scale[1].url :: string, "replicas=", 1, true))).toBeNil()
+		local _, scale2 = State.update(s, W.key("s", { text = "s", shift = true }))
+		expect(scale2[1].url :: string).toContain("op=scale")
+	end)
+
+	it("refuses restart and scale on kinds that do not support them", function()
+		local s = W.open()
+		local _, effects = State.update(s, W.key("r", { ctrl = true }))
+		expect(effects[1].t).toBe("toast")
+		local _, del = State.update(s, W.key("d", { ctrl = true }))
+		expect(del[1].url :: string).toContain("op=delete&kind=pod&")
+	end)
+
+	it("offers no mutation when mutations are disabled", function()
+		local s = W.open(nil, W.config('{"mutations": {"enabled": false}}'))
+		for _, k in { W.key("d", { ctrl = true }), W.key("r", { ctrl = true }), W.key("S", { shift = true }) } do
+			local _, effects = State.update(s, k)
+			expect(#effects).toBe(1)
+			expect(effects[1].t).toBe("toast")
+			expect(effects[1].text).toBe("Mutations are disabled")
+		end
+	end)
 end)
 
 describe("explore state: relations", function()

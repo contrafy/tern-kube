@@ -181,7 +181,10 @@ describe("quick actions", function()
 			expect((Quick.decode("kube-lens://act/port-forward?kind=Job&name=j&port=80"))).toBeNil()
 			expect((Quick.decode("kube-lens://act/port-forward?kind=Pod&name=p&local=80"))).toBeNil()
 			expect((Quick.decode("kube-lens://act/debug-node?kind=Node&name=n&namespace=x"))).toBeNil()
-			expect((Quick.decode("kube-lens://act/cronjob-run?kind=CronJob&name=c&namespace=b"))).toBeNil()
+			-- A chip carries no suffix (the approve block names the job), but
+			-- no command line can be built without one.
+			expect(Quick.decode("kube-lens://act/cronjob-run?kind=CronJob&name=c&namespace=b") ~= nil).toBe(true)
+			expect((Quick.command("cronjob-run", {}, ref("CronJob", "c", "b", "batch"), {}))).toBeNil()
 			expect(Quick.decode("kube-lens://act/cronjob-run?kind=CronJob&name=c&namespace=b&suffix=x1") ~= nil).toBe(
 				true
 			)
