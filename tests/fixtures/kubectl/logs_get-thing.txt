@@ -1,0 +1,2 @@
+2026-10-08T07:00:00Z starting get-thing
+2026-10-08T07:00:01Z ready
