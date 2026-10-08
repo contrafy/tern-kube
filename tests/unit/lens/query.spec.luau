@@ -126,6 +126,20 @@ describe("lens query", function()
 		expect(names(Query.apply(tbl, vsm.toggledProblems(vsm.default())))).toEqual({ "broken-image" })
 	end)
 
+	-- Live `get pods -A` counted the completed job pod (READY 0/1, STATUS
+	-- Completed) as a problem: a finished pod's containers are meant to be
+	-- not ready.
+	it("problems skip short READY of finished pods (Completed, Succeeded)", function()
+		local tbl = tableOf("kubectl get pods", {
+			"NAME       READY   STATUS      RESTARTS   AGE",
+			"done-job   0/1     Completed   0          5m",
+			"ok-job     0/1     Succeeded   0          5m",
+			"fail-job   0/1     Error       0          5m",
+			"starting   0/1     Running     0          5m",
+		})
+		expect(names(Query.apply(tbl, vsm.toggledProblems(vsm.default())))).toEqual({ "fail-job", "starting" })
+	end)
+
 	it("does not reorder or copy rows when nothing is asked", function()
 		local tbl = tableOf("kubectl get pods", PODS)
 		expect(Query.apply(tbl, vsm.default()).rows).toBe(tbl.rows)
