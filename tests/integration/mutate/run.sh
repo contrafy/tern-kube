@@ -247,10 +247,18 @@ scenario_tiny_timeout() {
 	kl_effects_lacks run "'exec'"
 }
 
+cronjob_manifest() { # NAME -> stdout
+	printf 'apiVersion: batch/v1\nkind: CronJob\nmetadata:\n  name: %s\n  namespace: %s\nspec:\n  schedule: "0 3 * * *"\n  suspend: true\n  jobTemplate:\n    spec:\n      template:\n        spec:\n          restartPolicy: Never\n          containers:\n            - name: report\n              image: registry.k8s.io/pause:3.10\n' \
+		"$1" "$NS"
+}
+
+# The suite owns its CronJob instead of relying on the fixture world, which a
+# freshly created cluster (CI) does not have.
 scenario_cronjob_quick() {
 	suffix=it$(date +%s | tail -c 6)
+	cronjob_manifest klm-nightly | k apply -f - >/dev/null
 	kl_begin cronjob-quick \
-		"kube-lens://act/cronjob-run?kind=CronJob&name=nightly-report&namespace=tern-test-batch&suffix=$suffix&context=$CTX"
+		"kube-lens://act/cronjob-run?kind=CronJob&name=klm-nightly&namespace=$NS&suffix=$suffix&context=$CTX"
 	kl_expect phase ready
 	kl_expect_has steps "dry-run=ok"
 	kl_key enter
@@ -258,7 +266,8 @@ scenario_cronjob_quick() {
 	kl_effects_has grant
 	kl_effects_has open
 	kl_check "the open link carries the token" grep -q "confirm=fedcba\|confirm=[0-9a-f]\{32\}" "$KL_W/effects.log"
-	kl_check "no job was created by the block" sh -c "! kubectl --kubeconfig '$KC' --context $CTX -n tern-test-batch get job nightly-report-manual-$suffix"
+	kl_check "no job was created by the block" sh -c "! kubectl --kubeconfig '$KC' --context $CTX -n $NS get job klm-nightly-manual-$suffix"
+	k -n "$NS" delete cronjob klm-nightly --ignore-not-found >/dev/null
 }
 
 secret_manifest() { # NAME VALUE PART_OF -> stdout

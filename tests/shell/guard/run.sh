@@ -134,18 +134,24 @@ expect_no_out() {
 	if grep -E -q -- "$1" "$root/out"; then bad "$2: output has /$1/"; else ok; fi
 }
 
-# launch SHELL ARGS...: like run_k but replaces the current (sub)shell, so a
-# background `(launch ...) &` is the shell itself, leading its process group.
-launch() {
+# launch_group SHELL ARGS...: like run_k, but replaces the current (sub)shell
+# with the kubectl call running as the leader of a new process group whose id
+# is this (sub)shell's pid, with SIGINT/SIGQUIT at their defaults, as in a
+# terminal's foreground job. Without job control (dash ignores `set -m` with
+# no terminal) a background job starts with both ignored and a shell cannot
+# trap a signal ignored on entry, so perl (on macOS and the Linux runners)
+# sets them up explicitly.
+launch_group() {
 	sh_l=$1
 	shift
 	code_l=$(kcode "$sh_l")
 	case $sh_l in
-	zsh) exec zsh -f -c "$code_l" zsh "$@" ;;
-	bash) exec bash --norc --noprofile -c "$code_l" bash "$@" ;;
-	fish) exec fish --no-config -c "$code_l" -- "$@" ;;
-	dash) exec dash -c "$code_l" dash "$@" ;;
+	zsh) set -- zsh -f -c "$code_l" zsh "$@" ;;
+	bash) set -- bash --norc --noprofile -c "$code_l" bash "$@" ;;
+	fish) set -- fish --no-config -c "$code_l" -- "$@" ;;
+	dash) set -- dash -c "$code_l" dash "$@" ;;
 	esac
+	exec perl -e '$SIG{INT} = $SIG{QUIT} = "DEFAULT"; setpgrp(0, 0) or die "setpgrp: $!\n"; exec { $ARGV[0] } @ARGV or die "exec: $!\n"' "$@"
 }
 
 expect_not_run() {
@@ -454,18 +460,20 @@ core_cases() {
 
 	fresh "$sh Ctrl-C"
 	mode hang
-	set -m
-	(launch "$sh" apply -f 'my dir/a b.yaml' >"$root/out" 2>&1 </dev/null) &
+	KUBE_LENS_GUARD_TIMEOUT=30
+	export KUBE_LENS_GUARD_TIMEOUT
+	# Ctrl-C reaches the whole foreground process group (see launch_group).
+	(launch_group "$sh" apply -f 'my dir/a b.yaml' >"$root/out" 2>&1 </dev/null) &
 	pid=$!
 	i=0
 	while [ $i -lt 100 ] && ! ls "$root/spool"/req-*.json >/dev/null 2>&1; do
 		sleep 0.1
 		i=$((i + 1))
 	done
-	kill -s INT -- "-$pid" 2>/dev/null
+	kill -s INT -- "-$pid" 2>/dev/null || bad "Ctrl-C: no process group $pid to signal"
 	wait "$pid"
 	st=$?
-	set +m
+	unset KUBE_LENS_GUARD_TIMEOUT
 	i=0
 	while [ $i -lt 50 ] && ls "$root/spool"/req-*.json >/dev/null 2>&1; do
 		sleep 0.1
