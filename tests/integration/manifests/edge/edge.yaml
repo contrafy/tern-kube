@@ -1,0 +1,51 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: labels-odd
+  namespace: tern-test-edge
+  labels:
+    app.kubernetes.io/name: odd-labels
+    app.kubernetes.io/part-of: kube-lens.fixtures
+    example.com/team: platform.core
+    lens.example.com/long-value: this-value-is-deliberately-long-to-reach-the-63-character-limit
+    lens.example.com/empty: ""
+    k8s.io/dotted: v1.2.3-rc.4
+    UPPER_case.Key: Mixed_Case.Value
+  annotations:
+    lens.example.com/description: "Ünïcødé — 日本語のテキスト — Ελληνικά — Кириллица — ✓ ✗ → ←"
+    lens.example.com/multiline: |
+      first line
+      second line with	tab
+spec:
+  terminationGracePeriodSeconds: 1
+  containers:
+    - name: app
+      image: registry.k8s.io/pause:3.10
+      imagePullPolicy: IfNotPresent
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: a-pod-with-a-deliberately-long-name-to-stress-column-widths-in-the-lens
+  namespace: tern-test-edge
+  labels:
+    app: long-name
+spec:
+  terminationGracePeriodSeconds: 1
+  containers:
+    - name: app
+      image: registry.k8s.io/pause:3.10
+      imagePullPolicy: IfNotPresent
+    - name: sidecar
+      image: registry.k8s.io/pause:3.10
+      imagePullPolicy: IfNotPresent
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: unicode-config
+  namespace: tern-test-edge
+  annotations:
+    lens.example.com/note: "Ünïcødé ✓ 日本語"
+data:
+  greeting: "こんにちは, Grüße, Привет"
