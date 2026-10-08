@@ -342,6 +342,16 @@ core_cases() {
 		expect_spool_clean "denied $verb"
 	done
 
+	# The block denies on its own when mutations are disabled; the user must
+	# learn why, and control characters in the reason never reach the terminal.
+	fresh "$sh deny with reason"
+	mode denyreason
+	run_k "$sh" delete pod web-0
+	expect_status 1 "denied with reason"
+	expect_out 'denied in Tern: Mutations are disabled\[31m \(mutations.enabled is false\)$' "reason printed"
+	expect_not_run "denied with reason"
+	expect_spool_clean "denied with reason"
+
 	for f in '-f -' '--filename=-' '-f=-' '-f-' '--filename -' '-Rf -' '-f a.yaml,-'; do
 		fresh "$sh stdin refused: $f"
 		# shellcheck disable=SC2086

@@ -604,12 +604,13 @@ klg_guard() {
 	klg_r_fp=
 	klg_r_ctx=
 	klg_r_at=
+	klg_r_reason=
 	klg_dup=
 	while IFS= read -r klg_line || [ -n "$klg_line" ]; do
 		klg_k=${klg_line%%=*}
 		klg_v=${klg_line#*=}
 		case $klg_k in
-		nonce | decision | fingerprint | context | approved_at)
+		nonce | decision | fingerprint | context | approved_at | reason)
 			eval "[ -n \"\${klg_seen_$klg_k-}\" ] && klg_dup=$klg_k; klg_seen_$klg_k=1"
 			;;
 		esac
@@ -619,6 +620,7 @@ klg_guard() {
 		fingerprint) klg_r_fp=$klg_v ;;
 		context) klg_r_ctx=$klg_v ;;
 		approved_at) klg_r_at=$klg_v ;;
+		reason) klg_r_reason=$(printf '%s' "$klg_v" | LC_ALL=C tr -cd '[:print:]') ;;
 		esac
 	done <"$klg_resp"
 	[ -z "$klg_dup" ] || klg_refuse "the approval response repeats '$klg_dup'; refusing it."
@@ -626,7 +628,11 @@ klg_guard() {
 	case $klg_r_decision in
 	approve) ;;
 	deny)
-		klg_err "denied in Tern; nothing was executed."
+		if [ -n "$klg_r_reason" ]; then
+			klg_err "denied in Tern: $klg_r_reason"
+		else
+			klg_err "denied in Tern; nothing was executed."
+		fi
 		klg_cleanup
 		exit 1
 		;;

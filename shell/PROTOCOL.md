@@ -155,14 +155,20 @@ decision=approve|deny
 fingerprint=<64 hex the block computed and previewed>
 context=<context the block previewed>
 approved_at=<unix seconds>
+reason=<one printable line; optional, deny only>
 ```
+
+`reason` is set when the block denies on its own (for example
+`mutations.enabled` is false); the guard prints it with the denial, stripped
+of non-printable characters. Unknown keys are ignored.
 
 The guard refuses, executing nothing, unless all hold:
 
 1. the file exists, is a regular file (not a symlink) owned by the user;
 2. no key above appears twice;
 3. `nonce` equals the request nonce;
-4. `decision=approve` (`deny`: "denied in Tern", exit 1);
+4. `decision=approve` (`deny`: "denied in Tern" plus the `reason` if any,
+   exit 1);
 5. `approved_at` is an integer with `created_at <= approved_at <=
    created_at + timeout_s`, and now `<= created_at + timeout_s`;
 6. a fresh context resolution equals both the request `context` and the
@@ -193,3 +199,12 @@ exactly one line, nothing else from the environment; mode 0600; written to
 `pane-<pane>.env.tmp.<pid>` then renamed. A `KUBECONFIG` containing a newline
 is not recorded. Readers must ignore `*.tmp.*` files. If the file is deleted,
 it is rewritten at the next change of `KUBECONFIG`, not before.
+
+The plugin reads the record of the pane a quick action was launched from
+(`link.pane`, at most 8 KiB) only when the action carries no kubeconfig of
+its own and no confirm token (a confirmed action reuses the kubeconfig the
+approve block previewed). It pins `--kubeconfig <value>` only for a single
+absolute path; an empty value, a relative path, a colon-separated list,
+control characters or any other line make it ignore the record (the split's
+kubectl then resolves its kubeconfig from Tern's environment, as in a pane
+without the snippet).

@@ -96,7 +96,12 @@ On each prompt in a Tern pane, the activation files record the pane's
 effective `KUBECONFIG` in `$KUBE_LENS_SPOOL/pane-$TERN_PANE.env` (one line,
 `kubeconfig=<value>`, mode 0600), so quick actions launched from that pane
 pin the same kubeconfig. The file is rewritten only when the value changes;
-no other environment variable is recorded. See PROTOCOL.md.
+no other environment variable is recorded. Only a single absolute path is
+pinned: with `KUBECONFIG` unset, relative, or a colon-separated list, the
+new split's kubectl resolves its kubeconfig from Tern's own environment, as
+without the snippet. Mutating quick actions (Debug, Run now) show the pinned
+kubeconfig in the approve block before they run. See PROTOCOL.md "Pane env
+record".
 
 ## Limitations
 

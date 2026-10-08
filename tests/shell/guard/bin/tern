@@ -3,6 +3,7 @@
 # approve block according to $FAKE_DIR/tern-mode:
 #   approve      writes a valid approval
 #   deny         writes a denial
+#   denyreason   writes a denial with a reason (block refused on its own)
 #   hang         never answers (until killed)
 #   noresp       returns 0 without a response (request opened in an editor)
 #   fail         exits 3 (tern open itself failed)
@@ -38,7 +39,7 @@ decision=approve
 mode=$(cat "$d/tern-mode" 2>/dev/null || echo approve)
 case $mode in
 approve) ;;
-deny) decision=deny ;;
+deny | denyreason) decision=deny ;;
 hang) exec sleep 1797 ;;
 noresp) exit 0 ;;
 fail) exit 3 ;;
@@ -58,5 +59,6 @@ dup) ;;
 esac
 printf 'nonce=%s\ndecision=%s\nfingerprint=%s\ncontext=%s\napproved_at=%s\n' "$nonce" "$decision" "$fp" "$ctx" "$at" >"$resp.tmp"
 [ "$mode" = dup ] && echo 'decision=deny' >>"$resp.tmp"
+[ "$mode" = denyreason ] && printf 'reason=Mutations are disabled\033[31m (mutations.enabled is false)\n' >>"$resp.tmp"
 mv "$resp.tmp" "$resp"
 exit 0
