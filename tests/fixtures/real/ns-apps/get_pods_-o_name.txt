@@ -1,0 +1,7 @@
+pod/broken-image-68986f4958-6qp2v
+pod/crashloop
+pod/db-0
+pod/node-agent-bb754
+pod/pending
+pod/web-65d7d99975-bmgbn
+pod/web-65d7d99975-zsb95

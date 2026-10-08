@@ -1,0 +1,2 @@
+NAMESPACE        NAME   READY   AGE
+tern-test-apps   db     1/1     5m20s

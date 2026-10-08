@@ -1,0 +1,6 @@
+NAMESPACE            NAME                     READY   UP-TO-DATE   AVAILABLE   AGE
+kube-system          coredns                  2/2     2            2           27m
+kube-system          metrics-server           1/1     1            1           18m
+local-path-storage   local-path-provisioner   1/1     1            1           27m
+tern-test-apps       broken-image             0/1     1            0           5m19s
+tern-test-apps       web                      2/2     2            2           5m19s

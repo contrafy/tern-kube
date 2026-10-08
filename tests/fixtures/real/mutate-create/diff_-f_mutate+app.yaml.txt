@@ -1,0 +1,89 @@
+diff -u -N /tmp/LIVE-4029468321/apps.v1.Deployment.tern-test-mutate.api /tmp/MERGED-1644976364/apps.v1.Deployment.tern-test-mutate.api
+--- /tmp/LIVE-4029468321/apps.v1.Deployment.tern-test-mutate.api	2026-10-08 03:15:44
++++ /tmp/MERGED-1644976364/apps.v1.Deployment.tern-test-mutate.api	2026-10-08 03:15:44
+@@ -0,0 +1,40 @@
++apiVersion: apps/v1
++kind: Deployment
++metadata:
++  creationTimestamp: "2026-10-08T08:15:44Z"
++  generation: 1
++  labels:
++    app: api
++  name: api
++  namespace: tern-test-mutate
++  uid: 5f554128-298f-4b1d-b72d-d31d160dee51
++spec:
++  progressDeadlineSeconds: 600
++  replicas: 1
++  revisionHistoryLimit: 10
++  selector:
++    matchLabels:
++      app: api
++  strategy:
++    rollingUpdate:
++      maxSurge: 25%
++      maxUnavailable: 25%
++    type: RollingUpdate
++  template:
++    metadata:
++      labels:
++        app: api
++    spec:
++      containers:
++      - image: registry.k8s.io/pause:3.10
++        imagePullPolicy: IfNotPresent
++        name: api
++        resources: {}
++        terminationMessagePath: /dev/termination-log
++        terminationMessagePolicy: File
++      dnsPolicy: ClusterFirst
++      restartPolicy: Always
++      schedulerName: default-scheduler
++      securityContext: {}
++      terminationGracePeriodSeconds: 1
++status: {}
+diff -u -N /tmp/LIVE-4029468321/v1.ConfigMap.tern-test-mutate.api-config /tmp/MERGED-1644976364/v1.ConfigMap.tern-test-mutate.api-config
+--- /tmp/LIVE-4029468321/v1.ConfigMap.tern-test-mutate.api-config	2026-10-08 03:15:44
++++ /tmp/MERGED-1644976364/v1.ConfigMap.tern-test-mutate.api-config	2026-10-08 03:15:44
+@@ -0,0 +1,9 @@
++apiVersion: v1
++data:
++  LOG_LEVEL: info
++kind: ConfigMap
++metadata:
++  creationTimestamp: "2026-10-08T08:15:44Z"
++  name: api-config
++  namespace: tern-test-mutate
++  uid: c2a08e43-04b8-457b-b9fd-c447eefb0e98
+diff -u -N /tmp/LIVE-4029468321/v1.Service.tern-test-mutate.api /tmp/MERGED-1644976364/v1.Service.tern-test-mutate.api
+--- /tmp/LIVE-4029468321/v1.Service.tern-test-mutate.api	2026-10-08 03:15:44
++++ /tmp/MERGED-1644976364/v1.Service.tern-test-mutate.api	2026-10-08 03:15:44
+@@ -0,0 +1,28 @@
++apiVersion: v1
++kind: Service
++metadata:
++  creationTimestamp: "2026-10-08T08:15:44Z"
++  labels:
++    app: api
++  name: api
++  namespace: tern-test-mutate
++  uid: 22ed1818-63c7-4823-88b3-72390f7c8714
++spec:
++  clusterIP: 10.96.0.0
++  clusterIPs:
++  - 10.96.0.0
++  internalTrafficPolicy: Cluster
++  ipFamilies:
++  - IPv4
++  ipFamilyPolicy: SingleStack
++  ports:
++  - name: http
++    port: 80
++    protocol: TCP
++    targetPort: 8080
++  selector:
++    app: api
++  sessionAffinity: None
++  type: ClusterIP
++status:
++  loadBalancer: {}

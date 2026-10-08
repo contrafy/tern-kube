@@ -1,0 +1,37 @@
+Name:             fail-job
+Namespace:        tern-test-batch
+Selector:         batch.kubernetes.io/controller-uid=345932a4-cbdd-41b2-891e-bcddbd454c2b
+Labels:           app=migrate
+Annotations:      <none>
+Parallelism:      1
+Completions:      1
+Completion Mode:  NonIndexed
+Suspend:          false
+Backoff Limit:    0
+Start Time:       Thu, 08 Oct 2026 03:10:24 -0500
+Pods Statuses:    0 Active (0 Ready) / 0 Succeeded / 1 Failed
+Pod Template:
+  Labels:  app=migrate
+           batch.kubernetes.io/controller-uid=345932a4-cbdd-41b2-891e-bcddbd454c2b
+           batch.kubernetes.io/job-name=fail-job
+           controller-uid=345932a4-cbdd-41b2-891e-bcddbd454c2b
+           job-name=fail-job
+  Containers:
+   migrate:
+    Image:      busybox:1.37
+    Port:       <none>
+    Host Port:  <none>
+    Command:
+      sh
+      -c
+      echo 'migration 0042 failed: relation exists' >&2; exit 3
+    Environment:   <none>
+    Mounts:        <none>
+  Volumes:         <none>
+  Node-Selectors:  <none>
+  Tolerations:     <none>
+Events:
+  Type     Reason                Age    From            Message
+  ----     ------                ----   ----            -------
+  Normal   SuccessfulCreate      5m17s  job-controller  Created pod: fail-job-5hlth
+  Warning  BackoffLimitExceeded  5m14s  job-controller  Job has reached the specified backoff limit

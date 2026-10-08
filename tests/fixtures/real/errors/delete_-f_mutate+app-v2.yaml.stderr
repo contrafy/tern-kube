@@ -1,0 +1,3 @@
+Error from server (NotFound): error when deleting "mutate/app-v2.yaml": configmaps "api-config" not found
+Error from server (NotFound): error when deleting "mutate/app-v2.yaml": deployments.apps "api" not found
+Error from server (NotFound): error when deleting "mutate/app-v2.yaml": services "api" not found

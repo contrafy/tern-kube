@@ -1,0 +1,1001 @@
+NAME                                                   READY   STATUS              RESTARTS          AGE
+api-gateway-44vrv                                      1/1     Running             0                 108m
+api-gateway-4bm5h                                      1/1     Running             0                 2y29d
+api-gateway-4pvj8                                      0/1     Pending             0                 25s
+api-gateway-5r5fk                                      1/1     Running             0                 11h
+api-gateway-67mmj                                      1/1     Running             0                 67s
+api-gateway-6q75c                                      0/1     Pending             0                 113s
+api-gateway-7247h                                      1/1     Running             0                 18s
+api-gateway-7jztx                                      1/1     Running             0                 306d
+api-gateway-7t5fw                                      1/1     Running             2 (76m ago)       2y127d
+api-gateway-8r24t                                      1/1     Running             0                 28m
+api-gateway-8sds7                                      0/1     Pending             0                 3y22d
+api-gateway-bg4pf                                      0/1     Completed           0                 177m
+api-gateway-bm9bh                                      0/1     Completed           0                 25h
+api-gateway-cg25c                                      0/1     OOMKilled           81 (10m ago)      10m
+api-gateway-ch8ps                                      0/1     Completed           0                 5d21h
+api-gateway-ddn4t                                      0/1     Completed           0                 3y279d
+api-gateway-djwht                                      0/1     CrashLoopBackOff    152 (99m ago)     99m
+api-gateway-f7gln                                      0/1     Completed           0                 237d
+api-gateway-gdj6t                                      1/1     Running             0                 44h
+api-gateway-gpnzf                                      0/1     Completed           0                 2y145d
+api-gateway-k86zq                                      1/1     Running             0                 6s
+api-gateway-lm48s                                      1/1     Running             0                 105s
+api-gateway-lr4vj                                      1/1     Running             0                 3d5h
+api-gateway-mgngn                                      1/1     Running             0                 301d
+api-gateway-mmfvj                                      1/1     Running             0                 3y315d
+api-gateway-mrcfw                                      0/1     Pending             0                 5d7h
+api-gateway-ntc9r                                      1/1     Running             0                 55d
+api-gateway-nxrhw                                      1/1     Running             0                 4m58s
+api-gateway-p62cf                                      1/1     Running             0                 4d6h
+api-gateway-p7sfs                                      0/1     Running             0                 2y275d
+api-gateway-pb4hz                                      1/1     Running             0                 40h
+api-gateway-ph669                                      0/1     Completed           0                 88s
+api-gateway-q9vxq                                      0/1     Pending             0                 6d14h
+api-gateway-qdsr6                                      0/1     Running             0                 20h
+api-gateway-qhd6g                                      1/1     Running             0                 5d9h
+api-gateway-qjdl6                                      0/1     Pending             0                 26h
+api-gateway-qmv2p                                      1/1     Running             0                 264d
+api-gateway-qrzcq                                      0/1     Init:0/1            0                 4s
+api-gateway-r22qv                                      1/1     Terminating         0                 6d12h
+api-gateway-rhnpp                                      0/1     ImagePullBackOff    0                 92s
+api-gateway-rj5tx                                      1/1     Running             0                 126d
+api-gateway-swh8k                                      1/1     Running             0                 71s
+api-gateway-sxn8m                                      0/1     Error               1 (144m ago)      144m
+api-gateway-tjzdf                                      0/1     ImagePullBackOff    0                 6d14h
+api-gateway-tvmnh                                      0/1     Terminating         0                 4y15d
+api-gateway-wgtlp                                      0/1     Error               2 (41s ago)       41s
+api-gateway-wspwg                                      1/1     Running             3 (32s ago)       32s
+api-gateway-xk9lt                                      0/1     CrashLoopBackOff    10 (134m ago)     134m
+api-gateway-zjn87                                      1/1     Running             0                 71m
+api-gateway-zvfg9                                      0/1     CrashLoopBackOff    204 (47m ago)     47m
+api-gateway-zzmqm                                      1/1     Running             0                 3y114d
+auth-service-lh88n8b8h-2f4vh                           2/2     Running             4 (5h25m ago)     4y111d
+auth-service-lh88n8b8h-2hqk4                           2/2     Running             0                 147m
+auth-service-lh88n8b8h-5fk4c                           2/2     Running             0                 2y292d
+auth-service-lh88n8b8h-5nn8j                           2/2     Running             2 (3m34s ago)     2y165d
+auth-service-lh88n8b8h-7csv9                           2/2     Running             0                 31m
+auth-service-lh88n8b8h-924f9                           2/2     Running             0                 78s
+auth-service-lh88n8b8h-b7d55                           2/2     Running             0                 13s
+auth-service-lh88n8b8h-bdd5k                           2/2     Running             0                 109m
+auth-service-lh88n8b8h-cnrlb                           2/2     Running             0                 2y305d
+auth-service-lh88n8b8h-d7mvx                           2/2     Running             0                 17h
+auth-service-lh88n8b8h-dpqr9                           2/2     Running             0                 80d
+auth-service-lh88n8b8h-fdxqq                           2/2     Running             0                 3y260d
+auth-service-lh88n8b8h-ftgg9                           2/2     Running             3 (139m ago)      2y260d
+auth-service-lh88n8b8h-g494m                           0/2     Init:0/1            0                 103s
+auth-service-lh88n8b8h-grxlk                           1/2     Running             0                 9s
+auth-service-lh88n8b8h-hm4wh                           0/2     Completed           0                 34h
+auth-service-lh88n8b8h-jfncj                           1/2     CrashLoopBackOff    159 (42m ago)     3h43m
+auth-service-lh88n8b8h-jmqhn                           1/2     Running             0                 144d
+auth-service-lh88n8b8h-jwhj2                           2/2     Running             0                 107s
+auth-service-lh88n8b8h-k5r4l                           1/2     CrashLoopBackOff    243 (53m ago)     11h
+auth-service-lh88n8b8h-k7pfq                           2/2     Running             0                 2y212d
+auth-service-lh88n8b8h-k8dl9                           2/2     Running             0                 29s
+auth-service-lh88n8b8h-kh5w6                           2/2     Running             4 (75m ago)       6d22h
+auth-service-lh88n8b8h-l6jfh                           1/2     CrashLoopBackOff    237 (4h6m ago)    258d
+auth-service-lh88n8b8h-ll679                           2/2     Running             0                 7h27m
+auth-service-lh88n8b8h-m4q84                           0/2     Error               0                 4s
+auth-service-lh88n8b8h-mg7wt                           2/2     Running             2 (12m ago)       40h
+auth-service-lh88n8b8h-mxc7g                           2/2     Running             0                 5d23h
+auth-service-lh88n8b8h-n26r2                           0/2     Completed           0                 2d14h
+auth-service-lh88n8b8h-njn2h                           0/2     Completed           0                 5d16h
+auth-service-lh88n8b8h-qbp7c                           0/2     ImagePullBackOff    0                 4d13h
+auth-service-lh88n8b8h-rlh64                           2/2     Running             0                 6d3h
+auth-service-lh88n8b8h-t2x9m                           2/2     Running             0                 2d18h
+auth-service-lh88n8b8h-tkp2j                           0/2     ImagePullBackOff    0                 60m
+auth-service-lh88n8b8h-vh59h                           2/2     Running             0                 118s
+auth-service-lh88n8b8h-vv5ff                           2/2     Running             0                 2y36d
+auth-service-lh88n8b8h-wbc5p                           0/2     ContainerCreating   0                 3y163d
+auth-service-lh88n8b8h-wlqkz                           2/2     Running             0                 7d16h
+auth-service-lh88n8b8h-xlfkh                           0/2     Pending             0                 2y341d
+auth-service-lh88n8b8h-zrj67                           0/2     ImagePullBackOff    0                 102m
+auth-service-lh88n8b8h-zzkq6                           2/2     Running             0                 40h
+cart-7w4cxns7n-28466                                   1/1     Running             0                 219d
+cart-7w4cxns7n-2jt2h                                   0/1     Completed           0                 3y279d
+cart-7w4cxns7n-48m62                                   1/1     Running             0                 76d
+cart-7w4cxns7n-4c2gf                                   1/1     Running             0                 132m
+cart-7w4cxns7n-4c4bf                                   1/1     Running             1 (73s ago)       73s
+cart-7w4cxns7n-4jqnd                                   1/1     Running             0                 4d8h
+cart-7w4cxns7n-4lv45                                   0/1     Completed           0                 172d
+cart-7w4cxns7n-58vjv                                   0/1     Completed           0                 2y44d
+cart-7w4cxns7n-5b5jl                                   0/1     OOMKilled           212 (10s ago)     10s
+cart-7w4cxns7n-5j2w8                                   0/1     ImagePullBackOff    0                 258d
+cart-7w4cxns7n-6j56j                                   0/1     CrashLoopBackOff    59 (78s ago)      78s
+cart-7w4cxns7n-6x68b                                   1/1     Running             0                 18s
+cart-7w4cxns7n-76g8t                                   1/1     Running             0                 3y250d
+cart-7w4cxns7n-7br6c                                   0/1     Pending             0                 258d
+cart-7w4cxns7n-7tptp                                   1/1     Running             0                 101s
+cart-7w4cxns7n-7wzwp                                   0/1     Pending             0                 163d
+cart-7w4cxns7n-7xlj4                                   1/1     Running             0                 25d
+cart-7w4cxns7n-85d4b                                   1/1     Running             1 (5h59m ago)     18h
+cart-7w4cxns7n-8gn7w                                   1/1     Running             0                 3h1m
+cart-7w4cxns7n-9mtbn                                   0/1     Completed           0                 3y150d
+cart-7w4cxns7n-b8whq                                   1/1     Running             0                 30h
+cart-7w4cxns7n-cgcn2                                   0/1     Completed           0                 23h
+cart-7w4cxns7n-d8zxk                                   1/1     Running             0                 48d
+cart-7w4cxns7n-dgqk6                                   0/1     Completed           0                 3s
+cart-7w4cxns7n-dzkss                                   0/1     ImagePullBackOff    0                 99s
+cart-7w4cxns7n-fc5km                                   0/1     Completed           0                 163d
+cart-7w4cxns7n-ftq7c                                   1/1     Running             0                 3d11h
+cart-7w4cxns7n-gchpd                                   1/1     Running             0                 69s
+cart-7w4cxns7n-hg2bf                                   0/1     Completed           0                 8h
+cart-7w4cxns7n-hhmwz                                   1/1     Running             0                 110d
+cart-7w4cxns7n-hrkbh                                   1/1     Running             0                 265d
+cart-7w4cxns7n-kt67f                                   1/1     Running             0                 11h
+cart-7w4cxns7n-kvrtl                                   0/1     Running             0                 110m
+cart-7w4cxns7n-ls285                                   0/1     ImagePullBackOff    0                 41h
+cart-7w4cxns7n-n5hnh                                   1/1     Running             0                 62s
+cart-7w4cxns7n-nl5s7                                   1/1     Running             2 (88m ago)       4y45d
+cart-7w4cxns7n-nmsmg                                   1/1     Running             0                 174m
+cart-7w4cxns7n-nqcb2                                   0/1     Completed           0                 6h37m
+cart-7w4cxns7n-pw8jw                                   0/1     Terminating         0                 45m
+cart-7w4cxns7n-pzpzg                                   0/1     Terminating         0                 81d
+cart-7w4cxns7n-q4q8z                                   1/1     Running             0                 114s
+cart-7w4cxns7n-rbbkn                                   0/1     ImagePullBackOff    0                 49m
+cart-7w4cxns7n-rtq6b                                   0/1     OOMKilled           148 (33s ago)     33s
+cart-7w4cxns7n-s84f8                                   1/1     Running             0                 4y99d
+cart-7w4cxns7n-sb6bv                                   1/1     Running             0                 3s
+cart-7w4cxns7n-sdn9w                                   1/1     Terminating         0                 3y49d
+cart-7w4cxns7n-t26r4                                   1/1     Running             2 (5h48m ago)     183d
+cart-7w4cxns7n-vjjgr                                   0/1     Error               1 (116m ago)      4d7h
+cart-7w4cxns7n-w7wh8                                   0/1     Error               1 (161m ago)      306d
+cart-7w4cxns7n-xzqzf                                   0/1     Completed           0                 6d23h
+checkout-service-t7vvzdh7p-24mcd                       2/2     Running             0                 11h
+checkout-service-t7vvzdh7p-29jrt                       2/2     Running             0                 5d23h
+checkout-service-t7vvzdh7p-2gdvb                       2/2     Running             0                 18h
+checkout-service-t7vvzdh7p-46n7d                       0/2     Completed           0                 3y35d
+checkout-service-t7vvzdh7p-4f977                       2/2     Terminating         0                 179m
+checkout-service-t7vvzdh7p-4klcq                       2/2     Running             0                 54m
+checkout-service-t7vvzdh7p-4zvqk                       2/2     Running             3 (56m ago)       119m
+checkout-service-t7vvzdh7p-52n56                       2/2     Running             2 (89m ago)       6d1h
+checkout-service-t7vvzdh7p-54bsh                       0/2     Completed           0                 2d5h
+checkout-service-t7vvzdh7p-65hsb                       0/2     Completed           0                 24h
+checkout-service-t7vvzdh7p-6tvjb                       1/2     Running             0                 20m
+checkout-service-t7vvzdh7p-78bmh                       2/2     Running             0                 3d21h
+checkout-service-t7vvzdh7p-7fh98                       2/2     Running             0                 2y152d
+checkout-service-t7vvzdh7p-9g6rl                       2/2     Running             3 (3h23m ago)     3d8h
+checkout-service-t7vvzdh7p-9jkhc                       1/2     Running             0                 41m
+checkout-service-t7vvzdh7p-9zzkd                       2/2     Running             0                 229d
+checkout-service-t7vvzdh7p-bfdqw                       2/2     Running             0                 11h
+checkout-service-t7vvzdh7p-bjflf                       2/2     Running             3 (163m ago)      62d
+checkout-service-t7vvzdh7p-bmnn5                       1/2     CrashLoopBackOff    95 (86s ago)      86s
+checkout-service-t7vvzdh7p-bnzqp                       2/2     Running             0                 3y189d
+checkout-service-t7vvzdh7p-bxqmn                       0/2     Completed           0                 62m
+checkout-service-t7vvzdh7p-c72mp                       2/2     Running             0                 115s
+checkout-service-t7vvzdh7p-cdnqr                       2/2     Running             2 (178m ago)      4d16h
+checkout-service-t7vvzdh7p-fnk5m                       1/2     CrashLoopBackOff    6 (129m ago)      3y200d
+checkout-service-t7vvzdh7p-fqxvx                       2/2     Running             0                 26m
+checkout-service-t7vvzdh7p-gx8bp                       2/2     Running             0                 42h
+checkout-service-t7vvzdh7p-h64cm                       0/2     Completed           0                 3y139d
+checkout-service-t7vvzdh7p-h7xjh                       1/2     CrashLoopBackOff    69 (5h58m ago)    172d
+checkout-service-t7vvzdh7p-j7qdx                       1/2     CrashLoopBackOff    147 (60s ago)     60s
+checkout-service-t7vvzdh7p-j9mcs                       2/2     Running             0                 169d
+checkout-service-t7vvzdh7p-kfmpc                       0/2     Completed           0                 6d11h
+checkout-service-t7vvzdh7p-kt7kn                       0/2     Pending             0                 3y126d
+checkout-service-t7vvzdh7p-m6qsx                       1/2     CrashLoopBackOff    71 (78m ago)      78m
+checkout-service-t7vvzdh7p-mc2md                       0/2     ContainerCreating   0                 119m
+checkout-service-t7vvzdh7p-mfp46                       2/2     Running             0                 173m
+checkout-service-t7vvzdh7p-mnbfr                       2/2     Running             0                 119m
+checkout-service-t7vvzdh7p-n79qw                       2/2     Running             2 (109m ago)      109m
+checkout-service-t7vvzdh7p-nxbpn                       0/2     Completed           0                 17s
+checkout-service-t7vvzdh7p-p9hkd                       0/2     Pending             0                 70m
+checkout-service-t7vvzdh7p-pmp6r                       2/2     Running             0                 228d
+checkout-service-t7vvzdh7p-qm794                       1/2     Running             0                 3y201d
+checkout-service-t7vvzdh7p-rp9zk                       2/2     Running             0                 203d
+checkout-service-t7vvzdh7p-s72mk                       1/2     Running             0                 34h
+checkout-service-t7vvzdh7p-svdlm                       0/2     Completed           0                 4y166d
+checkout-service-t7vvzdh7p-vhjjs                       2/2     Running             0                 3y146d
+checkout-service-t7vvzdh7p-whmkz                       2/2     Running             3 (95s ago)       95s
+checkout-service-t7vvzdh7p-x4sz5                       0/2     Completed           0                 7d2h
+checkout-service-t7vvzdh7p-xdt4l                       1/2     Running             0                 2d5h
+checkout-service-t7vvzdh7p-xkwbl                       0/2     Error               0                 34s
+checkout-service-t7vvzdh7p-zcczv                       2/2     Running             0                 5d13h
+checkout-service-t7vvzdh7p-zfmt8                       1/2     CrashLoopBackOff    145 (5h20m ago)   2y164d
+checkout-service-t7vvzdh7p-znpnv                       2/2     Running             2 (64m ago)       64m
+coredns-xmw9rp66j2-45ljq                               2/2     Running             0                 4d20h
+coredns-xmw9rp66j2-4fzdl                               0/2     Completed           0                 77s
+coredns-xmw9rp66j2-4ghnx                               0/2     Pending             0                 8s
+coredns-xmw9rp66j2-4sr9f                               2/2     Running             0                 4d13h
+coredns-xmw9rp66j2-5dmnh                               2/2     Terminating         0                 3d20h
+coredns-xmw9rp66j2-72b5h                               0/2     ImagePullBackOff    0                 2y221d
+coredns-xmw9rp66j2-7cdqk                               2/2     Running             0                 10s
+coredns-xmw9rp66j2-8hwpq                               0/2     Completed           0                 3y242d
+coredns-xmw9rp66j2-8n8kv                               2/2     Running             0                 23h
+coredns-xmw9rp66j2-9fb8w                               0/2     Completed           0                 6m54s
+coredns-xmw9rp66j2-9vk55                               2/2     Running             0                 292d
+coredns-xmw9rp66j2-b72lg                               2/2     Running             0                 6m54s
+coredns-xmw9rp66j2-b8978                               1/2     CrashLoopBackOff    204 (3h49m ago)   7d22h
+coredns-xmw9rp66j2-bhpfq                               2/2     Running             0                 107m
+coredns-xmw9rp66j2-cs9cw                               2/2     Running             0                 19d
+coredns-xmw9rp66j2-djftq                               0/2     ImagePullBackOff    0                 43h
+coredns-xmw9rp66j2-f4q7q                               2/2     Running             0                 113s
+coredns-xmw9rp66j2-fxlbx                               0/2     ImagePullBackOff    0                 22s
+coredns-xmw9rp66j2-g9klc                               1/2     Running             0                 42s
+coredns-xmw9rp66j2-gdkn9                               2/2     Running             0                 77m
+coredns-xmw9rp66j2-j6srv                               2/2     Running             0                 164d
+coredns-xmw9rp66j2-j8mfw                               1/2     CrashLoopBackOff    70 (85m ago)      95d
+coredns-xmw9rp66j2-jkxz6                               1/2     CrashLoopBackOff    144 (4h16m ago)   12h
+coredns-xmw9rp66j2-krcxp                               1/2     Running             0                 2y287d
+coredns-xmw9rp66j2-ktnwc                               2/2     Running             0                 29h
+coredns-xmw9rp66j2-m28lw                               1/2     Running             3 (5h48m ago)     2y214d
+coredns-xmw9rp66j2-mkdcf                               0/2     ImagePullBackOff    0                 2y156d
+coredns-xmw9rp66j2-mpg65                               0/2     ContainerCreating   0                 3y23d
+coredns-xmw9rp66j2-psthz                               1/2     CrashLoopBackOff    69 (79m ago)      240d
+coredns-xmw9rp66j2-qrkd8                               2/2     Running             0                 5d13h
+coredns-xmw9rp66j2-r8n5p                               2/2     Running             0                 3d20h
+coredns-xmw9rp66j2-r9sjz                               2/2     Running             3 (4h44m ago)     2y2d
+coredns-xmw9rp66j2-sdsln                               2/2     Terminating         0                 105m
+coredns-xmw9rp66j2-sscw4                               0/2     Pending             0                 111s
+coredns-xmw9rp66j2-sslsh                               1/2     Running             0                 16s
+coredns-xmw9rp66j2-vfq5f                               2/2     Running             0                 65s
+coredns-xmw9rp66j2-vwcgn                               2/2     Running             0                 2d5h
+coredns-xmw9rp66j2-vztwj                               0/2     Error               0                 5d14h
+coredns-xmw9rp66j2-zbbsj                               1/2     CrashLoopBackOff    140 (33m ago)     33m
+elasticsearch-data-l4kpkn7nk-2dbq5                     1/1     Running             0                 7d1h
+elasticsearch-data-l4kpkn7nk-2dd6x                     1/1     Running             0                 233d
+elasticsearch-data-l4kpkn7nk-44nrp                     1/1     Running             0                 6d18h
+elasticsearch-data-l4kpkn7nk-4jqck                     1/1     Running             1 (6m5s ago)      2y137d
+elasticsearch-data-l4kpkn7nk-55spd                     1/1     Running             0                 163m
+elasticsearch-data-l4kpkn7nk-5w5gp                     1/1     Running             0                 156m
+elasticsearch-data-l4kpkn7nk-6b7pt                     1/1     Running             0                 4y15d
+elasticsearch-data-l4kpkn7nk-7nfgf                     1/1     Running             0                 2d11h
+elasticsearch-data-l4kpkn7nk-97wt6                     1/1     Running             0                 55s
+elasticsearch-data-l4kpkn7nk-9sl82                     0/1     Terminating         0                 47h
+elasticsearch-data-l4kpkn7nk-9vl49                     0/1     CrashLoopBackOff    127 (34m ago)     34m
+elasticsearch-data-l4kpkn7nk-b4vgh                     0/1     Terminating         0                 135d
+elasticsearch-data-l4kpkn7nk-bkcpj                     1/1     Running             0                 6d1h
+elasticsearch-data-l4kpkn7nk-chs4t                     1/1     Running             0                 3d8h
+elasticsearch-data-l4kpkn7nk-ct47q                     1/1     Running             0                 7s
+elasticsearch-data-l4kpkn7nk-d78xl                     1/1     Running             0                 2y139d
+elasticsearch-data-l4kpkn7nk-d9jwl                     1/1     Running             0                 269d
+elasticsearch-data-l4kpkn7nk-dl5gk                     1/1     Running             0                 139m
+elasticsearch-data-l4kpkn7nk-f7sz6                     1/1     Running             0                 60m
+elasticsearch-data-l4kpkn7nk-fxxbx                     1/1     Running             0                 4h11m
+elasticsearch-data-l4kpkn7nk-g6hgh                     0/1     Running             0                 22h
+elasticsearch-data-l4kpkn7nk-g9489                     1/1     Running             0                 40h
+elasticsearch-data-l4kpkn7nk-gzvzj                     0/1     Running             0                 28h
+elasticsearch-data-l4kpkn7nk-jd2pw                     1/1     Running             2 (108m ago)      148d
+elasticsearch-data-l4kpkn7nk-jkzhq                     1/1     Running             0                 91d
+elasticsearch-data-l4kpkn7nk-k69fn                     0/1     CrashLoopBackOff    100 (4h47m ago)   3d23h
+elasticsearch-data-l4kpkn7nk-kmwpg                     0/1     Pending             0                 14m
+elasticsearch-data-l4kpkn7nk-mfnzl                     1/1     Running             4 (119s ago)      119s
+elasticsearch-data-l4kpkn7nk-mnqv9                     0/1     Running             1 (4h57m ago)     3y163d
+elasticsearch-data-l4kpkn7nk-mv5wd                     0/1     ImagePullBackOff    0                 41s
+elasticsearch-data-l4kpkn7nk-nkbfj                     1/1     Running             0                 3y26d
+elasticsearch-data-l4kpkn7nk-nmxx9                     0/1     Running             0                 5d4h
+elasticsearch-data-l4kpkn7nk-nsfwr                     1/1     Running             0                 145m
+elasticsearch-data-l4kpkn7nk-pfj49                     0/1     ContainerCreating   0                 6d16h
+elasticsearch-data-l4kpkn7nk-phxdb                     1/1     Running             0                 108d
+elasticsearch-data-l4kpkn7nk-pnsz9                     1/1     Running             2 (57m ago)       25h
+elasticsearch-data-l4kpkn7nk-pq8gm                     1/1     Running             0                 304d
+elasticsearch-data-l4kpkn7nk-q42mj                     1/1     Running             0                 3d4h
+elasticsearch-data-l4kpkn7nk-r2tdc                     0/1     Terminating         0                 34h
+elasticsearch-data-l4kpkn7nk-r4j56                     0/1     CrashLoopBackOff    212 (68m ago)     3y180d
+elasticsearch-data-l4kpkn7nk-rhcbx                     0/1     Error               1 (96m ago)       90d
+elasticsearch-data-l4kpkn7nk-rhrzb                     1/1     Running             0                 14h
+elasticsearch-data-l4kpkn7nk-rjgsv                     1/1     Running             0                 93d
+elasticsearch-data-l4kpkn7nk-rqzvv                     1/1     Running             4 (4h13m ago)     2y134d
+elasticsearch-data-l4kpkn7nk-scccb                     0/1     Completed           0                 3d18h
+elasticsearch-data-l4kpkn7nk-tc442                     1/1     Running             0                 39m
+elasticsearch-data-l4kpkn7nk-td77g                     1/1     Running             0                 288d
+elasticsearch-data-l4kpkn7nk-v7xln                     1/1     Running             0                 29s
+elasticsearch-data-l4kpkn7nk-vsdgw                     1/1     Running             0                 153m
+elasticsearch-data-l4kpkn7nk-wgnpl                     1/1     Running             0                 18h
+elasticsearch-data-l4kpkn7nk-wr59m                     0/1     Completed           0                 43s
+elasticsearch-data-l4kpkn7nk-x2tkw                     1/1     Running             0                 2y226d
+elasticsearch-data-l4kpkn7nk-xl7bj                     0/1     Completed           0                 6d19h
+elasticsearch-data-l4kpkn7nk-xnv2h                     0/1     Error               0                 68s
+frontend-dcjz682rz9-2fs88                              2/3     Running             0                 3y210d
+frontend-dcjz682rz9-2t4xr                              3/3     Running             0                 7d10h
+frontend-dcjz682rz9-4hbcv                              3/3     Running             0                 6d2h
+frontend-dcjz682rz9-4jl9s                              0/3     Completed           0                 3d
+frontend-dcjz682rz9-5m4w9                              3/3     Running             4 (5h18m ago)     17h
+frontend-dcjz682rz9-5mxcd                              3/3     Running             0                 85d
+frontend-dcjz682rz9-5zqcp                              3/3     Running             0                 4d18h
+frontend-dcjz682rz9-67s74                              3/3     Running             2 (132m ago)      40h
+frontend-dcjz682rz9-6plz8                              3/3     Running             2 (41s ago)       41s
+frontend-dcjz682rz9-898p9                              3/3     Running             0                 97m
+frontend-dcjz682rz9-8d9xb                              3/3     Running             3 (5h9m ago)      3y229d
+frontend-dcjz682rz9-8lxnb                              0/3     Completed           0                 4d3h
+frontend-dcjz682rz9-9kf7n                              3/3     Running             4 (98m ago)       98m
+frontend-dcjz682rz9-9tfb9                              3/3     Running             0                 147d
+frontend-dcjz682rz9-b6xxn                              3/3     Running             0                 23s
+frontend-dcjz682rz9-bfbf5                              3/3     Running             3 (15s ago)       15s
+frontend-dcjz682rz9-bmg8m                              3/3     Running             0                 6h6m
+frontend-dcjz682rz9-cg6ph                              3/3     Terminating         0                 188d
+frontend-dcjz682rz9-d7887                              3/3     Running             1 (45m ago)       4y75d
+frontend-dcjz682rz9-dknls                              3/3     Running             3 (4h48m ago)     4d18h
+frontend-dcjz682rz9-h68rb                              3/3     Running             0                 32h
+frontend-dcjz682rz9-hlh7d                              3/3     Running             0                 5m44s
+frontend-dcjz682rz9-hqf5r                              3/3     Running             3 (91m ago)       2d17h
+frontend-dcjz682rz9-jxxbv                              3/3     Running             4 (3h21m ago)     3d4h
+frontend-dcjz682rz9-kg76h                              3/3     Running             2 (130m ago)      130m
+frontend-dcjz682rz9-kjz69                              3/3     Running             4 (160m ago)      27d
+frontend-dcjz682rz9-kph9v                              3/3     Running             0                 25s
+frontend-dcjz682rz9-kpzkl                              2/3     CrashLoopBackOff    186 (98m ago)     8h
+frontend-dcjz682rz9-kv668                              3/3     Running             0                 196d
+frontend-dcjz682rz9-l2j96                              3/3     Running             0                 2d17h
+frontend-dcjz682rz9-l2ljc                              0/3     Completed           0                 194d
+frontend-dcjz682rz9-l6pvj                              2/3     CrashLoopBackOff    229 (5h24m ago)   4d13h
+frontend-dcjz682rz9-lg2g8                              3/3     Running             0                 3y296d
+frontend-dcjz682rz9-ll9q9                              3/3     Running             0                 198d
+frontend-dcjz682rz9-ln9gz                              2/3     CrashLoopBackOff    32 (57m ago)      37h
+frontend-dcjz682rz9-lzdzp                              3/3     Running             0                 16s
+frontend-dcjz682rz9-m5mhm                              3/3     Running             0                 2d6h
+frontend-dcjz682rz9-pns85                              3/3     Running             3 (82s ago)       82s
+frontend-dcjz682rz9-qz24n                              0/3     ImagePullBackOff    0                 36h
+frontend-dcjz682rz9-r2rlv                              3/3     Running             0                 45h
+frontend-dcjz682rz9-r44jh                              3/3     Running             0                 5d21h
+frontend-dcjz682rz9-rgzqx                              3/3     Running             1 (30m ago)       30m
+frontend-dcjz682rz9-sdx5d                              2/3     CrashLoopBackOff    136 (126m ago)    4y47d
+frontend-dcjz682rz9-sljn2                              3/3     Running             0                 224d
+frontend-dcjz682rz9-sqqtb                              3/3     Running             0                 2y75d
+frontend-dcjz682rz9-tmbxz                              3/3     Running             0                 134d
+frontend-dcjz682rz9-tz2w8                              3/3     Running             0                 15h
+frontend-dcjz682rz9-tzpcs                              0/3     Completed           0                 5d16h
+frontend-dcjz682rz9-v2526                              2/3     CrashLoopBackOff    224 (43m ago)     43m
+frontend-dcjz682rz9-vbhwx                              3/3     Running             0                 2d22h
+frontend-dcjz682rz9-vf7qd                              3/3     Running             0                 41h
+frontend-dcjz682rz9-vpg4h                              3/3     Running             0                 5d15h
+frontend-dcjz682rz9-wk6qr                              3/3     Running             0                 3d19h
+frontend-dcjz682rz9-xcvwb                              3/3     Running             0                 2d5h
+frontend-dcjz682rz9-xqwrb                              3/3     Running             0                 2d4h
+frontend-dcjz682rz9-xs6zk                              3/3     Running             0                 15h
+frontend-dcjz682rz9-zfdrl                              0/3     Pending             0                 49s
+image-resizer-100                                      0/3     ContainerCreating   0                 42s
+image-resizer-118                                      0/3     Completed           0                 33h
+image-resizer-229                                      3/3     Running             1 (16s ago)       16s
+image-resizer-244                                      3/3     Running             2 (4h23m ago)     3y82d
+image-resizer-266                                      3/3     Running             0                 103s
+image-resizer-285                                      3/3     Running             0                 7d22h
+image-resizer-299                                      3/3     Running             0                 98m
+image-resizer-316                                      3/3     Running             0                 87s
+image-resizer-331                                      0/3     Completed           0                 106s
+image-resizer-348                                      3/3     Running             0                 34h
+image-resizer-357                                      3/3     Running             0                 2y112d
+image-resizer-384                                      0/3     Pending             0                 152d
+image-resizer-403                                      0/3     ImagePullBackOff    0                 99d
+image-resizer-405                                      3/3     Running             0                 38h
+image-resizer-411                                      0/3     ImagePullBackOff    0                 4y55d
+image-resizer-421                                      3/3     Running             0                 4y1d
+image-resizer-440                                      3/3     Running             0                 231d
+image-resizer-447                                      3/3     Running             0                 88d
+image-resizer-45                                       2/3     Running             0                 57s
+image-resizer-464                                      3/3     Running             0                 23h
+image-resizer-471                                      3/3     Running             0                 36h
+image-resizer-509                                      3/3     Running             1 (5h59m ago)     56d
+image-resizer-510                                      3/3     Running             0                 82d
+image-resizer-527                                      0/3     Error               2 (141m ago)      297d
+image-resizer-550                                      3/3     Running             0                 27s
+image-resizer-56                                       0/3     Completed           0                 127m
+image-resizer-584                                      3/3     Running             0                 6d10h
+image-resizer-617                                      0/3     Pending             0                 2d9h
+image-resizer-662                                      3/3     Running             0                 96d
+image-resizer-675                                      3/3     Running             1 (90m ago)       90m
+image-resizer-686                                      3/3     Running             0                 2d3h
+image-resizer-687                                      3/3     Running             1 (103m ago)      3y123d
+image-resizer-695                                      3/3     Running             0                 6d14h
+image-resizer-736                                      3/3     Running             0                 60m
+image-resizer-745                                      3/3     Running             0                 21s
+image-resizer-760                                      3/3     Running             0                 2y16d
+image-resizer-790                                      0/3     Completed           0                 61d
+image-resizer-830                                      3/3     Running             4 (85m ago)       46h
+image-resizer-919                                      0/3     Completed           0                 185d
+image-resizer-944                                      0/3     Completed           0                 104s
+image-resizer-953                                      3/3     Running             0                 36h
+image-resizer-961                                      0/3     ContainerCreating   0                 8s
+image-resizer-976                                      3/3     Running             0                 4y160d
+kafka-29015536-8b7rv                                   1/2     Running             0                 4d4h
+kafka-29018268-vdcsg                                   0/2     Completed           0                 164m
+kafka-29080668-mcgpj                                   2/2     Running             0                 4d17h
+kafka-29082454-tvztj                                   0/2     Completed           0                 4d20h
+kafka-29093280-92sz8                                   0/2     Completed           0                 5d4h
+kafka-29109396-n8pcg                                   2/2     Running             3 (37m ago)       3y301d
+kafka-29153494-ttlff                                   0/2     Completed           0                 2y223d
+kafka-29168696-jpdnp                                   0/2     Pending             0                 95s
+kafka-29184939-2phgd                                   0/2     Completed           0                 163m
+kafka-29192885-hxg8s                                   0/2     Completed           0                 37h
+kafka-29197458-7bz52                                   0/2     Completed           0                 30h
+kafka-29207914-7hchc                                   0/2     Completed           0                 125m
+kafka-29212140-tt4hh                                   0/2     Completed           0                 21h
+kafka-29213655-jp4qt                                   0/2     Completed           0                 3d12h
+kafka-29214360-pjz7d                                   0/2     Terminating         0                 61m
+kafka-29229669-rprb9                                   0/2     Completed           0                 55s
+kafka-29232014-2j4l4                                   0/2     Completed           0                 4y34d
+kafka-29258950-kgr4r                                   0/2     Completed           0                 115s
+kafka-29271574-pdhtw                                   0/2     Error               1 (4h20m ago)     3y77d
+kafka-29318524-9qdh4                                   2/2     Running             0                 97s
+kafka-29351333-b4jtr                                   0/2     Error               1 (5h3m ago)      3d18h
+kafka-29365617-wz8h7                                   1/2     Running             0                 4y110d
+kafka-29384465-xbt6g                                   2/2     Running             0                 3y148d
+kafka-29388118-j7zts                                   2/2     Running             0                 3s
+kafka-29397662-xx5br                                   2/2     Running             0                 3h
+kafka-29424031-xpwj8                                   0/2     Completed           0                 4d2h
+kafka-29427953-zzrxz                                   1/2     OOMKilled           9 (56m ago)       56m
+kafka-29467971-665j4                                   0/2     Completed           0                 6d1h
+kafka-29474233-9tvcw                                   2/2     Running             4 (148m ago)      3y240d
+kafka-29485910-vcfsz                                   1/2     OOMKilled           179 (63s ago)     63s
+kafka-29526878-29dxv                                   0/2     Completed           0                 46m
+kafka-29553393-7h6xr                                   1/2     CrashLoopBackOff    196 (5h52m ago)   204d
+kafka-29554505-7zhmt                                   0/2     Completed           0                 44s
+kafka-29573561-ds22s                                   2/2     Running             0                 6d15h
+kafka-29613241-5mf8b                                   0/2     Error               1 (11m ago)       3y46d
+kafka-29620189-8zg8q                                   0/2     Error               2 (16m ago)       2d13h
+kafka-29666733-8b9sf                                   0/2     Completed           0                 11h
+kafka-29676568-2d2kp                                   0/2     Completed           0                 74s
+kafka-29677062-mbdfc                                   2/2     Running             0                 2d15h
+kafka-29699143-hlnb8                                   1/2     CrashLoopBackOff    240 (68m ago)     2y53d
+kafka-29712998-l6qxw                                   0/2     Completed           0                 4d19h
+kafka-29720590-jrck7                                   2/2     Running             3 (2s ago)        2s
+kafka-29734831-bdpw2                                   0/2     Completed           0                 157d
+kafka-29753849-xsnhp                                   0/2     Completed           0                 2y339d
+kafka-29756769-jzzlj                                   2/2     Running             0                 94m
+kafka-29783970-5vhc8                                   0/2     ImagePullBackOff    0                 3y320d
+kafka-29786168-gnfsc                                   2/2     Running             0                 2y195d
+kafka-29822933-fdr6b                                   0/2     Completed           0                 24h
+kafka-29835015-9dht4                                   2/2     Running             0                 7d6h
+kafka-29879788-59wqd                                   2/2     Running             0                 5d16h
+kafka-29881992-kcr57                                   0/2     Completed           0                 38h
+kafka-29890448-m852h                                   0/2     Pending             0                 3h9m
+kafka-29905162-sjxsr                                   1/2     CrashLoopBackOff    79 (95m ago)      3d23h
+kafka-29910815-q9sv6                                   0/2     Completed           0                 7d20h
+kafka-29911755-844tg                                   0/2     Completed           0                 173m
+kafka-29923135-47nrn                                   2/2     Running             0                 17h
+kafka-29927936-jzxqh                                   0/2     Error               1 (5h40m ago)     34h
+kafka-29961749-4gtgm                                   2/2     Running             0                 30h
+kafka-29981451-n98wn                                   0/2     Terminating         0                 62s
+kafka-29982226-6slnd                                   0/2     Completed           0                 4d14h
+kube-proxy-2cm49n79z-22hxb                             1/1     Terminating         0                 236d
+kube-proxy-2cm49n79z-2vlwb                             1/1     Running             0                 4y109d
+kube-proxy-2cm49n79z-4lszm                             1/1     Running             0                 49s
+kube-proxy-2cm49n79z-52szr                             0/1     Error               1 (4h19m ago)     30h
+kube-proxy-2cm49n79z-69xhw                             1/1     Running             0                 2s
+kube-proxy-2cm49n79z-75jzq                             0/1     Running             0                 3y237d
+kube-proxy-2cm49n79z-7d54h                             0/1     CrashLoopBackOff    66 (14s ago)      14s
+kube-proxy-2cm49n79z-7xzng                             1/1     Running             0                 84s
+kube-proxy-2cm49n79z-8kcmk                             0/1     Completed           0                 2y133d
+kube-proxy-2cm49n79z-9wxds                             0/1     CrashLoopBackOff    190 (5h16m ago)   91d
+kube-proxy-2cm49n79z-dl2ww                             1/1     Running             0                 25m
+kube-proxy-2cm49n79z-dq7wm                             1/1     Running             0                 13d
+kube-proxy-2cm49n79z-fzx9d                             0/1     Completed           0                 38h
+kube-proxy-2cm49n79z-glft9                             1/1     Running             0                 59s
+kube-proxy-2cm49n79z-gwx2z                             1/1     Running             4 (72m ago)       4d18h
+kube-proxy-2cm49n79z-k2jl9                             1/1     Running             0                 6s
+kube-proxy-2cm49n79z-ldt62                             0/1     Terminating         0                 4h45m
+kube-proxy-2cm49n79z-lf7fn                             1/1     Running             0                 42h
+kube-proxy-2cm49n79z-lqhkn                             1/1     Running             0                 127m
+kube-proxy-2cm49n79z-m6vl2                             0/1     Running             0                 31h
+kube-proxy-2cm49n79z-md5kt                             1/1     Running             0                 3y349d
+kube-proxy-2cm49n79z-md8zg                             0/1     Pending             0                 101s
+kube-proxy-2cm49n79z-nwh99                             0/1     Completed           0                 3y309d
+kube-proxy-2cm49n79z-pd58t                             1/1     Running             0                 78m
+kube-proxy-2cm49n79z-pgghv                             0/1     Running             0                 107d
+kube-proxy-2cm49n79z-pglkx                             1/1     Running             0                 247d
+kube-proxy-2cm49n79z-q5q5l                             0/1     Pending             0                 4y108d
+kube-proxy-2cm49n79z-rlpxw                             1/1     Running             0                 74m
+kube-proxy-2cm49n79z-rq5p7                             1/1     Running             0                 44h
+kube-proxy-2cm49n79z-t5shb                             1/1     Running             0                 76s
+kube-proxy-2cm49n79z-t8s27                             0/1     Terminating         0                 4d19h
+kube-proxy-2cm49n79z-tw5fv                             0/1     Completed           0                 3y160d
+kube-proxy-2cm49n79z-v88rg                             0/1     Completed           0                 84m
+kube-proxy-2cm49n79z-vmb82                             0/1     Error               0                 46m
+kube-proxy-2cm49n79z-w4kjh                             1/1     Running             0                 29h
+kube-proxy-2cm49n79z-wdj5x                             0/1     Completed           0                 154m
+kube-proxy-2cm49n79z-wn6vn                             1/1     Running             0                 139d
+kube-proxy-2cm49n79z-x9qr4                             1/1     Running             0                 2d10h
+kube-proxy-2cm49n79z-xbglz                             1/1     Running             1 (5h18m ago)     2y124d
+kube-proxy-2cm49n79z-xmmqf                             1/1     Running             0                 2y33d
+kube-proxy-2cm49n79z-xpkmp                             0/1     Running             2 (3h10m ago)     252d
+kube-proxy-2cm49n79z-xsljb                             1/1     Running             0                 150m
+kube-proxy-2cm49n79z-zg5g8                             1/1     Running             0                 2d8h
+kube-proxy-2cm49n79z-zmvp5                             0/1     Running             0                 87d
+node-exporter-gftd2fs7n-26zv2                          3/3     Running             0                 35s
+node-exporter-gftd2fs7n-2hcg2                          3/3     Running             0                 3y222d
+node-exporter-gftd2fs7n-4kh4d                          3/3     Running             0                 40h
+node-exporter-gftd2fs7n-4zfgr                          2/3     Running             0                 108s
+node-exporter-gftd2fs7n-52cw2                          2/3     Running             0                 2y97d
+node-exporter-gftd2fs7n-5rll6                          3/3     Running             4 (4h58m ago)     3d22h
+node-exporter-gftd2fs7n-5wvvq                          3/3     Running             0                 9h
+node-exporter-gftd2fs7n-62x7r                          3/3     Running             0                 110s
+node-exporter-gftd2fs7n-6s29r                          3/3     Running             0                 45h
+node-exporter-gftd2fs7n-7722g                          0/3     Completed           0                 7h33m
+node-exporter-gftd2fs7n-7v25k                          3/3     Running             2 (3h36m ago)     4y65d
+node-exporter-gftd2fs7n-7xtxk                          3/3     Running             4 (5h34m ago)     119d
+node-exporter-gftd2fs7n-9598l                          0/3     Completed           0                 3y349d
+node-exporter-gftd2fs7n-b496s                          3/3     Running             4 (11s ago)       11s
+node-exporter-gftd2fs7n-bjq4r                          3/3     Terminating         0                 86s
+node-exporter-gftd2fs7n-f5f26                          2/3     CrashLoopBackOff    162 (5h31m ago)   6h48m
+node-exporter-gftd2fs7n-f64rk                          3/3     Running             1 (5h58m ago)     4y73d
+node-exporter-gftd2fs7n-fkc8w                          3/3     Running             0                 2d12h
+node-exporter-gftd2fs7n-g6qwd                          3/3     Running             0                 6d2h
+node-exporter-gftd2fs7n-ggqzn                          2/3     Running             0                 81s
+node-exporter-gftd2fs7n-gqvpb                          3/3     Running             0                 121m
+node-exporter-gftd2fs7n-h6nqq                          3/3     Running             0                 169m
+node-exporter-gftd2fs7n-h6t8z                          3/3     Running             0                 179m
+node-exporter-gftd2fs7n-hmfgl                          3/3     Running             0                 223d
+node-exporter-gftd2fs7n-jtqhw                          2/3     OOMKilled           238 (25m ago)     4d3h
+node-exporter-gftd2fs7n-l4m4r                          3/3     Running             2 (167m ago)      168m
+node-exporter-gftd2fs7n-lrjzt                          3/3     Running             0                 70d
+node-exporter-gftd2fs7n-nmrq5                          3/3     Running             0                 5d13h
+node-exporter-gftd2fs7n-p47jf                          0/3     Completed           0                 238d
+node-exporter-gftd2fs7n-rpdm8                          3/3     Running             0                 47s
+node-exporter-gftd2fs7n-rszw6                          2/3     Running             1 (139m ago)      7h29m
+node-exporter-gftd2fs7n-rwfkz                          3/3     Running             0                 3y166d
+node-exporter-gftd2fs7n-v7tdx                          3/3     Running             3 (3h17m ago)     32h
+node-exporter-gftd2fs7n-wbdvd                          3/3     Running             0                 9h
+node-exporter-gftd2fs7n-wj4c5                          2/3     CrashLoopBackOff    36 (179m ago)     142d
+node-exporter-gftd2fs7n-wxn7j                          3/3     Running             0                 118s
+node-exporter-gftd2fs7n-xbgcz                          3/3     Running             0                 4d
+node-exporter-gftd2fs7n-xhpxv                          0/3     Terminating         0                 39h
+notification-sender-29007793-4kht8                     3/3     Running             0                 106d
+notification-sender-29010677-2nrcg                     3/3     Running             0                 75m
+notification-sender-29034440-nsw76                     0/3     ContainerCreating   0                 4y120d
+notification-sender-29042392-b2zgf                     0/3     Completed           0                 60s
+notification-sender-29054503-8vt98                     3/3     Running             3 (3h23m ago)     2y40d
+notification-sender-29079783-r4p62                     3/3     Running             0                 3d21h
+notification-sender-29111797-6ph5r                     0/3     Completed           0                 3d10h
+notification-sender-29126579-gdnfm                     0/3     Completed           0                 3y328d
+notification-sender-29131516-jrr62                     0/3     Completed           0                 164m
+notification-sender-29135385-r7pfr                     3/3     Running             0                 219d
+notification-sender-29165789-t6zt2                     0/3     Completed           0                 184d
+notification-sender-29167603-2nw2t                     3/3     Running             0                 103s
+notification-sender-29208766-thdxd                     0/3     Completed           0                 150m
+notification-sender-29221786-8htmp                     0/3     Completed           0                 180d
+notification-sender-29240216-n9g7c                     0/3     Completed           0                 72d
+notification-sender-29292084-2l5vn                     0/3     Completed           0                 231d
+notification-sender-29325988-bphq9                     0/3     Completed           0                 217d
+notification-sender-29332271-x2j48                     0/3     Completed           0                 43h
+notification-sender-29346014-p66fh                     3/3     Running             0                 38h
+notification-sender-29391687-hwxk5                     0/3     Completed           0                 99s
+notification-sender-29392805-gdxc5                     0/3     Completed           0                 38h
+notification-sender-29418765-zkskx                     0/3     Completed           0                 24h
+notification-sender-29457061-vvs89                     0/3     Completed           0                 2y12d
+notification-sender-29465766-hxqs7                     2/3     Running             0                 3d7h
+notification-sender-29478366-kkshx                     0/3     Completed           0                 4d14h
+notification-sender-29516340-mczhp                     0/3     Completed           0                 264d
+notification-sender-29520899-4pnnr                     0/3     Completed           0                 2y1d
+notification-sender-29591403-sf44d                     0/3     Completed           0                 3d4h
+notification-sender-29592638-tdm7x                     0/3     Completed           0                 3y338d
+notification-sender-29637905-pmjj5                     0/3     Completed           0                 82m
+notification-sender-29646513-7jlg9                     0/3     Completed           0                 93d
+notification-sender-29665653-pqkfk                     0/3     Completed           0                 2y297d
+notification-sender-29675795-v7kl2                     0/3     Completed           0                 3y265d
+notification-sender-29680449-r8kgd                     0/3     ContainerCreating   0                 2d8h
+notification-sender-29730732-lxqq5                     0/3     Completed           0                 259d
+notification-sender-29740439-m5lr6                     0/3     Completed           0                 2d15h
+notification-sender-29761608-fqnpm                     0/3     Completed           0                 225d
+notification-sender-29766392-fxc5b                     0/3     Completed           0                 31s
+notification-sender-29770681-txhsr                     0/3     Completed           0                 53d
+notification-sender-29772605-wwxhv                     0/3     Completed           0                 20d
+notification-sender-29798976-4bwfn                     0/3     Completed           0                 11h
+notification-sender-29822765-mpqql                     0/3     Completed           0                 56m
+notification-sender-29851887-ck48c                     3/3     Running             0                 5d12h
+notification-sender-29853240-mfnxs                     3/3     Running             1 (142m ago)      142m
+notification-sender-29864215-rlmng                     2/3     CrashLoopBackOff    80 (112m ago)     286d
+notification-sender-29874138-h88dl                     0/3     Completed           0                 2y192d
+notification-sender-29876105-rxlhk                     0/3     Completed           0                 6d22h
+notification-sender-29886908-mxk5g                     0/3     Completed           0                 3y195d
+notification-sender-29900904-cnf94                     3/3     Running             2 (91s ago)       5d12h
+notification-sender-29918024-l58hn                     0/3     Completed           0                 30d
+notification-sender-29946027-5jksm                     0/3     Completed           0                 3y17d
+notification-sender-29975588-tgkdd                     2/3     CrashLoopBackOff    114 (4h59m ago)   4d5h
+notification-sender-29983227-pwscc                     0/3     Completed           0                 2y183d
+notification-sender-29983394-wjxwk                     0/3     Completed           0                 4y104d
+notification-sender-29986743-jc74n                     3/3     Running             0                 3y91d
+payments-worker-s44ctv8jkr-22zp4                       2/2     Running             0                 177m
+payments-worker-s44ctv8jkr-2cxfd                       2/2     Running             0                 3y189d
+payments-worker-s44ctv8jkr-4nnpj                       2/2     Running             0                 186d
+payments-worker-s44ctv8jkr-4sfg8                       2/2     Running             0                 3y358d
+payments-worker-s44ctv8jkr-589zb                       2/2     Running             0                 3d4h
+payments-worker-s44ctv8jkr-5fkgv                       2/2     Running             0                 257d
+payments-worker-s44ctv8jkr-5ktfh                       2/2     Running             0                 2y363d
+payments-worker-s44ctv8jkr-7dx6x                       1/2     CrashLoopBackOff    212 (11m ago)     7h24m
+payments-worker-s44ctv8jkr-7v5jr                       2/2     Running             0                 79d
+payments-worker-s44ctv8jkr-8rgkd                       0/2     Error               1 (125m ago)      33h
+payments-worker-s44ctv8jkr-8s8z4                       2/2     Running             0                 53m
+payments-worker-s44ctv8jkr-cjwq4                       2/2     Running             0                 3y217d
+payments-worker-s44ctv8jkr-crrq8                       2/2     Running             2 (109m ago)      3y31d
+payments-worker-s44ctv8jkr-fc755                       2/2     Terminating         0                 86m
+payments-worker-s44ctv8jkr-fcttz                       2/2     Running             0                 4d7h
+payments-worker-s44ctv8jkr-fkp48                       1/2     CrashLoopBackOff    42 (5h23m ago)    4y161d
+payments-worker-s44ctv8jkr-fzx8r                       2/2     Running             0                 2d13h
+payments-worker-s44ctv8jkr-ggcsv                       2/2     Running             0                 23h
+payments-worker-s44ctv8jkr-h5x6n                       2/2     Running             0                 25h
+payments-worker-s44ctv8jkr-hxd62                       0/2     Pending             0                 3y327d
+payments-worker-s44ctv8jkr-j5d22                       2/2     Running             0                 4s
+payments-worker-s44ctv8jkr-jdg2z                       0/2     Completed           0                 90s
+payments-worker-s44ctv8jkr-jp5kr                       2/2     Running             0                 90s
+payments-worker-s44ctv8jkr-k2n2p                       0/2     Error               2 (3h ago)        109d
+payments-worker-s44ctv8jkr-ktq5p                       0/2     Completed           0                 2y148d
+payments-worker-s44ctv8jkr-l27rb                       2/2     Running             3 (103s ago)      103s
+payments-worker-s44ctv8jkr-l42h5                       2/2     Running             0                 20h
+payments-worker-s44ctv8jkr-l5t5b                       2/2     Running             0                 175m
+payments-worker-s44ctv8jkr-l8l4k                       2/2     Running             0                 2y72d
+payments-worker-s44ctv8jkr-lwl8z                       2/2     Running             4 (101m ago)      26h
+payments-worker-s44ctv8jkr-m44nw                       0/2     ImagePullBackOff    0                 17m
+payments-worker-s44ctv8jkr-m6fp2                       2/2     Running             0                 21h
+payments-worker-s44ctv8jkr-nw8cs                       1/2     Running             0                 54m
+payments-worker-s44ctv8jkr-pkbw4                       2/2     Running             0                 3y294d
+payments-worker-s44ctv8jkr-ppwhs                       2/2     Running             0                 44h
+payments-worker-s44ctv8jkr-qklvp                       0/2     Completed           0                 55d
+payments-worker-s44ctv8jkr-qvkfc                       2/2     Running             0                 3d11h
+payments-worker-s44ctv8jkr-r9f5s                       2/2     Running             0                 2d5h
+payments-worker-s44ctv8jkr-rkbpc                       2/2     Running             0                 2y335d
+payments-worker-s44ctv8jkr-srt5d                       2/2     Running             0                 5d14h
+payments-worker-s44ctv8jkr-sw8kv                       2/2     Running             0                 2y224d
+payments-worker-s44ctv8jkr-t6qpc                       0/2     Completed           0                 32d
+payments-worker-s44ctv8jkr-thxrk                       0/2     Pending             0                 164d
+payments-worker-s44ctv8jkr-tmcs4                       2/2     Running             0                 47m
+payments-worker-s44ctv8jkr-tq7d2                       0/2     Pending             0                 143m
+payments-worker-s44ctv8jkr-tt4jr                       2/2     Running             0                 118m
+payments-worker-s44ctv8jkr-vfkpf                       2/2     Running             4 (175m ago)      82d
+payments-worker-s44ctv8jkr-vxnbn                       1/2     Running             1 (150m ago)      29h
+payments-worker-s44ctv8jkr-w4mrb                       2/2     Running             0                 28h
+payments-worker-s44ctv8jkr-xcppr                       2/2     Running             0                 239d
+payments-worker-s44ctv8jkr-xsz86                       2/2     Running             0                 278d
+payments-worker-s44ctv8jkr-z9mbs                       0/2     Completed           0                 81s
+payments-worker-s44ctv8jkr-zqr9z                       2/2     Running             2 (175m ago)      175m
+payments-worker-s44ctv8jkr-zvc84                       0/2     Pending             0                 34m
+postgres-kz9gdvc6mv-2wjj2                              0/1     Running             0                 2y22d
+postgres-kz9gdvc6mv-4ftf8                              0/1     Terminating         0                 44h
+postgres-kz9gdvc6mv-4jg28                              0/1     Running             0                 242d
+postgres-kz9gdvc6mv-4vqqz                              0/1     CrashLoopBackOff    3 (151m ago)      7d
+postgres-kz9gdvc6mv-5p652                              1/1     Running             0                 291d
+postgres-kz9gdvc6mv-67sqh                              1/1     Running             0                 3h14m
+postgres-kz9gdvc6mv-6lq55                              1/1     Running             0                 113s
+postgres-kz9gdvc6mv-6m22n                              1/1     Running             0                 36s
+postgres-kz9gdvc6mv-6rvlk                              1/1     Running             0                 43h
+postgres-kz9gdvc6mv-7pp9h                              1/1     Running             1 (98m ago)       2d6h
+postgres-kz9gdvc6mv-859rr                              0/1     ImagePullBackOff    0                 144m
+postgres-kz9gdvc6mv-9jcdg                              0/1     Init:0/1            0                 69s
+postgres-kz9gdvc6mv-9tqkm                              0/1     Error               1 (40m ago)       110m
+postgres-kz9gdvc6mv-cdghg                              1/1     Running             1 (4h22m ago)     3y55d
+postgres-kz9gdvc6mv-d5d4k                              1/1     Running             0                 6d10h
+postgres-kz9gdvc6mv-d6v74                              1/1     Running             3 (82m ago)       144m
+postgres-kz9gdvc6mv-fp4kh                              1/1     Running             0                 117d
+postgres-kz9gdvc6mv-fzvl7                              0/1     Pending             0                 36h
+postgres-kz9gdvc6mv-g7wk9                              1/1     Running             0                 3d6h
+postgres-kz9gdvc6mv-gf46x                              0/1     CrashLoopBackOff    221 (5h32m ago)   151d
+postgres-kz9gdvc6mv-hjts9                              1/1     Running             0                 155d
+postgres-kz9gdvc6mv-htj94                              1/1     Running             0                 2y307d
+postgres-kz9gdvc6mv-k5lh6                              1/1     Running             0                 139d
+postgres-kz9gdvc6mv-k9pvx                              1/1     Running             0                 4y122d
+postgres-kz9gdvc6mv-km5tt                              1/1     Running             0                 3y235d
+postgres-kz9gdvc6mv-knqk2                              1/1     Running             4 (102s ago)      102s
+postgres-kz9gdvc6mv-l8ztn                              0/1     CrashLoopBackOff    134 (114s ago)    114s
+postgres-kz9gdvc6mv-ldmg6                              1/1     Running             0                 110s
+postgres-kz9gdvc6mv-lgq86                              1/1     Running             0                 2y83d
+postgres-kz9gdvc6mv-lh9pr                              0/1     CrashLoopBackOff    93 (5h36m ago)    4y132d
+postgres-kz9gdvc6mv-lmvqh                              1/1     Running             2 (5h31m ago)     2y63d
+postgres-kz9gdvc6mv-mv4fm                              1/1     Running             3 (125m ago)      302d
+postgres-kz9gdvc6mv-r7pp2                              1/1     Running             0                 2y143d
+postgres-kz9gdvc6mv-r7q25                              0/1     ImagePullBackOff    0                 52s
+postgres-kz9gdvc6mv-rfprq                              1/1     Running             1 (134m ago)      3y329d
+postgres-kz9gdvc6mv-s9k2h                              0/1     Pending             0                 65s
+postgres-kz9gdvc6mv-sbc2c                              1/1     Running             0                 3h1m
+postgres-kz9gdvc6mv-sj4hk                              1/1     Running             0                 54s
+postgres-kz9gdvc6mv-sr59m                              0/1     Pending             0                 4d14h
+postgres-kz9gdvc6mv-sx4w9                              1/1     Running             0                 6d1h
+postgres-kz9gdvc6mv-vmrr4                              0/1     Running             0                 25h
+postgres-kz9gdvc6mv-w58bf                              1/1     Running             3 (93m ago)       3y58d
+postgres-kz9gdvc6mv-x6464                              1/1     Running             1 (5h45m ago)     42h
+prometheus-server-2pvvx                                0/3     Completed           0                 88s
+prometheus-server-2td57                                0/3     Completed           0                 5d6h
+prometheus-server-48f7p                                3/3     Running             0                 7d9h
+prometheus-server-4r5wq                                3/3     Running             0                 256d
+prometheus-server-5fl8q                                2/3     Running             1 (5h51m ago)     2y81d
+prometheus-server-65qk9                                3/3     Running             0                 2d14h
+prometheus-server-6bdch                                3/3     Running             0                 113s
+prometheus-server-6m6zm                                3/3     Terminating         0                 50s
+prometheus-server-6mrqg                                3/3     Running             0                 5m38s
+prometheus-server-8xrf7                                3/3     Running             3 (23m ago)       3y261d
+prometheus-server-8zfmj                                3/3     Running             0                 86s
+prometheus-server-9m6qs                                3/3     Running             4 (21m ago)       21m
+prometheus-server-b87bt                                3/3     Running             0                 75s
+prometheus-server-bmksl                                3/3     Running             0                 266d
+prometheus-server-c46f2                                3/3     Running             4 (150m ago)      41h
+prometheus-server-c8xlt                                0/3     Completed           0                 123m
+prometheus-server-cbtx4                                3/3     Running             0                 41h
+prometheus-server-ccxmm                                0/3     ImagePullBackOff    0                 255d
+prometheus-server-dcs7k                                3/3     Running             0                 4d
+prometheus-server-dxqq9                                0/3     Terminating         0                 290d
+prometheus-server-fjtzz                                0/3     Pending             0                 66s
+prometheus-server-fvwcr                                3/3     Running             0                 55s
+prometheus-server-gcxqk                                3/3     Running             0                 293d
+prometheus-server-gnkvw                                3/3     Running             3 (111m ago)      6d
+prometheus-server-gvfp9                                3/3     Running             0                 6d13h
+prometheus-server-hfhb9                                3/3     Running             0                 62s
+prometheus-server-hsgpn                                3/3     Running             0                 158m
+prometheus-server-jg7z9                                3/3     Running             2 (18m ago)       2y209d
+prometheus-server-jzzj7                                3/3     Running             0                 255d
+prometheus-server-k58b4                                3/3     Running             0                 2y272d
+prometheus-server-krlww                                0/3     Completed           0                 2y296d
+prometheus-server-kz7m4                                3/3     Running             0                 3y280d
+prometheus-server-l25qf                                3/3     Running             4 (80m ago)       161m
+prometheus-server-l44gf                                3/3     Running             0                 136m
+prometheus-server-ldgtj                                3/3     Running             0                 2d4h
+prometheus-server-lhcvk                                3/3     Running             0                 3y332d
+prometheus-server-lmqbr                                3/3     Running             0                 67s
+prometheus-server-mcj9c                                2/3     CrashLoopBackOff    207 (82m ago)     7d15h
+prometheus-server-mfml8                                3/3     Running             0                 2d19h
+prometheus-server-mww8z                                3/3     Running             0                 147d
+prometheus-server-pz2xn                                3/3     Running             0                 153m
+prometheus-server-qd79n                                2/3     CrashLoopBackOff    123 (49m ago)     121d
+prometheus-server-qmtqq                                2/3     Running             0                 86s
+prometheus-server-qvwtc                                3/3     Running             0                 98d
+prometheus-server-r7v6q                                3/3     Running             0                 21s
+prometheus-server-rqdr4                                3/3     Running             0                 28h
+prometheus-server-s74fx                                2/3     Running             0                 107m
+prometheus-server-sp8b6                                0/3     Terminating         0                 3y73d
+prometheus-server-sxmvh                                3/3     Running             0                 3y116d
+prometheus-server-txqrt                                2/3     CrashLoopBackOff    132 (5h45m ago)   5d7h
+prometheus-server-txztc                                3/3     Running             0                 33s
+prometheus-server-v2wcl                                3/3     Running             0                 102s
+prometheus-server-wb7qz                                3/3     Running             0                 226d
+prometheus-server-wvf95                                3/3     Running             0                 6h53m
+prometheus-server-xjkz8                                0/3     ImagePullBackOff    0                 297d
+prometheus-server-zkvdh                                0/3     Error               0                 3y155d
+prometheus-server-zmcqc                                3/3     Running             3 (41m ago)       298d
+recommendation-engine-batch-scoring-6p86j29xzz-26w67   2/3     CrashLoopBackOff    130 (30s ago)     30s
+recommendation-engine-batch-scoring-6p86j29xzz-27xlk   2/3     Running             0                 2d1h
+recommendation-engine-batch-scoring-6p86j29xzz-47cqr   3/3     Running             0                 4d2h
+recommendation-engine-batch-scoring-6p86j29xzz-4v4m7   3/3     Running             3 (24s ago)       24s
+recommendation-engine-batch-scoring-6p86j29xzz-5g84r   3/3     Running             0                 4d6h
+recommendation-engine-batch-scoring-6p86j29xzz-5l4bq   3/3     Running             3 (89s ago)       89s
+recommendation-engine-batch-scoring-6p86j29xzz-62lfk   3/3     Running             0                 4y114d
+recommendation-engine-batch-scoring-6p86j29xzz-7hkbj   2/3     CrashLoopBackOff    160 (118s ago)    118s
+recommendation-engine-batch-scoring-6p86j29xzz-7pqsq   3/3     Running             0                 110m
+recommendation-engine-batch-scoring-6p86j29xzz-7zq7q   0/3     Completed           0                 53s
+recommendation-engine-batch-scoring-6p86j29xzz-8764g   2/3     CrashLoopBackOff    30 (132m ago)     132m
+recommendation-engine-batch-scoring-6p86j29xzz-88v8z   3/3     Running             0                 4y52d
+recommendation-engine-batch-scoring-6p86j29xzz-8bm67   3/3     Running             0                 86s
+recommendation-engine-batch-scoring-6p86j29xzz-8hr9q   2/3     Running             0                 26h
+recommendation-engine-batch-scoring-6p86j29xzz-8q22j   3/3     Running             0                 2y24d
+recommendation-engine-batch-scoring-6p86j29xzz-94mzq   3/3     Running             0                 170m
+recommendation-engine-batch-scoring-6p86j29xzz-9lvqg   0/3     Error               1 (4h37m ago)     40h
+recommendation-engine-batch-scoring-6p86j29xzz-9xn9r   3/3     Running             0                 3y85d
+recommendation-engine-batch-scoring-6p86j29xzz-brqr2   3/3     Running             0                 4d11h
+recommendation-engine-batch-scoring-6p86j29xzz-c4lxd   3/3     Running             0                 154d
+recommendation-engine-batch-scoring-6p86j29xzz-cc4s6   3/3     Running             0                 4d22h
+recommendation-engine-batch-scoring-6p86j29xzz-f2sc5   3/3     Running             0                 94s
+recommendation-engine-batch-scoring-6p86j29xzz-fc5jj   3/3     Running             0                 83d
+recommendation-engine-batch-scoring-6p86j29xzz-gftgk   3/3     Running             0                 306d
+recommendation-engine-batch-scoring-6p86j29xzz-gm9f9   0/3     Error               1 (4h46m ago)     2y358d
+recommendation-engine-batch-scoring-6p86j29xzz-gz6tn   3/3     Running             0                 6d15h
+recommendation-engine-batch-scoring-6p86j29xzz-hg6g9   3/3     Running             3 (99s ago)       99s
+recommendation-engine-batch-scoring-6p86j29xzz-j52qq   0/3     Error               0                 34s
+recommendation-engine-batch-scoring-6p86j29xzz-jrklw   3/3     Running             0                 3y68d
+recommendation-engine-batch-scoring-6p86j29xzz-jvtv8   3/3     Running             2 (6s ago)        6s
+recommendation-engine-batch-scoring-6p86j29xzz-jwzgp   3/3     Running             0                 142m
+recommendation-engine-batch-scoring-6p86j29xzz-l6tdw   3/3     Running             0                 86m
+recommendation-engine-batch-scoring-6p86j29xzz-lkfzz   3/3     Running             0                 181d
+recommendation-engine-batch-scoring-6p86j29xzz-m2jnr   3/3     Running             0                 33h
+recommendation-engine-batch-scoring-6p86j29xzz-mxhqf   3/3     Running             0                 4y40d
+recommendation-engine-batch-scoring-6p86j29xzz-ngwnh   0/3     ImagePullBackOff    0                 47m
+recommendation-engine-batch-scoring-6p86j29xzz-nqb7b   3/3     Running             0                 3d12h
+recommendation-engine-batch-scoring-6p86j29xzz-nqjpx   3/3     Running             0                 2y167d
+recommendation-engine-batch-scoring-6p86j29xzz-p8cjn   3/3     Running             0                 16h
+recommendation-engine-batch-scoring-6p86j29xzz-pljzn   3/3     Running             0                 161d
+recommendation-engine-batch-scoring-6p86j29xzz-q9tn9   0/3     Error               1 (5h49m ago)     78d
+recommendation-engine-batch-scoring-6p86j29xzz-r6r64   2/3     OOMKilled           120 (120m ago)    29h
+recommendation-engine-batch-scoring-6p86j29xzz-rgsvg   3/3     Running             0                 23m
+recommendation-engine-batch-scoring-6p86j29xzz-s8f7c   3/3     Running             0                 3y44d
+recommendation-engine-batch-scoring-6p86j29xzz-sgmr4   3/3     Running             4 (22m ago)       4y91d
+recommendation-engine-batch-scoring-6p86j29xzz-sknwd   3/3     Running             0                 4y92d
+recommendation-engine-batch-scoring-6p86j29xzz-smltc   0/3     Pending             0                 42h
+recommendation-engine-batch-scoring-6p86j29xzz-stsxn   0/3     Completed           0                 3y318d
+recommendation-engine-batch-scoring-6p86j29xzz-t7x45   3/3     Running             3 (4h25m ago)     43h
+recommendation-engine-batch-scoring-6p86j29xzz-tfv7t   0/3     Completed           0                 60m
+recommendation-engine-batch-scoring-6p86j29xzz-tmjwl   3/3     Running             0                 4y150d
+recommendation-engine-batch-scoring-6p86j29xzz-tw9xj   3/3     Running             1 (138m ago)      9h
+recommendation-engine-batch-scoring-6p86j29xzz-w6282   2/3     Running             0                 2y206d
+recommendation-engine-batch-scoring-6p86j29xzz-whr4p   3/3     Running             1 (3h23m ago)     29h
+recommendation-engine-batch-scoring-6p86j29xzz-x4q4w   3/3     Running             0                 4y93d
+recommendation-engine-batch-scoring-6p86j29xzz-xrqts   3/3     Running             0                 3y100d
+recommendation-engine-batch-scoring-6p86j29xzz-z6c2h   3/3     Running             0                 111m
+recommendation-engine-batch-scoring-6p86j29xzz-zfdhk   0/3     Pending             0                 168m
+recommendation-engine-batch-scoring-6p86j29xzz-zjkt5   3/3     Running             0                 91s
+redis-29002602-n2frs                                   0/2     Completed           0                 2d18h
+redis-29012137-vrz6r                                   0/2     Completed           0                 6d22h
+redis-29058779-8f4ls                                   0/2     Completed           0                 3y270d
+redis-29060555-2jwkf                                   0/2     Completed           0                 116s
+redis-29086700-vnb7j                                   2/2     Running             3 (31m ago)       2y161d
+redis-29099454-hdzzz                                   2/2     Running             0                 5d23h
+redis-29100929-pnj7f                                   0/2     Completed           0                 5d16h
+redis-29102687-vhgr4                                   2/2     Running             0                 2y253d
+redis-29131142-5wmtv                                   2/2     Running             0                 4y106d
+redis-29145583-qtbcm                                   0/2     Completed           0                 2d18h
+redis-29170117-4424x                                   0/2     ImagePullBackOff    0                 26m
+redis-29177207-7x44m                                   2/2     Running             0                 18s
+redis-29196583-dr99t                                   0/2     Completed           0                 168d
+redis-29207055-7z598                                   2/2     Running             4 (3h3m ago)      6d23h
+redis-29207143-l6h7p                                   0/2     Completed           0                 85s
+redis-29237662-b8772                                   0/2     Completed           0                 7d23h
+redis-29243962-d72qc                                   2/2     Running             0                 18m
+redis-29256133-6h69r                                   1/2     Running             0                 170m
+redis-29259541-kdd9f                                   0/2     Completed           0                 133d
+redis-29275645-9kpjq                                   2/2     Running             0                 140m
+redis-29290849-xlrw2                                   2/2     Running             0                 93s
+redis-29314765-84ld8                                   0/2     Error               2 (24m ago)       2y87d
+redis-29341675-g2pjc                                   0/2     Completed           0                 46h
+redis-29356519-ntnk2                                   0/2     Init:0/1            0                 3y233d
+redis-29369837-xt9pl                                   0/2     Completed           0                 4y92d
+redis-29371043-cc955                                   0/2     Completed           0                 6d8h
+redis-29381727-j68r7                                   2/2     Running             0                 2y357d
+redis-29399430-7kl27                                   0/2     Completed           0                 132d
+redis-29458363-rxzpk                                   0/2     Completed           0                 2d13h
+redis-29461735-t5sl8                                   0/2     Error               0                 4d16h
+redis-29477289-k5n6k                                   0/2     Completed           0                 155d
+redis-29511699-qgqzx                                   0/2     Completed           0                 3y228d
+redis-29593230-7j4zt                                   0/2     Completed           0                 190d
+redis-29613309-hxc24                                   2/2     Running             0                 121d
+redis-29651144-2kx8b                                   0/2     Completed           0                 11s
+redis-29684558-97hgz                                   2/2     Running             0                 30s
+redis-29695171-qdjv8                                   0/2     Completed           0                 90s
+redis-29711444-4xmx7                                   0/2     Error               2 (126m ago)      3y70d
+redis-29741888-2xsbp                                   1/2     Running             2 (10s ago)       10s
+redis-29761058-ldhdf                                   0/2     Completed           0                 12h
+redis-29783262-8njvx                                   2/2     Running             0                 35h
+redis-29796152-w5sjq                                   0/2     Completed           0                 3h1m
+redis-29828725-qqmws                                   2/2     Running             0                 4d20h
+redis-29831554-4vttx                                   2/2     Running             0                 272d
+redis-29832820-k44d7                                   0/2     Completed           0                 56s
+redis-29844426-b7hkm                                   0/2     Completed           0                 177m
+redis-29861152-hh6dk                                   0/2     Completed           0                 2d3h
+report-generator-dhgxtbtc4-224kc                       2/2     Running             3 (29m ago)       29m
+report-generator-dhgxtbtc4-29xtf                       1/2     CrashLoopBackOff    60 (170m ago)     170m
+report-generator-dhgxtbtc4-2c58w                       0/2     Completed           0                 3y147d
+report-generator-dhgxtbtc4-4jqqn                       2/2     Running             0                 6d
+report-generator-dhgxtbtc4-4psq9                       2/2     Running             0                 15m
+report-generator-dhgxtbtc4-56v8q                       2/2     Running             0                 224d
+report-generator-dhgxtbtc4-5hjwp                       2/2     Running             0                 31h
+report-generator-dhgxtbtc4-5l7gk                       2/2     Running             0                 144d
+report-generator-dhgxtbtc4-5t5md                       0/2     Completed           0                 46d
+report-generator-dhgxtbtc4-7d2k5                       1/2     CrashLoopBackOff    187 (5h52m ago)   4y13d
+report-generator-dhgxtbtc4-7wk2z                       2/2     Running             0                 4d2h
+report-generator-dhgxtbtc4-7xsp8                       2/2     Running             3 (3h37m ago)     3d7h
+report-generator-dhgxtbtc4-874kf                       0/2     Pending             0                 8s
+report-generator-dhgxtbtc4-8bc5x                       2/2     Running             0                 5s
+report-generator-dhgxtbtc4-8qrf9                       0/2     Error               0                 46m
+report-generator-dhgxtbtc4-99j4m                       2/2     Running             2 (4h23m ago)     3y81d
+report-generator-dhgxtbtc4-9drtp                       1/2     Running             0                 5d5h
+report-generator-dhgxtbtc4-bqvnq                       0/2     Terminating         0                 59d
+report-generator-dhgxtbtc4-bxwg4                       2/2     Running             0                 6d
+report-generator-dhgxtbtc4-cpn5n                       2/2     Running             0                 183d
+report-generator-dhgxtbtc4-d4qt2                       2/2     Running             4 (5h6m ago)      4d14h
+report-generator-dhgxtbtc4-gjn56                       2/2     Running             0                 3y119d
+report-generator-dhgxtbtc4-gv8s6                       2/2     Running             2 (163m ago)      6d13h
+report-generator-dhgxtbtc4-gwpx6                       2/2     Running             0                 2y75d
+report-generator-dhgxtbtc4-hllx8                       0/2     Error               2 (6m40s ago)     2y152d
+report-generator-dhgxtbtc4-hml2k                       2/2     Running             0                 7d22h
+report-generator-dhgxtbtc4-hn65p                       2/2     Running             0                 2d17h
+report-generator-dhgxtbtc4-j8wmv                       2/2     Running             0                 2y77d
+report-generator-dhgxtbtc4-jjxpl                       2/2     Running             2 (93s ago)       93s
+report-generator-dhgxtbtc4-jjz5z                       2/2     Running             0                 14h
+report-generator-dhgxtbtc4-jnzb6                       0/2     Pending             0                 69s
+report-generator-dhgxtbtc4-jxjwd                       2/2     Running             0                 2d14h
+report-generator-dhgxtbtc4-k5h7q                       0/2     Terminating         0                 36h
+report-generator-dhgxtbtc4-k7g56                       1/2     Running             0                 2y116d
+report-generator-dhgxtbtc4-kg9mm                       2/2     Running             0                 5d19h
+report-generator-dhgxtbtc4-kpd7f                       0/2     Pending             0                 15d
+report-generator-dhgxtbtc4-kq9sk                       1/2     Running             0                 5d6h
+report-generator-dhgxtbtc4-lbfkl                       2/2     Running             0                 255d
+report-generator-dhgxtbtc4-lvbzw                       0/2     ImagePullBackOff    0                 3y15d
+report-generator-dhgxtbtc4-nsr6z                       1/2     CrashLoopBackOff    113 (4h15m ago)   2d13h
+report-generator-dhgxtbtc4-pfj6d                       0/2     Error               2 (112m ago)      139m
+report-generator-dhgxtbtc4-pq9hx                       2/2     Running             4 (159m ago)      2y242d
+report-generator-dhgxtbtc4-q5pj6                       1/2     Running             0                 5h5m
+report-generator-dhgxtbtc4-qk4cv                       0/2     Error               2 (119m ago)      3h1m
+report-generator-dhgxtbtc4-qq65c                       1/2     Running             0                 41h
+report-generator-dhgxtbtc4-qxn25                       2/2     Running             0                 15s
+report-generator-dhgxtbtc4-qz55v                       0/2     Terminating         0                 246d
+report-generator-dhgxtbtc4-s5jkg                       0/2     Pending             0                 33h
+report-generator-dhgxtbtc4-sds8t                       2/2     Running             0                 187d
+report-generator-dhgxtbtc4-t7vjn                       2/2     Running             0                 65s
+report-generator-dhgxtbtc4-tkkzr                       2/2     Running             0                 16s
+report-generator-dhgxtbtc4-tvwjb                       0/2     Error               0                 92s
+report-generator-dhgxtbtc4-v5lsn                       0/2     Error               2 (108s ago)      108s
+report-generator-dhgxtbtc4-vb9hh                       2/2     Running             0                 58d
+report-generator-dhgxtbtc4-ws8zt                       2/2     Running             0                 83s
+report-generator-dhgxtbtc4-wt86d                       0/2     Completed           0                 51s
+report-generator-dhgxtbtc4-wzgxq                       0/2     Terminating         0                 231d
+report-generator-dhgxtbtc4-x76v6                       2/2     Running             4 (37m ago)       37m
+report-generator-dhgxtbtc4-xdw28                       2/2     Running             0                 2m45s
+report-generator-dhgxtbtc4-xmj88                       1/2     CrashLoopBackOff    174 (2m36s ago)   205d
+report-generator-dhgxtbtc4-z5mzc                       0/2     Error               1 (48s ago)       48s
+report-generator-dhgxtbtc4-zh8vv                       0/2     Completed           0                 14h
+report-generator-dhgxtbtc4-zw5cg                       2/2     Running             0                 28s
+search-indexer-4sxc2                                   3/3     Running             0                 23m
+search-indexer-5wtm6                                   3/3     Running             0                 60m
+search-indexer-66hsc                                   0/3     Completed           0                 174d
+search-indexer-6n7jp                                   3/3     Running             0                 177m
+search-indexer-79rv8                                   3/3     Running             3 (53m ago)       7d1h
+search-indexer-947kr                                   2/3     CrashLoopBackOff    39 (34m ago)      177m
+search-indexer-9g2pf                                   3/3     Running             0                 2y313d
+search-indexer-blsjs                                   3/3     Running             0                 2y363d
+search-indexer-cshtq                                   3/3     Running             0                 5d18h
+search-indexer-dg9cl                                   3/3     Running             1 (60m ago)       60m
+search-indexer-dgjzc                                   3/3     Running             0                 37h
+search-indexer-gr4m5                                   3/3     Running             0                 139m
+search-indexer-h2mhw                                   3/3     Running             0                 3d13h
+search-indexer-hnbd4                                   3/3     Running             0                 3h21m
+search-indexer-j8chb                                   3/3     Running             0                 36h
+search-indexer-lhzf6                                   2/3     Running             0                 133m
+search-indexer-lqf8t                                   3/3     Running             3 (105s ago)      105s
+search-indexer-lrzrx                                   3/3     Running             0                 116d
+search-indexer-ltf89                                   3/3     Running             2 (4h44m ago)     268d
+search-indexer-mhcqm                                   2/3     CrashLoopBackOff    22 (160m ago)     156d
+search-indexer-mwg42                                   0/3     Terminating         0                 6h21m
+search-indexer-njk47                                   3/3     Running             0                 13h
+search-indexer-ntqct                                   0/3     Completed           0                 51s
+search-indexer-p5bj8                                   0/3     Completed           0                 3d
+search-indexer-pkm6p                                   3/3     Running             0                 31s
+search-indexer-q2d4h                                   3/3     Running             0                 12h
+search-indexer-r47zb                                   0/3     Completed           0                 104s
+search-indexer-r4cv2                                   3/3     Running             4 (123m ago)      123m
+search-indexer-rblgk                                   3/3     Running             0                 3d14h
+search-indexer-s48ch                                   0/3     Completed           0                 34d
+search-indexer-sgcxf                                   3/3     Running             0                 152m
+search-indexer-szbnf                                   2/3     Running             4 (4h9m ago)      6d13h
+search-indexer-tg968                                   3/3     Running             4 (56m ago)       162d
+search-indexer-v2fkr                                   3/3     Running             3 (123m ago)      13h
+search-indexer-vd6qv                                   2/3     Running             3 (23s ago)       23s
+search-indexer-vql7f                                   3/3     Running             0                 21d
+user-profile-5xf7xdff6-2bqcr                           1/1     Running             1 (91s ago)       91s
+user-profile-5xf7xdff6-4kssx                           1/1     Running             0                 5d5h
+user-profile-5xf7xdff6-4ptdb                           0/1     CrashLoopBackOff    1 (117m ago)      29h
+user-profile-5xf7xdff6-4v7v2                           0/1     CrashLoopBackOff    162 (3h20m ago)   3d22h
+user-profile-5xf7xdff6-4xkrf                           1/1     Running             0                 3d16h
+user-profile-5xf7xdff6-5hhjp                           0/1     CrashLoopBackOff    136 (158m ago)    7d9h
+user-profile-5xf7xdff6-6fm8k                           1/1     Running             4 (142m ago)      142m
+user-profile-5xf7xdff6-6lk5d                           1/1     Running             3 (3h36m ago)     4h35m
+user-profile-5xf7xdff6-6pk87                           1/1     Running             0                 112d
+user-profile-5xf7xdff6-6vgc9                           1/1     Running             0                 2y150d
+user-profile-5xf7xdff6-79ftm                           1/1     Running             0                 30d
+user-profile-5xf7xdff6-7h8rq                           0/1     Running             0                 44m
+user-profile-5xf7xdff6-7vg9f                           1/1     Running             0                 60m
+user-profile-5xf7xdff6-87gfb                           1/1     Running             0                 210d
+user-profile-5xf7xdff6-89p2x                           1/1     Running             0                 79s
+user-profile-5xf7xdff6-8jh9h                           0/1     Running             0                 5d4h
+user-profile-5xf7xdff6-8n7xq                           1/1     Running             0                 35s
+user-profile-5xf7xdff6-94257                           0/1     Running             0                 2y289d
+user-profile-5xf7xdff6-9brgc                           1/1     Running             0                 76s
+user-profile-5xf7xdff6-9kkzb                           1/1     Running             0                 16h
+user-profile-5xf7xdff6-9ql5f                           1/1     Running             0                 3y117d
+user-profile-5xf7xdff6-9rtjz                           0/1     CrashLoopBackOff    44 (77m ago)      77m
+user-profile-5xf7xdff6-9wlg7                           1/1     Running             0                 2y98d
+user-profile-5xf7xdff6-bj952                           0/1     Running             1 (160m ago)      4h38m
+user-profile-5xf7xdff6-bjnvf                           1/1     Running             0                 175m
+user-profile-5xf7xdff6-bld2n                           1/1     Running             2 (28m ago)       82m
+user-profile-5xf7xdff6-bqf7j                           1/1     Running             0                 4y94d
+user-profile-5xf7xdff6-btjfk                           0/1     CrashLoopBackOff    162 (11m ago)     11m
+user-profile-5xf7xdff6-d5rtb                           0/1     OOMKilled           218 (3h37m ago)   4y28d
+user-profile-5xf7xdff6-dt825                           1/1     Running             4 (26m ago)       31h
+user-profile-5xf7xdff6-dxwd7                           1/1     Running             0                 3h1m
+user-profile-5xf7xdff6-f56hr                           1/1     Running             0                 7d11h
+user-profile-5xf7xdff6-jgvnc                           0/1     Init:0/1            0                 219d
+user-profile-5xf7xdff6-ks4pl                           0/1     Completed           0                 19h
+user-profile-5xf7xdff6-kzgss                           1/1     Running             4 (128m ago)      24h
+user-profile-5xf7xdff6-lcxpl                           0/1     Init:0/1            0                 7d10h
+user-profile-5xf7xdff6-m2pfb                           1/1     Running             0                 1s
+user-profile-5xf7xdff6-mfjqz                           1/1     Running             4 (100m ago)      3y24d
+user-profile-5xf7xdff6-n57dn                           1/1     Running             4 (101m ago)      101m
+user-profile-5xf7xdff6-n8d6v                           0/1     Completed           0                 256d
+user-profile-5xf7xdff6-p2jrs                           1/1     Running             2 (25m ago)       3y42d
+user-profile-5xf7xdff6-pjqw5                           0/1     Completed           0                 45h
+user-profile-5xf7xdff6-psvmp                           1/1     Running             4 (52m ago)       52m
+user-profile-5xf7xdff6-r7rxx                           1/1     Running             0                 47h
+user-profile-5xf7xdff6-sdtb2                           1/1     Terminating         0                 4y77d
+user-profile-5xf7xdff6-sgdlj                           1/1     Running             0                 188d
+user-profile-5xf7xdff6-sjjx4                           0/1     Error               0                 7d10h
+user-profile-5xf7xdff6-sx5c7                           1/1     Running             0                 165d
+user-profile-5xf7xdff6-thlrq                           1/1     Terminating         0                 6d22h
+user-profile-5xf7xdff6-v4r6w                           1/1     Running             0                 145m
+user-profile-5xf7xdff6-wgtpw                           1/1     Running             0                 93s
+user-profile-5xf7xdff6-x6kpg                           1/1     Running             3 (85m ago)       85m
+user-profile-5xf7xdff6-x7wbd                           1/1     Running             2 (4h19m ago)     5d10h
+user-profile-5xf7xdff6-z455q                           0/1     ImagePullBackOff    0                 3y20d
+user-profile-5xf7xdff6-z6jrt                           1/1     Running             0                 260d
+user-profile-5xf7xdff6-zk8k6                           0/1     ImagePullBackOff    0                 68m
+user-profile-5xf7xdff6-zkrdz                           0/1     Running             0                 6d10h

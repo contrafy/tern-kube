@@ -1,0 +1,2 @@
+NAMESPACE        NAME   CLASS    HOSTS                             ADDRESS   PORTS     AGE
+tern-test-apps   web    <none>   app.example.com,api.example.com             80, 443   5m19s

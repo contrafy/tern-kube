@@ -1,0 +1,2 @@
+NAME                       SCOPE        VERSIONS            CREATED AT
+widgets.lens.example.com   Namespaced   v1alpha1(storage)   2026-10-08T08:10:24Z

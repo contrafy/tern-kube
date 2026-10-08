@@ -1,0 +1,3 @@
+NAME                                                                      READY   STATUS    RESTARTS   AGE     LABELS
+a-pod-with-a-deliberately-long-name-to-stress-column-widths-in-the-lens   2/2     Running   0          5m18s   app=long-name
+labels-odd                                                                1/1     Running   0          5m18s   UPPER_case.Key=Mixed_Case.Value,app.kubernetes.io/name=odd-labels,app.kubernetes.io/part-of=kube-lens.fixtures,example.com/team=platform.core,k8s.io/dotted=v1.2.3-rc.4,lens.example.com/empty=,lens.example.com/long-value=this-value-is-deliberately-long-to-reach-the-63-character-limit

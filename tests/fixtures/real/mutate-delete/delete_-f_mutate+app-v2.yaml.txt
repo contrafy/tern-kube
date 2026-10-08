@@ -1,0 +1,3 @@
+configmap "api-config" deleted from tern-test-mutate namespace
+deployment.apps "api" deleted from tern-test-mutate namespace
+service "api" deleted from tern-test-mutate namespace

@@ -1,0 +1,8 @@
+NAME                            READY   STATUS             RESTARTS        AGE
+broken-image-68986f4958-6qp2v   0/1     ImagePullBackOff   0               5m15s
+crashloop                       0/1     CrashLoopBackOff   5 (2m15s ago)   5m15s
+db-0                            1/1     Running            0               5m15s
+node-agent-bb754                1/1     Running            0               5m15s
+pending                         0/1     Pending            0               5m15s
+web-65d7d99975-bmgbn            1/1     Running            0               5m15s
+web-65d7d99975-zsb95            1/1     Running            0               5m15s

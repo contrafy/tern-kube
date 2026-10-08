@@ -1,0 +1,4 @@
+POD                                                                       NAME      CPU(cores)   MEMORY(bytes)   
+a-pod-with-a-deliberately-long-name-to-stress-column-widths-in-the-lens   app       0m           0Mi             
+a-pod-with-a-deliberately-long-name-to-stress-column-widths-in-the-lens   sidecar   0m           0Mi             
+labels-odd                                                                app       0m           0Mi             

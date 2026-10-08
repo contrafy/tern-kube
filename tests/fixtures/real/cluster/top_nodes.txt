@@ -1,0 +1,2 @@
+NAME                          CPU(cores)   CPU(%)   MEMORY(bytes)   MEMORY(%)   
+kube-lens-dev-control-plane   154m         1%       938Mi           11%         

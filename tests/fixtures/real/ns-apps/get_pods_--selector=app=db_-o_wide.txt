@@ -1,0 +1,2 @@
+NAME   READY   STATUS    RESTARTS   AGE     IP            NODE                          NOMINATED NODE   READINESS GATES
+db-0   1/1     Running   0          5m15s   10.244.0.38   kube-lens-dev-control-plane   <none>           <none>

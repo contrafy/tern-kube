@@ -1,0 +1,35 @@
+diff -u -N /tmp/LIVE-1145413731/apps.v1.Deployment.tern-test-mutate.api /tmp/MERGED-1989329874/apps.v1.Deployment.tern-test-mutate.api
+--- /tmp/LIVE-1145413731/apps.v1.Deployment.tern-test-mutate.api	2026-10-08 03:15:46
++++ /tmp/MERGED-1989329874/apps.v1.Deployment.tern-test-mutate.api	2026-10-08 03:15:46
+@@ -6,16 +6,17 @@
+     kubectl.kubernetes.io/last-applied-configuration: |
+       {"apiVersion":"apps/v1","kind":"Deployment","metadata":{"annotations":{},"labels":{"app":"api"},"name":"api","namespace":"tern-test-mutate"},"spec":{"replicas":1,"selector":{"matchLabels":{"app":"api"}},"template":{"metadata":{"labels":{"app":"api"}},"spec":{"containers":[{"image":"registry.k8s.io/pause:3.10","imagePullPolicy":"IfNotPresent","name":"api"}],"terminationGracePeriodSeconds":1}}}}
+   creationTimestamp: "2026-10-08T08:15:45Z"
+-  generation: 1
++  generation: 2
+   labels:
+     app: api
++    release: v2
+   name: api
+   namespace: tern-test-mutate
+   resourceVersion: "4846"
+   uid: 62b06fe8-efaa-4dad-abad-ad7d29aa64e4
+ spec:
+   progressDeadlineSeconds: 600
+-  replicas: 1
++  replicas: 2
+   revisionHistoryLimit: 10
+   selector:
+     matchLabels:
+diff -u -N /tmp/LIVE-1145413731/v1.ConfigMap.tern-test-mutate.api-config /tmp/MERGED-1989329874/v1.ConfigMap.tern-test-mutate.api-config
+--- /tmp/LIVE-1145413731/v1.ConfigMap.tern-test-mutate.api-config	2026-10-08 03:15:46
++++ /tmp/MERGED-1989329874/v1.ConfigMap.tern-test-mutate.api-config	2026-10-08 03:15:46
+@@ -1,6 +1,7 @@
+ apiVersion: v1
+ data:
+-  LOG_LEVEL: info
++  CACHE_TTL: 30s
++  LOG_LEVEL: debug
+ kind: ConfigMap
+ metadata:
+   annotations:

@@ -1,0 +1,29 @@
+NAME                                READY   STATUS             RESTARTS        AGE
+pod/broken-image-68986f4958-6qp2v   0/1     ImagePullBackOff   0               5m17s
+pod/crashloop                       0/1     CrashLoopBackOff   5 (2m17s ago)   5m17s
+pod/db-0                            1/1     Running            0               5m17s
+pod/node-agent-bb754                1/1     Running            0               5m17s
+pod/pending                         0/1     Pending            0               5m17s
+pod/web-65d7d99975-bmgbn            1/1     Running            0               5m17s
+pod/web-65d7d99975-zsb95            1/1     Running            0               5m17s
+
+NAME                    TYPE           CLUSTER-IP      EXTERNAL-IP        PORT(S)                      AGE
+service/db-headless     ClusterIP      None            <none>             5432/TCP                     5m17s
+service/external-docs   ExternalName   <none>          docs.example.com   <none>                       5m17s
+service/web             ClusterIP      10.96.50.91     <none>             80/TCP                       5m17s
+service/web-lb          LoadBalancer   10.96.71.110    <pending>          80:30081/TCP,443:30443/TCP   5m17s
+service/web-nodeport    NodePort       10.96.103.172   <none>             80:30080/TCP                 5m17s
+
+NAME                        DESIRED   CURRENT   READY   UP-TO-DATE   AVAILABLE   NODE SELECTOR   AGE
+daemonset.apps/node-agent   1         1         1       1            1           <none>          5m17s
+
+NAME                           READY   UP-TO-DATE   AVAILABLE   AGE
+deployment.apps/broken-image   0/1     1            0           5m17s
+deployment.apps/web            2/2     2            2           5m17s
+
+NAME                                      DESIRED   CURRENT   READY   AGE
+replicaset.apps/broken-image-68986f4958   1         1         0       5m17s
+replicaset.apps/web-65d7d99975            2         2         2       5m17s
+
+NAME                  READY   AGE
+statefulset.apps/db   1/1     5m17s

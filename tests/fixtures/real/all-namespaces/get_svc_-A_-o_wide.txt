@@ -1,0 +1,9 @@
+NAMESPACE        NAME             TYPE           CLUSTER-IP      EXTERNAL-IP        PORT(S)                      AGE     SELECTOR
+default          kubernetes       ClusterIP      10.96.0.1       <none>             443/TCP                      27m     <none>
+kube-system      kube-dns         ClusterIP      10.96.0.10      <none>             53/UDP,53/TCP,9153/TCP       27m     k8s-app=kube-dns
+kube-system      metrics-server   ClusterIP      10.96.88.167    <none>             443/TCP                      18m     k8s-app=metrics-server
+tern-test-apps   db-headless      ClusterIP      None            <none>             5432/TCP                     5m19s   app=db
+tern-test-apps   external-docs    ExternalName   <none>          docs.example.com   <none>                       5m19s   <none>
+tern-test-apps   web              ClusterIP      10.96.50.91     <none>             80/TCP                       5m19s   app=web
+tern-test-apps   web-lb           LoadBalancer   10.96.71.110    <pending>          80:30081/TCP,443:30443/TCP   5m19s   app=web
+tern-test-apps   web-nodeport     NodePort       10.96.103.172   <none>             80:30080/TCP                 5m19s   app=web

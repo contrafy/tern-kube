@@ -1,0 +1,3 @@
+NAME             SCHEDULE       TIMEZONE   SUSPEND   ACTIVE   LAST SCHEDULE   AGE
+nightly-report   0 3 * * *      Etc/UTC    False     0        <none>          5m17s
+paused-cleanup   */15 * * * *   <none>     True      0        <none>          5m17s

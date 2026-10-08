@@ -1,0 +1,63 @@
+NAMESPACE            NAME                                                                          READY   STATUS             RESTARTS        AGE
+kube-system          pod/coredns-559f6c778d-gj5nz                                                  1/1     Running            0               26m
+kube-system          pod/coredns-559f6c778d-qxwp4                                                  1/1     Running            0               26m
+kube-system          pod/etcd-kube-lens-dev-control-plane                                          1/1     Running            0               27m
+kube-system          pod/kindnet-f8lmd                                                             1/1     Running            0               26m
+kube-system          pod/kube-apiserver-kube-lens-dev-control-plane                                1/1     Running            0               27m
+kube-system          pod/kube-controller-manager-kube-lens-dev-control-plane                       1/1     Running            0               27m
+kube-system          pod/kube-proxy-9s9pd                                                          1/1     Running            0               26m
+kube-system          pod/kube-scheduler-kube-lens-dev-control-plane                                1/1     Running            0               27m
+kube-system          pod/metrics-server-84c99cb944-mjq2v                                           1/1     Running            0               11m
+local-path-storage   pod/local-path-provisioner-75f7fc7dc5-g75wh                                   1/1     Running            0               26m
+tern-test-apps       pod/broken-image-68986f4958-6qp2v                                             0/1     ImagePullBackOff   0               5m19s
+tern-test-apps       pod/crashloop                                                                 0/1     CrashLoopBackOff   5 (2m19s ago)   5m19s
+tern-test-apps       pod/db-0                                                                      1/1     Running            0               5m19s
+tern-test-apps       pod/node-agent-bb754                                                          1/1     Running            0               5m19s
+tern-test-apps       pod/pending                                                                   0/1     Pending            0               5m19s
+tern-test-apps       pod/web-65d7d99975-bmgbn                                                      1/1     Running            0               5m19s
+tern-test-apps       pod/web-65d7d99975-zsb95                                                      1/1     Running            0               5m19s
+tern-test-batch      pod/done-job-s576z                                                            0/1     Completed          0               5m19s
+tern-test-batch      pod/fail-job-5hlth                                                            0/1     Error              0               5m19s
+tern-test-edge       pod/a-pod-with-a-deliberately-long-name-to-stress-column-widths-in-the-lens   2/2     Running            0               5m19s
+tern-test-edge       pod/labels-odd                                                                1/1     Running            0               5m19s
+
+NAMESPACE        NAME                     TYPE           CLUSTER-IP      EXTERNAL-IP        PORT(S)                      AGE
+default          service/kubernetes       ClusterIP      10.96.0.1       <none>             443/TCP                      27m
+kube-system      service/kube-dns         ClusterIP      10.96.0.10      <none>             53/UDP,53/TCP,9153/TCP       27m
+kube-system      service/metrics-server   ClusterIP      10.96.88.167    <none>             443/TCP                      18m
+tern-test-apps   service/db-headless      ClusterIP      None            <none>             5432/TCP                     5m19s
+tern-test-apps   service/external-docs    ExternalName   <none>          docs.example.com   <none>                       5m19s
+tern-test-apps   service/web              ClusterIP      10.96.50.91     <none>             80/TCP                       5m19s
+tern-test-apps   service/web-lb           LoadBalancer   10.96.71.110    <pending>          80:30081/TCP,443:30443/TCP   5m19s
+tern-test-apps   service/web-nodeport     NodePort       10.96.103.172   <none>             80:30080/TCP                 5m19s
+
+NAMESPACE        NAME                        DESIRED   CURRENT   READY   UP-TO-DATE   AVAILABLE   NODE SELECTOR            AGE
+kube-system      daemonset.apps/kindnet      1         1         1       1            1           kubernetes.io/os=linux   27m
+kube-system      daemonset.apps/kube-proxy   1         1         1       1            1           kubernetes.io/os=linux   27m
+tern-test-apps   daemonset.apps/node-agent   1         1         1       1            1           <none>                   5m19s
+
+NAMESPACE            NAME                                     READY   UP-TO-DATE   AVAILABLE   AGE
+kube-system          deployment.apps/coredns                  2/2     2            2           27m
+kube-system          deployment.apps/metrics-server           1/1     1            1           18m
+local-path-storage   deployment.apps/local-path-provisioner   1/1     1            1           27m
+tern-test-apps       deployment.apps/broken-image             0/1     1            0           5m19s
+tern-test-apps       deployment.apps/web                      2/2     2            2           5m19s
+
+NAMESPACE            NAME                                                DESIRED   CURRENT   READY   AGE
+kube-system          replicaset.apps/coredns-559f6c778d                  2         2         2       26m
+kube-system          replicaset.apps/metrics-server-84c99cb944           1         1         1       11m
+kube-system          replicaset.apps/metrics-server-8b6fff8b7            0         0         0       18m
+local-path-storage   replicaset.apps/local-path-provisioner-75f7fc7dc5   1         1         1       26m
+tern-test-apps       replicaset.apps/broken-image-68986f4958             1         1         0       5m19s
+tern-test-apps       replicaset.apps/web-65d7d99975                      2         2         2       5m19s
+
+NAMESPACE        NAME                  READY   AGE
+tern-test-apps   statefulset.apps/db   1/1     5m19s
+
+NAMESPACE         NAME                           SCHEDULE       TIMEZONE   SUSPEND   ACTIVE   LAST SCHEDULE   AGE
+tern-test-batch   cronjob.batch/nightly-report   0 3 * * *      Etc/UTC    False     0        <none>          5m19s
+tern-test-batch   cronjob.batch/paused-cleanup   */15 * * * *   <none>     True      0        <none>          5m19s
+
+NAMESPACE         NAME                 STATUS     COMPLETIONS   DURATION   AGE
+tern-test-batch   job.batch/done-job   Complete   1/1           3s         5m19s
+tern-test-batch   job.batch/fail-job   Failed     0/1           5m19s      5m19s

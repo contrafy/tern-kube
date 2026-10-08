@@ -1,0 +1,1001 @@
+NAMESPACE                           NAME                                                   READY   STATUS              RESTARTS          AGE
+auth                                api-gateway-86zqj                                      1/1     Running             0                 113m
+auth                                api-gateway-cvctd                                      1/1     Running             0                 3d14h
+auth                                api-gateway-h6t8z                                      1/1     Running             0                 179m
+auth                                api-gateway-kht8w                                      1/1     Running             0                 106d
+auth                                api-gateway-qnpm8                                      0/1     Running             0                 95m
+auth                                api-gateway-sfnjw                                      0/1     Pending             0                 9s
+auth                                auth-service-lh88n8b8h-4pvj8                           0/2     Pending             0                 25s
+auth                                auth-service-lh88n8b8h-8flrn                           2/2     Running             0                 34h
+auth                                auth-service-lh88n8b8h-8m2zb                           0/2     Completed           0                 7d20h
+auth                                auth-service-lh88n8b8h-mz8kl                           2/2     Running             0                 24s
+auth                                auth-service-lh88n8b8h-pnw8c                           2/2     Running             3 (4h1m ago)      32h
+auth                                auth-service-lh88n8b8h-prqvl                           2/2     Running             0                 29s
+auth                                auth-service-lh88n8b8h-qrkwq                           2/2     Running             2 (4h53m ago)     6d20h
+auth                                auth-service-lh88n8b8h-rxltj                           0/2     Pending             0                 2y237d
+auth                                auth-service-lh88n8b8h-t7qq8                           2/2     Running             0                 71s
+auth                                auth-service-lh88n8b8h-wpql9                           2/2     Running             3 (77m ago)       4y87d
+auth                                auth-service-lh88n8b8h-zwpkn                           0/2     Completed           0                 29h
+auth                                cart-7w4cxns7n-8772p                                   0/1     Error               2 (112m ago)      2y114d
+auth                                cart-7w4cxns7n-rkwgv                                   1/1     Running             2 (4h23m ago)     2y358d
+auth                                cart-7w4cxns7n-rwfkz                                   1/1     Running             0                 3y166d
+auth                                checkout-service-t7vvzdh7p-26k82                       2/2     Running             0                 242d
+auth                                checkout-service-t7vvzdh7p-p46jv                       1/2     CrashLoopBackOff    95 (5h15m ago)    39h
+auth                                checkout-service-t7vvzdh7p-pff7d                       2/2     Running             0                 99d
+auth                                checkout-service-t7vvzdh7p-snm2p                       1/2     Running             0                 3d17h
+auth                                elasticsearch-data-l4kpkn7nk-727h9                     0/1     Error               2 (98s ago)       98s
+auth                                elasticsearch-data-l4kpkn7nk-cccbc                     0/1     Error               1 (53s ago)       53s
+auth                                elasticsearch-data-l4kpkn7nk-djzcc                     1/1     Running             0                 231d
+auth                                elasticsearch-data-l4kpkn7nk-gfc2f                     1/1     Running             4 (32m ago)       78m
+auth                                elasticsearch-data-l4kpkn7nk-q72pp                     1/1     Running             0                 4d23h
+auth                                frontend-dcjz682rz9-g6phs                              0/3     Completed           0                 3y280d
+auth                                frontend-dcjz682rz9-gh8h4                              0/3     Error               0                 51d
+auth                                image-resizer-103                                      2/3     CrashLoopBackOff    36 (19m ago)      15h
+auth                                image-resizer-233                                      0/3     Completed           0                 121d
+auth                                image-resizer-662                                      3/3     Running             0                 5d4h
+auth                                image-resizer-777                                      3/3     Running             0                 55s
+auth                                image-resizer-9                                        3/3     Running             0                 6d3h
+auth                                image-resizer-986                                      3/3     Running             0                 41d
+auth                                kafka-29214293-4v5d8                                   0/2     Completed           0                 2y24d
+auth                                kafka-29300743-ttxrd                                   0/2     Completed           0                 6h21m
+auth                                kafka-29570132-452j2                                   2/2     Running             0                 187d
+auth                                kube-proxy-2cm49n79z-55txt                             0/1     Error               0                 152m
+auth                                kube-proxy-2cm49n79z-grc5r                             1/1     Running             0                 75s
+auth                                kube-proxy-2cm49n79z-tb7vm                             1/1     Running             0                 7m45s
+auth                                node-exporter-gftd2fs7n-dr66z                          3/3     Running             0                 13m
+auth                                node-exporter-gftd2fs7n-ggqzn                          2/3     Running             0                 81s
+auth                                node-exporter-gftd2fs7n-qp6l5                          2/3     Running             0                 2y184d
+auth                                node-exporter-gftd2fs7n-qq9x5                          3/3     Running             0                 61m
+auth                                node-exporter-gftd2fs7n-v5dq7                          3/3     Running             0                 178d
+auth                                node-exporter-gftd2fs7n-wc4s9                          3/3     Running             0                 3y351d
+auth                                notification-sender-29335447-vt98b                     3/3     Running             0                 121m
+auth                                notification-sender-29441678-nvf7q                     3/3     Running             0                 41h
+auth                                notification-sender-29809938-dw6pk                     3/3     Running             0                 11h
+auth                                payments-worker-s44ctv8jkr-5t8r2                       2/2     Running             0                 4d17h
+auth                                payments-worker-s44ctv8jkr-f4nw5                       2/2     Running             0                 5d8h
+auth                                payments-worker-s44ctv8jkr-h2h2m                       2/2     Running             4 (3h54m ago)     5d11h
+auth                                payments-worker-s44ctv8jkr-jgnk7                       1/2     Running             0                 4y163d
+auth                                payments-worker-s44ctv8jkr-tcvd2                       1/2     CrashLoopBackOff    21 (46s ago)      46s
+auth                                payments-worker-s44ctv8jkr-w6l85                       0/2     Completed           0                 73m
+auth                                postgres-kz9gdvc6mv-59rrz                              1/1     Running             0                 3y192d
+auth                                postgres-kz9gdvc6mv-9nbnk                              0/1     Completed           0                 238d
+auth                                postgres-kz9gdvc6mv-jjs5d                              1/1     Running             0                 6d4h
+auth                                postgres-kz9gdvc6mv-tj945                              1/1     Running             4 (72m ago)       143m
+auth                                prometheus-server-8sds7                                0/3     Pending             0                 3y22d
+auth                                prometheus-server-j7n89                                0/3     ContainerCreating   0                 46s
+auth                                prometheus-server-jlb4j                                3/3     Running             0                 3m50s
+auth                                prometheus-server-nlbbm                                2/3     CrashLoopBackOff    227 (5h35m ago)   7d2h
+auth                                prometheus-server-zmrlt                                0/3     Completed           0                 287d
+auth                                recommendation-engine-batch-scoring-6p86j29xzz-26wvk   2/3     Running             0                 2y213d
+auth                                recommendation-engine-batch-scoring-6p86j29xzz-kh28m   3/3     Running             0                 3y231d
+auth                                recommendation-engine-batch-scoring-6p86j29xzz-l9dx9   2/3     CrashLoopBackOff    71 (173m ago)     3y13d
+auth                                recommendation-engine-batch-scoring-6p86j29xzz-lfq4m   3/3     Running             0                 84m
+auth                                recommendation-engine-batch-scoring-6p86j29xzz-nzr2n   0/3     Pending             0                 3y308d
+auth                                recommendation-engine-batch-scoring-6p86j29xzz-qtqx6   3/3     Running             0                 3y331d
+auth                                recommendation-engine-batch-scoring-6p86j29xzz-t445p   0/3     ContainerCreating   0                 3h3m
+auth                                recommendation-engine-batch-scoring-6p86j29xzz-tgtvm   3/3     Running             0                 2y89d
+auth                                redis-29129530-tnk2v                                   0/2     Completed           0                 3y233d
+auth                                redis-29133972-x7qlg                                   2/2     Running             0                 229d
+auth                                redis-29286486-482cb                                   0/2     Completed           0                 19d
+auth                                redis-29489493-xwc9l                                   0/2     Completed           0                 6d13h
+auth                                redis-29995585-xzpkz                                   2/2     Running             0                 4d20h
+auth                                report-generator-dhgxtbtc4-8gqr5                       1/2     CrashLoopBackOff    120 (62s ago)     62s
+auth                                report-generator-dhgxtbtc4-bddlh                       2/2     Running             4 (4h29m ago)     3d9h
+auth                                report-generator-dhgxtbtc4-jr8cr                       2/2     Running             0                 5d20h
+auth                                report-generator-dhgxtbtc4-q9skc                       0/2     Error               0                 91d
+auth                                report-generator-dhgxtbtc4-w7vx4                       2/2     Running             0                 3y164d
+auth                                search-indexer-2zkvd                                   2/3     Running             0                 2y354d
+auth                                search-indexer-7c48b                                   3/3     Running             0                 3y224d
+auth                                search-indexer-8qntn                                   3/3     Running             0                 4y105d
+auth                                search-indexer-9rg66                                   3/3     Running             4 (28m ago)       5d13h
+auth                                search-indexer-b7n4h                                   0/3     Pending             0                 32h
+auth                                search-indexer-c8hff                                   3/3     Running             0                 7d7h
+auth                                search-indexer-rxxbl                                   3/3     Running             0                 3y131d
+auth                                user-profile-5xf7xdff6-qhd6g                           1/1     Running             0                 5d9h
+auth                                user-profile-5xf7xdff6-s8t7k                           0/1     Error               0                 3y190d
+checkout                            api-gateway-2brxh                                      0/1     Pending             0                 96s
+checkout                            api-gateway-pbhvr                                      0/1     ContainerCreating   0                 208d
+checkout                            auth-service-lh88n8b8h-czkrd                           1/2     Running             4 (146m ago)      75d
+checkout                            auth-service-lh88n8b8h-d2kpn                           2/2     Running             0                 24h
+checkout                            auth-service-lh88n8b8h-dxqq6                           2/2     Running             0                 17h
+checkout                            auth-service-lh88n8b8h-jfjcd                           1/2     CrashLoopBackOff    250 (153m ago)    2y140d
+checkout                            auth-service-lh88n8b8h-nrlb9                           2/2     Running             0                 3d16h
+checkout                            auth-service-lh88n8b8h-wc9xf                           0/2     ImagePullBackOff    0                 27d
+checkout                            cart-7w4cxns7n-7hkm6                                   1/1     Running             1 (3h25m ago)     3y213d
+checkout                            cart-7w4cxns7n-k5nxp                                   0/1     Running             0                 240d
+checkout                            cart-7w4cxns7n-ph2xc                                   1/1     Running             0                 2y104d
+checkout                            checkout-service-t7vvzdh7p-4mcdb                       2/2     Running             0                 288d
+checkout                            checkout-service-t7vvzdh7p-jsf59                       2/2     Running             0                 156m
+checkout                            checkout-service-t7vvzdh7p-q5bhj                       2/2     Running             1 (96m ago)       26d
+checkout                            checkout-service-t7vvzdh7p-q7zq7                       2/2     Running             0                 24h
+checkout                            coredns-xmw9rp66j2-28lwd                               0/2     Pending             0                 7h55m
+checkout                            coredns-xmw9rp66j2-2jclq                               0/2     Init:0/1            0                 6d22h
+checkout                            coredns-xmw9rp66j2-5c488                               1/2     CrashLoopBackOff    166 (79m ago)     17h
+checkout                            coredns-xmw9rp66j2-5gpb5                               0/2     Init:0/1            0                 251d
+checkout                            coredns-xmw9rp66j2-6qrnf                               0/2     ImagePullBackOff    0                 2d5h
+checkout                            coredns-xmw9rp66j2-bd4s5                               2/2     Running             0                 17h
+checkout                            coredns-xmw9rp66j2-kxz6v                               2/2     Running             3 (107m ago)      7d12h
+checkout                            coredns-xmw9rp66j2-l8m4p                               2/2     Running             0                 2d3h
+checkout                            coredns-xmw9rp66j2-tclb8                               2/2     Running             0                 171m
+checkout                            coredns-xmw9rp66j2-v6ph5                               1/2     Running             0                 1s
+checkout                            elasticsearch-data-l4kpkn7nk-4hb72                     1/1     Running             0                 37m
+checkout                            elasticsearch-data-l4kpkn7nk-d7trs                     1/1     Running             0                 19h
+checkout                            elasticsearch-data-l4kpkn7nk-fr58q                     0/1     Completed           0                 91m
+checkout                            elasticsearch-data-l4kpkn7nk-gnplb                     1/1     Running             4 (5h53m ago)     5d4h
+checkout                            elasticsearch-data-l4kpkn7nk-trmhf                     1/1     Running             2 (31m ago)       119m
+checkout                            frontend-dcjz682rz9-b86n7                              3/3     Running             0                 4y105d
+checkout                            frontend-dcjz682rz9-p6zh8                              3/3     Running             0                 143d
+checkout                            frontend-dcjz682rz9-tfb9z                              3/3     Running             0                 17d
+checkout                            image-resizer-155                                      0/3     Completed           0                 11s
+checkout                            image-resizer-696                                      3/3     Running             0                 2y229d
+checkout                            image-resizer-787                                      0/3     Completed           0                 214d
+checkout                            image-resizer-913                                      3/3     Running             0                 3d20h
+checkout                            kafka-29021743-z4pbc                                   0/2     Completed           0                 149d
+checkout                            kafka-29171047-fhhmw                                   0/2     Completed           0                 15h
+checkout                            kafka-29284901-mzj7z                                   0/2     Completed           0                 3y63d
+checkout                            kafka-29812935-lfkhk                                   2/2     Running             0                 16s
+checkout                            kafka-29916134-brt7z                                   2/2     Running             0                 221d
+checkout                            kafka-29938540-ljn88                                   2/2     Running             0                 255d
+checkout                            kafka-29938975-fcfkh                                   0/2     Completed           0                 3d3h
+checkout                            kube-proxy-2cm49n79z-2szrw                             1/1     Running             3 (32m ago)       3y44d
+checkout                            kube-proxy-2cm49n79z-45k9p                             1/1     Running             0                 4d13h
+checkout                            kube-proxy-2cm49n79z-5fk4c                             1/1     Running             0                 2y292d
+checkout                            kube-proxy-2cm49n79z-9wwpw                             1/1     Running             0                 167m
+checkout                            kube-proxy-2cm49n79z-hgd88                             0/1     Completed           0                 30d
+checkout                            kube-proxy-2cm49n79z-lnqcb                             0/1     Completed           0                 17s
+checkout                            node-exporter-gftd2fs7n-6t8bm                          3/3     Running             0                 99s
+checkout                            node-exporter-gftd2fs7n-hcg22                          3/3     Running             0                 110s
+checkout                            node-exporter-gftd2fs7n-jfncj                          2/3     CrashLoopBackOff    159 (42m ago)     3h43m
+checkout                            node-exporter-gftd2fs7n-xf5gz                          3/3     Running             0                 182d
+checkout                            notification-sender-29105074-96fxc                     0/3     Completed           0                 28h
+checkout                            notification-sender-29232905-pqr95                     0/3     Completed           0                 185d
+checkout                            notification-sender-29588200-dnfmr                     2/3     Running             0                 4y96d
+checkout                            notification-sender-29634025-844vr                     0/3     Completed           0                 20h
+checkout                            notification-sender-29730459-knz2h                     0/3     Completed           0                 82s
+checkout                            notification-sender-29900904-cnf94                     3/3     Running             2 (91s ago)       5d12h
+checkout                            payments-worker-s44ctv8jkr-5k99p                       0/2     Error               2 (88m ago)       2y9d
+checkout                            payments-worker-s44ctv8jkr-9wwxh                       2/2     Running             0                 100d
+checkout                            payments-worker-s44ctv8jkr-cb96x                       2/2     Running             3 (3h41m ago)     119d
+checkout                            payments-worker-s44ctv8jkr-dls28                       2/2     Running             0                 2y216d
+checkout                            payments-worker-s44ctv8jkr-pvjn7                       2/2     Running             3 (56m ago)       177d
+checkout                            payments-worker-s44ctv8jkr-pwhsq                       1/2     CrashLoopBackOff    148 (133m ago)    5d1h
+checkout                            payments-worker-s44ctv8jkr-rl6nl                       0/2     Completed           0                 3y75d
+checkout                            postgres-kz9gdvc6mv-7frlw                              1/1     Running             0                 119m
+checkout                            postgres-kz9gdvc6mv-cb2zg                              0/1     Terminating         0                 98d
+checkout                            postgres-kz9gdvc6mv-lp5wp                              1/1     Running             3 (33m ago)       23h
+checkout                            postgres-kz9gdvc6mv-m22nz                              0/1     ImagePullBackOff    0                 30h
+checkout                            postgres-kz9gdvc6mv-mrr4b                              1/1     Running             0                 3y332d
+checkout                            postgres-kz9gdvc6mv-twj9f                              0/1     Completed           0                 119s
+checkout                            postgres-kz9gdvc6mv-vzrss                              0/1     Pending             0                 3y18d
+checkout                            prometheus-server-4m6tv                                3/3     Running             3 (5h29m ago)     166d
+checkout                            prometheus-server-6kjwh                                3/3     Running             0                 28h
+checkout                            prometheus-server-gcdgh                                3/3     Running             0                 3d16h
+checkout                            prometheus-server-qcp99                                2/3     Running             0                 58s
+checkout                            prometheus-server-xtpbs                                0/3     ImagePullBackOff    0                 19h
+checkout                            recommendation-engine-batch-scoring-6p86j29xzz-6276f   3/3     Running             0                 66s
+checkout                            recommendation-engine-batch-scoring-6p86j29xzz-692sp   2/3     CrashLoopBackOff    234 (5h17m ago)   6h44m
+checkout                            recommendation-engine-batch-scoring-6p86j29xzz-9w4m6   2/3     Running             0                 3d17h
+checkout                            recommendation-engine-batch-scoring-6p86j29xzz-gmr48   2/3     Running             0                 97s
+checkout                            recommendation-engine-batch-scoring-6p86j29xzz-lj4kv   3/3     Running             0                 24h
+checkout                            recommendation-engine-batch-scoring-6p86j29xzz-mngg7   3/3     Running             0                 2d13h
+checkout                            recommendation-engine-batch-scoring-6p86j29xzz-xdtqj   3/3     Running             0                 23h
+checkout                            redis-29222918-52cw2                                   0/2     Completed           0                 2y97d
+checkout                            redis-29468596-w6klg                                   0/2     ImagePullBackOff    0                 3y26d
+checkout                            redis-29652619-rhh6d                                   2/2     Running             0                 2d3h
+checkout                            report-generator-dhgxtbtc4-6w78b                       0/2     Error               2 (146m ago)      75d
+checkout                            report-generator-dhgxtbtc4-9j4mw                       2/2     Running             0                 41h
+checkout                            report-generator-dhgxtbtc4-9v745                       1/2     CrashLoopBackOff    46 (93m ago)      5d20h
+checkout                            report-generator-dhgxtbtc4-dw4f9                       2/2     Running             0                 3d17h
+checkout                            report-generator-dhgxtbtc4-k6xzc                       2/2     Running             0                 3d3h
+checkout                            report-generator-dhgxtbtc4-mt7vj                       2/2     Running             0                 25m
+checkout                            search-indexer-4pqkf                                   3/3     Running             0                 27h
+checkout                            search-indexer-6lwl8                                   3/3     Running             0                 23h
+checkout                            search-indexer-82mgs                                   2/3     CrashLoopBackOff    181 (175m ago)    175m
+checkout                            search-indexer-ccrnq                                   3/3     Running             0                 7d21h
+checkout                            search-indexer-pfr44                                   3/3     Running             0                 6d6h
+checkout                            search-indexer-r6htm                                   0/3     Error               2 (177m ago)      43h
+checkout                            search-indexer-sflm6                                   3/3     Running             0                 49m
+checkout                            search-indexer-tqctm                                   3/3     Running             0                 13s
+checkout                            search-indexer-zx7dr                                   0/3     Pending             0                 99m
+checkout                            user-profile-5xf7xdff6-62td5                           0/1     Completed           0                 175d
+checkout                            user-profile-5xf7xdff6-dsdsl                           0/1     Completed           0                 31s
+checkout                            user-profile-5xf7xdff6-kssxf                           1/1     Running             2 (84s ago)       84s
+checkout                            user-profile-5xf7xdff6-lkmbm                           1/1     Running             0                 6d14h
+checkout                            user-profile-5xf7xdff6-s9csh                           1/1     Running             0                 7d23h
+checkout                            user-profile-5xf7xdff6-xtlk6                           1/1     Running             0                 45h
+data-pipeline                       api-gateway-6f2dh                                      1/1     Running             0                 121m
+data-pipeline                       api-gateway-fvtrz                                      0/1     CrashLoopBackOff    159 (153m ago)    2y110d
+data-pipeline                       api-gateway-jpb8w                                      1/1     Running             0                 25s
+data-pipeline                       api-gateway-m2xk2                                      0/1     CrashLoopBackOff    139 (5h3m ago)    3y189d
+data-pipeline                       api-gateway-mv2p9                                      1/1     Running             0                 8s
+data-pipeline                       api-gateway-njk24                                      1/1     Running             0                 3y98d
+data-pipeline                       api-gateway-sb6bv                                      1/1     Running             0                 3s
+data-pipeline                       api-gateway-vc4lx                                      1/1     Running             0                 2d19h
+data-pipeline                       auth-service-lh88n8b8h-8ssdg                           2/2     Running             0                 3y362d
+data-pipeline                       auth-service-lh88n8b8h-9ldb4                           2/2     Running             2 (7m45s ago)     7m45s
+data-pipeline                       auth-service-lh88n8b8h-9w7d2                           0/2     Error               0                 71s
+data-pipeline                       auth-service-lh88n8b8h-nmx85                           1/2     Running             0                 51d
+data-pipeline                       auth-service-lh88n8b8h-ph2dt                           2/2     Running             0                 19h
+data-pipeline                       cart-7w4cxns7n-cvbtj                                   1/1     Running             0                 259d
+data-pipeline                       cart-7w4cxns7n-fnhmt                                   1/1     Running             0                 8h
+data-pipeline                       cart-7w4cxns7n-vq4km                                   1/1     Running             0                 25s
+data-pipeline                       cart-7w4cxns7n-wmprq                                   0/1     Running             0                 7d11h
+data-pipeline                       cart-7w4cxns7n-z8vqb                                   1/1     Running             0                 14h
+data-pipeline                       checkout-service-t7vvzdh7p-5q5q5                       2/2     Running             0                 2y299d
+data-pipeline                       checkout-service-t7vvzdh7p-8zw5w                       0/2     ContainerCreating   0                 13h
+data-pipeline                       checkout-service-t7vvzdh7p-fdnct                       0/2     Completed           0                 4d18h
+data-pipeline                       checkout-service-t7vvzdh7p-fsg2q                       2/2     Running             0                 5d10h
+data-pipeline                       checkout-service-t7vvzdh7p-k6nxl                       2/2     Running             0                 4y57d
+data-pipeline                       checkout-service-t7vvzdh7p-lh6m6                       1/2     Running             0                 5d23h
+data-pipeline                       checkout-service-t7vvzdh7p-q8jqm                       2/2     Running             0                 224d
+data-pipeline                       checkout-service-t7vvzdh7p-qvkfc                       2/2     Running             0                 3d11h
+data-pipeline                       checkout-service-t7vvzdh7p-xplwt                       1/2     CrashLoopBackOff    2 (5h2m ago)      14h
+data-pipeline                       coredns-xmw9rp66j2-8qwxn                               1/2     Running             0                 89s
+data-pipeline                       coredns-xmw9rp66j2-jlxpk                               2/2     Running             0                 8h
+data-pipeline                       coredns-xmw9rp66j2-lsnsw                               0/2     Completed           0                 35h
+data-pipeline                       coredns-xmw9rp66j2-ncqlm                               0/2     Completed           0                 29s
+data-pipeline                       elasticsearch-data-l4kpkn7nk-2tkwq                     1/1     Running             4 (80m ago)       6d19h
+data-pipeline                       elasticsearch-data-l4kpkn7nk-4rk62                     1/1     Running             3 (4h46m ago)     3y114d
+data-pipeline                       elasticsearch-data-l4kpkn7nk-4wts7                     0/1     CrashLoopBackOff    194 (148m ago)    7d17h
+data-pipeline                       elasticsearch-data-l4kpkn7nk-djxxb                     0/1     Running             0                 65s
+data-pipeline                       elasticsearch-data-l4kpkn7nk-glx2j                     1/1     Running             0                 255d
+data-pipeline                       elasticsearch-data-l4kpkn7nk-mfmn7                     0/1     CrashLoopBackOff    231 (21m ago)     21m
+data-pipeline                       elasticsearch-data-l4kpkn7nk-rcj66                     0/1     Running             0                 176m
+data-pipeline                       frontend-dcjz682rz9-7lklv                              0/3     Pending             0                 28h
+data-pipeline                       frontend-dcjz682rz9-h99px                              3/3     Running             3 (3h46m ago)     3d5h
+data-pipeline                       frontend-dcjz682rz9-t6mp8                              3/3     Terminating         0                 49s
+data-pipeline                       frontend-dcjz682rz9-v4lwf                              0/3     Completed           0                 113s
+data-pipeline                       frontend-dcjz682rz9-vr7v6                              3/3     Running             0                 13h
+data-pipeline                       image-resizer-107                                      3/3     Running             1 (3h45m ago)     271d
+data-pipeline                       image-resizer-150                                      0/3     Completed           0                 4y121d
+data-pipeline                       image-resizer-268                                      3/3     Running             0                 6h6m
+data-pipeline                       image-resizer-286                                      3/3     Running             3 (5h25m ago)     2y260d
+data-pipeline                       image-resizer-477                                      0/3     Error               2 (26m ago)       3y211d
+data-pipeline                       image-resizer-737                                      3/3     Running             0                 29h
+data-pipeline                       image-resizer-758                                      3/3     Running             2 (102s ago)      102s
+data-pipeline                       kafka-29031100-k2nlr                                   2/2     Running             0                 110m
+data-pipeline                       kafka-29053963-hc87d                                   0/2     Completed           0                 6d13h
+data-pipeline                       kafka-29458706-dknls                                   2/2     Running             0                 26h
+data-pipeline                       kube-proxy-2cm49n79z-58t5r                             1/1     Running             0                 4y102d
+data-pipeline                       kube-proxy-2cm49n79z-qz9mb                             1/1     Running             0                 32h
+data-pipeline                       node-exporter-gftd2fs7n-457h8                          3/3     Running             0                 102s
+data-pipeline                       node-exporter-gftd2fs7n-7942w                          3/3     Running             0                 280d
+data-pipeline                       node-exporter-gftd2fs7n-kphwx                          0/3     Error               0                 182d
+data-pipeline                       node-exporter-gftd2fs7n-mrq52                          3/3     Running             0                 3y213d
+data-pipeline                       node-exporter-gftd2fs7n-q8266                          0/3     Completed           0                 237d
+data-pipeline                       node-exporter-gftd2fs7n-wvbph                          3/3     Running             0                 4y29d
+data-pipeline                       notification-sender-29056148-9k4gm                     3/3     Running             1 (24m ago)       4d10h
+data-pipeline                       notification-sender-29203022-cb5w4                     2/3     Running             2 (37m ago)       6d20h
+data-pipeline                       notification-sender-29355058-tzr4k                     0/3     Completed           0                 3d15h
+data-pipeline                       notification-sender-29646263-jbwgt                     0/3     Completed           0                 4y133d
+data-pipeline                       notification-sender-29948263-kz99q                     0/3     Completed           0                 2d3h
+data-pipeline                       notification-sender-29958611-gqk69                     0/3     Completed           0                 3y64d
+data-pipeline                       payments-worker-s44ctv8jkr-jfzck                       2/2     Running             3 (38s ago)       38s
+data-pipeline                       payments-worker-s44ctv8jkr-sjfpn                       2/2     Running             0                 117m
+data-pipeline                       payments-worker-s44ctv8jkr-wcr2g                       2/2     Running             0                 248d
+data-pipeline                       postgres-kz9gdvc6mv-8ztjf                              0/1     Error               1 (168m ago)      168m
+data-pipeline                       postgres-kz9gdvc6mv-jhwjx                              1/1     Running             0                 105s
+data-pipeline                       postgres-kz9gdvc6mv-llwtf                              1/1     Running             0                 21h
+data-pipeline                       prometheus-server-57zxq                                3/3     Running             0                 143m
+data-pipeline                       prometheus-server-hvvvc                                2/3     CrashLoopBackOff    59 (5h19m ago)    47h
+data-pipeline                       prometheus-server-jsj8w                                3/3     Running             0                 38d
+data-pipeline                       recommendation-engine-batch-scoring-6p86j29xzz-dfbfd   3/3     Running             0                 3y163d
+data-pipeline                       recommendation-engine-batch-scoring-6p86j29xzz-nqmrc   3/3     Running             0                 20h
+data-pipeline                       recommendation-engine-batch-scoring-6p86j29xzz-v275j   3/3     Running             1 (4h38m ago)     4d12h
+data-pipeline                       redis-29705668-p5p65                                   2/2     Running             0                 291d
+data-pipeline                       redis-29799109-hgr48                                   0/2     Completed           0                 2y253d
+data-pipeline                       report-generator-dhgxtbtc4-ggj28                       2/2     Running             0                 20s
+data-pipeline                       report-generator-dhgxtbtc4-hlsjd                       1/2     Running             4 (28s ago)       28s
+data-pipeline                       report-generator-dhgxtbtc4-rzd4q                       2/2     Running             0                 37h
+data-pipeline                       report-generator-dhgxtbtc4-s9vsd                       2/2     Running             4 (5h46m ago)     2y129d
+data-pipeline                       report-generator-dhgxtbtc4-sr6l4                       2/2     Running             0                 4d8h
+data-pipeline                       report-generator-dhgxtbtc4-szc9g                       0/2     Completed           0                 20h
+data-pipeline                       report-generator-dhgxtbtc4-x9drh                       0/2     Completed           0                 39m
+data-pipeline                       search-indexer-bm947                                   3/3     Running             0                 219d
+data-pipeline                       user-profile-5xf7xdff6-c2cx8                           1/1     Running             0                 2y51d
+data-pipeline                       user-profile-5xf7xdff6-fhnh6                           1/1     Running             0                 27h
+data-pipeline                       user-profile-5xf7xdff6-g98sg                           1/1     Running             0                 4d19h
+data-pipeline                       user-profile-5xf7xdff6-gr88k                           1/1     Running             0                 4d20h
+data-pipeline                       user-profile-5xf7xdff6-k2qzr                           1/1     Running             0                 282d
+data-pipeline                       user-profile-5xf7xdff6-m5mxc                           1/1     Running             0                 3y343d
+default                             api-gateway-jfvkd                                      1/1     Running             0                 3y357d
+default                             api-gateway-t5fw5                                      0/1     CrashLoopBackOff    181 (5h46m ago)   2y254d
+default                             api-gateway-xlx2r                                      1/1     Running             0                 236d
+default                             auth-service-lh88n8b8h-7mvx2                           2/2     Running             0                 86s
+default                             auth-service-lh88n8b8h-lh642                           2/2     Running             2 (10s ago)       10s
+default                             auth-service-lh88n8b8h-pbrmb                           2/2     Running             0                 4d19h
+default                             cart-7w4cxns7n-88rp6                                   1/1     Running             0                 94m
+default                             cart-7w4cxns7n-hnxqm                                   1/1     Running             0                 3y148d
+default                             cart-7w4cxns7n-nc9xt                                   1/1     Running             2 (92m ago)       43d
+default                             cart-7w4cxns7n-tm6dz                                   1/1     Terminating         0                 55s
+default                             cart-7w4cxns7n-zkssv                                   1/1     Running             0                 102s
+default                             checkout-service-t7vvzdh7p-72mpl                       2/2     Running             0                 3y50d
+default                             checkout-service-t7vvzdh7p-gc9zp                       0/2     ImagePullBackOff    0                 2y138d
+default                             checkout-service-t7vvzdh7p-h64cm                       0/2     Completed           0                 3y139d
+default                             checkout-service-t7vvzdh7p-sxn8p                       2/2     Running             0                 111d
+default                             checkout-service-t7vvzdh7p-tb222                       0/2     Pending             0                 116s
+default                             checkout-service-t7vvzdh7p-zvqkv                       2/2     Running             4 (27m ago)       27m
+default                             coredns-xmw9rp66j2-62ph6                               0/2     Pending             0                 6d8h
+default                             coredns-xmw9rp66j2-cs45k                               2/2     Running             0                 4d2h
+default                             coredns-xmw9rp66j2-rswxt                               1/2     Running             0                 2y252d
+default                             coredns-xmw9rp66j2-scw4g                               1/2     Running             0                 6d11h
+default                             elasticsearch-data-l4kpkn7nk-ksznf                     0/1     Running             0                 7d13h
+default                             elasticsearch-data-l4kpkn7nk-rpzkn                     0/1     Pending             0                 59s
+default                             frontend-dcjz682rz9-cxphl                              3/3     Running             0                 19h
+default                             frontend-dcjz682rz9-lk272                              3/3     Running             0                 101s
+default                             frontend-dcjz682rz9-mdjmf                              3/3     Running             0                 21h
+default                             frontend-dcjz682rz9-rbmjj                              3/3     Running             0                 150m
+default                             frontend-dcjz682rz9-wrq4w                              2/3     CrashLoopBackOff    117 (4h43m ago)   4d3h
+default                             frontend-dcjz682rz9-zqcpg                              0/3     Completed           0                 58s
+default                             image-resizer-250                                      3/3     Running             0                 6d13h
+default                             image-resizer-379                                      3/3     Running             0                 147d
+default                             image-resizer-853                                      3/3     Running             0                 135m
+default                             kafka-29534294-hmkzj                                   0/2     Completed           0                 220d
+default                             kafka-29555407-rth7x                                   0/2     Completed           0                 4d6h
+default                             kafka-29917491-9pmgt                                   2/2     Running             0                 11h
+default                             kube-proxy-2cm49n79z-d5ktk                             1/1     Running             0                 2d3h
+default                             kube-proxy-2cm49n79z-gkz8j                             1/1     Running             0                 6d6h
+default                             kube-proxy-2cm49n79z-qt8pb                             1/1     Running             1 (61m ago)       5d12h
+default                             node-exporter-gftd2fs7n-5mlm9                          0/3     Terminating         0                 27h
+default                             node-exporter-gftd2fs7n-7fwxp                          3/3     Running             4 (85m ago)       46h
+default                             node-exporter-gftd2fs7n-dnd8h                          0/3     Terminating         0                 2y351d
+default                             node-exporter-gftd2fs7n-hgz6t                          0/3     ImagePullBackOff    0                 94d
+default                             node-exporter-gftd2fs7n-k48cp                          3/3     Running             0                 5d12h
+default                             node-exporter-gftd2fs7n-kvhzk                          3/3     Running             2 (89m ago)       10h
+default                             node-exporter-gftd2fs7n-lk5xh                          3/3     Running             0                 2s
+default                             notification-sender-29275892-rvrz6                     0/3     Completed           0                 32h
+default                             notification-sender-29292048-62k6x                     0/3     Completed           0                 113s
+default                             notification-sender-29660618-4kwpc                     0/3     Error               2 (4h41m ago)     3y299d
+default                             notification-sender-29811121-phzxr                     3/3     Running             1 (4h33m ago)     236d
+default                             notification-sender-29955352-xbpnq                     0/3     Completed           0                 95m
+default                             notification-sender-29975552-6qhdz                     3/3     Running             0                 2y24d
+default                             payments-worker-s44ctv8jkr-4hhdp                       0/2     Error               2 (80s ago)       80s
+default                             payments-worker-s44ctv8jkr-kfvfv                       2/2     Running             0                 105m
+default                             payments-worker-s44ctv8jkr-s56lp                       2/2     Running             1 (4h55m ago)     102d
+default                             postgres-kz9gdvc6mv-576b7                              0/1     Pending             0                 13m
+default                             postgres-kz9gdvc6mv-5j665                              1/1     Running             0                 3d3h
+default                             postgres-kz9gdvc6mv-7m4bp                              0/1     CrashLoopBackOff    22 (65m ago)      261d
+default                             postgres-kz9gdvc6mv-ftbd2                              0/1     Running             2 (4h41m ago)     5d15h
+default                             postgres-kz9gdvc6mv-gj8z9                              1/1     Running             0                 6d16h
+default                             postgres-kz9gdvc6mv-m7kr6                              0/1     CrashLoopBackOff    135 (43s ago)     43s
+default                             postgres-kz9gdvc6mv-nqk2n                              0/1     Running             0                 3y72d
+default                             postgres-kz9gdvc6mv-nzlvx                              1/1     Running             0                 92m
+default                             postgres-kz9gdvc6mv-twspw                              0/1     ContainerCreating   0                 2y226d
+default                             postgres-kz9gdvc6mv-xdl2w                              1/1     Running             0                 287d
+default                             postgres-kz9gdvc6mv-z5hlj                              1/1     Running             2 (103s ago)      103s
+default                             prometheus-server-f7zmv                                3/3     Running             0                 38m
+default                             prometheus-server-g7g46                                2/3     CrashLoopBackOff    44 (4h28m ago)    47h
+default                             prometheus-server-sdbxd                                3/3     Running             0                 57s
+default                             recommendation-engine-batch-scoring-6p86j29xzz-c8w9t   3/3     Running             1 (3h36m ago)     7h56m
+default                             recommendation-engine-batch-scoring-6p86j29xzz-gkw5l   3/3     Terminating         0                 17s
+default                             recommendation-engine-batch-scoring-6p86j29xzz-mrzrs   0/3     Pending             0                 131m
+default                             recommendation-engine-batch-scoring-6p86j29xzz-mv4fm   3/3     Running             3 (125m ago)      302d
+default                             recommendation-engine-batch-scoring-6p86j29xzz-ssmzl   0/3     Init:0/1            0                 3y257d
+default                             recommendation-engine-batch-scoring-6p86j29xzz-tl4m4   2/3     Running             0                 3d6h
+default                             recommendation-engine-batch-scoring-6p86j29xzz-tlfhp   3/3     Running             0                 111s
+default                             redis-29248723-pjpfj                                   0/2     Completed           0                 2y85d
+default                             redis-29262224-rrhrz                                   0/2     Completed           0                 115s
+default                             redis-29361897-4v7xl                                   2/2     Running             0                 29s
+default                             redis-29759669-qbrwh                                   2/2     Running             0                 3y157d
+default                             redis-29966455-rblsj                                   0/2     Completed           0                 3s
+default                             report-generator-dhgxtbtc4-2l8dt                       0/2     Completed           0                 4y76d
+default                             report-generator-dhgxtbtc4-lh8jh                       2/2     Running             0                 3y77d
+default                             report-generator-dhgxtbtc4-xkwbl                       0/2     Error               0                 34s
+default                             report-generator-dhgxtbtc4-zgxqp                       2/2     Running             2 (4h1m ago)      289d
+default                             search-indexer-59kkz                                   3/3     Running             0                 5d23h
+default                             search-indexer-7pp9h                                   3/3     Running             1 (98m ago)       2d6h
+default                             search-indexer-8chbm                                   3/3     Running             0                 3m27s
+default                             search-indexer-8rgsc                                   3/3     Running             1 (39m ago)       2y103d
+default                             user-profile-5xf7xdff6-gs4pn                           1/1     Running             4 (5h54m ago)     79d
+default                             user-profile-5xf7xdff6-hpxgv                           1/1     Running             0                 3y167d
+ingress-nginx                       api-gateway-7dsmr                                      1/1     Running             4 (5h38m ago)     275d
+ingress-nginx                       api-gateway-ck86b                                      1/1     Running             0                 34h
+ingress-nginx                       api-gateway-lfkf2                                      1/1     Running             0                 45m
+ingress-nginx                       api-gateway-p8ph6                                      0/1     CrashLoopBackOff    157 (38m ago)     2y249d
+ingress-nginx                       api-gateway-s7svr                                      1/1     Running             0                 6d4h
+ingress-nginx                       api-gateway-t5dzq                                      0/1     Pending             0                 6d8h
+ingress-nginx                       auth-service-lh88n8b8h-2mpmf                           2/2     Running             0                 54s
+ingress-nginx                       auth-service-lh88n8b8h-4b7rv                           0/2     Terminating         0                 3y73d
+ingress-nginx                       auth-service-lh88n8b8h-7pfql                           2/2     Running             0                 4y147d
+ingress-nginx                       auth-service-lh88n8b8h-pj5d2                           2/2     Running             0                 3d8h
+ingress-nginx                       auth-service-lh88n8b8h-vgr4j                           0/2     Completed           0                 25h
+ingress-nginx                       cart-7w4cxns7n-2jztx                                   0/1     Completed           0                 20h
+ingress-nginx                       cart-7w4cxns7n-k2kq9                                   1/1     Running             0                 2y300d
+ingress-nginx                       cart-7w4cxns7n-nxlhc                                   0/1     Error               2 (5h14m ago)     244d
+ingress-nginx                       cart-7w4cxns7n-pzclq                                   0/1     CrashLoopBackOff    120 (40m ago)     40m
+ingress-nginx                       cart-7w4cxns7n-q4m9v                                   0/1     CrashLoopBackOff    116 (77m ago)     3y130d
+ingress-nginx                       checkout-service-t7vvzdh7p-kgvrj                       1/2     Running             0                 2y185d
+ingress-nginx                       checkout-service-t7vvzdh7p-n5n48                       2/2     Running             0                 4d13h
+ingress-nginx                       checkout-service-t7vvzdh7p-nvwzx                       2/2     Running             0                 22h
+ingress-nginx                       checkout-service-t7vvzdh7p-qbcmc                       0/2     Completed           0                 7d
+ingress-nginx                       checkout-service-t7vvzdh7p-qmdrn                       2/2     Running             2 (5h8m ago)      3y262d
+ingress-nginx                       coredns-xmw9rp66j2-6l4xm                               2/2     Running             0                 16h
+ingress-nginx                       coredns-xmw9rp66j2-ggdjf                               1/2     CrashLoopBackOff    157 (112s ago)    112s
+ingress-nginx                       coredns-xmw9rp66j2-qvwtc                               2/2     Running             0                 98d
+ingress-nginx                       coredns-xmw9rp66j2-s9cwx                               0/2     Completed           0                 43s
+ingress-nginx                       coredns-xmw9rp66j2-xxj6s                               1/2     OOMKilled           171 (39s ago)     39s
+ingress-nginx                       elasticsearch-data-l4kpkn7nk-2lcct                     0/1     Running             2 (72s ago)       72s
+ingress-nginx                       elasticsearch-data-l4kpkn7nk-f4pnl                     1/1     Running             0                 145m
+ingress-nginx                       elasticsearch-data-l4kpkn7nk-gmg7w                     1/1     Running             0                 18h
+ingress-nginx                       elasticsearch-data-l4kpkn7nk-zcx65                     0/1     ImagePullBackOff    0                 2d15h
+ingress-nginx                       frontend-dcjz682rz9-65qk9                              3/3     Running             0                 2d14h
+ingress-nginx                       frontend-dcjz682rz9-bpjgq                              3/3     Running             0                 13h
+ingress-nginx                       frontend-dcjz682rz9-kbjg2                              2/3     Running             3 (126m ago)      19h
+ingress-nginx                       frontend-dcjz682rz9-n9gzr                              3/3     Running             3 (5h19m ago)     12h
+ingress-nginx                       image-resizer-446                                      0/3     Completed           0                 2y69d
+ingress-nginx                       image-resizer-472                                      3/3     Running             0                 3y122d
+ingress-nginx                       image-resizer-682                                      0/3     Pending             0                 19h
+ingress-nginx                       image-resizer-839                                      3/3     Running             0                 24h
+ingress-nginx                       image-resizer-861                                      2/3     CrashLoopBackOff    192 (63m ago)     15h
+ingress-nginx                       image-resizer-968                                      2/3     Running             0                 31h
+ingress-nginx                       kafka-29024573-s6k4t                                   0/2     Completed           0                 65s
+ingress-nginx                       kafka-29230247-f7sz6                                   0/2     Completed           0                 60m
+ingress-nginx                       kafka-29418056-2bqcr                                   2/2     Running             0                 11s
+ingress-nginx                       kafka-29438341-mf8bg                                   2/2     Running             0                 20s
+ingress-nginx                       kafka-29488358-qthxr                                   0/2     Pending             0                 164d
+ingress-nginx                       kafka-29604192-hb8nv                                   1/2     CrashLoopBackOff    179 (91m ago)     91m
+ingress-nginx                       kafka-29769691-7gv7l                                   0/2     ImagePullBackOff    0                 37h
+ingress-nginx                       kafka-29822466-bt6gx                                   2/2     Running             0                 82s
+ingress-nginx                       kafka-29986510-6n7jp                                   1/2     CrashLoopBackOff    50 (28s ago)      28s
+ingress-nginx                       kube-proxy-2cm49n79z-9s4zf                             1/1     Running             3 (82m ago)       157m
+ingress-nginx                       kube-proxy-2cm49n79z-dq7jt                             1/1     Running             0                 21h
+ingress-nginx                       kube-proxy-2cm49n79z-gc5jg                             0/1     ContainerCreating   0                 3d21h
+ingress-nginx                       kube-proxy-2cm49n79z-m4xwb                             0/1     Error               2 (53m ago)       53m
+ingress-nginx                       kube-proxy-2cm49n79z-m5kt6                             1/1     Running             2 (3h31m ago)     6d
+ingress-nginx                       kube-proxy-2cm49n79z-mww8z                             1/1     Running             0                 147d
+ingress-nginx                       kube-proxy-2cm49n79z-xjfrk                             1/1     Running             0                 3y28d
+ingress-nginx                       node-exporter-gftd2fs7n-598lc                          3/3     Running             0                 83m
+ingress-nginx                       node-exporter-gftd2fs7n-dvbbh                          0/3     Init:0/1            0                 6d17h
+ingress-nginx                       node-exporter-gftd2fs7n-qzlgn                          3/3     Running             0                 41h
+ingress-nginx                       node-exporter-gftd2fs7n-rvjrf                          2/3     Running             1 (5h51m ago)     6d12h
+ingress-nginx                       node-exporter-gftd2fs7n-zxqh7                          0/3     Error               1 (5h40m ago)     34h
+ingress-nginx                       notification-sender-29019583-g9tvc                     0/3     Completed           0                 2y281d
+ingress-nginx                       notification-sender-29394629-4nnpj                     3/3     Running             0                 50m
+ingress-nginx                       notification-sender-29445363-8d96r                     2/3     CrashLoopBackOff    124 (5h54m ago)   4y162d
+ingress-nginx                       notification-sender-29692360-wpl92                     3/3     Running             0                 4d1h
+ingress-nginx                       payments-worker-s44ctv8jkr-2bqvn                       2/2     Running             0                 6d9h
+ingress-nginx                       payments-worker-s44ctv8jkr-fblm6                       2/2     Running             0                 65s
+ingress-nginx                       payments-worker-s44ctv8jkr-gkk72                       2/2     Running             0                 5d10h
+ingress-nginx                       postgres-kz9gdvc6mv-c7scx                              0/1     CrashLoopBackOff    126 (100m ago)    4y126d
+ingress-nginx                       postgres-kz9gdvc6mv-h8xbd                              1/1     Running             0                 82d
+ingress-nginx                       postgres-kz9gdvc6mv-ml9qk                              0/1     Terminating         0                 94s
+ingress-nginx                       postgres-kz9gdvc6mv-pqnmp                              1/1     Running             0                 2y216d
+ingress-nginx                       prometheus-server-g7z9k                                3/3     Running             0                 249d
+ingress-nginx                       prometheus-server-jkz8s                                3/3     Running             0                 222d
+ingress-nginx                       prometheus-server-ll8qt                                3/3     Running             0                 51m
+ingress-nginx                       prometheus-server-v2wcl                                3/3     Running             0                 102s
+ingress-nginx                       recommendation-engine-batch-scoring-6p86j29xzz-6w67x   2/3     Running             2 (106s ago)      106s
+ingress-nginx                       recommendation-engine-batch-scoring-6p86j29xzz-hbj9l   3/3     Running             0                 51s
+ingress-nginx                       recommendation-engine-batch-scoring-6p86j29xzz-sjbhz   3/3     Running             0                 2y248d
+ingress-nginx                       recommendation-engine-batch-scoring-6p86j29xzz-xpt79   3/3     Running             1 (11m ago)       21h
+ingress-nginx                       redis-29115873-h4dwt                                   2/2     Running             0                 100s
+ingress-nginx                       redis-29335012-4sxwr                                   0/2     Completed           0                 4y68d
+ingress-nginx                       redis-29431887-d78g4                                   2/2     Running             0                 3y199d
+ingress-nginx                       report-generator-dhgxtbtc4-7vn99                       2/2     Running             0                 38s
+ingress-nginx                       report-generator-dhgxtbtc4-9cbjc                       0/2     Completed           0                 7s
+ingress-nginx                       report-generator-dhgxtbtc4-nzb6b                       1/2     Running             0                 30h
+ingress-nginx                       report-generator-dhgxtbtc4-qrkd8                       2/2     Running             0                 5d13h
+ingress-nginx                       report-generator-dhgxtbtc4-scc72                       2/2     Running             0                 2d21h
+ingress-nginx                       search-indexer-2qnd6                                   0/3     Completed           0                 53s
+ingress-nginx                       search-indexer-dvd96                                   3/3     Running             0                 129d
+ingress-nginx                       search-indexer-k28sq                                   0/3     Pending             0                 12h
+ingress-nginx                       search-indexer-r4npf                                   3/3     Running             0                 4d17h
+ingress-nginx                       search-indexer-zhdbm                                   3/3     Running             0                 18h
+ingress-nginx                       user-profile-5xf7xdff6-5m5mh                           1/1     Running             0                 2y123d
+ingress-nginx                       user-profile-5xf7xdff6-9g7v5                           1/1     Running             0                 133d
+ingress-nginx                       user-profile-5xf7xdff6-g8lfg                           1/1     Running             0                 3y97d
+ingress-nginx                       user-profile-5xf7xdff6-hgcxq                           1/1     Running             0                 7d12h
+ingress-nginx                       user-profile-5xf7xdff6-hw8s2                           1/1     Running             0                 42d
+ingress-nginx                       user-profile-5xf7xdff6-qd4jx                           1/1     Running             0                 6d7h
+kube-system                         api-gateway-7fz7k                                      1/1     Running             0                 10s
+kube-system                         api-gateway-mndkv                                      1/1     Running             1 (169m ago)      22h
+kube-system                         api-gateway-rfmkx                                      1/1     Running             0                 19h
+kube-system                         api-gateway-rrgft                                      0/1     Running             0                 27m
+kube-system                         auth-service-lh88n8b8h-5j7g7                           2/2     Running             0                 5d15h
+kube-system                         auth-service-lh88n8b8h-6xr9n                           0/2     Error               2 (4h28m ago)     4d16h
+kube-system                         auth-service-lh88n8b8h-lkfzz                           2/2     Running             0                 181d
+kube-system                         auth-service-lh88n8b8h-p779h                           0/2     ImagePullBackOff    0                 2y37d
+kube-system                         auth-service-lh88n8b8h-sdpmz                           2/2     Terminating         0                 3d10h
+kube-system                         cart-7w4cxns7n-7wgdj                                   1/1     Running             0                 267d
+kube-system                         cart-7w4cxns7n-dn9wz                                   1/1     Running             0                 2d2h
+kube-system                         cart-7w4cxns7n-hsxcp                                   1/1     Running             0                 3y237d
+kube-system                         cart-7w4cxns7n-j4ztb                                   1/1     Running             0                 280d
+kube-system                         cart-7w4cxns7n-jvtv8                                   1/1     Running             2 (6s ago)        6s
+kube-system                         cart-7w4cxns7n-qqgmx                                   0/1     Running             0                 24m
+kube-system                         cart-7w4cxns7n-qrpv9                                   0/1     CrashLoopBackOff    144 (171m ago)    28h
+kube-system                         cart-7w4cxns7n-vk2dh                                   1/1     Running             2 (4h8m ago)      6d2h
+kube-system                         cart-7w4cxns7n-zqzfl                                   1/1     Running             0                 19h
+kube-system                         checkout-service-t7vvzdh7p-6v5km                       2/2     Running             0                 12h
+kube-system                         checkout-service-t7vvzdh7p-bh4dd                       0/2     Pending             0                 118m
+kube-system                         checkout-service-t7vvzdh7p-d77x2                       2/2     Running             0                 166d
+kube-system                         checkout-service-t7vvzdh7p-pnscn                       1/2     CrashLoopBackOff    59 (4s ago)       4s
+kube-system                         coredns-xmw9rp66j2-77flt                               1/2     Running             0                 32h
+kube-system                         coredns-xmw9rp66j2-88v8z                               2/2     Running             0                 4y52d
+kube-system                         coredns-xmw9rp66j2-hpfqm                               0/2     Completed           0                 15m
+kube-system                         coredns-xmw9rp66j2-pg65p                               2/2     Running             0                 5d12h
+kube-system                         coredns-xmw9rp66j2-xc24z                               2/2     Running             0                 121d
+kube-system                         elasticsearch-data-l4kpkn7nk-7nfgf                     1/1     Running             0                 2d11h
+kube-system                         elasticsearch-data-l4kpkn7nk-vsdgw                     1/1     Running             0                 153m
+kube-system                         frontend-dcjz682rz9-2flzj                              0/3     Pending             0                 58s
+kube-system                         frontend-dcjz682rz9-2qvg2                              3/3     Running             0                 24h
+kube-system                         frontend-dcjz682rz9-2x7bz                              3/3     Running             0                 3d8h
+kube-system                         frontend-dcjz682rz9-g76hg                              3/3     Terminating         0                 3y267d
+kube-system                         frontend-dcjz682rz9-wt6nq                              3/3     Running             0                 2y295d
+kube-system                         image-resizer-218                                      0/3     Completed           0                 3y78d
+kube-system                         image-resizer-222                                      3/3     Running             1 (3h36m ago)     3y134d
+kube-system                         image-resizer-96                                       0/3     Completed           0                 9d
+kube-system                         kafka-29188076-qw87q                                   0/2     Completed           0                 39m
+kube-system                         kafka-29226475-zw2xp                                   0/2     Completed           0                 6d20h
+kube-system                         kafka-29721822-8gbn8                                   1/2     CrashLoopBackOff    186 (135m ago)    164m
+kube-system                         kafka-29751084-hchcr                                   2/2     Running             0                 46h
+kube-system                         kube-proxy-2cm49n79z-2jl9t                             1/1     Running             0                 159d
+kube-system                         kube-proxy-2cm49n79z-cpwlz                             1/1     Running             0                 2y31d
+kube-system                         kube-proxy-2cm49n79z-d54h5                             1/1     Running             0                 146m
+kube-system                         kube-proxy-2cm49n79z-hxmmq                             0/1     Error               0                 4y34d
+kube-system                         kube-proxy-2cm49n79z-jq284                             0/1     Pending             0                 2y48d
+kube-system                         kube-proxy-2cm49n79z-jrhxs                             0/1     ImagePullBackOff    0                 163m
+kube-system                         kube-proxy-2cm49n79z-l6tdw                             1/1     Running             0                 86m
+kube-system                         kube-proxy-2cm49n79z-lszmf                             1/1     Running             0                 2y72d
+kube-system                         kube-proxy-2cm49n79z-s8f7c                             1/1     Running             0                 3y44d
+kube-system                         node-exporter-gftd2fs7n-2ffsr                          0/3     Completed           0                 10h
+kube-system                         node-exporter-gftd2fs7n-b4vgh                          0/3     Terminating         0                 135d
+kube-system                         node-exporter-gftd2fs7n-rn8jm                          3/3     Running             0                 30m
+kube-system                         node-exporter-gftd2fs7n-rxz44                          3/3     Running             0                 78d
+kube-system                         node-exporter-gftd2fs7n-z5c2n                          3/3     Terminating         0                 17d
+kube-system                         notification-sender-29138117-k9g2p                     3/3     Running             0                 2y313d
+kube-system                         notification-sender-29249480-nswh8                     0/3     Completed           0                 103m
+kube-system                         notification-sender-29314299-gn6mr                     0/3     Completed           0                 16d
+kube-system                         notification-sender-29325422-cg79r                     3/3     Running             0                 108m
+kube-system                         notification-sender-29448801-smc5g                     0/3     Completed           0                 166m
+kube-system                         notification-sender-29666434-kskxf                     0/3     Completed           0                 137m
+kube-system                         notification-sender-29834075-g9zk8                     0/3     Completed           0                 22h
+kube-system                         notification-sender-29958413-hnbd4                     0/3     Completed           0                 3h21m
+kube-system                         payments-worker-s44ctv8jkr-76gcg                       2/2     Running             0                 36d
+kube-system                         payments-worker-s44ctv8jkr-hc2k2                       0/2     ContainerCreating   0                 5d3h
+kube-system                         payments-worker-s44ctv8jkr-pljzn                       2/2     Running             0                 161d
+kube-system                         payments-worker-s44ctv8jkr-rpcmb                       2/2     Running             0                 2d11h
+kube-system                         payments-worker-s44ctv8jkr-xgtg9                       1/2     CrashLoopBackOff    244 (146m ago)    45h
+kube-system                         postgres-kz9gdvc6mv-4g74r                              0/1     Running             0                 21h
+kube-system                         postgres-kz9gdvc6mv-7sqh4                              1/1     Running             0                 2y189d
+kube-system                         postgres-kz9gdvc6mv-bc2cs                              0/1     Completed           0                 175m
+kube-system                         postgres-kz9gdvc6mv-d59t7                              0/1     Completed           0                 6d12h
+kube-system                         postgres-kz9gdvc6mv-whh8x                              1/1     Running             0                 4d10h
+kube-system                         prometheus-server-c67z4                                2/3     CrashLoopBackOff    87 (37m ago)      91d
+kube-system                         prometheus-server-chq97                                3/3     Running             0                 9h
+kube-system                         prometheus-server-d7ltj                                3/3     Running             0                 114s
+kube-system                         prometheus-server-dx997                                3/3     Running             0                 175m
+kube-system                         prometheus-server-pvvxp                                3/3     Running             0                 162m
+kube-system                         prometheus-server-qkz4x                                3/3     Running             0                 3d10h
+kube-system                         prometheus-server-sbpj6                                2/3     Running             0                 37d
+kube-system                         prometheus-server-vp6pf                                0/3     Pending             0                 4d4h
+kube-system                         prometheus-server-x9x7z                                3/3     Running             0                 3y178d
+kube-system                         recommendation-engine-batch-scoring-6p86j29xzz-4h78g   2/3     Running             0                 103s
+kube-system                         recommendation-engine-batch-scoring-6p86j29xzz-999lm   3/3     Running             0                 4d18h
+kube-system                         recommendation-engine-batch-scoring-6p86j29xzz-fdn2p   3/3     Running             0                 257d
+kube-system                         recommendation-engine-batch-scoring-6p86j29xzz-p2jxg   3/3     Running             0                 159m
+kube-system                         recommendation-engine-batch-scoring-6p86j29xzz-pbhrg   3/3     Running             0                 4y67d
+kube-system                         recommendation-engine-batch-scoring-6p86j29xzz-xnjpj   3/3     Running             4 (3h59m ago)     6d4h
+kube-system                         redis-29179847-q6lrb                                   1/2     Running             0                 2y226d
+kube-system                         redis-29813131-s52dd                                   0/2     Completed           0                 1s
+kube-system                         report-generator-dhgxtbtc4-6n5d6                       0/2     Pending             0                 64m
+kube-system                         report-generator-dhgxtbtc4-9gmkn                       1/2     CrashLoopBackOff    73 (13m ago)      193d
+kube-system                         report-generator-dhgxtbtc4-fh4gh                       2/2     Running             0                 6h25m
+kube-system                         report-generator-dhgxtbtc4-fjgmx                       2/2     Running             0                 7d10h
+kube-system                         search-indexer-59hwn                                   0/3     Init:0/1            0                 295d
+kube-system                         search-indexer-9bjfl                                   3/3     Running             0                 4d23h
+kube-system                         search-indexer-d6qvg                                   2/3     Running             0                 3d6h
+kube-system                         search-indexer-nd77j                                   0/3     Pending             0                 218d
+kube-system                         search-indexer-ngwnh                                   0/3     ImagePullBackOff    0                 47m
+kube-system                         search-indexer-r4m5q                                   3/3     Running             0                 61s
+kube-system                         search-indexer-zfvp9                                   3/3     Running             1 (5h5m ago)      40d
+kube-system                         search-indexer-zg2xt                                   3/3     Running             2 (3h34m ago)     22h
+kube-system                         user-profile-5xf7xdff6-2fp27                           0/1     Error               2 (49m ago)       49m
+kube-system                         user-profile-5xf7xdff6-67nms                           0/1     Pending             0                 147d
+kube-system                         user-profile-5xf7xdff6-h59zq                           1/1     Running             0                 2y175d
+kube-system                         user-profile-5xf7xdff6-hk9wb                           0/1     Pending             0                 4d8h
+monitoring                          api-gateway-bbm2j                                      1/1     Running             0                 275d
+monitoring                          api-gateway-n6h69                                      1/1     Running             0                 137m
+monitoring                          auth-service-lh88n8b8h-2mkmh                           0/2     Completed           0                 95s
+monitoring                          auth-service-lh88n8b8h-2v64v                           2/2     Terminating         0                 274d
+monitoring                          auth-service-lh88n8b8h-7fkp4                           2/2     Running             0                 3d
+monitoring                          auth-service-lh88n8b8h-blp2t                           2/2     Running             4 (161m ago)      11d
+monitoring                          auth-service-lh88n8b8h-hqk4k                           2/2     Running             0                 3y279d
+monitoring                          auth-service-lh88n8b8h-kmkgd                           2/2     Running             1 (18m ago)       18m
+monitoring                          auth-service-lh88n8b8h-wwvdp                           2/2     Running             0                 93s
+monitoring                          cart-7w4cxns7n-668mc                                   0/1     Error               0                 18m
+monitoring                          cart-7w4cxns7n-9shdw                                   1/1     Running             0                 3y217d
+monitoring                          cart-7w4cxns7n-l5s7j                                   0/1     CrashLoopBackOff    191 (117m ago)    2y185d
+monitoring                          cart-7w4cxns7n-r2rlv                                   1/1     Running             0                 45h
+monitoring                          cart-7w4cxns7n-rp4xp                                   0/1     Completed           0                 2y182d
+monitoring                          cart-7w4cxns7n-vd72q                                   0/1     CrashLoopBackOff    26 (3h16m ago)    3y243d
+monitoring                          cart-7w4cxns7n-xlr7r                                   0/1     ImagePullBackOff    0                 32s
+monitoring                          checkout-service-t7vvzdh7p-85xrf                       2/2     Running             4 (38m ago)       62m
+monitoring                          checkout-service-t7vvzdh7p-c955l                       1/2     CrashLoopBackOff    100 (158m ago)    191d
+monitoring                          checkout-service-t7vvzdh7p-h7d2r                       2/2     Running             0                 129d
+monitoring                          checkout-service-t7vvzdh7p-l2b78                       2/2     Running             0                 51s
+monitoring                          checkout-service-t7vvzdh7p-pw4kp                       2/2     Running             0                 1s
+monitoring                          checkout-service-t7vvzdh7p-qmkcr                       0/2     Pending             0                 7d1h
+monitoring                          checkout-service-t7vvzdh7p-qtbkp                       0/2     Init:0/1            0                 2y80d
+monitoring                          checkout-service-t7vvzdh7p-x9ww6                       2/2     Running             0                 54s
+monitoring                          coredns-xmw9rp66j2-6tjzd                               2/2     Running             1 (57m ago)       57m
+monitoring                          coredns-xmw9rp66j2-7brf2                               2/2     Running             2 (54m ago)       113m
+monitoring                          coredns-xmw9rp66j2-fq5ff                               2/2     Running             0                 72m
+monitoring                          coredns-xmw9rp66j2-fvzjn                               2/2     Running             3 (115s ago)      115s
+monitoring                          coredns-xmw9rp66j2-jmslx                               2/2     Running             2 (5m12s ago)     94m
+monitoring                          elasticsearch-data-l4kpkn7nk-9r88r                     1/1     Running             0                 40h
+monitoring                          elasticsearch-data-l4kpkn7nk-l7bj8                     0/1     CrashLoopBackOff    162 (4h32m ago)   18h
+monitoring                          elasticsearch-data-l4kpkn7nk-pprvr                     0/1     Error               0                 7d21h
+monitoring                          elasticsearch-data-l4kpkn7nk-ttz47                     1/1     Running             0                 84s
+monitoring                          frontend-dcjz682rz9-4d8ff                              0/3     Pending             0                 46h
+monitoring                          frontend-dcjz682rz9-7rhsl                              3/3     Running             0                 29h
+monitoring                          frontend-dcjz682rz9-wdszb                              3/3     Running             3 (83s ago)       83s
+monitoring                          image-resizer-305                                      2/3     OOMKilled           42 (90m ago)      6d16h
+monitoring                          image-resizer-340                                      0/3     Pending             0                 70m
+monitoring                          image-resizer-635                                      3/3     Terminating         0                 35h
+monitoring                          image-resizer-710                                      3/3     Running             0                 122m
+monitoring                          image-resizer-95                                       3/3     Running             0                 35h
+monitoring                          kafka-29031081-87mdf                                   0/2     Completed           0                 49s
+monitoring                          kafka-29143823-8cnqv                                   0/2     Completed           0                 3y84d
+monitoring                          kafka-29372561-lnd9q                                   2/2     Running             0                 3d5h
+monitoring                          kafka-29432524-pf2rs                                   0/2     Pending             0                 101m
+monitoring                          kafka-29559893-bnl7d                                   0/2     Completed           0                 75s
+monitoring                          kafka-29709048-ldzjk                                   0/2     Completed           0                 295d
+monitoring                          kafka-29863493-qf5rc                                   2/2     Running             0                 94d
+monitoring                          kafka-29973770-6q9sv                                   2/2     Running             0                 7d20h
+monitoring                          kube-proxy-2cm49n79z-5bjgn                             0/1     Running             4 (3h25m ago)     85d
+monitoring                          kube-proxy-2cm49n79z-7dpv6                             0/1     Error               0                 2y114d
+monitoring                          kube-proxy-2cm49n79z-lft94                             1/1     Running             1 (4h41m ago)     2y262d
+monitoring                          kube-proxy-2cm49n79z-snmpl                             1/1     Running             0                 33h
+monitoring                          kube-proxy-2cm49n79z-tn9hn                             1/1     Running             0                 197d
+monitoring                          node-exporter-gftd2fs7n-9srxm                          3/3     Running             0                 19h
+monitoring                          node-exporter-gftd2fs7n-gcdpk                          3/3     Running             0                 2y79d
+monitoring                          node-exporter-gftd2fs7n-wqjs8                          3/3     Running             4 (36s ago)       36s
+monitoring                          node-exporter-gftd2fs7n-xp5l4                          3/3     Running             0                 6d16h
+monitoring                          notification-sender-29033202-mmb5m                     0/3     Completed           0                 130d
+monitoring                          notification-sender-29158080-p628r                     3/3     Running             0                 5d23h
+monitoring                          notification-sender-29197655-5w9hq                     0/3     Pending             0                 265d
+monitoring                          notification-sender-29256543-hdxdd                     3/3     Running             2 (5s ago)        5s
+monitoring                          notification-sender-29372231-b6gdg                     0/3     Completed           0                 143m
+monitoring                          notification-sender-29744865-6256b                     3/3     Running             3 (121m ago)      2y159d
+monitoring                          notification-sender-29767235-fm45n                     3/3     Running             0                 46s
+monitoring                          notification-sender-29780734-hr7b2                     2/3     Running             0                 3d8h
+monitoring                          notification-sender-29861478-dm7x5                     3/3     Running             0                 3d4h
+monitoring                          notification-sender-29952956-56zhh                     3/3     Running             0                 4h20m
+monitoring                          payments-worker-s44ctv8jkr-5t5bm                       2/2     Running             0                 4y33d
+monitoring                          payments-worker-s44ctv8jkr-gx7r6                       2/2     Running             0                 15h
+monitoring                          payments-worker-s44ctv8jkr-ml47g                       2/2     Running             0                 5d8h
+monitoring                          payments-worker-s44ctv8jkr-r28m8                       0/2     Init:0/1            0                 51s
+monitoring                          payments-worker-s44ctv8jkr-rgzqx                       2/2     Running             1 (30m ago)       30m
+monitoring                          payments-worker-s44ctv8jkr-rrq8t                       0/2     Terminating         0                 40h
+monitoring                          payments-worker-s44ctv8jkr-sl6jf                       0/2     Completed           0                 2y138d
+monitoring                          payments-worker-s44ctv8jkr-xnbn7                       0/2     Pending             0                 2y15d
+monitoring                          payments-worker-s44ctv8jkr-z96cw                       2/2     Running             0                 52m
+monitoring                          postgres-kz9gdvc6mv-9k2hb                              0/1     Running             4 (41m ago)       27h
+monitoring                          postgres-kz9gdvc6mv-dv7hk                              1/1     Running             0                 5s
+monitoring                          postgres-kz9gdvc6mv-gxlrw                              0/1     Running             0                 4d19h
+monitoring                          prometheus-server-btx4c                                3/3     Running             0                 264d
+monitoring                          prometheus-server-lcgsz                                3/3     Running             0                 6d5h
+monitoring                          prometheus-server-s2shd                                3/3     Running             0                 301d
+monitoring                          recommendation-engine-batch-scoring-6p86j29xzz-4rhrl   3/3     Running             0                 82s
+monitoring                          recommendation-engine-batch-scoring-6p86j29xzz-5svdl   3/3     Running             0                 2y91d
+monitoring                          recommendation-engine-batch-scoring-6p86j29xzz-8cc7b   2/3     CrashLoopBackOff    48 (16m ago)      16m
+monitoring                          recommendation-engine-batch-scoring-6p86j29xzz-knwdt   2/3     CrashLoopBackOff    158 (128m ago)    2y344d
+monitoring                          recommendation-engine-batch-scoring-6p86j29xzz-pk4rq   3/3     Running             1 (151m ago)      2d11h
+monitoring                          recommendation-engine-batch-scoring-6p86j29xzz-q25xx   3/3     Running             0                 4y22d
+monitoring                          recommendation-engine-batch-scoring-6p86j29xzz-rzgdk   0/3     ImagePullBackOff    0                 3y16d
+monitoring                          recommendation-engine-batch-scoring-6p86j29xzz-rzkgd   3/3     Running             3 (4h59m ago)     3y73d
+monitoring                          recommendation-engine-batch-scoring-6p86j29xzz-skl8z   3/3     Running             0                 116m
+monitoring                          recommendation-engine-batch-scoring-6p86j29xzz-twm2q   3/3     Running             0                 32h
+monitoring                          recommendation-engine-batch-scoring-6p86j29xzz-wzgpz   0/3     ContainerCreating   0                 4d13h
+monitoring                          redis-29058779-8f4ls                                   0/2     Completed           0                 3y270d
+monitoring                          redis-29141278-tldzv                                   0/2     Completed           0                 7s
+monitoring                          redis-29172237-pgx4b                                   2/2     Running             0                 115m
+monitoring                          redis-29255637-fbf5b                                   0/2     Completed           0                 37s
+monitoring                          redis-29966739-4mv5l                                   2/2     Running             0                 4d19h
+monitoring                          report-generator-dhgxtbtc4-dw28g                       0/2     ContainerCreating   0                 29h
+monitoring                          report-generator-dhgxtbtc4-q9hxk                       2/2     Running             0                 56s
+monitoring                          report-generator-dhgxtbtc4-tzfp4                       2/2     Running             0                 42h
+monitoring                          search-indexer-2fkrl                                   3/3     Running             0                 146m
+monitoring                          search-indexer-2p7xs                                   3/3     Running             0                 115m
+monitoring                          search-indexer-d5t5m                                   0/3     Completed           0                 15h
+monitoring                          search-indexer-tqnb4                                   3/3     Running             0                 7d17h
+monitoring                          search-indexer-vq842                                   0/3     ContainerCreating   0                 2m20s
+monitoring                          search-indexer-xpfbq                                   3/3     Running             0                 2y85d
+monitoring                          user-profile-5xf7xdff6-88h6n                           1/1     Running             0                 2d8h
+monitoring                          user-profile-5xf7xdff6-jj2wk                           1/1     Running             0                 21s
+monitoring                          user-profile-5xf7xdff6-k6q6h                           1/1     Running             0                 108s
+monitoring                          user-profile-5xf7xdff6-m7qrt                           1/1     Running             0                 154d
+monitoring                          user-profile-5xf7xdff6-rfmzd                           1/1     Running             0                 46s
+monitoring                          user-profile-5xf7xdff6-wbpxb                           1/1     Running             3 (3h51m ago)     59d
+payments                            api-gateway-7pzdn                                      1/1     Running             0                 54s
+payments                            api-gateway-89kf7                                      0/1     Pending             0                 103s
+payments                            api-gateway-8w7v2                                      0/1     Error               2 (115m ago)      115m
+payments                            api-gateway-d558f                                      1/1     Running             1 (75m ago)       70d
+payments                            api-gateway-qwrmw                                      1/1     Running             0                 269d
+payments                            auth-service-lh88n8b8h-4lmsq                           2/2     Running             0                 23m
+payments                            auth-service-lh88n8b8h-77hkm                           2/2     Running             0                 11m
+payments                            auth-service-lh88n8b8h-f8vrf                           2/2     Running             0                 103s
+payments                            auth-service-lh88n8b8h-n7rts                           2/2     Running             1 (99s ago)       99s
+payments                            auth-service-lh88n8b8h-tlx59                           2/2     Running             0                 297d
+payments                            auth-service-lh88n8b8h-xbqrj                           0/2     Error               1 (38m ago)       38m
+payments                            cart-7w4cxns7n-82qlc                                   1/1     Running             0                 29m
+payments                            checkout-service-t7vvzdh7p-g6rlj                       2/2     Running             0                 124m
+payments                            checkout-service-t7vvzdh7p-nk5m4                       2/2     Running             0                 119s
+payments                            checkout-service-t7vvzdh7p-qbr52                       0/2     Init:0/1            0                 51s
+payments                            checkout-service-t7vvzdh7p-zgrt2                       1/2     Running             0                 3y239d
+payments                            coredns-xmw9rp66j2-cbbgj                               2/2     Running             1 (35m ago)       3d2h
+payments                            coredns-xmw9rp66j2-nt7f6                               2/2     Running             0                 42h
+payments                            coredns-xmw9rp66j2-tfggk                               0/2     Completed           0                 86m
+payments                            coredns-xmw9rp66j2-wcgnm                               2/2     Running             0                 2y56d
+payments                            elasticsearch-data-l4kpkn7nk-2w892                     1/1     Running             0                 13m
+payments                            elasticsearch-data-l4kpkn7nk-5jct6                     1/1     Running             4 (103m ago)      12h
+payments                            elasticsearch-data-l4kpkn7nk-kh4mm                     0/1     CrashLoopBackOff    36 (105m ago)     4d5h
+payments                            elasticsearch-data-l4kpkn7nk-n8bl7                     0/1     Running             0                 6h28m
+payments                            elasticsearch-data-l4kpkn7nk-sglpz                     1/1     Running             1 (5h32m ago)     106d
+payments                            frontend-dcjz682rz9-44d78                              0/3     Completed           0                 13h
+payments                            frontend-dcjz682rz9-9zb6x                              0/3     ImagePullBackOff    0                 7d4h
+payments                            frontend-dcjz682rz9-fd4hb                              3/3     Running             0                 90m
+payments                            frontend-dcjz682rz9-kghln                              3/3     Running             0                 275d
+payments                            frontend-dcjz682rz9-qz55v                              0/3     Terminating         0                 246d
+payments                            frontend-dcjz682rz9-wfvv8                              3/3     Running             0                 3y15d
+payments                            image-resizer-196                                      3/3     Running             1 (170m ago)      170m
+payments                            image-resizer-251                                      3/3     Running             0                 13h
+payments                            image-resizer-445                                      3/3     Running             0                 60s
+payments                            image-resizer-700                                      3/3     Running             0                 3y236d
+payments                            image-resizer-738                                      3/3     Running             0                 2d6h
+payments                            image-resizer-980                                      3/3     Running             0                 2y357d
+payments                            kafka-29068991-nhxxv                                   2/2     Running             0                 263d
+payments                            kafka-29717836-54fgb                                   0/2     Completed           0                 4d23h
+payments                            kafka-29911745-w94mz                                   0/2     Completed           0                 3y74d
+payments                            kube-proxy-2cm49n79z-5shb6                             1/1     Running             0                 199d
+payments                            kube-proxy-2cm49n79z-7dnx5                             0/1     Running             0                 65m
+payments                            kube-proxy-2cm49n79z-7xs6z                             1/1     Running             0                 33d
+payments                            kube-proxy-2cm49n79z-fnt2g                             1/1     Running             0                 17h
+payments                            kube-proxy-2cm49n79z-lpmdt                             1/1     Running             0                 4h6m
+payments                            kube-proxy-2cm49n79z-mcbdt                             0/1     Error               0                 3y188d
+payments                            kube-proxy-2cm49n79z-pqg6n                             0/1     Completed           0                 102m
+payments                            node-exporter-gftd2fs7n-75dhh                          3/3     Running             0                 4d7h
+payments                            node-exporter-gftd2fs7n-842ms                          0/3     Error               1 (4h43m ago)     9h
+payments                            node-exporter-gftd2fs7n-nqklv                          2/3     Running             3 (3h59m ago)     220d
+payments                            node-exporter-gftd2fs7n-wvvqz                          0/3     Completed           0                 25h
+payments                            notification-sender-29229787-45d5w                     3/3     Running             0                 136d
+payments                            notification-sender-29231047-pd7fg                     0/3     Completed           0                 125m
+payments                            notification-sender-29553418-z9tqk                     0/3     Error               1 (40m ago)       110m
+payments                            notification-sender-29966759-dbnjh                     3/3     Running             0                 2y272d
+payments                            payments-worker-s44ctv8jkr-clw94                       0/2     Pending             0                 86m
+payments                            payments-worker-s44ctv8jkr-rvjlr                       2/2     Running             0                 3y116d
+payments                            postgres-kz9gdvc6mv-2qht4                              0/1     Pending             0                 33m
+payments                            postgres-kz9gdvc6mv-7pb4z                              0/1     CrashLoopBackOff    129 (165m ago)    235d
+payments                            postgres-kz9gdvc6mv-ph5bg                              1/1     Running             0                 4y153d
+payments                            prometheus-server-fl8q4                                2/3     Running             0                 5d6h
+payments                            prometheus-server-g6ng8                                3/3     Running             0                 4d17h
+payments                            prometheus-server-jrtlj                                0/3     Error               2 (40m ago)       40m
+payments                            prometheus-server-wprhc                                2/3     OOMKilled           171 (42s ago)     42s
+payments                            prometheus-server-zf947                                3/3     Running             0                 3y209d
+payments                            recommendation-engine-batch-scoring-6p86j29xzz-7k6m6   3/3     Running             3 (5h59m ago)     5d5h
+payments                            recommendation-engine-batch-scoring-6p86j29xzz-g4kt5   3/3     Running             0                 132m
+payments                            recommendation-engine-batch-scoring-6p86j29xzz-g6g9w   2/3     Running             0                 70d
+payments                            recommendation-engine-batch-scoring-6p86j29xzz-vlswx   3/3     Running             0                 136m
+payments                            redis-29376223-v8s67                                   0/2     Completed           0                 26s
+payments                            redis-29395706-r4v7l                                   1/2     Running             0                 3h35m
+payments                            redis-29434823-qg6wr                                   0/2     Pending             0                 108s
+payments                            redis-29590224-2h76b                                   0/2     Completed           0                 163d
+payments                            redis-29939381-mctsl                                   0/2     Completed           0                 71d
+payments                            report-generator-dhgxtbtc4-hpmpv                       1/2     CrashLoopBackOff    250 (50m ago)     50m
+payments                            report-generator-dhgxtbtc4-r6wr8                       2/2     Running             0                 70s
+payments                            report-generator-dhgxtbtc4-tr5m4                       2/2     Running             0                 47h
+payments                            report-generator-dhgxtbtc4-xjh5w                       2/2     Running             0                 7d3h
+payments                            report-generator-dhgxtbtc4-z5mzc                       0/2     Error               1 (48s ago)       48s
+payments                            search-indexer-2d4hh                                   3/3     Running             0                 89m
+payments                            search-indexer-nbwmh                                   3/3     Running             0                 145m
+payments                            search-indexer-q6hc9                                   0/3     ContainerCreating   0                 6d22h
+payments                            search-indexer-qx68b                                   0/3     Pending             0                 73m
+payments                            search-indexer-rdd4j                                   3/3     Running             2 (129m ago)      129m
+payments                            search-indexer-sxc2n                                   3/3     Running             0                 24s
+payments                            search-indexer-vk954                                   3/3     Running             0                 119d
+payments                            search-indexer-xmj88                                   2/3     CrashLoopBackOff    174 (2m36s ago)   205d
+payments                            user-profile-5xf7xdff6-hn65p                           1/1     Running             0                 2d17h
+payments                            user-profile-5xf7xdff6-mgqst                           1/1     Running             0                 99d
+payments                            user-profile-5xf7xdff6-pqpzp                           1/1     Running             0                 138m
+payments                            user-profile-5xf7xdff6-qq595                           1/1     Running             0                 8s
+search                              api-gateway-hkmtr                                      1/1     Running             0                 73s
+search                              api-gateway-r4mjc                                      0/1     Pending             0                 11s
+search                              api-gateway-vfg9x                                      1/1     Running             0                 3y195d
+search                              auth-service-lh88n8b8h-6r7nv                           2/2     Running             0                 28h
+search                              auth-service-lh88n8b8h-6zl5p                           2/2     Running             0                 110m
+search                              auth-service-lh88n8b8h-8z62q                           0/2     Completed           0                 33h
+search                              auth-service-lh88n8b8h-h8qkp                           2/2     Running             0                 3y93d
+search                              auth-service-lh88n8b8h-s48ch                           0/2     Completed           0                 34d
+search                              auth-service-lh88n8b8h-wrd85                           2/2     Running             0                 73s
+search                              auth-service-lh88n8b8h-zp4mz                           2/2     Running             0                 57s
+search                              cart-7w4cxns7n-4nttb                                   0/1     Running             0                 76s
+search                              cart-7w4cxns7n-8bd2s                                   0/1     CrashLoopBackOff    163 (76m ago)     3y26d
+search                              cart-7w4cxns7n-9zqsv                                   1/1     Running             0                 2d18h
+search                              cart-7w4cxns7n-l6q45                                   1/1     Running             0                 26m
+search                              checkout-service-t7vvzdh7p-cv9dq                       2/2     Running             0                 3y344d
+search                              checkout-service-t7vvzdh7p-kdf9x                       0/2     Error               2 (5h7m ago)      14h
+search                              checkout-service-t7vvzdh7p-lskvz                       2/2     Running             0                 2d4h
+search                              checkout-service-t7vvzdh7p-lv6pg                       0/2     Error               1 (9s ago)        9s
+search                              checkout-service-t7vvzdh7p-nwvtw                       0/2     Error               0                 5s
+search                              checkout-service-t7vvzdh7p-sz55x                       2/2     Running             0                 33s
+search                              coredns-xmw9rp66j2-dm8cq                               2/2     Running             0                 6d13h
+search                              coredns-xmw9rp66j2-jq4q8                               0/2     Error               0                 55s
+search                              coredns-xmw9rp66j2-ltbvw                               2/2     Running             0                 287d
+search                              coredns-xmw9rp66j2-mmbdf                               1/2     CrashLoopBackOff    10 (3h10m ago)    2y89d
+search                              coredns-xmw9rp66j2-s5mnq                               2/2     Running             3 (4h27m ago)     44h
+search                              elasticsearch-data-l4kpkn7nk-f7hns                     0/1     OOMKilled           131 (92m ago)     2y89d
+search                              frontend-dcjz682rz9-424xl                              0/3     ImagePullBackOff    0                 26m
+search                              frontend-dcjz682rz9-7887p                              2/3     CrashLoopBackOff    1 (3h45m ago)     7h19m
+search                              frontend-dcjz682rz9-7rsjj                              0/3     Pending             0                 58s
+search                              frontend-dcjz682rz9-7shtm                              2/3     Running             0                 3y162d
+search                              frontend-dcjz682rz9-b228s                              3/3     Running             0                 234d
+search                              frontend-dcjz682rz9-pvh8b                              3/3     Running             0                 2y134d
+search                              image-resizer-323                                      3/3     Running             0                 2y317d
+search                              image-resizer-458                                      3/3     Terminating         0                 21h
+search                              image-resizer-659                                      3/3     Running             3 (64m ago)       64m
+search                              image-resizer-956                                      0/3     Completed           0                 44h
+search                              image-resizer-963                                      3/3     Running             0                 2d23h
+search                              kafka-29145414-xfpdz                                   2/2     Running             4 (5h49m ago)     22h
+search                              kafka-29439237-d4qnz                                   0/2     Pending             0                 3d21h
+search                              kafka-29552766-k6xhp                                   0/2     Completed           0                 6d16h
+search                              kube-proxy-2cm49n79z-27phz                             0/1     Running             0                 99m
+search                              kube-proxy-2cm49n79z-2s84f                             0/1     CrashLoopBackOff    179 (150m ago)    130d
+search                              kube-proxy-2cm49n79z-9vsb8                             1/1     Running             3 (5h4m ago)      5d7h
+search                              kube-proxy-2cm49n79z-j86qj                             0/1     Running             0                 224d
+search                              kube-proxy-2cm49n79z-x7d2k                             1/1     Running             0                 108s
+search                              kube-proxy-2cm49n79z-z9s8b                             1/1     Running             0                 98m
+search                              node-exporter-gftd2fs7n-926tx                          0/3     Completed           0                 2d19h
+search                              node-exporter-gftd2fs7n-lhs5g                          3/3     Running             0                 6d18h
+search                              node-exporter-gftd2fs7n-lwwt6                          3/3     Running             0                 192d
+search                              node-exporter-gftd2fs7n-nxkkp                          3/3     Running             0                 2y361d
+search                              notification-sender-29085814-5gvsb                     3/3     Running             0                 44h
+search                              notification-sender-29119106-hg2bf                     0/3     Completed           0                 8h
+search                              notification-sender-29173070-p8bj6                     0/3     Completed           0                 59m
+search                              notification-sender-29238350-l5vn5                     0/3     Completed           0                 21h
+search                              notification-sender-29375319-9zrlz                     3/3     Running             1 (5h3m ago)      2y111d
+search                              notification-sender-29428666-v2984                     0/3     Completed           0                 27s
+search                              notification-sender-29446450-8rxcz                     3/3     Running             3 (109m ago)      4y29d
+search                              notification-sender-29860097-s7kpx                     0/3     Completed           0                 6h19m
+search                              notification-sender-29911755-844tg                     0/3     Completed           0                 173m
+search                              notification-sender-29923135-47nrn                     3/3     Running             0                 17h
+search                              payments-worker-s44ctv8jkr-75mvt                       1/2     CrashLoopBackOff    160 (3h48m ago)   7h28m
+search                              payments-worker-s44ctv8jkr-lrzrx                       2/2     Running             0                 116d
+search                              payments-worker-s44ctv8jkr-pn624                       2/2     Running             0                 227d
+search                              payments-worker-s44ctv8jkr-q862d                       2/2     Running             0                 94s
+search                              payments-worker-s44ctv8jkr-qqq4r                       0/2     Error               0                 2y144d
+search                              payments-worker-s44ctv8jkr-sk7vg                       2/2     Running             0                 4d2h
+search                              payments-worker-s44ctv8jkr-wn6fm                       2/2     Running             0                 126m
+search                              postgres-kz9gdvc6mv-7vb9n                              0/1     Completed           0                 12h
+search                              postgres-kz9gdvc6mv-c4njk                              1/1     Running             2 (4h19m ago)     5d13h
+search                              postgres-kz9gdvc6mv-cfm7v                              1/1     Running             0                 161d
+search                              prometheus-server-9878d                                3/3     Running             0                 5d23h
+search                              prometheus-server-hjp54                                2/3     Running             0                 3y210d
+search                              prometheus-server-hxx5b                                0/3     Completed           0                 3y19d
+search                              prometheus-server-rrlpx                                0/3     Init:0/1            0                 102d
+search                              recommendation-engine-batch-scoring-6p86j29xzz-9bx7v   3/3     Running             0                 60s
+search                              recommendation-engine-batch-scoring-6p86j29xzz-c58bc   3/3     Running             4 (73s ago)       73s
+search                              recommendation-engine-batch-scoring-6p86j29xzz-fxz67   0/3     Completed           0                 3m12s
+search                              recommendation-engine-batch-scoring-6p86j29xzz-lvrjr   0/3     Completed           0                 98m
+search                              redis-29001265-r6xd9                                   1/2     Running             0                 15m
+search                              redis-29015731-hs9tv                                   2/2     Running             2 (80m ago)       80m
+search                              redis-29068881-4dk7d                                   2/2     Running             0                 13m
+search                              redis-29347988-cpn5n                                   0/2     Completed           0                 183d
+search                              redis-29357310-lnz8r                                   1/2     Running             4 (3h27m ago)     7d23h
+search                              redis-29583194-8dxwd                                   0/2     Completed           0                 10h
+search                              redis-29607590-k5bmg                                   0/2     Completed           0                 125d
+search                              redis-29823705-kd566                                   2/2     Running             0                 277d
+search                              redis-29861042-jh5kp                                   0/2     Error               2 (21m ago)       6d3h
+search                              report-generator-dhgxtbtc4-64bzz                       2/2     Running             0                 2d21h
+search                              report-generator-dhgxtbtc4-m2pgl                       2/2     Running             0                 75s
+search                              report-generator-dhgxtbtc4-tp8jw                       2/2     Running             0                 163d
+search                              search-indexer-5skqp                                   2/3     Running             0                 177m
+search                              search-indexer-7cgxd                                   0/3     ImagePullBackOff    0                 76s
+search                              search-indexer-9ds22                                   0/3     Pending             0                 5d6h
+search                              search-indexer-gcxfs                                   3/3     Running             3 (143m ago)      3d1h
+search                              search-indexer-m9f9d                                   3/3     Running             0                 2d4h
+search                              search-indexer-q8ss5                                   3/3     Running             0                 32h
+search                              user-profile-5xf7xdff6-4257b                           0/1     Pending             0                 119s
+search                              user-profile-5xf7xdff6-56hrv                           0/1     CrashLoopBackOff    79 (65m ago)      4d16h
+search                              user-profile-5xf7xdff6-gpr82                           1/1     Running             0                 33d
+search                              user-profile-5xf7xdff6-qcggq                           0/1     CrashLoopBackOff    78 (39m ago)      63d
+team-recommendations-experimental   api-gateway-48jrr                                      1/1     Running             0                 2y82d
+team-recommendations-experimental   api-gateway-49l4p                                      1/1     Running             0                 79m
+team-recommendations-experimental   api-gateway-5jxjw                                      1/1     Running             0                 180d
+team-recommendations-experimental   api-gateway-8rb2s                                      0/1     ImagePullBackOff    0                 7h9m
+team-recommendations-experimental   api-gateway-nck56                                      0/1     Completed           0                 230d
+team-recommendations-experimental   auth-service-lh88n8b8h-24f9l                           2/2     Running             1 (3h22m ago)     307d
+team-recommendations-experimental   auth-service-lh88n8b8h-7gcg9                           2/2     Running             4 (5h21m ago)     3y357d
+team-recommendations-experimental   auth-service-lh88n8b8h-tdt5n                           2/2     Running             0                 12s
+team-recommendations-experimental   cart-7w4cxns7n-44dqz                                   1/1     Running             0                 4y60d
+team-recommendations-experimental   cart-7w4cxns7n-8vjvx                                   0/1     Error               0                 23m
+team-recommendations-experimental   cart-7w4cxns7n-br6ct                                   0/1     Completed           0                 3y302d
+team-recommendations-experimental   cart-7w4cxns7n-j884l                                   1/1     Running             0                 260d
+team-recommendations-experimental   cart-7w4cxns7n-l76n5                                   1/1     Running             0                 95s
+team-recommendations-experimental   cart-7w4cxns7n-srq4h                                   0/1     Pending             0                 195d
+team-recommendations-experimental   checkout-service-t7vvzdh7p-9ppz2                       0/2     Completed           0                 66m
+team-recommendations-experimental   checkout-service-t7vvzdh7p-dsbjn                       2/2     Running             0                 6d12h
+team-recommendations-experimental   coredns-xmw9rp66j2-n57dn                               2/2     Running             4 (101m ago)      101m
+team-recommendations-experimental   coredns-xmw9rp66j2-qbsj9                               2/2     Running             0                 110s
+team-recommendations-experimental   coredns-xmw9rp66j2-x27m2                               2/2     Running             0                 7d17h
+team-recommendations-experimental   coredns-xmw9rp66j2-xjppn                               2/2     Running             0                 296d
+team-recommendations-experimental   elasticsearch-data-l4kpkn7nk-7jm8n                     1/1     Running             0                 37h
+team-recommendations-experimental   elasticsearch-data-l4kpkn7nk-hs6kp                     1/1     Running             0                 89s
+team-recommendations-experimental   elasticsearch-data-l4kpkn7nk-l2glk                     0/1     Error               0                 2y139d
+team-recommendations-experimental   elasticsearch-data-l4kpkn7nk-rvmhh                     1/1     Running             0                 10m
+team-recommendations-experimental   elasticsearch-data-l4kpkn7nk-wrw4k                     1/1     Running             0                 16h
+team-recommendations-experimental   elasticsearch-data-l4kpkn7nk-wxpfb                     0/1     Running             0                 99s
+team-recommendations-experimental   elasticsearch-data-l4kpkn7nk-zvg49                     1/1     Running             0                 2d6h
+team-recommendations-experimental   frontend-dcjz682rz9-8n7xq                              3/3     Running             0                 35s
+team-recommendations-experimental   frontend-dcjz682rz9-dj287                              3/3     Running             0                 3s
+team-recommendations-experimental   frontend-dcjz682rz9-jjhtr                              2/3     Running             0                 14m
+team-recommendations-experimental   image-resizer-204                                      2/3     OOMKilled           237 (3h ago)      133d
+team-recommendations-experimental   image-resizer-320                                      3/3     Running             0                 22m
+team-recommendations-experimental   image-resizer-352                                      3/3     Running             3 (5h33m ago)     26d
+team-recommendations-experimental   image-resizer-465                                      3/3     Running             0                 139m
+team-recommendations-experimental   image-resizer-733                                      3/3     Running             0                 6d17h
+team-recommendations-experimental   image-resizer-897                                      3/3     Running             0                 178m
+team-recommendations-experimental   image-resizer-924                                      3/3     Running             0                 244d
+team-recommendations-experimental   kafka-29036865-v27xl                                   0/2     Completed           0                 3y100d
+team-recommendations-experimental   kafka-29058725-kgpf8                                   0/2     Completed           0                 93s
+team-recommendations-experimental   kafka-29213308-t8767                                   2/2     Running             0                 4d21h
+team-recommendations-experimental   kafka-29277927-vztjh                                   1/2     Running             0                 28h
+team-recommendations-experimental   kafka-29436179-8269p                                   0/2     Completed           0                 37h
+team-recommendations-experimental   kafka-29520949-lj4kh                                   0/2     Completed           0                 41h
+team-recommendations-experimental   kafka-29597329-4997h                                   0/2     Completed           0                 22d
+team-recommendations-experimental   kafka-29636841-hhz2p                                   0/2     Completed           0                 2y29d
+team-recommendations-experimental   kafka-29651005-v5dr9                                   0/2     Completed           0                 60s
+team-recommendations-experimental   kafka-29846871-n2w86                                   2/2     Running             0                 143m
+team-recommendations-experimental   kube-proxy-2cm49n79z-8gtzp                             0/1     Error               1 (131m ago)      3d12h
+team-recommendations-experimental   kube-proxy-2cm49n79z-gghvr                             1/1     Running             0                 95s
+team-recommendations-experimental   kube-proxy-2cm49n79z-s6tg4                             1/1     Running             3 (5h55m ago)     52d
+team-recommendations-experimental   kube-proxy-2cm49n79z-t8s27                             0/1     Terminating         0                 4d19h
+team-recommendations-experimental   node-exporter-gftd2fs7n-2q42m                          3/3     Running             0                 45s
+team-recommendations-experimental   node-exporter-gftd2fs7n-5rhgq                          3/3     Running             4 (146m ago)      65d
+team-recommendations-experimental   node-exporter-gftd2fs7n-8rqzb                          0/3     Completed           0                 2d1h
+team-recommendations-experimental   node-exporter-gftd2fs7n-d7f9s                          3/3     Running             0                 133m
+team-recommendations-experimental   node-exporter-gftd2fs7n-fpx5p                          2/3     Running             1 (5h35m ago)     4d15h
+team-recommendations-experimental   node-exporter-gftd2fs7n-kdgvf                          0/3     Terminating         0                 4y61d
+team-recommendations-experimental   node-exporter-gftd2fs7n-qxnvq                          3/3     Running             0                 3d13h
+team-recommendations-experimental   notification-sender-29266984-z9zfm                     3/3     Running             0                 5d8h
+team-recommendations-experimental   notification-sender-29324498-49cwv                     0/3     Completed           0                 5d8h
+team-recommendations-experimental   notification-sender-29700670-2jnl7                     3/3     Running             0                 85d
+team-recommendations-experimental   notification-sender-29848529-rtjz9                     3/3     Running             0                 6d10h
+team-recommendations-experimental   payments-worker-s44ctv8jkr-7xzjl                       2/2     Running             0                 80s
+team-recommendations-experimental   payments-worker-s44ctv8jkr-fx88q                       2/2     Running             0                 4d11h
+team-recommendations-experimental   payments-worker-s44ctv8jkr-ks4pl                       0/2     Completed           0                 19h
+team-recommendations-experimental   payments-worker-s44ctv8jkr-m5j2w                       2/2     Running             0                 2y211d
+team-recommendations-experimental   payments-worker-s44ctv8jkr-rlktn                       2/2     Running             0                 175d
+team-recommendations-experimental   postgres-kz9gdvc6mv-6lk5d                              1/1     Running             3 (3h36m ago)     4h35m
+team-recommendations-experimental   postgres-kz9gdvc6mv-jq9vx                              1/1     Running             0                 3y178d
+team-recommendations-experimental   postgres-kz9gdvc6mv-ldjxr                              1/1     Running             0                 40s
+team-recommendations-experimental   prometheus-server-9t2z4                                3/3     Running             0                 139d
+team-recommendations-experimental   prometheus-server-d5rtb                                2/3     OOMKilled           218 (3h37m ago)   4y28d
+team-recommendations-experimental   prometheus-server-lx8zp                                3/3     Running             0                 45h
+team-recommendations-experimental   prometheus-server-zvfhd                                3/3     Running             0                 177m
+team-recommendations-experimental   recommendation-engine-batch-scoring-6p86j29xzz-5nlxg   3/3     Running             0                 192d
+team-recommendations-experimental   recommendation-engine-batch-scoring-6p86j29xzz-6r649   3/3     Running             1 (169m ago)      169m
+team-recommendations-experimental   recommendation-engine-batch-scoring-6p86j29xzz-dqj72   3/3     Running             0                 2d21h
+team-recommendations-experimental   recommendation-engine-batch-scoring-6p86j29xzz-l8zjf   0/3     Completed           0                 2d2h
+team-recommendations-experimental   recommendation-engine-batch-scoring-6p86j29xzz-m9f98   3/3     Running             0                 7d
+team-recommendations-experimental   recommendation-engine-batch-scoring-6p86j29xzz-ztmjw   3/3     Running             0                 213d
+team-recommendations-experimental   redis-29032727-qhsmh                                   0/2     Completed           0                 69d
+team-recommendations-experimental   redis-29034797-7z2vf                                   1/2     Running             0                 178m
+team-recommendations-experimental   redis-29120590-wd98r                                   1/2     CrashLoopBackOff    2 (105s ago)      105s
+team-recommendations-experimental   redis-29197883-6ttkr                                   2/2     Terminating         0                 42h
+team-recommendations-experimental   redis-29856101-nj7f7                                   2/2     Running             0                 3d22h
+team-recommendations-experimental   report-generator-dhgxtbtc4-69xhw                       2/2     Running             0                 2s
+team-recommendations-experimental   report-generator-dhgxtbtc4-7lkkx                       2/2     Running             0                 4y49d
+team-recommendations-experimental   report-generator-dhgxtbtc4-8tct4                       2/2     Running             0                 2d20h
+team-recommendations-experimental   report-generator-dhgxtbtc4-b94ft                       2/2     Running             4 (126m ago)      6d10h
+team-recommendations-experimental   report-generator-dhgxtbtc4-mk75m                       2/2     Running             0                 4d23h
+team-recommendations-experimental   report-generator-dhgxtbtc4-rb826                       2/2     Running             2 (5s ago)        5s
+team-recommendations-experimental   report-generator-dhgxtbtc4-xn25d                       2/2     Running             0                 53s
+team-recommendations-experimental   search-indexer-9s5fp                                   3/3     Running             0                 2y246d
+team-recommendations-experimental   search-indexer-rq5p7                                   3/3     Running             0                 44h
+team-recommendations-experimental   search-indexer-tzgck                                   3/3     Running             0                 3d13h
+team-recommendations-experimental   user-profile-5xf7xdff6-6hvfb                           1/1     Running             0                 117m
+team-recommendations-experimental   user-profile-5xf7xdff6-7gfb4                           1/1     Running             0                 37d
+team-recommendations-experimental   user-profile-5xf7xdff6-84psq                           1/1     Running             4 (166m ago)      89d
+team-recommendations-experimental   user-profile-5xf7xdff6-dzrj6                           0/1     ImagePullBackOff    0                 26m
+team-recommendations-experimental   user-profile-5xf7xdff6-g4mn2                           1/1     Running             0                 19h
+team-recommendations-experimental   user-profile-5xf7xdff6-p94mj                           0/1     CrashLoopBackOff    236 (118m ago)    6d22h

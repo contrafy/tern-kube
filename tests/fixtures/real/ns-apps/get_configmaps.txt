@@ -1,0 +1,3 @@
+NAME               DATA   AGE
+app-config         3      5m16s
+kube-root-ca.crt   1      5m16s

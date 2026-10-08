@@ -1,0 +1,147 @@
+scenario	key	argv	exit	kubectl_version	server_version
+cluster	version	kubectl version	0	v1.34.1	v1.37.0
+cluster	api-resources	kubectl api-resources	0	v1.34.1	v1.37.0
+cluster	get_nodes	kubectl get nodes	0	v1.34.1	v1.37.0
+cluster	get_nodes_-o_wide	kubectl get nodes -o wide	0	v1.34.1	v1.37.0
+cluster	get_nodes_--show-labels	kubectl get nodes --show-labels	0	v1.34.1	v1.37.0
+cluster	get_nodes_-o_json	kubectl get nodes -o json	0	v1.34.1	v1.37.0
+cluster	get_no	kubectl get no	0	v1.34.1	v1.37.0
+cluster	get_namespaces	kubectl get namespaces	0	v1.34.1	v1.37.0
+cluster	get_ns	kubectl get ns	0	v1.34.1	v1.37.0
+cluster	get_crd	kubectl get crd	0	v1.34.1	v1.37.0
+cluster	get_crd_widgets.lens.example.com_-o_yaml	kubectl get crd widgets.lens.example.com -o yaml	0	v1.34.1	v1.37.0
+cluster	describe_node	kubectl describe node	0	v1.34.1	v1.37.0
+cluster	describe_node_kube-lens-dev-control-plane	kubectl describe node kube-lens-dev-control-plane	0	v1.34.1	v1.37.0
+cluster	top_nodes	kubectl top nodes	0	v1.34.1	v1.37.0
+ns-apps	get_pods	kubectl get pods -n tern-test-apps	0	v1.34.1	v1.37.0
+ns-apps	get_po	kubectl get po -n tern-test-apps	0	v1.34.1	v1.37.0
+ns-apps	get_pods_-o_wide	kubectl get pods -n tern-test-apps -o wide	0	v1.34.1	v1.37.0
+ns-apps	get_pods_--show-labels	kubectl get pods -n tern-test-apps --show-labels	0	v1.34.1	v1.37.0
+ns-apps	get_pods_-l_app=web	kubectl get pods -n tern-test-apps -l app=web	0	v1.34.1	v1.37.0
+ns-apps	get_pods_--selector=app=db_-o_wide	kubectl get pods -n tern-test-apps --selector=app=db -o wide	0	v1.34.1	v1.37.0
+ns-apps	get_pods_--no-headers	kubectl get pods -n tern-test-apps --no-headers	0	v1.34.1	v1.37.0
+ns-apps	get_pods_-o_json	kubectl get pods -n tern-test-apps -o json	0	v1.34.1	v1.37.0
+ns-apps	get_pods_-o_yaml	kubectl get pods -n tern-test-apps -o yaml	0	v1.34.1	v1.37.0
+ns-apps	get_pods_-o_name	kubectl get pods -n tern-test-apps -o name	0	v1.34.1	v1.37.0
+ns-apps	get_pods_-o_custom-columns=NAME:.metadata.name,NODE:.spec.nodeName	kubectl get pods -n tern-test-apps -o custom-columns=NAME:.metadata.name,NODE:.spec.nodeName	0	v1.34.1	v1.37.0
+ns-apps	get_pods_--sort-by=.metadata.name	kubectl get pods -n tern-test-apps --sort-by=.metadata.name	0	v1.34.1	v1.37.0
+ns-apps	get_pods_--sort-by=.status.containerStatuses[0].restartCount	kubectl get pods -n tern-test-apps '--sort-by=.status.containerStatuses[0].restartCount'	0	v1.34.1	v1.37.0
+ns-apps	get_pod_crashloop	kubectl get pod crashloop -n tern-test-apps	0	v1.34.1	v1.37.0
+ns-apps	get_pods_crashloop_pending	kubectl get pods crashloop pending -n tern-test-apps	0	v1.34.1	v1.37.0
+ns-apps	get_pod+crashloop	kubectl get pod/crashloop -n tern-test-apps	0	v1.34.1	v1.37.0
+ns-apps	get_pod_crashloop_-o_yaml	kubectl get pod crashloop -n tern-test-apps -o yaml	0	v1.34.1	v1.37.0
+ns-apps	get_deployments	kubectl get deployments -n tern-test-apps	0	v1.34.1	v1.37.0
+ns-apps	get_deploy	kubectl get deploy -n tern-test-apps	0	v1.34.1	v1.37.0
+ns-apps	get_deploy_-o_wide	kubectl get deploy -n tern-test-apps -o wide	0	v1.34.1	v1.37.0
+ns-apps	get_deployment_web_-o_yaml	kubectl get deployment web -n tern-test-apps -o yaml	0	v1.34.1	v1.37.0
+ns-apps	get_services	kubectl get services -n tern-test-apps	0	v1.34.1	v1.37.0
+ns-apps	get_svc	kubectl get svc -n tern-test-apps	0	v1.34.1	v1.37.0
+ns-apps	get_svc_-o_wide	kubectl get svc -n tern-test-apps -o wide	0	v1.34.1	v1.37.0
+ns-apps	get_endpointslices	kubectl get endpointslices -n tern-test-apps	0	v1.34.1	v1.37.0
+ns-apps	get_endpoints	kubectl get endpoints -n tern-test-apps	0	v1.34.1	v1.37.0
+ns-apps	get_ingress	kubectl get ingress -n tern-test-apps	0	v1.34.1	v1.37.0
+ns-apps	get_ing_-o_wide	kubectl get ing -n tern-test-apps -o wide	0	v1.34.1	v1.37.0
+ns-apps	get_statefulsets	kubectl get statefulsets -n tern-test-apps	0	v1.34.1	v1.37.0
+ns-apps	get_sts_-o_wide	kubectl get sts -n tern-test-apps -o wide	0	v1.34.1	v1.37.0
+ns-apps	get_daemonsets	kubectl get daemonsets -n tern-test-apps	0	v1.34.1	v1.37.0
+ns-apps	get_ds_-o_wide	kubectl get ds -n tern-test-apps -o wide	0	v1.34.1	v1.37.0
+ns-apps	get_replicasets	kubectl get replicasets -n tern-test-apps	0	v1.34.1	v1.37.0
+ns-apps	get_rs_-o_wide	kubectl get rs -n tern-test-apps -o wide	0	v1.34.1	v1.37.0
+ns-apps	get_configmaps	kubectl get configmaps -n tern-test-apps	0	v1.34.1	v1.37.0
+ns-apps	get_secrets	kubectl get secrets -n tern-test-apps	0	v1.34.1	v1.37.0
+ns-apps	get_secret_app-secret_-o_yaml	kubectl get secret app-secret -n tern-test-apps -o yaml	0	v1.34.1	v1.37.0
+ns-apps	get_events	kubectl get events -n tern-test-apps	0	v1.34.1	v1.37.0
+ns-apps	get_events_--sort-by=.lastTimestamp	kubectl get events -n tern-test-apps --sort-by=.lastTimestamp	0	v1.34.1	v1.37.0
+ns-apps	get_all	kubectl get all -n tern-test-apps	0	v1.34.1	v1.37.0
+ns-apps	get_pods,svc	kubectl get pods,svc -n tern-test-apps	0	v1.34.1	v1.37.0
+ns-apps	describe_pods	kubectl describe pods -n tern-test-apps	0	v1.34.1	v1.37.0
+ns-apps	get_deploy,rs,pods	kubectl get deploy,rs,pods -n tern-test-apps	0	v1.34.1	v1.37.0
+ns-apps	describe_pod_crashloop	kubectl describe pod crashloop -n tern-test-apps	0	v1.34.1	v1.37.0
+ns-apps	describe_pod_pending	kubectl describe pod pending -n tern-test-apps	0	v1.34.1	v1.37.0
+ns-apps	describe_deployment_web	kubectl describe deployment web -n tern-test-apps	0	v1.34.1	v1.37.0
+ns-apps	describe_svc_web	kubectl describe svc web -n tern-test-apps	0	v1.34.1	v1.37.0
+ns-apps	describe_ingress_web	kubectl describe ingress web -n tern-test-apps	0	v1.34.1	v1.37.0
+ns-apps	top_pods	kubectl top pods -n tern-test-apps	0	v1.34.1	v1.37.0
+ns-apps	top_pods_--containers	kubectl top pods -n tern-test-apps --containers	0	v1.34.1	v1.37.0
+ns-batch	get_pods	kubectl get pods -n tern-test-batch	0	v1.34.1	v1.37.0
+ns-batch	get_jobs	kubectl get jobs -n tern-test-batch	0	v1.34.1	v1.37.0
+ns-batch	get_jobs_-o_wide	kubectl get jobs -n tern-test-batch -o wide	0	v1.34.1	v1.37.0
+ns-batch	get_cronjobs	kubectl get cronjobs -n tern-test-batch	0	v1.34.1	v1.37.0
+ns-batch	get_cj_-o_wide	kubectl get cj -n tern-test-batch -o wide	0	v1.34.1	v1.37.0
+ns-batch	get_all	kubectl get all -n tern-test-batch	0	v1.34.1	v1.37.0
+ns-batch	get_events	kubectl get events -n tern-test-batch	0	v1.34.1	v1.37.0
+ns-batch	describe_job_fail-job	kubectl describe job fail-job -n tern-test-batch	0	v1.34.1	v1.37.0
+ns-batch	describe_cronjob_nightly-report	kubectl describe cronjob nightly-report -n tern-test-batch	0	v1.34.1	v1.37.0
+ns-crd	get_widgets	kubectl get widgets -n tern-test-crd	0	v1.34.1	v1.37.0
+ns-crd	get_wd	kubectl get wd -n tern-test-crd	0	v1.34.1	v1.37.0
+ns-crd	get_widgets.lens.example.com	kubectl get widgets.lens.example.com -n tern-test-crd	0	v1.34.1	v1.37.0
+ns-crd	get_widgets_-o_wide	kubectl get widgets -n tern-test-crd -o wide	0	v1.34.1	v1.37.0
+ns-crd	get_widgets_-o_json	kubectl get widgets -n tern-test-crd -o json	0	v1.34.1	v1.37.0
+ns-crd	get_widgets_-o_yaml	kubectl get widgets -n tern-test-crd -o yaml	0	v1.34.1	v1.37.0
+ns-crd	get_widget_gizmo	kubectl get widget gizmo -n tern-test-crd	0	v1.34.1	v1.37.0
+ns-crd	describe_widget_gizmo	kubectl describe widget gizmo -n tern-test-crd	0	v1.34.1	v1.37.0
+ns-crd	get_lens	kubectl get lens -n tern-test-crd	0	v1.34.1	v1.37.0
+ns-edge	get_pods	kubectl get pods -n tern-test-edge	0	v1.34.1	v1.37.0
+ns-edge	get_pods_-o_wide	kubectl get pods -n tern-test-edge -o wide	0	v1.34.1	v1.37.0
+ns-edge	get_pods_--show-labels	kubectl get pods -n tern-test-edge --show-labels	0	v1.34.1	v1.37.0
+ns-edge	get_pod_labels-odd_-o_yaml	kubectl get pod labels-odd -n tern-test-edge -o yaml	0	v1.34.1	v1.37.0
+ns-edge	get_pod_labels-odd_-o_json	kubectl get pod labels-odd -n tern-test-edge -o json	0	v1.34.1	v1.37.0
+ns-edge	describe_pod_labels-odd	kubectl describe pod labels-odd -n tern-test-edge	0	v1.34.1	v1.37.0
+ns-edge	get_configmap_unicode-config_-o_yaml	kubectl get configmap unicode-config -n tern-test-edge -o yaml	0	v1.34.1	v1.37.0
+ns-edge	top_pods_--containers	kubectl top pods -n tern-test-edge --containers	0	v1.34.1	v1.37.0
+ns-empty	get_pods	kubectl get pods -n tern-test-empty	0	v1.34.1	v1.37.0
+ns-empty	get_all	kubectl get all -n tern-test-empty	0	v1.34.1	v1.37.0
+ns-empty	get_events	kubectl get events -n tern-test-empty	0	v1.34.1	v1.37.0
+ns-empty	get_pods_-o_json	kubectl get pods -n tern-test-empty -o json	0	v1.34.1	v1.37.0
+all-namespaces	get_pods_-A	kubectl get pods -A	0	v1.34.1	v1.37.0
+all-namespaces	get_pods_--all-namespaces	kubectl get pods --all-namespaces	0	v1.34.1	v1.37.0
+all-namespaces	get_pods_-A_-o_wide	kubectl get pods -A -o wide	0	v1.34.1	v1.37.0
+all-namespaces	get_pods_-A_--no-headers	kubectl get pods -A --no-headers	0	v1.34.1	v1.37.0
+all-namespaces	get_pods_-A_--show-labels	kubectl get pods -A --show-labels	0	v1.34.1	v1.37.0
+all-namespaces	get_pods_-A_-l_app=web	kubectl get pods -A -l app=web	0	v1.34.1	v1.37.0
+all-namespaces	get_deploy_-A	kubectl get deploy -A	0	v1.34.1	v1.37.0
+all-namespaces	get_svc_-A	kubectl get svc -A	0	v1.34.1	v1.37.0
+all-namespaces	get_svc_-A_-o_wide	kubectl get svc -A -o wide	0	v1.34.1	v1.37.0
+all-namespaces	get_events_-A	kubectl get events -A	0	v1.34.1	v1.37.0
+all-namespaces	get_events_-A_--sort-by=.lastTimestamp	kubectl get events -A --sort-by=.lastTimestamp	0	v1.34.1	v1.37.0
+all-namespaces	get_all_-A	kubectl get all -A	0	v1.34.1	v1.37.0
+all-namespaces	get_jobs_-A	kubectl get jobs -A	0	v1.34.1	v1.37.0
+all-namespaces	get_cronjobs_-A	kubectl get cronjobs -A	0	v1.34.1	v1.37.0
+all-namespaces	get_ingress_-A	kubectl get ingress -A	0	v1.34.1	v1.37.0
+all-namespaces	get_sts_-A	kubectl get sts -A	0	v1.34.1	v1.37.0
+all-namespaces	get_ds_-A	kubectl get ds -A	0	v1.34.1	v1.37.0
+all-namespaces	get_rs_-A	kubectl get rs -A	0	v1.34.1	v1.37.0
+all-namespaces	get_endpointslices_-A	kubectl get endpointslices -A	0	v1.34.1	v1.37.0
+all-namespaces	get_configmaps_-A	kubectl get configmaps -A	0	v1.34.1	v1.37.0
+all-namespaces	get_widgets_-A	kubectl get widgets -A	0	v1.34.1	v1.37.0
+all-namespaces	top_pods_-A	kubectl top pods -A	0	v1.34.1	v1.37.0
+errors	get_foos	kubectl get foos	1	v1.34.1	v1.37.0
+errors	get_pod_does-not-exist	kubectl get pod does-not-exist -n tern-test-apps	1	v1.34.1	v1.37.0
+errors	get_pods_does-not-exist_crashloop	kubectl get pods does-not-exist crashloop -n tern-test-apps	1	v1.34.1	v1.37.0
+errors	describe_pod_does-not-exist	kubectl describe pod does-not-exist -n tern-test-apps	1	v1.34.1	v1.37.0
+errors	get_pods	kubectl get pods -n tern-test-does-not-exist	0	v1.34.1	v1.37.0
+errors	get_secrets_--as=system:serviceaccount:tern-test-apps:default	kubectl get secrets -n tern-test-apps --as=system:serviceaccount:tern-test-apps:default	1	v1.34.1	v1.37.0
+errors	get_pods_--server=https:++127.0.0.1:1_--request-timeout=5s	kubectl get pods -n tern-test-apps --server=https://127.0.0.1:1 --request-timeout=5s	1	v1.34.1	v1.37.0
+errors-context	get_pods	kubectl --context does-not-exist get pods -n tern-test-apps	1	v1.34.1	v1.37.0
+mutate-create	diff_-f_mutate+app.yaml	kubectl diff -n tern-test-mutate -f mutate/app.yaml	1	v1.34.1	v1.37.0
+mutate-create	apply_--dry-run=server_-f_mutate+app.yaml	kubectl apply -n tern-test-mutate --dry-run=server -f mutate/app.yaml	0	v1.34.1	v1.37.0
+mutate-create	apply_-f_mutate+app.yaml	kubectl apply -n tern-test-mutate -f mutate/app.yaml	0	v1.34.1	v1.37.0
+mutate-create	apply_-f_mutate+scratch-pod.yaml	kubectl apply -n tern-test-mutate -f mutate/scratch-pod.yaml	0	v1.34.1	v1.37.0
+mutate-unchanged	apply_-f_mutate+app.yaml	kubectl apply -n tern-test-mutate -f mutate/app.yaml	0	v1.34.1	v1.37.0
+mutate-unchanged	diff_-f_mutate+app.yaml	kubectl diff -n tern-test-mutate -f mutate/app.yaml	0	v1.34.1	v1.37.0
+mutate-configured	diff_-f_mutate+app-v2.yaml	kubectl diff -n tern-test-mutate -f mutate/app-v2.yaml	1	v1.34.1	v1.37.0
+mutate-configured	apply_--dry-run=client_-f_mutate+app-v2.yaml	kubectl apply -n tern-test-mutate --dry-run=client -f mutate/app-v2.yaml	0	v1.34.1	v1.37.0
+mutate-configured	apply_--dry-run=server_-f_mutate+app-v2.yaml	kubectl apply -n tern-test-mutate --dry-run=server -f mutate/app-v2.yaml	0	v1.34.1	v1.37.0
+mutate-configured	apply_-f_mutate+app-v2.yaml	kubectl apply -n tern-test-mutate -f mutate/app-v2.yaml	0	v1.34.1	v1.37.0
+mutate-ops	scale_deployment+api_--replicas=3	kubectl scale deployment/api --replicas=3 -n tern-test-mutate	0	v1.34.1	v1.37.0
+mutate-ops	rollout_restart_deployment+api	kubectl rollout restart deployment/api -n tern-test-mutate	0	v1.34.1	v1.37.0
+mutate-ops	rollout_status_deployment+api_--timeout=180s	kubectl rollout status deployment/api -n tern-test-mutate --timeout=180s	0	v1.34.1	v1.37.0
+mutate-ops	delete_pod_scratch	kubectl delete pod scratch -n tern-test-mutate	0	v1.34.1	v1.37.0
+mutate-delete	delete_-f_mutate+app-v2.yaml	kubectl delete -n tern-test-mutate -f mutate/app-v2.yaml	0	v1.34.1	v1.37.0
+errors	apply_-f_mutate+invalid.yaml	kubectl apply -n tern-test-mutate -f mutate/invalid.yaml	1	v1.34.1	v1.37.0
+errors	apply_-f_mutate+broken.yaml	kubectl apply -n tern-test-mutate -f mutate/broken.yaml	1	v1.34.1	v1.37.0
+errors	apply_-f_mutate+does-not-exist.yaml	kubectl apply -n tern-test-mutate -f mutate/does-not-exist.yaml	1	v1.34.1	v1.37.0
+errors	delete_-f_mutate+app-v2.yaml	kubectl delete -n tern-test-mutate -f mutate/app-v2.yaml	1	v1.34.1	v1.37.0
+errors	delete_pod_scratch	kubectl delete pod scratch -n tern-test-mutate	1	v1.34.1	v1.37.0
+errors	scale_deployment+api_--replicas=1	kubectl scale deployment/api --replicas=1 -n tern-test-mutate	1	v1.34.1	v1.37.0
+errors	rollout_restart_deployment+api	kubectl rollout restart deployment/api -n tern-test-mutate	1	v1.34.1	v1.37.0

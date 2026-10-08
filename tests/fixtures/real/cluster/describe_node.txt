@@ -1,0 +1,99 @@
+Name:               kube-lens-dev-control-plane
+Roles:              control-plane
+Labels:             beta.kubernetes.io/arch=arm64
+                    beta.kubernetes.io/os=linux
+                    kubernetes.io/arch=arm64
+                    kubernetes.io/hostname=kube-lens-dev-control-plane
+                    kubernetes.io/os=linux
+                    node-role.kubernetes.io/control-plane=
+Annotations:        node.alpha.kubernetes.io/ttl: 0
+                    volumes.kubernetes.io/controller-managed-attach-detach: true
+CreationTimestamp:  Thu, 08 Oct 2026 02:48:36 -0500
+Taints:             <none>
+Unschedulable:      false
+Lease:
+  HolderIdentity:  kube-lens-dev-control-plane
+  AcquireTime:     <unset>
+  RenewTime:       Thu, 08 Oct 2026 03:15:31 -0500
+Conditions:
+  Type             Status  LastHeartbeatTime                 LastTransitionTime                Reason                       Message
+  ----             ------  -----------------                 ------------------                ------                       -------
+  MemoryPressure   False   Thu, 08 Oct 2026 03:13:18 -0500   Thu, 08 Oct 2026 02:48:35 -0500   KubeletHasSufficientMemory   kubelet has sufficient memory available
+  DiskPressure     False   Thu, 08 Oct 2026 03:13:18 -0500   Thu, 08 Oct 2026 02:48:35 -0500   KubeletHasNoDiskPressure     kubelet has no disk pressure
+  PIDPressure      False   Thu, 08 Oct 2026 03:13:18 -0500   Thu, 08 Oct 2026 02:48:35 -0500   KubeletHasSufficientPID      kubelet has sufficient PID available
+  Ready            True    Thu, 08 Oct 2026 03:13:18 -0500   Thu, 08 Oct 2026 02:48:57 -0500   KubeletReady                 kubelet is posting ready status
+Addresses:
+  InternalIP:  172.18.0.2
+  Hostname:    kube-lens-dev-control-plane
+Capacity:
+  cpu:                10
+  ephemeral-storage:  977843695616
+  hugepages-1Gi:      0
+  hugepages-2Mi:      0
+  hugepages-32Mi:     0
+  hugepages-64Ki:     0
+  memory:             8126480Ki
+  pods:               110
+Allocatable:
+  cpu:                10
+  ephemeral-storage:  977843695616
+  hugepages-1Gi:      0
+  hugepages-2Mi:      0
+  hugepages-32Mi:     0
+  hugepages-64Ki:     0
+  memory:             8126480Ki
+  pods:               110
+System Info:
+  Machine ID:                 13fc5d98c9be40c38c08eebb16e9ac55
+  System UUID:                13fc5d98c9be40c38c08eebb16e9ac55
+  Boot ID:                    c189386f-c32a-438f-97d5-b5b5c3d7ec11
+  Kernel Version:             6.12.76-linuxkit
+  OS Image:                   Debian GNU/Linux 13 (trixie)
+  Operating System:           linux
+  Architecture:               arm64
+  Container Runtime Version:  containerd://2.3.4
+  Kubelet Version:            v1.37.0
+  Kube-Proxy Version:         
+PodCIDR:                      10.244.0.0/24
+PodCIDRs:                     10.244.0.0/24
+ProviderID:                   kind://docker/kube-lens-dev/kube-lens-dev-control-plane
+Non-terminated Pods:          (18 in total)
+  Namespace                   Name                                                                       CPU Requests  CPU Limits  Memory Requests  Memory Limits  Age
+  ---------                   ----                                                                       ------------  ----------  ---------------  -------------  ---
+  kube-system                 coredns-559f6c778d-gj5nz                                                   100m (1%)     0 (0%)      70Mi (0%)        170Mi (2%)     26m
+  kube-system                 coredns-559f6c778d-qxwp4                                                   100m (1%)     0 (0%)      70Mi (0%)        170Mi (2%)     26m
+  kube-system                 etcd-kube-lens-dev-control-plane                                           100m (1%)     0 (0%)      100Mi (1%)       0 (0%)         27m
+  kube-system                 kindnet-f8lmd                                                              100m (1%)     0 (0%)      50Mi (0%)        0 (0%)         26m
+  kube-system                 kube-apiserver-kube-lens-dev-control-plane                                 250m (2%)     0 (0%)      0 (0%)           0 (0%)         27m
+  kube-system                 kube-controller-manager-kube-lens-dev-control-plane                        200m (2%)     0 (0%)      0 (0%)           0 (0%)         27m
+  kube-system                 kube-proxy-9s9pd                                                           0 (0%)        0 (0%)      0 (0%)           0 (0%)         26m
+  kube-system                 kube-scheduler-kube-lens-dev-control-plane                                 100m (1%)     0 (0%)      0 (0%)           0 (0%)         27m
+  kube-system                 metrics-server-84c99cb944-mjq2v                                            100m (1%)     0 (0%)      200Mi (2%)       0 (0%)         10m
+  local-path-storage          local-path-provisioner-75f7fc7dc5-g75wh                                    0 (0%)        0 (0%)      0 (0%)           0 (0%)         26m
+  tern-test-apps              broken-image-68986f4958-6qp2v                                              0 (0%)        0 (0%)      0 (0%)           0 (0%)         5m14s
+  tern-test-apps              crashloop                                                                  0 (0%)        0 (0%)      0 (0%)           0 (0%)         5m14s
+  tern-test-apps              db-0                                                                       0 (0%)        0 (0%)      0 (0%)           0 (0%)         5m14s
+  tern-test-apps              node-agent-bb754                                                           0 (0%)        0 (0%)      0 (0%)           0 (0%)         5m14s
+  tern-test-apps              web-65d7d99975-bmgbn                                                       5m (0%)       0 (0%)      8Mi (0%)         0 (0%)         5m14s
+  tern-test-apps              web-65d7d99975-zsb95                                                       5m (0%)       0 (0%)      8Mi (0%)         0 (0%)         5m14s
+  tern-test-edge              a-pod-with-a-deliberately-long-name-to-stress-column-widths-in-the-lens    0 (0%)        0 (0%)      0 (0%)           0 (0%)         5m14s
+  tern-test-edge              labels-odd                                                                 0 (0%)        0 (0%)      0 (0%)           0 (0%)         5m14s
+Allocated resources:
+  (Total limits may be over 100 percent, i.e., overcommitted.)
+  Resource           Requests     Limits
+  --------           --------     ------
+  cpu                1060m (10%)  0 (0%)
+  memory             506Mi (6%)   340Mi (4%)
+  ephemeral-storage  0 (0%)       0 (0%)
+  hugepages-1Gi      0 (0%)       0 (0%)
+  hugepages-2Mi      0 (0%)       0 (0%)
+  hugepages-32Mi     0 (0%)       0 (0%)
+  hugepages-64Ki     0 (0%)       0 (0%)
+Events:
+  Type    Reason                   Age   From             Message
+  ----    ------                   ----  ----             -------
+  Normal  NodeHasSufficientMemory  27m   kubelet          Node kube-lens-dev-control-plane status is now: NodeHasSufficientMemory
+  Normal  NodeHasNoDiskPressure    27m   kubelet          Node kube-lens-dev-control-plane status is now: NodeHasNoDiskPressure
+  Normal  NodeHasSufficientPID     27m   kubelet          Node kube-lens-dev-control-plane status is now: NodeHasSufficientPID
+  Normal  RegisteredNode           26m   node-controller  Node kube-lens-dev-control-plane event: Registered Node kube-lens-dev-control-plane in Controller
+  Normal  NodeReady                26m   kubelet          Node kube-lens-dev-control-plane status is now: NodeReady

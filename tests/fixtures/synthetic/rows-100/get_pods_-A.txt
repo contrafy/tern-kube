@@ -1,0 +1,101 @@
+NAMESPACE                           NAME                                                   READY   STATUS              RESTARTS          AGE
+auth                                api-gateway-sfnjw                                      0/1     Pending             0                 9s
+auth                                elasticsearch-data-l4kpkn7nk-727h9                     0/1     Error               2 (98s ago)       98s
+auth                                elasticsearch-data-l4kpkn7nk-djzcc                     1/1     Running             0                 231d
+auth                                image-resizer-9                                        3/3     Running             0                 6d3h
+auth                                node-exporter-gftd2fs7n-wc4s9                          3/3     Running             0                 3y351d
+auth                                payments-worker-s44ctv8jkr-5t8r2                       2/2     Running             0                 4d17h
+auth                                postgres-kz9gdvc6mv-59rrz                              1/1     Running             0                 3y192d
+auth                                recommendation-engine-batch-scoring-6p86j29xzz-lfq4m   3/3     Running             0                 84m
+auth                                redis-29133972-x7qlg                                   2/2     Running             0                 229d
+auth                                search-indexer-9rg66                                   3/3     Running             4 (28m ago)       5d13h
+checkout                            elasticsearch-data-l4kpkn7nk-d7trs                     1/1     Running             0                 19h
+checkout                            kube-proxy-2cm49n79z-2szrw                             1/1     Running             3 (32m ago)       3y44d
+checkout                            notification-sender-29634025-844vr                     0/3     Completed           0                 20h
+checkout                            notification-sender-29900904-cnf94                     3/3     Running             2 (91s ago)       5d12h
+checkout                            postgres-kz9gdvc6mv-lp5wp                              1/1     Running             3 (33m ago)       23h
+data-pipeline                       api-gateway-m2xk2                                      0/1     CrashLoopBackOff    139 (5h3m ago)    3y189d
+data-pipeline                       auth-service-lh88n8b8h-8ssdg                           2/2     Running             0                 3y362d
+data-pipeline                       auth-service-lh88n8b8h-9ldb4                           2/2     Running             2 (7m45s ago)     7m45s
+data-pipeline                       coredns-xmw9rp66j2-jlxpk                               2/2     Running             0                 8h
+data-pipeline                       frontend-dcjz682rz9-t6mp8                              3/3     Terminating         0                 49s
+data-pipeline                       payments-worker-s44ctv8jkr-sjfpn                       2/2     Running             0                 117m
+data-pipeline                       postgres-kz9gdvc6mv-jhwjx                              1/1     Running             0                 105s
+data-pipeline                       recommendation-engine-batch-scoring-6p86j29xzz-dfbfd   3/3     Running             0                 3y163d
+data-pipeline                       redis-29705668-p5p65                                   2/2     Running             0                 291d
+data-pipeline                       user-profile-5xf7xdff6-gr88k                           1/1     Running             0                 4d20h
+default                             api-gateway-jfvkd                                      1/1     Running             0                 3y357d
+default                             checkout-service-t7vvzdh7p-72mpl                       2/2     Running             0                 3y50d
+default                             coredns-xmw9rp66j2-62ph6                               0/2     Pending             0                 6d8h
+default                             frontend-dcjz682rz9-cxphl                              3/3     Running             0                 19h
+default                             frontend-dcjz682rz9-mdjmf                              3/3     Running             0                 21h
+default                             frontend-dcjz682rz9-wrq4w                              2/3     CrashLoopBackOff    117 (4h43m ago)   4d3h
+default                             kube-proxy-2cm49n79z-d5ktk                             1/1     Running             0                 2d3h
+default                             postgres-kz9gdvc6mv-gj8z9                              1/1     Running             0                 6d16h
+default                             postgres-kz9gdvc6mv-nzlvx                              1/1     Running             0                 92m
+default                             recommendation-engine-batch-scoring-6p86j29xzz-ssmzl   0/3     Init:0/1            0                 3y257d
+default                             recommendation-engine-batch-scoring-6p86j29xzz-tl4m4   2/3     Running             0                 3d6h
+ingress-nginx                       elasticsearch-data-l4kpkn7nk-2lcct                     0/1     Running             2 (72s ago)       72s
+ingress-nginx                       kube-proxy-2cm49n79z-gc5jg                             0/1     ContainerCreating   0                 3d21h
+ingress-nginx                       node-exporter-gftd2fs7n-rvjrf                          2/3     Running             1 (5h51m ago)     6d12h
+ingress-nginx                       notification-sender-29692360-wpl92                     3/3     Running             0                 4d1h
+ingress-nginx                       payments-worker-s44ctv8jkr-fblm6                       2/2     Running             0                 65s
+ingress-nginx                       payments-worker-s44ctv8jkr-gkk72                       2/2     Running             0                 5d10h
+ingress-nginx                       report-generator-dhgxtbtc4-9cbjc                       0/2     Completed           0                 7s
+kube-system                         api-gateway-7fz7k                                      1/1     Running             0                 10s
+kube-system                         cart-7w4cxns7n-vk2dh                                   1/1     Running             2 (4h8m ago)      6d2h
+kube-system                         image-resizer-96                                       0/3     Completed           0                 9d
+kube-system                         kafka-29188076-qw87q                                   0/2     Completed           0                 39m
+kube-system                         kube-proxy-2cm49n79z-lszmf                             1/1     Running             0                 2y72d
+kube-system                         node-exporter-gftd2fs7n-2ffsr                          0/3     Completed           0                 10h
+kube-system                         notification-sender-29666434-kskxf                     0/3     Completed           0                 137m
+kube-system                         postgres-kz9gdvc6mv-d59t7                              0/1     Completed           0                 6d12h
+kube-system                         prometheus-server-x9x7z                                3/3     Running             0                 3y178d
+kube-system                         recommendation-engine-batch-scoring-6p86j29xzz-pbhrg   3/3     Running             0                 4y67d
+kube-system                         user-profile-5xf7xdff6-h59zq                           1/1     Running             0                 2y175d
+monitoring                          api-gateway-bbm2j                                      1/1     Running             0                 275d
+monitoring                          api-gateway-n6h69                                      1/1     Running             0                 137m
+monitoring                          auth-service-lh88n8b8h-2v64v                           2/2     Terminating         0                 274d
+monitoring                          cart-7w4cxns7n-9shdw                                   1/1     Running             0                 3y217d
+monitoring                          cart-7w4cxns7n-r2rlv                                   1/1     Running             0                 45h
+monitoring                          checkout-service-t7vvzdh7p-85xrf                       2/2     Running             4 (38m ago)       62m
+monitoring                          coredns-xmw9rp66j2-7brf2                               2/2     Running             2 (54m ago)       113m
+monitoring                          coredns-xmw9rp66j2-fq5ff                               2/2     Running             0                 72m
+monitoring                          image-resizer-95                                       3/3     Running             0                 35h
+monitoring                          kafka-29143823-8cnqv                                   0/2     Completed           0                 3y84d
+monitoring                          kafka-29372561-lnd9q                                   2/2     Running             0                 3d5h
+monitoring                          kafka-29432524-pf2rs                                   0/2     Pending             0                 101m
+monitoring                          kube-proxy-2cm49n79z-5bjgn                             0/1     Running             4 (3h25m ago)     85d
+monitoring                          node-exporter-gftd2fs7n-9srxm                          3/3     Running             0                 19h
+monitoring                          postgres-kz9gdvc6mv-9k2hb                              0/1     Running             4 (41m ago)       27h
+monitoring                          recommendation-engine-batch-scoring-6p86j29xzz-4rhrl   3/3     Running             0                 82s
+monitoring                          recommendation-engine-batch-scoring-6p86j29xzz-5svdl   3/3     Running             0                 2y91d
+monitoring                          recommendation-engine-batch-scoring-6p86j29xzz-q25xx   3/3     Running             0                 4y22d
+monitoring                          redis-29255637-fbf5b                                   0/2     Completed           0                 37s
+monitoring                          search-indexer-2fkrl                                   3/3     Running             0                 146m
+payments                            cart-7w4cxns7n-82qlc                                   1/1     Running             0                 29m
+payments                            checkout-service-t7vvzdh7p-qbr52                       0/2     Init:0/1            0                 51s
+payments                            elasticsearch-data-l4kpkn7nk-5jct6                     1/1     Running             4 (103m ago)      12h
+payments                            kube-proxy-2cm49n79z-7dnx5                             0/1     Running             0                 65m
+payments                            node-exporter-gftd2fs7n-nqklv                          2/3     Running             3 (3h59m ago)     220d
+payments                            notification-sender-29966759-dbnjh                     3/3     Running             0                 2y272d
+payments                            payments-worker-s44ctv8jkr-clw94                       0/2     Pending             0                 86m
+payments                            report-generator-dhgxtbtc4-r6wr8                       2/2     Running             0                 70s
+payments                            search-indexer-nbwmh                                   3/3     Running             0                 145m
+payments                            user-profile-5xf7xdff6-qq595                           1/1     Running             0                 8s
+search                              auth-service-lh88n8b8h-s48ch                           0/2     Completed           0                 34d
+search                              cart-7w4cxns7n-9zqsv                                   1/1     Running             0                 2d18h
+search                              elasticsearch-data-l4kpkn7nk-f7hns                     0/1     OOMKilled           131 (92m ago)     2y89d
+search                              kube-proxy-2cm49n79z-x7d2k                             1/1     Running             0                 108s
+search                              notification-sender-29428666-v2984                     0/3     Completed           0                 27s
+search                              notification-sender-29446450-8rxcz                     3/3     Running             3 (109m ago)      4y29d
+search                              postgres-kz9gdvc6mv-c4njk                              1/1     Running             2 (4h19m ago)     5d13h
+search                              prometheus-server-9878d                                3/3     Running             0                 5d23h
+search                              prometheus-server-hjp54                                2/3     Running             0                 3y210d
+team-recommendations-experimental   coredns-xmw9rp66j2-xjppn                               2/2     Running             0                 296d
+team-recommendations-experimental   kube-proxy-2cm49n79z-8gtzp                             0/1     Error               1 (131m ago)      3d12h
+team-recommendations-experimental   node-exporter-gftd2fs7n-kdgvf                          0/3     Terminating         0                 4y61d
+team-recommendations-experimental   notification-sender-29848529-rtjz9                     3/3     Running             0                 6d10h
+team-recommendations-experimental   payments-worker-s44ctv8jkr-m5j2w                       2/2     Running             0                 2y211d
+team-recommendations-experimental   postgres-kz9gdvc6mv-jq9vx                              1/1     Running             0                 3y178d
+team-recommendations-experimental   user-profile-5xf7xdff6-g4mn2                           1/1     Running             0                 19h

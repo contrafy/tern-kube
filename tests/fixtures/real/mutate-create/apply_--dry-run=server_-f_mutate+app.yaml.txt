@@ -1,0 +1,3 @@
+configmap/api-config created (server dry run)
+deployment.apps/api created (server dry run)
+service/api created (server dry run)

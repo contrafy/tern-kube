@@ -1,0 +1,16 @@
+NAME                           READY   UP-TO-DATE   AVAILABLE   AGE
+deployment.apps/broken-image   0/1     1            0           5m17s
+deployment.apps/web            2/2     2            2           5m17s
+
+NAME                                      DESIRED   CURRENT   READY   AGE
+replicaset.apps/broken-image-68986f4958   1         1         0       5m17s
+replicaset.apps/web-65d7d99975            2         2         2       5m17s
+
+NAME                                READY   STATUS             RESTARTS        AGE
+pod/broken-image-68986f4958-6qp2v   0/1     ImagePullBackOff   0               5m17s
+pod/crashloop                       0/1     CrashLoopBackOff   5 (2m17s ago)   5m17s
+pod/db-0                            1/1     Running            0               5m17s
+pod/node-agent-bb754                1/1     Running            0               5m17s
+pod/pending                         0/1     Pending            0               5m17s
+pod/web-65d7d99975-bmgbn            1/1     Running            0               5m17s
+pod/web-65d7d99975-zsb95            1/1     Running            0               5m17s
