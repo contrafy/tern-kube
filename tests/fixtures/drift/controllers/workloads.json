@@ -1,0 +1,187 @@
+{
+    "apiVersion": "v1",
+    "items": [
+        {
+            "apiVersion": "v1",
+            "data": {
+                "tracked-by": "annotation"
+            },
+            "kind": "ConfigMap",
+            "metadata": {
+                "annotations": {
+                    "argocd.argoproj.io/tracking-id": "guestbook-drifted:/ConfigMap:tern-test-gitops/argo-annotated",
+                    "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"v1\",\"data\":{\"tracked-by\":\"annotation\"},\"kind\":\"ConfigMap\",\"metadata\":{\"annotations\":{\"argocd.argoproj.io/tracking-id\":\"guestbook-drifted:/ConfigMap:tern-test-gitops/argo-annotated\"},\"name\":\"argo-annotated\",\"namespace\":\"tern-test-gitops\"}}\n"
+                },
+                "creationTimestamp": "2026-10-08T17:13:43Z",
+                "name": "argo-annotated",
+                "namespace": "tern-test-gitops",
+                "resourceVersion": "17045",
+                "uid": "6de4ce9c-915e-48fc-8ae2-8d30b1e31f20"
+            }
+        },
+        {
+            "apiVersion": "v1",
+            "data": {
+                "tracked-by": "copied annotation of another object"
+            },
+            "kind": "ConfigMap",
+            "metadata": {
+                "annotations": {
+                    "argocd.argoproj.io/tracking-id": "guestbook:/ConfigMap:tern-test-gitops/argo-label",
+                    "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"v1\",\"data\":{\"tracked-by\":\"copied annotation of another object\"},\"kind\":\"ConfigMap\",\"metadata\":{\"annotations\":{\"argocd.argoproj.io/tracking-id\":\"guestbook:/ConfigMap:tern-test-gitops/argo-label\"},\"name\":\"argo-copied\",\"namespace\":\"tern-test-gitops\"}}\n"
+                },
+                "creationTimestamp": "2026-10-08T17:13:43Z",
+                "name": "argo-copied",
+                "namespace": "tern-test-gitops",
+                "resourceVersion": "17046",
+                "uid": "43f9c810-8f05-42d0-8af7-1fbc97a4e477"
+            }
+        },
+        {
+            "apiVersion": "v1",
+            "data": {
+                "tracked-by": "label"
+            },
+            "kind": "ConfigMap",
+            "metadata": {
+                "annotations": {
+                    "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"v1\",\"data\":{\"tracked-by\":\"label\"},\"kind\":\"ConfigMap\",\"metadata\":{\"annotations\":{},\"labels\":{\"app.kubernetes.io/instance\":\"guestbook\"},\"name\":\"argo-label\",\"namespace\":\"tern-test-gitops\"}}\n"
+                },
+                "creationTimestamp": "2026-10-08T17:13:43Z",
+                "labels": {
+                    "app.kubernetes.io/instance": "guestbook"
+                },
+                "name": "argo-label",
+                "namespace": "tern-test-gitops",
+                "resourceVersion": "17044",
+                "uid": "a22d2b14-098a-43e6-911a-8399cae07031"
+            }
+        },
+        {
+            "apiVersion": "v1",
+            "data": {
+                "tracked-by": "flux kustomization"
+            },
+            "kind": "ConfigMap",
+            "metadata": {
+                "annotations": {
+                    "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"v1\",\"data\":{\"tracked-by\":\"flux kustomization\"},\"kind\":\"ConfigMap\",\"metadata\":{\"annotations\":{},\"labels\":{\"kustomize.toolkit.fluxcd.io/name\":\"apps\",\"kustomize.toolkit.fluxcd.io/namespace\":\"tern-test-gitops\"},\"name\":\"flux-kustomized\",\"namespace\":\"tern-test-gitops\"}}\n"
+                },
+                "creationTimestamp": "2026-10-08T17:13:43Z",
+                "labels": {
+                    "kustomize.toolkit.fluxcd.io/name": "apps",
+                    "kustomize.toolkit.fluxcd.io/namespace": "tern-test-gitops"
+                },
+                "name": "flux-kustomized",
+                "namespace": "tern-test-gitops",
+                "resourceVersion": "17047",
+                "uid": "667da56b-ca45-4374-bce2-2dd4d04f10ec"
+            }
+        },
+        {
+            "apiVersion": "v1",
+            "data": {
+                "tracked-by": "plain helm (no controller object)"
+            },
+            "kind": "ConfigMap",
+            "metadata": {
+                "annotations": {
+                    "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"v1\",\"data\":{\"tracked-by\":\"plain helm (no controller object)\"},\"kind\":\"ConfigMap\",\"metadata\":{\"annotations\":{},\"labels\":{\"app.kubernetes.io/instance\":\"some-release\",\"app.kubernetes.io/managed-by\":\"Helm\"},\"name\":\"helm-only\",\"namespace\":\"tern-test-gitops\"}}\n"
+                },
+                "creationTimestamp": "2026-10-08T17:13:43Z",
+                "labels": {
+                    "app.kubernetes.io/instance": "some-release",
+                    "app.kubernetes.io/managed-by": "Helm"
+                },
+                "name": "helm-only",
+                "namespace": "tern-test-gitops",
+                "resourceVersion": "17052",
+                "uid": "d61a41fd-7e4a-440f-a981-345fff879131"
+            }
+        },
+        {
+            "apiVersion": "v1",
+            "data": {
+                "ca.crt": "REDACTED"
+            },
+            "kind": "ConfigMap",
+            "metadata": {
+                "annotations": {
+                    "kubernetes.io/description": "Contains a CA bundle that can be used to verify the kube-apiserver when using internal endpoints such as the internal service IP or kubernetes.default.svc. No other usage is guaranteed across distributions of Kubernetes clusters."
+                },
+                "creationTimestamp": "2026-10-08T17:13:43Z",
+                "name": "kube-root-ca.crt",
+                "namespace": "tern-test-gitops",
+                "resourceVersion": "17036",
+                "uid": "3541f64c-b356-409b-88e3-65cc1599c5ae"
+            }
+        },
+        {
+            "apiVersion": "v1",
+            "data": {
+                "tracked-by": "nothing"
+            },
+            "kind": "ConfigMap",
+            "metadata": {
+                "annotations": {
+                    "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"v1\",\"data\":{\"tracked-by\":\"nothing\"},\"kind\":\"ConfigMap\",\"metadata\":{\"annotations\":{},\"name\":\"untracked\",\"namespace\":\"tern-test-gitops\"}}\n"
+                },
+                "creationTimestamp": "2026-10-08T17:13:43Z",
+                "name": "untracked",
+                "namespace": "tern-test-gitops",
+                "resourceVersion": "17053",
+                "uid": "3d92b9cb-321c-4e74-b6a4-636c4322a2c7"
+            }
+        },
+        {
+            "apiVersion": "v1",
+            "kind": "Service",
+            "metadata": {
+                "annotations": {
+                    "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"v1\",\"kind\":\"Service\",\"metadata\":{\"annotations\":{},\"labels\":{\"app.kubernetes.io/instance\":\"podinfo\",\"helm.toolkit.fluxcd.io/name\":\"podinfo\",\"helm.toolkit.fluxcd.io/namespace\":\"tern-test-gitops\"},\"name\":\"podinfo\",\"namespace\":\"tern-test-gitops\"},\"spec\":{\"ports\":[{\"name\":\"http\",\"port\":9898}],\"selector\":{\"app\":\"podinfo\"}}}\n"
+                },
+                "creationTimestamp": "2026-10-08T17:13:43Z",
+                "labels": {
+                    "app.kubernetes.io/instance": "podinfo",
+                    "helm.toolkit.fluxcd.io/name": "podinfo",
+                    "helm.toolkit.fluxcd.io/namespace": "tern-test-gitops"
+                },
+                "name": "podinfo",
+                "namespace": "tern-test-gitops",
+                "resourceVersion": "17049",
+                "uid": "6c688f9f-25a8-4b34-b038-9b887dff2331"
+            },
+            "spec": {
+                "clusterIP": "10.96.78.28",
+                "clusterIPs": [
+                    "10.96.78.28"
+                ],
+                "internalTrafficPolicy": "Cluster",
+                "ipFamilies": [
+                    "IPv4"
+                ],
+                "ipFamilyPolicy": "SingleStack",
+                "ports": [
+                    {
+                        "name": "http",
+                        "port": 9898,
+                        "protocol": "TCP",
+                        "targetPort": 9898
+                    }
+                ],
+                "selector": {
+                    "app": "podinfo"
+                },
+                "sessionAffinity": "None",
+                "type": "ClusterIP"
+            },
+            "status": {
+                "loadBalancer": {}
+            }
+        }
+    ],
+    "kind": "List",
+    "metadata": {
+        "resourceVersion": ""
+    }
+}

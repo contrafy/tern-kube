@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: tern-test-drift
+  labels:
+    lens.example.com/fixture-world: "true"
+    team: platform

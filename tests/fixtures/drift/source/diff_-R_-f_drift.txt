@@ -1,0 +1,117 @@
+diff -u -N /tmp/LIVE-2926628305/apps.v1.Deployment.tern-test-drift.web /tmp/MERGED-3530037667/apps.v1.Deployment.tern-test-drift.web
+--- /tmp/LIVE-2926628305/apps.v1.Deployment.tern-test-drift.web	2026-10-08 12:13:44
++++ /tmp/MERGED-3530037667/apps.v1.Deployment.tern-test-drift.web	2026-10-08 12:13:44
+@@ -6,7 +6,7 @@
+     kubectl.kubernetes.io/last-applied-configuration: |
+       {"apiVersion":"apps/v1","kind":"Deployment","metadata":{"annotations":{},"labels":{"app":"web"},"name":"web","namespace":"tern-test-drift"},"spec":{"replicas":1,"selector":{"matchLabels":{"app":"web"}},"template":{"metadata":{"labels":{"app":"web"}},"spec":{"containers":[{"image":"registry.k8s.io/pause:3.10","name":"web","resources":{"limits":{"memory":"16Mi"},"requests":{"cpu":"5m","memory":"8Mi"}}}],"serviceAccountName":"web"}}}}
+   creationTimestamp: "2026-10-08T17:13:42Z"
+-  generation: 2
++  generation: 3
+   labels:
+     app: web
+   name: web
+@@ -15,7 +15,7 @@
+   uid: 3787b574-396f-457c-84aa-80ebcae1f24f
+ spec:
+   progressDeadlineSeconds: 600
+-  replicas: 2
++  replicas: 1
+   revisionHistoryLimit: 10
+   selector:
+     matchLabels:
+diff -u -N /tmp/LIVE-2926628305/lens.example.com.v1alpha1.Widget.tern-test-drift.dial.v2 /tmp/MERGED-3530037667/lens.example.com.v1alpha1.Widget.tern-test-drift.dial.v2
+--- /tmp/LIVE-2926628305/lens.example.com.v1alpha1.Widget.tern-test-drift.dial.v2	2026-10-08 12:13:44
++++ /tmp/MERGED-3530037667/lens.example.com.v1alpha1.Widget.tern-test-drift.dial.v2	2026-10-08 12:13:44
+@@ -0,0 +1,15 @@
++apiVersion: lens.example.com/v1alpha1
++kind: Widget
++metadata:
++  creationTimestamp: "2026-10-08T17:13:44Z"
++  generation: 1
++  labels:
++    app: widgets
++  name: dial.v2
++  namespace: tern-test-drift
++  uid: b3550ac4-c97b-487a-b048-d1ce05402dcf
++spec:
++  color: black
++  enabled: false
++  owner: team-platform
++  size: 2
+diff -u -N /tmp/LIVE-2926628305/lens.example.com.v1alpha1.Widget.tern-test-drift.gauge /tmp/MERGED-3530037667/lens.example.com.v1alpha1.Widget.tern-test-drift.gauge
+--- /tmp/LIVE-2926628305/lens.example.com.v1alpha1.Widget.tern-test-drift.gauge	2026-10-08 12:13:44
++++ /tmp/MERGED-3530037667/lens.example.com.v1alpha1.Widget.tern-test-drift.gauge	2026-10-08 12:13:44
+@@ -5,7 +5,7 @@
+     kubectl.kubernetes.io/last-applied-configuration: |
+       {"apiVersion":"lens.example.com/v1alpha1","kind":"Widget","metadata":{"annotations":{},"labels":{"app":"widgets"},"name":"gauge","namespace":"tern-test-drift"},"spec":{"color":"red","enabled":true,"owner":"team-platform","size":7}}
+   creationTimestamp: "2026-10-08T17:13:42Z"
+-  generation: 2
++  generation: 3
+   labels:
+     app: widgets
+   name: gauge
+@@ -13,7 +13,7 @@
+   resourceVersion: "17023"
+   uid: b9b24c08-fbbe-4386-b41a-1618e487bbce
+ spec:
+-  color: orange
++  color: red
+   enabled: true
+   owner: team-platform
+-  size: 9
++  size: 7
+diff -u -N /tmp/LIVE-2926628305/rbac.authorization.k8s.io.v1.ClusterRole..tern-test-drift-reader /tmp/MERGED-3530037667/rbac.authorization.k8s.io.v1.ClusterRole..tern-test-drift-reader
+--- /tmp/LIVE-2926628305/rbac.authorization.k8s.io.v1.ClusterRole..tern-test-drift-reader	2026-10-08 12:13:44
++++ /tmp/MERGED-3530037667/rbac.authorization.k8s.io.v1.ClusterRole..tern-test-drift-reader	2026-10-08 12:13:44
+@@ -0,0 +1,14 @@
++apiVersion: rbac.authorization.k8s.io/v1
++kind: ClusterRole
++metadata:
++  creationTimestamp: "2026-10-08T17:13:44Z"
++  name: tern-test-drift-reader
++  uid: 28c6c488-e96d-48c9-86c5-67054d186bb4
++rules:
++- apiGroups:
++  - ""
++  resources:
++  - configmaps
++  verbs:
++  - get
++  - list
+diff -u -N /tmp/LIVE-2926628305/v1.ConfigMap.tern-test-drift.app-config /tmp/MERGED-3530037667/v1.ConfigMap.tern-test-drift.app-config
+--- /tmp/LIVE-2926628305/v1.ConfigMap.tern-test-drift.app-config	2026-10-08 12:13:44
++++ /tmp/MERGED-3530037667/v1.ConfigMap.tern-test-drift.app-config	2026-10-08 12:13:44
+@@ -1,7 +1,7 @@
+ apiVersion: v1
+ data:
+   CACHE_TTL: 60s
+-  LOG_LEVEL: debug
++  LOG_LEVEL: info
+ kind: ConfigMap
+ metadata:
+   annotations:
+diff -u -N /tmp/LIVE-2926628305/v1.ConfigMap.tern-test-drift.only-in-git /tmp/MERGED-3530037667/v1.ConfigMap.tern-test-drift.only-in-git
+--- /tmp/LIVE-2926628305/v1.ConfigMap.tern-test-drift.only-in-git	2026-10-08 12:13:44
++++ /tmp/MERGED-3530037667/v1.ConfigMap.tern-test-drift.only-in-git	2026-10-08 12:13:44
+@@ -0,0 +1,9 @@
++apiVersion: v1
++data:
++  FEATURE_FLAG: "on"
++kind: ConfigMap
++metadata:
++  creationTimestamp: "2026-10-08T17:13:44Z"
++  name: only-in-git
++  namespace: tern-test-drift
++  uid: 8fea763e-c2d3-43bf-be74-774689c72fce
+diff -u -N /tmp/LIVE-2926628305/v1.Namespace..tern-test-drift /tmp/MERGED-3530037667/v1.Namespace..tern-test-drift
+--- /tmp/LIVE-2926628305/v1.Namespace..tern-test-drift	2026-10-08 12:13:44
++++ /tmp/MERGED-3530037667/v1.Namespace..tern-test-drift	2026-10-08 12:13:44
+@@ -8,7 +8,7 @@
+   labels:
+     kubernetes.io/metadata.name: tern-test-drift
+     lens.example.com/fixture-world: "true"
+-    team: payments
++    team: platform
+   name: tern-test-drift
+   resourceVersion: "17024"
+   uid: c82c8d97-9118-4409-b9fb-8b78af2b7f24

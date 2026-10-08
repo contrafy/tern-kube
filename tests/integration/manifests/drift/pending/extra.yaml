@@ -1,0 +1,30 @@
+# In git, never applied: drift reports these as missing in the cluster.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: only-in-git
+  namespace: tern-test-drift
+data:
+  FEATURE_FLAG: "on"
+---
+apiVersion: lens.example.com/v1alpha1
+kind: Widget
+metadata:
+  name: dial.v2
+  namespace: tern-test-drift
+  labels:
+    app: widgets
+spec:
+  color: black
+  size: 2
+  owner: team-platform
+  enabled: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: tern-test-drift-reader
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list"]

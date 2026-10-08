@@ -1,0 +1,1 @@
+{"status":{"observedGeneration":1,"lastAttemptedRevision":"6.7.0","conditions":[{"type":"Ready","status":"Unknown","reason":"Progressing","message":"Running 'upgrade' action with timeout of 5m0s","lastTransitionTime":"2026-10-08T00:00:00Z","observedGeneration":1}]}}

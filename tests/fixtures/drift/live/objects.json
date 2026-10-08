@@ -1,0 +1,327 @@
+{
+    "apiVersion": "v1",
+    "items": [
+        {
+            "apiVersion": "apps/v1",
+            "kind": "Deployment",
+            "metadata": {
+                "annotations": {
+                    "deployment.kubernetes.io/revision": "1",
+                    "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"apps/v1\",\"kind\":\"Deployment\",\"metadata\":{\"annotations\":{},\"labels\":{\"app\":\"web\"},\"name\":\"web\",\"namespace\":\"tern-test-drift\"},\"spec\":{\"replicas\":1,\"selector\":{\"matchLabels\":{\"app\":\"web\"}},\"template\":{\"metadata\":{\"labels\":{\"app\":\"web\"}},\"spec\":{\"containers\":[{\"image\":\"registry.k8s.io/pause:3.10\",\"name\":\"web\",\"resources\":{\"limits\":{\"memory\":\"16Mi\"},\"requests\":{\"cpu\":\"5m\",\"memory\":\"8Mi\"}}}],\"serviceAccountName\":\"web\"}}}}\n"
+                },
+                "creationTimestamp": "2026-10-08T17:13:42Z",
+                "generation": 2,
+                "labels": {
+                    "app": "web"
+                },
+                "name": "web",
+                "namespace": "tern-test-drift",
+                "resourceVersion": "17033",
+                "uid": "3787b574-396f-457c-84aa-80ebcae1f24f"
+            },
+            "spec": {
+                "progressDeadlineSeconds": 600,
+                "replicas": 2,
+                "revisionHistoryLimit": 10,
+                "selector": {
+                    "matchLabels": {
+                        "app": "web"
+                    }
+                },
+                "strategy": {
+                    "rollingUpdate": {
+                        "maxSurge": "25%",
+                        "maxUnavailable": "25%"
+                    },
+                    "type": "RollingUpdate"
+                },
+                "template": {
+                    "metadata": {
+                        "labels": {
+                            "app": "web"
+                        }
+                    },
+                    "spec": {
+                        "containers": [
+                            {
+                                "image": "registry.k8s.io/pause:3.10",
+                                "imagePullPolicy": "IfNotPresent",
+                                "name": "web",
+                                "resources": {
+                                    "limits": {
+                                        "memory": "16Mi"
+                                    },
+                                    "requests": {
+                                        "cpu": "5m",
+                                        "memory": "8Mi"
+                                    }
+                                },
+                                "terminationMessagePath": "/dev/termination-log",
+                                "terminationMessagePolicy": "File"
+                            }
+                        ],
+                        "dnsPolicy": "ClusterFirst",
+                        "restartPolicy": "Always",
+                        "schedulerName": "default-scheduler",
+                        "securityContext": {},
+                        "serviceAccount": "web",
+                        "serviceAccountName": "web",
+                        "terminationGracePeriodSeconds": 30
+                    }
+                }
+            },
+            "status": {
+                "availableReplicas": 2,
+                "conditions": [
+                    {
+                        "lastTransitionTime": "2026-10-08T17:13:42Z",
+                        "lastUpdateTime": "2026-10-08T17:13:42Z",
+                        "message": "ReplicaSet \"web-77d6c687b4\" has successfully progressed.",
+                        "reason": "NewReplicaSetAvailable",
+                        "status": "True",
+                        "type": "Progressing"
+                    },
+                    {
+                        "lastTransitionTime": "2026-10-08T17:13:43Z",
+                        "lastUpdateTime": "2026-10-08T17:13:43Z",
+                        "message": "Deployment has minimum availability.",
+                        "reason": "MinimumReplicasAvailable",
+                        "status": "True",
+                        "type": "Available"
+                    }
+                ],
+                "observedGeneration": 2,
+                "readyReplicas": 2,
+                "replicas": 2,
+                "terminatingReplicas": 0,
+                "updatedReplicas": 2
+            }
+        },
+        {
+            "apiVersion": "apps/v1",
+            "kind": "ReplicaSet",
+            "metadata": {
+                "annotations": {
+                    "deployment.kubernetes.io/desired-replicas": "2",
+                    "deployment.kubernetes.io/max-replicas": "3",
+                    "deployment.kubernetes.io/revision": "1"
+                },
+                "creationTimestamp": "2026-10-08T17:13:42Z",
+                "generation": 2,
+                "labels": {
+                    "app": "web",
+                    "pod-template-hash": "77d6c687b4"
+                },
+                "name": "web-77d6c687b4",
+                "namespace": "tern-test-drift",
+                "ownerReferences": [
+                    {
+                        "apiVersion": "apps/v1",
+                        "blockOwnerDeletion": true,
+                        "controller": true,
+                        "kind": "Deployment",
+                        "name": "web",
+                        "uid": "3787b574-396f-457c-84aa-80ebcae1f24f"
+                    }
+                ],
+                "resourceVersion": "17032",
+                "uid": "4fb64450-727f-451b-9e9b-42c688449319"
+            },
+            "spec": {
+                "replicas": 2,
+                "selector": {
+                    "matchLabels": {
+                        "app": "web",
+                        "pod-template-hash": "77d6c687b4"
+                    }
+                },
+                "template": {
+                    "metadata": {
+                        "labels": {
+                            "app": "web",
+                            "pod-template-hash": "77d6c687b4"
+                        }
+                    },
+                    "spec": {
+                        "containers": [
+                            {
+                                "image": "registry.k8s.io/pause:3.10",
+                                "imagePullPolicy": "IfNotPresent",
+                                "name": "web",
+                                "resources": {
+                                    "limits": {
+                                        "memory": "16Mi"
+                                    },
+                                    "requests": {
+                                        "cpu": "5m",
+                                        "memory": "8Mi"
+                                    }
+                                },
+                                "terminationMessagePath": "/dev/termination-log",
+                                "terminationMessagePolicy": "File"
+                            }
+                        ],
+                        "dnsPolicy": "ClusterFirst",
+                        "restartPolicy": "Always",
+                        "schedulerName": "default-scheduler",
+                        "securityContext": {},
+                        "serviceAccount": "web",
+                        "serviceAccountName": "web",
+                        "terminationGracePeriodSeconds": 30
+                    }
+                }
+            },
+            "status": {
+                "availableReplicas": 2,
+                "fullyLabeledReplicas": 2,
+                "observedGeneration": 2,
+                "readyReplicas": 2,
+                "replicas": 2,
+                "terminatingReplicas": 0
+            }
+        },
+        {
+            "apiVersion": "v1",
+            "data": {
+                "CACHE_TTL": "60s",
+                "LOG_LEVEL": "debug"
+            },
+            "kind": "ConfigMap",
+            "metadata": {
+                "annotations": {
+                    "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"v1\",\"data\":{\"CACHE_TTL\":\"60s\",\"LOG_LEVEL\":\"info\"},\"kind\":\"ConfigMap\",\"metadata\":{\"annotations\":{},\"name\":\"app-config\",\"namespace\":\"tern-test-drift\"}}\n"
+                },
+                "creationTimestamp": "2026-10-08T17:13:42Z",
+                "name": "app-config",
+                "namespace": "tern-test-drift",
+                "resourceVersion": "17022",
+                "uid": "1b2e42a0-726d-46bc-88a7-8e72893f0f48"
+            }
+        },
+        {
+            "apiVersion": "v1",
+            "data": {
+                "owner": "someone"
+            },
+            "kind": "ConfigMap",
+            "metadata": {
+                "creationTimestamp": "2026-10-08T17:13:42Z",
+                "name": "hand-made",
+                "namespace": "tern-test-drift",
+                "resourceVersion": "17008",
+                "uid": "ddf016fe-e3f7-4989-9acd-dc91c0c27920"
+            }
+        },
+        {
+            "apiVersion": "v1",
+            "data": {
+                "ca.crt": "REDACTED"
+            },
+            "kind": "ConfigMap",
+            "metadata": {
+                "annotations": {
+                    "kubernetes.io/description": "Contains a CA bundle that can be used to verify the kube-apiserver when using internal endpoints such as the internal service IP or kubernetes.default.svc. No other usage is guaranteed across distributions of Kubernetes clusters."
+                },
+                "creationTimestamp": "2026-10-08T17:13:42Z",
+                "name": "kube-root-ca.crt",
+                "namespace": "tern-test-drift",
+                "resourceVersion": "16973",
+                "uid": "001354eb-ce68-45f4-9995-1749d3fe63c3"
+            }
+        },
+        {
+            "apiVersion": "v1",
+            "kind": "Service",
+            "metadata": {
+                "annotations": {
+                    "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"v1\",\"kind\":\"Service\",\"metadata\":{\"annotations\":{},\"name\":\"web\",\"namespace\":\"tern-test-drift\"},\"spec\":{\"ports\":[{\"name\":\"http\",\"port\":80,\"targetPort\":8080}],\"selector\":{\"app\":\"web\"}}}\n"
+                },
+                "creationTimestamp": "2026-10-08T17:13:42Z",
+                "name": "web",
+                "namespace": "tern-test-drift",
+                "resourceVersion": "16992",
+                "uid": "88bd0a03-2b1f-436d-ac7d-dc9fd34a6dbe"
+            },
+            "spec": {
+                "clusterIP": "10.96.34.160",
+                "clusterIPs": [
+                    "10.96.34.160"
+                ],
+                "internalTrafficPolicy": "Cluster",
+                "ipFamilies": [
+                    "IPv4"
+                ],
+                "ipFamilyPolicy": "SingleStack",
+                "ports": [
+                    {
+                        "name": "http",
+                        "port": 80,
+                        "protocol": "TCP",
+                        "targetPort": 8080
+                    }
+                ],
+                "selector": {
+                    "app": "web"
+                },
+                "sessionAffinity": "None",
+                "type": "ClusterIP"
+            },
+            "status": {
+                "loadBalancer": {}
+            }
+        },
+        {
+            "apiVersion": "v1",
+            "kind": "ServiceAccount",
+            "metadata": {
+                "creationTimestamp": "2026-10-08T17:13:42Z",
+                "name": "default",
+                "namespace": "tern-test-drift",
+                "resourceVersion": "16974",
+                "uid": "49c2f04d-3cff-4bd7-85bd-70990a1347b1"
+            }
+        },
+        {
+            "apiVersion": "v1",
+            "kind": "ServiceAccount",
+            "metadata": {
+                "annotations": {
+                    "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"v1\",\"kind\":\"ServiceAccount\",\"metadata\":{\"annotations\":{},\"name\":\"web\",\"namespace\":\"tern-test-drift\"}}\n"
+                },
+                "creationTimestamp": "2026-10-08T17:13:42Z",
+                "name": "web",
+                "namespace": "tern-test-drift",
+                "resourceVersion": "16983",
+                "uid": "6ac71f1f-6054-440b-ab05-4c1838ec65f6"
+            }
+        },
+        {
+            "apiVersion": "lens.example.com/v1alpha1",
+            "kind": "Widget",
+            "metadata": {
+                "annotations": {
+                    "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"lens.example.com/v1alpha1\",\"kind\":\"Widget\",\"metadata\":{\"annotations\":{},\"labels\":{\"app\":\"widgets\"},\"name\":\"gauge\",\"namespace\":\"tern-test-drift\"},\"spec\":{\"color\":\"red\",\"enabled\":true,\"owner\":\"team-platform\",\"size\":7}}\n"
+                },
+                "creationTimestamp": "2026-10-08T17:13:42Z",
+                "generation": 2,
+                "labels": {
+                    "app": "widgets"
+                },
+                "name": "gauge",
+                "namespace": "tern-test-drift",
+                "resourceVersion": "17023",
+                "uid": "b9b24c08-fbbe-4386-b41a-1618e487bbce"
+            },
+            "spec": {
+                "color": "orange",
+                "enabled": true,
+                "owner": "team-platform",
+                "size": 9
+            }
+        }
+    ],
+    "kind": "List",
+    "metadata": {
+        "resourceVersion": ""
+    }
+}

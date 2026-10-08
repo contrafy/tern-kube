@@ -1,0 +1,14 @@
+scenario	key	argv	exit	kubectl_version	server_version
+changed	changed/diff_-f_drift+baseline+app.yaml	kubectl --context kind-kube-lens-dev diff -f drift/baseline/app.yaml	1	v1.34.1	v1.37.0
+unchanged	unchanged/diff_-f_drift+baseline+service.yaml	kubectl --context kind-kube-lens-dev diff -f drift/baseline/service.yaml	0	v1.34.1	v1.37.0
+crd	crd/diff_-f_drift+baseline+widgets.yaml	kubectl --context kind-kube-lens-dev diff -f drift/baseline/widgets.yaml	1	v1.34.1	v1.37.0
+missing	missing/diff_-f_drift+pending+extra.yaml	kubectl --context kind-kube-lens-dev diff -f drift/pending/extra.yaml	1	v1.34.1	v1.37.0
+cluster-scoped	cluster-scoped/diff_-f_drift+namespace.yaml	kubectl --context kind-kube-lens-dev diff -f drift/namespace.yaml	1	v1.34.1	v1.37.0
+source	source/diff_-R_-f_drift	kubectl --context kind-kube-lens-dev diff -R -f drift	1	v1.34.1	v1.37.0
+live	live/objects.json	kubectl --context kind-kube-lens-dev get deployments.apps,replicasets.apps,configmaps,services,serviceaccounts,widgets.lens.example.com -n tern-test-drift -o json	0	v1.34.1	v1.37.0
+controllers	controllers/api-resources.list	kubectl --context kind-kube-lens-dev api-resources --verbs=list -o name	0	v1.34.1	v1.37.0
+controllers	controllers/applications.json	kubectl --context kind-kube-lens-dev get applications.argoproj.io -n tern-test-gitops -o json	0	v1.34.1	v1.37.0
+controllers	controllers/kustomizations.json	kubectl --context kind-kube-lens-dev get kustomizations.kustomize.toolkit.fluxcd.io -n tern-test-gitops -o json	0	v1.34.1	v1.37.0
+controllers	controllers/helmreleases.json	kubectl --context kind-kube-lens-dev get helmreleases.helm.toolkit.fluxcd.io -n tern-test-gitops -o json	0	v1.34.1	v1.37.0
+controllers	controllers/gitrepositories.json	kubectl --context kind-kube-lens-dev get gitrepositories.source.toolkit.fluxcd.io -n tern-test-gitops -o json	0	v1.34.1	v1.37.0
+controllers	controllers/workloads.json	kubectl --context kind-kube-lens-dev get configmaps,services -n tern-test-gitops -o json	0	v1.34.1	v1.37.0
