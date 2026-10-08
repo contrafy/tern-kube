@@ -410,7 +410,10 @@ end
 local M = {}
 
 function M.parse(program: string, args: { string }): Invocation
-	local input = if basename(program) == "kubecolor" then stripKubecolor(args) else args
+	-- Any program other than kubectl is kubecolor or a shell alias reported as
+	-- typed (bash/fish), which may point at kubecolor; real kubectl rejects
+	-- kubecolor's flags, so stripping them never hides a kubectl flag.
+	local input = if basename(program) == "kubectl" then args else stripKubecolor(args)
 
 	local pre = scan(input, anySet)
 	local verb: string? = nil

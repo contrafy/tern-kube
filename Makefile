@@ -46,3 +46,7 @@ typecheck: tools
 	$(LUAU_LSP) analyze --platform=standard --definitions=@tern=$(TERN_DEFS) $(LUAU_DIRS)
 
 check: fmt-check lint typecheck test-runner-selfcheck test
+
+.PHONY: test-shell-aliases
+test-shell-aliases:
+	@sh tests/shell/aliases/run.sh

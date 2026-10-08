@@ -247,4 +247,18 @@ describe("lens capture", function()
 	end)
 end)
 
+describe("lens capture of an alias program", function()
+	-- bash/fish report `k get pods` as typed when `k` is a claimed alias.
+	it("builds the same capture as kubectl", function()
+		local f = runs.load("ns-apps/get_pods")
+		local viaAlias = { program = "k", args = f.run.args }
+		local c = Capture.build(viaAlias, f.lines, f.status, { decode = json.decode })
+		local ref = build("ns-apps/get_pods")
+		expect(Capture.modeOf(viaAlias)).toBe(Capture.modeOf(f.run))
+		expect(c.mode).toBe(ref.mode)
+		expect(keysOf(c)).toEqual(keysOf(ref))
+		expect(c.invocation.program).toBe("k")
+	end)
+end)
+
 return nil

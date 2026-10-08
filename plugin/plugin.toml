@@ -45,6 +45,8 @@ match = [
 	"kubecolor -* delete *",
 	"kubecolor -* rollout restart *",
 	"kubecolor -* scale *",
+	# BEGIN kube-lens aliases
+	# END kube-lens aliases
 ]
 
 [[blocks]]
