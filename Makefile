@@ -7,10 +7,10 @@ STYLUA = $(BIN)/stylua
 SELENE = $(BIN)/selene
 TERN_DEFS = .tools/types/tern.lsp.d.luau
 
-LUAU_DIRS = $(wildcard plugin tests)
+LUAU_DIRS = $(wildcard plugin tests) scripts/bench.luau
 FILTER =
 
-.PHONY: bootstrap tools fixtures test test-runner-selfcheck lint fmt fmt-check typecheck check
+.PHONY: bootstrap tools fixtures test test-runner-selfcheck bench e2e lint fmt fmt-check typecheck check
 
 bootstrap:
 	sh scripts/bootstrap.sh
@@ -33,6 +33,14 @@ test: tools fixtures
 test-runner-selfcheck: tools
 	@LUAU=$(LUAU) sh tests/selfcheck/check.sh
 
+# Deterministic standalone benchmark; fails only on gross regressions.
+bench: tools fixtures
+	@$(LUAU) scripts/bench.luau
+
+# Drives an isolated Tern window (local only; skipped when `tern` is absent).
+e2e:
+	@sh scripts/e2e.sh
+
 lint: tools
 	$(SELENE) $(LUAU_DIRS)
 
@@ -45,7 +53,7 @@ fmt-check: tools
 typecheck: tools
 	$(LUAU_LSP) analyze --platform=standard --definitions=@tern=$(TERN_DEFS) $(LUAU_DIRS)
 
-check: fmt-check lint typecheck test-runner-selfcheck test
+check: fmt-check lint typecheck test-runner-selfcheck test bench
 
 .PHONY: test-shell-aliases
 test-shell-aliases:
