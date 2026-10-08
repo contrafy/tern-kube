@@ -72,6 +72,21 @@ zsh, bash and fish: `kubectl apply`, `delete`, `scale` and
 untouched. It is a seatbelt, not a policy: `command kubectl` and scripts
 bypass it. Setup: [shell/README.md](shell/README.md).
 
+## GitOps
+
+Explore knows the git repository you ran the command in: `m` opens an
+object's manifest at its line, `=` diffs it against the live object,
+`ctrl+g` reports drift for a directory, Kustomization, Helm release or a
+locally checked out Argo CD / Flux app (changed, missing, unmanaged), and
+`E` exports live objects as clean manifests, optionally onto a new branch
+and commit. Push and pull requests are off unless you turn them on.
+
+![Drift report](docs/screenshots/m3b-drift-dark-wide.png)
+
+Outside Tern, [`bin/kube-lens-drift`](bin/kube-lens-drift) produces the same
+report for CI ([example workflow](examples/ci/github-actions-drift.yml)).
+Details: [docs/gitops.md](docs/gitops.md).
+
 ## Install
 
 ```sh
@@ -98,7 +113,7 @@ To remove: `tern plugin unlink kube-lens`.
       shell, logs and port-forward in a split
 - [x] Mutations with server dry-run, per-resource diff and risk-tiered
       confirmation; opt-in zsh/bash/fish guard for typed commands
-- [ ] GitOps: open and diff a resource's manifest, drift reports
+- [x] GitOps: open and diff a resource's manifest, drift reports
       (YAML, Kustomize, Helm, Argo CD/Flux aware), export, CI drift check
 - [x] Settings file ([configuration](docs/configuration.md))
 - [ ] Settings UI, CI, releases
