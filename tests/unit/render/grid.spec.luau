@@ -126,8 +126,18 @@ describe("render cells", function()
 
 	it("mutes placeholders and marks numbers", function()
 		expect(tones("NOMINATED NODE", "text", "<none>")).toEqual({ "muted" })
-		expect(tones("AGE", "duration", "5m")).toEqual({ "num" })
+		expect(tones("AGE", "duration", "5m")).toEqual({ "mono" })
 		expect(nodes.text(Cells.cell("NAME", "text", "db-0"))).toBe("db-0")
+	end)
+
+	-- Live Tern draws `num` in --sf-c-num (orange in the default theme), which
+	-- also wins over a tone token on the same span: healthy `1/1` and every
+	-- AGE looked like warnings. `mono` gives tabular figures without a color.
+	it("never uses the colored num token in table cells", function()
+		for _, case in { { "READY", "ratio", "1/1" }, { "RESTARTS", "count", "3" }, { "AGE", "duration", "5m" } } do
+			expect(table.find(tones(case[1], case[2] :: any, case[3]), "num")).toBeNil()
+		end
+		expect(table.find(tones("READY", "ratio", "1/1"), "mono") ~= nil).toBe(true)
 	end)
 end)
 

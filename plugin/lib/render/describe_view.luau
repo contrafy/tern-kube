@@ -68,7 +68,7 @@ local function valueSpans(key: string, value: string): { Span }
 	end
 	if key == "Restart Count" then
 		local n = tonumber(value)
-		return { { t = value, s = if n and n > 0 then "warning num" else "num" } }
+		return { { t = value, s = if n and n > 0 then "warning mono" else "mono" } }
 	end
 	if STATUS_KEYS[key] then
 		local style = TONE_STYLE[Values.statusTone(key, value)]
@@ -235,7 +235,7 @@ local function eventsNode(obj: DescribeObject, id: string): Node?
 			cells = {
 				type = cell(e.type, if warn then "warning strong" else "muted"),
 				reason = cell(e.reason, style),
-				age = cell(e.age, "num"),
+				age = cell(e.age, "mono"),
 				from = cell(e.from, "muted"),
 				message = cell(e.message, style),
 			},

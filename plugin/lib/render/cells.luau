@@ -36,19 +36,19 @@ function M.style(col: string, columnType: ColumnType, value: string): string?
 	if columnType == "status" or columnType == "ratio" then
 		local tone = TONE_STYLE[Values.statusTone(col, value)]
 		if columnType == "ratio" then
-			return if tone then tone .. " num" else "num"
+			return if tone then tone .. " mono" else "mono"
 		end
 		return if tone then tone .. " strong" else nil
 	end
 	if columnType == "count" then
 		local n = Values.count(value)
 		if col == "RESTARTS" and n and n > 0 then
-			return "warning num"
+			return "warning mono"
 		end
-		return "num"
+		return "mono"
 	end
 	if NUMERIC[columnType] then
-		return "num"
+		return "mono"
 	end
 	if col == "NAME" then
 		return "strong"
