@@ -1,6 +1,9 @@
 --!strict
 local Capture = require("./lib/lens/capture")
 local Command = require("./lib/kubectl/command")
+local ConfigHost = require("./config_host")
+local Quick = require("./lib/actions/quick")
+local Redact = require("./lib/model/redact")
 local Values = require("./lib/model/values")
 local View = require("./lib/lens/view")
 local Viewstate = require("./lib/lens/viewstate")
@@ -44,18 +47,23 @@ type LensState = {
 	view: ViewState,
 	capture: Capture?,
 	warned: boolean,
+	-- Config read (from the cache, no I/O) when the block opened.
+	native: boolean,
+	maxLines: number,
+	maxBytes: number,
+	pageSize: number,
+	policy: Redact.Policy,
 }
 
 -- Structured output is only valid as a whole; while it streams, raw is shown.
 local NEEDS_FINISH: { [string]: boolean } = { json = true, yaml = true, describe = true }
 
 -- Parsing cost is linear in lines (about 15 us per line in the plugin VM), and
--- Tern waits for `view` before feeding more output: past these limits the
--- native view would stall the pane, so the block stays raw (PRD: 16 MiB cap).
-local MAX_NATIVE_LINES = 20000
-local MAX_NATIVE_BYTES = 16 * 1024 * 1024
--- While a command still runs, every `view` rebuilds the capture; above this
--- many lines the live view stays raw until the command finishes.
+-- Tern waits for `view` before feeding more output: past general.max_rows
+-- lines or general.max_capture_bytes the native view would stall the pane, so
+-- the block stays raw. While a command still runs, every `view` rebuilds
+-- the capture; above this many lines the live view stays raw until the
+-- command finishes.
 local MAX_RUNNING_LINES = 2000
 
 local function warnOnce(state: LensState, what: string, err: any)
@@ -81,9 +89,9 @@ local function captureOf(state: LensState): Capture?
 		if #state.lines > MAX_RUNNING_LINES or NEEDS_FINISH[Capture.modeOf(run)] then
 			return nil
 		end
-		return Capture.build(run, state.lines, nil, { decode = decode })
+		return Capture.build(run, state.lines, nil, { decode = decode, policy = state.policy })
 	end
-	local capture = Capture.build(run, state.lines, state.status, { decode = decode })
+	local capture = Capture.build(run, state.lines, state.status, { decode = decode, policy = state.policy })
 	state.capture = capture
 	return capture
 end
@@ -130,8 +138,22 @@ local function exploreAction(state: LensState, key: string, cx: EffectCx)
 	cx:open(Command.exploreUrl(capture.invocation, row.ref))
 end
 
+-- Inspector quick-action chips carry a kube-lens://act/ link built by
+-- Quick.encode; the window's route.link rebuilds the command from the
+-- validated fields. Anything else is dropped here so no stray URL reaches
+-- cx:open (an unclaimed scheme would raise an OS dialog).
+local function quickAction(url: string, cx: EffectCx)
+	local req, err = Quick.decode(url)
+	if req == nil then
+		log.warn("kube-lens lens quick action ignored", url, tostring(err))
+		return
+	end
+	cx:open(url)
+end
+
 tern.lens.define("kubectl", {
 	open = function(run: LensRun, _cx: EffectCx): LensState
+		local cfg = ConfigHost.current()
 		return {
 			run = run,
 			lines = {},
@@ -141,6 +163,11 @@ tern.lens.define("kubectl", {
 			view = Viewstate.default(),
 			capture = nil,
 			warned = false,
+			native = cfg.general.native_default,
+			maxLines = cfg.general.max_rows,
+			maxBytes = cfg.general.max_capture_bytes,
+			pageSize = cfg.general.max_rendered_rows,
+			policy = Redact.fromConfig(cfg),
 		}
 	end,
 	line = function(state: LensState, l: LensLine)
@@ -148,7 +175,7 @@ tern.lens.define("kubectl", {
 			return
 		end
 		state.bytes += #l.text + 1
-		if #state.lines >= MAX_NATIVE_LINES or state.bytes > MAX_NATIVE_BYTES then
+		if #state.lines >= state.maxLines or state.bytes > state.maxBytes then
 			state.overflow = true
 			state.lines = {}
 			return
@@ -159,13 +186,16 @@ tern.lens.define("kubectl", {
 		state.status = status
 	end,
 	view = function(state: LensState): Node?
+		if not state.native then
+			return nil
+		end
 		local t0 = os.clock()
 		local ok, node = pcall(function(): Node?
 			local capture = captureOf(state)
 			if capture == nil then
 				return nil
 			end
-			return View.render(capture, state.view) :: any
+			return View.render(capture, state.view, { pageSize = state.pageSize }) :: any
 		end)
 		if not ok then
 			warnOnce(state, "view", node)
@@ -193,6 +223,8 @@ tern.lens.define("kubectl", {
 				copyAction(state, value, cx)
 			elseif ev.act == "explore" then
 				exploreAction(state, value, cx)
+			elseif ev.act == "act" then
+				quickAction(value, cx)
 			end
 		end)
 		if not ok then
@@ -201,236 +233,7 @@ tern.lens.define("kubectl", {
 	end,
 })
 
--- Block `explore` ------------------------------------------------------------
-
-type Pod = { name: string, phase: string }
-type Param = { key: string, value: string }
-type ExploreState = {
-	args: { string },
-	params: { Param },
-	pods: { Pod },
-	sel: number,
-	query: string,
-	editing: boolean,
-	status: string,
-	stopped: boolean,
-}
-
-local function param(state: ExploreState, key: string): string?
-	for _, p in state.params do
-		if p.key == key and p.value ~= "" then
-			return p.value
-		end
-	end
-	return nil
-end
-
--- The daemon's PATH is not the shell's; the kv key "kubectl" (set by the
--- settings flow or tests) names the binary explicitly.
-local function kubectl_program(): string
-	local configured = tern.kv.get("kubectl")
-	if type(configured) == "string" and configured ~= "" then
-		return configured
-	end
-	local env = tern.getenv("KUBE_LENS_KUBECTL")
-	if env and env ~= "" then
-		return env
-	end
-	return "kubectl"
-end
-
-local function visible(state: ExploreState): { Pod }
-	if state.query == "" then
-		return state.pods
-	end
-	local out: { Pod } = {}
-	local q = string.lower(state.query)
-	for _, p in state.pods do
-		if string.find(string.lower(p.name), q, 1, true) then
-			table.insert(out, p)
-		end
-	end
-	return out
-end
-
--- Target flags come from the lensed command (link params), never from the
--- daemon's environment, which may point at another cluster.
-local function fetch_argv(state: ExploreState, prog: string): { string }
-	local argv = { prog }
-	local kubeconfig, context, namespace =
-		param(state, "kubeconfig"), param(state, "context"), param(state, "namespace")
-	if kubeconfig then
-		table.insert(argv, "--kubeconfig")
-		table.insert(argv, kubeconfig)
-	end
-	if context then
-		table.insert(argv, "--context")
-		table.insert(argv, context)
-	end
-	for _, a in { "get", "pods", "-o", "json" } do
-		table.insert(argv, a)
-	end
-	if namespace then
-		table.insert(argv, "-n")
-		table.insert(argv, namespace)
-	end
-	return argv
-end
-
-local function fetch(state: ExploreState, cx: BlockCx)
-	local prog = kubectl_program()
-	local t0 = tern.now()
-	local ok, err = pcall(function()
-		tern.process.run(fetch_argv(state, prog), { timeout_ms = 10000, cwd = cx.cwd }, function(res: ProcessResult)
-			log.debug(
-				"kube-lens explore.fetch",
-				prog,
-				"status=" .. res.status,
-				"took_ms=" .. math.floor(tern.now() - t0)
-			)
-			if state.stopped then
-				return
-			end
-			if res.timed_out then
-				state.status = "kubectl timed out"
-			elseif res.status ~= 0 then
-				state.status = "kubectl failed: " .. string.sub(res.stderr, 1, 200)
-			else
-				local okj, doc = pcall(json.decode, res.stdout)
-				local pods: { Pod } = {}
-				if okj and type(doc) == "table" and type(doc.items) == "table" then
-					for _, item in doc.items do
-						local phase = if type(item.status) == "table" then item.status.phase else nil
-						table.insert(pods, { name = item.metadata.name, phase = phase or "?" })
-					end
-				end
-				state.pods = pods
-				state.status = #pods .. " pods"
-			end
-			cx:render()
-		end)
-	end)
-	state.status = if ok then "loading" else "cannot run " .. prog .. ": " .. tostring(err)
-end
-
--- Plugin blocks get no close callback: poll the pane list and stop when the
--- block's pane is gone.
-local function watch_liveness(state: ExploreState, cx: BlockCx)
-	local function tick()
-		if state.stopped then
-			return
-		end
-		for _, p in tern.pane.list() do
-			if p.pane == cx.pane then
-				tern.timer(2000, tick)
-				return
-			end
-		end
-		state.stopped = true
-	end
-	tern.timer(2000, tick)
-end
-
-tern.block.define("explore", {
-	init = function(cx: BlockCx, block_args: { string }, saved: any): ExploreState
-		local url = block_args[1] or ""
-		local state: ExploreState = {
-			args = block_args,
-			params = if string.sub(url, 1, 12) == "kube-lens://" then Command.parseQuery(url) else {},
-			pods = {},
-			sel = 1,
-			query = if type(saved) == "table" and type(saved.query) == "string" then saved.query else "",
-			editing = false,
-			status = "starting",
-			stopped = false,
-		}
-		fetch(state, cx)
-		watch_liveness(state, cx)
-		return state
-	end,
-	view = function(state: ExploreState, _cx: BlockCx): BlockView
-		local pods = visible(state)
-		local items: { Node } = {}
-		for _, p in pods do
-			local tone = Values.statusTone("STATUS", p.phase)
-			local style = if tone == "neutral" then "strong" else tone .. " strong"
-			table.insert(items, ui.node("item", { key = p.name, label = p.name, value = { ui.span(p.phase, style) } }))
-		end
-		local sel = pods[state.sel]
-		local target: { { Spans } } = {}
-		for _, p in state.params do
-			table.insert(target, { ui.span(p.key, "muted"), ui.span(p.value, "mono") })
-		end
-		return {
-			main = ui.col({
-				with_props(
-					ui.text({ ui.span("Explore ", "strong"), ui.span(table.concat(state.args, " "), "mono") }),
-					{ key = "head" }
-				),
-				with_props(ui.kv(target), { key = "target", role = "kube-lens.explore-target" }),
-				ui.node("input", {
-					key = "query",
-					text = state.query,
-					cursor = #state.query,
-					placeholder = "press / to filter",
-					prompt = "/",
-				}),
-				ui.node("list", {
-					key = "items",
-					selected = if sel then "main.items." .. sel.name else nil,
-					max = { lines = 15 },
-					empty = "no pods",
-				}, items),
-				with_props(
-					ui.text(ui.span(state.status .. "  ·  j/k move  / filter  esc close", "muted")),
-					{ key = "status" }
-				),
-			}),
-		}
-	end,
-	title = function(_state: ExploreState): string?
-		return "Kube Explore"
-	end,
-	key = function(state: ExploreState, key: Key, cx: BlockCx): boolean?
-		if state.editing then
-			if key.name == "escape" or key.name == "enter" then
-				state.editing = false
-			elseif key.name == "backspace" then
-				state.query = string.sub(state.query, 1, -2)
-			elseif key.text and not key.ctrl and not key.meta then
-				state.query ..= key.text
-			else
-				return false
-			end
-			state.sel = 1
-			return true
-		end
-		local n = #visible(state)
-		if key.name == "j" or key.name == "down" then
-			state.sel = math.min(n, state.sel + 1)
-		elseif key.name == "k" or key.name == "up" then
-			state.sel = math.max(1, state.sel - 1)
-		elseif key.name == "/" then
-			state.editing = true
-			cx:frame({ { "focus", "main.query" } })
-		elseif key.name == "escape" then
-			state.stopped = true
-			cx:exit(0)
-		else
-			return false
-		end
-		return true
-	end,
-	event = function(state: ExploreState, ev: UiEvent, cx: BlockCx)
-		if ev.ev == "focus" and ev.id then
-			state.editing = true
-			cx:frame({ { "focus", ev.id } })
-		end
-	end,
-	save = function(state: ExploreState): any
-		return { query = state.query }
-	end,
-})
+require("./explore_host").register()
 
 -- Block `approve` ------------------------------------------------------------
 

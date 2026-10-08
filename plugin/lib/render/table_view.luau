@@ -5,6 +5,7 @@
 
 local Capture = require("../lens/capture")
 local Command = require("../kubectl/command")
+local Quick = require("../actions/quick")
 local Grid = require("./grid")
 local Objtree = require("./objtree")
 local Query = require("../lens/query")
@@ -21,6 +22,8 @@ type SnapshotTable = Types.SnapshotTable
 type ViewState = Viewstate.ViewState
 
 export type Counts = { shown: number, matched: number, total: number }
+-- pageSize: rows drawn per page (config general.max_rendered_rows).
+export type Options = { pageSize: number? }
 
 local M = {}
 
@@ -188,6 +191,48 @@ local function containersOf(tbl: SnapshotTable, row: ResourceRow): number?
 	return den
 end
 
+-- Service ports from a PORT(S) cell (`80/TCP`, `80:30080/TCP,443/TCP`): the
+-- service port of each entry, in order; `<none>` and junk give none.
+function M.servicePorts(cell: string): { number }
+	local out: { number } = {}
+	for part in string.gmatch(cell, "[^,]+") do
+		local digits = string.match(part, "^%s*(%d+)[:/]")
+		local n = if digits then tonumber(digits) else nil
+		if n and n >= 1 and n <= 65535 then
+			table.insert(out, n)
+		end
+	end
+	return out
+end
+
+-- Shell / Logs / Port-forward chips; each opens a new split through the
+-- window's route.link. They never touch the view state.
+local function quickChips(capture: Capture, tbl: SnapshotTable, row: ResourceRow, ref: Types.ResourceRef): { Node }
+	local ports: { number }? = nil
+	local index = columnIndex(tbl, "PORT(S)")
+	if ref.kind == "Service" and index then
+		ports = M.servicePorts(row.cells[index] or "")
+	end
+	local inv = capture.invocation
+	local out: { Node } = {}
+	for _, c in
+		Quick.chipsFor(ref.kind, ref, { context = inv.context, kubeconfig = inv.kubeconfig }, {
+			source = "lens",
+			ports = ports,
+		})
+	do
+		table.insert(
+			out,
+			ui.badge(
+				c.label,
+				"info",
+				{ title = c.title, actions = { click = "act=" .. c.url }, role = "kube-lens.quick" }
+			)
+		)
+	end
+	return out
+end
+
 local function actionChips(capture: Capture, tbl: SnapshotTable, row: ResourceRow, vs: ViewState): { Node }
 	local out: { Node } = {}
 	if not vs.full then
@@ -205,6 +250,9 @@ local function actionChips(capture: Capture, tbl: SnapshotTable, row: ResourceRo
 				actions = { click = "explore=" .. row.key },
 			})
 		)
+		for _, n in quickChips(capture, tbl, row, ref) do
+			table.insert(out, n)
+		end
 		local inv = capture.invocation
 		local opts = { containers = containersOf(tbl, row) }
 		local copies: { { string } } = {
@@ -285,7 +333,11 @@ function M.inspectView(capture: Capture, tbl: SnapshotTable, row: ResourceRow, v
 	if object ~= nil then
 		table.insert(
 			children,
-			ui.section({ "Object" }, { Objtree.tree(object, { id = row.key }) }, { key = "object", collapsible = true })
+			ui.section(
+				{ "Object" },
+				{ Objtree.tree(object, { id = row.key, policy = capture.policy }) },
+				{ key = "object", collapsible = true }
+			)
 		)
 	end
 	return ui.col(children, { key = "inspect", role = "kube-lens.inspect" })
@@ -293,16 +345,16 @@ end
 
 type Slice = { tbl: SnapshotTable, index: number, rows: { ResourceRow }, matched: number }
 
-local function pageChips(matched: number, vs: ViewState): Node
-	local pages = math.ceil(matched / M.PAGE_SIZE)
-	local first = vs.page * M.PAGE_SIZE + 1
-	local last = math.min(matched, (vs.page + 1) * M.PAGE_SIZE)
+local function pageChips(matched: number, vs: ViewState, size: number): Node
+	local pages = math.ceil(matched / size)
+	local first = vs.page * size + 1
+	local last = math.min(matched, (vs.page + 1) * size)
 	local items: { Node } = {
 		ui.text({ ui.span(string.format("Rows %d-%d of %d", first, last, matched), "muted") }),
 	}
 	for p = 0, pages - 1 do
-		local from = p * M.PAGE_SIZE + 1
-		local to = math.min(matched, (p + 1) * M.PAGE_SIZE)
+		local from = p * size + 1
+		local to = math.min(matched, (p + 1) * size)
 		table.insert(
 			items,
 			chip(from .. "-" .. to, Viewstate.action(Viewstate.paged(vs, p)), p == vs.page, nil, "page" .. p)
@@ -311,7 +363,8 @@ local function pageChips(matched: number, vs: ViewState): Node
 	return ui.row(items, { key = "pages", wrap = true, role = "kube-lens.pages" })
 end
 
-function M.render(capture: Capture, vs: ViewState): (Node?, Counts)
+function M.render(capture: Capture, vs: ViewState, opts: Options?): (Node?, Counts)
+	local size = if opts and opts.pageSize and opts.pageSize >= 1 then opts.pageSize else M.PAGE_SIZE
 	local snapshot = capture.snapshot
 	local tables: { SnapshotTable } = if snapshot then snapshot.tables else {}
 	local total = 0
@@ -336,10 +389,10 @@ function M.render(capture: Capture, vs: ViewState): (Node?, Counts)
 		matched += result.matched
 		table.insert(slices, { tbl = tbl, index = i, rows = result.rows, matched = result.matched })
 	end
-	local pages = math.max(1, math.ceil(matched / M.PAGE_SIZE))
+	local pages = math.max(1, math.ceil(matched / size))
 	local page = math.min(vs.page, pages - 1)
-	local skip = page * M.PAGE_SIZE
-	local budget = M.PAGE_SIZE
+	local skip = page * size
+	local budget = size
 
 	local children: { Node } = {}
 	local chips = chipsNode(tables, vs)
@@ -416,8 +469,8 @@ function M.render(capture: Capture, vs: ViewState): (Node?, Counts)
 	if matched == 0 then
 		table.insert(children, ui.text({ ui.span("No rows match the filters", "muted") }, { key = "nomatch" }))
 	end
-	if matched > M.PAGE_SIZE then
-		table.insert(children, pageChips(matched, Viewstate.paged(vs, page)))
+	if matched > size then
+		table.insert(children, pageChips(matched, Viewstate.paged(vs, page), size))
 	end
 	return ui.col(children, { key = "table", role = "kube-lens.table" }),
 		{
