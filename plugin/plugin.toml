@@ -1,7 +1,7 @@
 schema = 1
 id = "tern-kube"
 name = "Tern Kube"
-version = "0.0.1"
+version = "0.1.0"
 description = "Native views for kubectl output, with an explicit Explore block and an opt-in mutation guard."
 icon = "box"
 host = "host.luau"

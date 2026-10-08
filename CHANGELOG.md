@@ -7,6 +7,10 @@ versions may break).
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-10-08
+
+First public beta.
+
 ### Added
 
 - GitOps in Explore: manifest index for YAML, Kustomize and Helm sources;
@@ -63,4 +67,5 @@ versions may break).
 - Docs: SDK capability matrix, configuration, performance, architecture,
   security model, testing, releasing.
 
-[Unreleased]: https://github.com/contrafy/tern-kube/commits/master
+[Unreleased]: https://github.com/contrafy/tern-kube/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/contrafy/tern-kube/releases/tag/v0.1.0
