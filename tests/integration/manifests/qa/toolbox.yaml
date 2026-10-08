@@ -1,0 +1,54 @@
+# Disposable toolbox for quick-action checks (exec shell, logs -f,
+# port-forward): busybox with a shell, an httpd on 8080 and a sidecar so
+# container selection is exercised. kind cluster kube-lens-dev only.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kl-qa-shell
+  namespace: tern-test-mutate
+  labels:
+    app: kl-qa-shell
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kl-qa-shell
+  template:
+    metadata:
+      labels:
+        app: kl-qa-shell
+    spec:
+      terminationGracePeriodSeconds: 1
+      containers:
+        - name: web
+          image: busybox:1.37
+          command:
+            - sh
+            - -c
+            - "echo kl-qa-ok >/tmp/index.html; echo 'web: httpd on 8080'; exec httpd -f -v -p 8080 -h /tmp"
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+        - name: ticker
+          image: busybox:1.37
+          command:
+            - sh
+            - -c
+            - 'i=0; while true; do i=$((i+1)); echo "ticker: tick $i"; sleep 5; done'
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kl-qa-shell
+  namespace: tern-test-mutate
+  labels:
+    app: kl-qa-shell
+spec:
+  selector:
+    app: kl-qa-shell
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+      protocol: TCP
