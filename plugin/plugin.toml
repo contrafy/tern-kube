@@ -8,15 +8,45 @@ host = "host.luau"
 window = "window.luau"
 styles = ["kube-lens.css"]
 
+# Globs over-claim (`kubectl -* get *` also matches `kubectl -n x logs pod get`);
+# the lens re-derives the verb from argv and returns raw for anything else.
 [[lenses]]
-id = "get"
+id = "kubectl"
 match = [
 	"kubectl get",
 	"kubectl get *",
-	"kubecolor get",
-	"kubecolor get *",
+	"kubectl describe *",
+	"kubectl top *",
+	"kubectl apply *",
+	"kubectl delete *",
+	"kubectl rollout restart *",
+	"kubectl scale *",
 	"kubectl -* get",
 	"kubectl -* get *",
+	"kubectl -* describe *",
+	"kubectl -* top *",
+	"kubectl -* apply *",
+	"kubectl -* delete *",
+	"kubectl -* rollout restart *",
+	"kubectl -* scale *",
+	"kubecolor get",
+	"kubecolor get *",
+	"kubecolor describe *",
+	"kubecolor top *",
+	"kubecolor apply *",
+	"kubecolor delete *",
+	"kubecolor rollout restart *",
+	"kubecolor scale *",
+	"kubecolor -* get",
+	"kubecolor -* get *",
+	"kubecolor -* describe *",
+	"kubecolor -* top *",
+	"kubecolor -* apply *",
+	"kubecolor -* delete *",
+	"kubecolor -* rollout restart *",
+	"kubecolor -* scale *",
+	# BEGIN kube-lens aliases
+	# END kube-lens aliases
 ]
 
 [[blocks]]

@@ -1,0 +1,3 @@
+configmap/api-config unchanged
+deployment.apps/api unchanged
+service/api unchanged

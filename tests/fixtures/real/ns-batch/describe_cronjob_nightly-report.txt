@@ -1,0 +1,32 @@
+Name:                          nightly-report
+Namespace:                     tern-test-batch
+Labels:                        app=reports
+Annotations:                   <none>
+Schedule:                      0 3 * * *
+Concurrency Policy:            Allow
+Suspend:                       False
+Successful Job History Limit:  3
+Failed Job History Limit:      1
+Starting Deadline Seconds:     <unset>
+Selector:                      <unset>
+Parallelism:                   <unset>
+Completions:                   <unset>
+Pod Template:
+  Labels:  <none>
+  Containers:
+   report:
+    Image:      busybox:1.37
+    Port:       <none>
+    Host Port:  <none>
+    Command:
+      sh
+      -c
+      echo nightly
+    Environment:     <none>
+    Mounts:          <none>
+  Volumes:           <none>
+  Node-Selectors:    <none>
+  Tolerations:       <none>
+Last Schedule Time:  <unset>
+Active Jobs:         <none>
+Events:              <none>

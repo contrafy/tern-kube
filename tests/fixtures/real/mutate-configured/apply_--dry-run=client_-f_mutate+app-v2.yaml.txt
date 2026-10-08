@@ -1,0 +1,3 @@
+configmap/api-config configured (dry run)
+deployment.apps/api configured (dry run)
+service/api configured (dry run)

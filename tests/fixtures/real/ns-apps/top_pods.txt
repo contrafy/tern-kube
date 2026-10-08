@@ -1,0 +1,5 @@
+NAME                   CPU(cores)   MEMORY(bytes)   
+db-0                   0m           0Mi             
+node-agent-bb754       0m           0Mi             
+web-65d7d99975-bmgbn   0m           0Mi             
+web-65d7d99975-zsb95   0m           0Mi             

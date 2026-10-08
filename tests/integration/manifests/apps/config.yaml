@@ -1,0 +1,25 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-config
+  namespace: tern-test-apps
+  labels:
+    app: web
+data:
+  LOG_LEVEL: info
+  FEATURE_FLAGS: "search,sort,filter"
+  app.properties: |
+    server.port=8080
+    cache.ttl=30s
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: app-secret
+  namespace: tern-test-apps
+  labels:
+    app: web
+type: Opaque
+stringData:
+  password: kube-lens-test-not-a-secret
+  username: kube-lens-test-user

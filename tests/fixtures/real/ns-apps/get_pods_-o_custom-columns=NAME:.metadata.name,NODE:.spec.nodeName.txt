@@ -1,0 +1,8 @@
+NAME                            NODE
+broken-image-68986f4958-6qp2v   kube-lens-dev-control-plane
+crashloop                       kube-lens-dev-control-plane
+db-0                            kube-lens-dev-control-plane
+node-agent-bb754                kube-lens-dev-control-plane
+pending                         <none>
+web-65d7d99975-bmgbn            kube-lens-dev-control-plane
+web-65d7d99975-zsb95            kube-lens-dev-control-plane

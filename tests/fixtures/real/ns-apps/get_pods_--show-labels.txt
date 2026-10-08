@@ -1,0 +1,8 @@
+NAME                            READY   STATUS             RESTARTS        AGE     LABELS
+broken-image-68986f4958-6qp2v   0/1     ImagePullBackOff   0               5m15s   app=broken-image,pod-template-hash=68986f4958
+crashloop                       0/1     CrashLoopBackOff   5 (2m15s ago)   5m15s   app=crashloop
+db-0                            1/1     Running            0               5m15s   app=db,apps.kubernetes.io/pod-index=0,controller-revision-hash=db-7f49d5454d,statefulset.kubernetes.io/pod-name=db-0
+node-agent-bb754                1/1     Running            0               5m15s   app=node-agent,controller-revision-hash=7cbf7cf995,pod-template-generation=1
+pending                         0/1     Pending            0               5m15s   app=pending
+web-65d7d99975-bmgbn            1/1     Running            0               5m15s   app=web,pod-template-hash=65d7d99975,tier=frontend
+web-65d7d99975-zsb95            1/1     Running            0               5m15s   app=web,pod-template-hash=65d7d99975,tier=frontend

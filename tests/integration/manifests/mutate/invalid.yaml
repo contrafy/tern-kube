@@ -1,0 +1,18 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: invalid
+  namespace: tern-test-mutate
+spec:
+  replcas: 2
+  selector:
+    matchLabels:
+      app: invalid
+  template:
+    metadata:
+      labels:
+        app: invalid
+    spec:
+      containers:
+        - name: invalid
+          image: registry.k8s.io/pause:3.10

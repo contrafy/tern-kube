@@ -1,0 +1,3 @@
+configmap/api-config created
+deployment.apps/api created
+service/api created

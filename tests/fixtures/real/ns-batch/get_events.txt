@@ -1,0 +1,13 @@
+LAST SEEN   TYPE      REASON                 OBJECT               MESSAGE
+5m17s       Normal    Scheduled              pod/done-job-s576z   Successfully assigned tern-test-batch/done-job-s576z to kube-lens-dev-control-plane
+5m17s       Normal    Pulled                 pod/done-job-s576z   Container image "busybox:1.37" already present on machine and can be accessed by the pod
+5m17s       Normal    Created                pod/done-job-s576z   Container created
+5m16s       Normal    Started                pod/done-job-s576z   Container started
+5m17s       Normal    SuccessfulCreate       job/done-job         Created pod: done-job-s576z
+5m14s       Normal    Completed              job/done-job         Job completed
+5m17s       Normal    Scheduled              pod/fail-job-5hlth   Successfully assigned tern-test-batch/fail-job-5hlth to kube-lens-dev-control-plane
+5m17s       Normal    Pulled                 pod/fail-job-5hlth   Container image "busybox:1.37" already present on machine and can be accessed by the pod
+5m17s       Normal    Created                pod/fail-job-5hlth   Container created
+5m16s       Normal    Started                pod/fail-job-5hlth   Container started
+5m17s       Normal    SuccessfulCreate       job/fail-job         Created pod: fail-job-5hlth
+5m14s       Warning   BackoffLimitExceeded   job/fail-job         Job has reached the specified backoff limit

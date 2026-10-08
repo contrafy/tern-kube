@@ -1,0 +1,3 @@
+NAME       STATUS     COMPLETIONS   DURATION   AGE     CONTAINERS   IMAGES         SELECTOR
+done-job   Complete   1/1           3s         5m17s   report       busybox:1.37   batch.kubernetes.io/controller-uid=62997c3e-6b77-455e-b90b-6d96da0b71b9
+fail-job   Failed     0/1           5m17s      5m17s   migrate      busybox:1.37   batch.kubernetes.io/controller-uid=345932a4-cbdd-41b2-891e-bcddbd454c2b

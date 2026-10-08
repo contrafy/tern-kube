@@ -1,0 +1,4 @@
+NAMESPACE       NAME               COLOR   SIZE   DESCRIPTION                                                                                                                                                                               AGE
+tern-test-crd   gizmo              blue    3      A small blue gizmo                                                                                                                                                                        5m18s
+tern-test-crd   long-description   red     7      This widget has a deliberately long description so that the printer column grows far wider than the terminal and the lens must truncate or wrap it without losing the remaining columns   5m18s
+tern-test-crd   sprocket           green   120                                                                                                                                                                                              5m18s

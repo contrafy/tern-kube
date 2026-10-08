@@ -1,0 +1,88 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: done-job
+  namespace: tern-test-batch
+  labels:
+    app: reports
+spec:
+  backoffLimit: 0
+  template:
+    metadata:
+      labels:
+        app: reports
+    spec:
+      restartPolicy: Never
+      terminationGracePeriodSeconds: 1
+      containers:
+        - name: report
+          image: busybox:1.37
+          imagePullPolicy: IfNotPresent
+          command: ["sh", "-c", "echo 'report generated: 42 rows'"]
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: fail-job
+  namespace: tern-test-batch
+  labels:
+    app: migrate
+spec:
+  backoffLimit: 0
+  template:
+    metadata:
+      labels:
+        app: migrate
+    spec:
+      restartPolicy: Never
+      terminationGracePeriodSeconds: 1
+      containers:
+        - name: migrate
+          image: busybox:1.37
+          imagePullPolicy: IfNotPresent
+          command: ["sh", "-c", "echo 'migration 0042 failed: relation exists' >&2; exit 3"]
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: nightly-report
+  namespace: tern-test-batch
+  labels:
+    app: reports
+spec:
+  schedule: "0 3 * * *"
+  timeZone: Etc/UTC
+  suspend: false
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: report
+              image: busybox:1.37
+              imagePullPolicy: IfNotPresent
+              command: ["sh", "-c", "echo nightly"]
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: paused-cleanup
+  namespace: tern-test-batch
+  labels:
+    app: cleanup
+spec:
+  schedule: "*/15 * * * *"
+  suspend: true
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: cleanup
+              image: busybox:1.37
+              imagePullPolicy: IfNotPresent
+              command: ["sh", "-c", "echo cleanup"]

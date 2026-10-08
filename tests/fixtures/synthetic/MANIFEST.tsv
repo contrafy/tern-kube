@@ -1,0 +1,9 @@
+scenario	key	argv	rows	seed
+rows-100	get_pods	kubectl get pods	100	20261008
+rows-100	get_pods_-o_wide	kubectl get pods -o wide	100	20261008
+rows-100	get_pods_-A	kubectl get pods -A	100	20261008
+rows-100	get_pods_-A_-o_wide	kubectl get pods -A -o wide	100	20261008
+rows-1000	get_pods	kubectl get pods	1000	20261008
+rows-1000	get_pods_-o_wide	kubectl get pods -o wide	1000	20261008
+rows-1000	get_pods_-A	kubectl get pods -A	1000	20261008
+rows-1000	get_pods_-A_-o_wide	kubectl get pods -A -o wide	1000	20261008

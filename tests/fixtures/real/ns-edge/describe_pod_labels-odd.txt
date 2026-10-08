@@ -1,0 +1,60 @@
+Name:             labels-odd
+Namespace:        tern-test-edge
+Priority:         0
+Service Account:  default
+Node:             kube-lens-dev-control-plane/172.18.0.2
+Start Time:       Thu, 08 Oct 2026 03:10:24 -0500
+Labels:           UPPER_case.Key=Mixed_Case.Value
+                  app.kubernetes.io/name=odd-labels
+                  app.kubernetes.io/part-of=kube-lens.fixtures
+                  example.com/team=platform.core
+                  k8s.io/dotted=v1.2.3-rc.4
+                  lens.example.com/empty=
+                  lens.example.com/long-value=this-value-is-deliberately-long-to-reach-the-63-character-limit
+Annotations:      lens.example.com/description: Ünïcødé — 日本語のテキスト — Ελληνικά — Кириллица — ✓ ✗ → ←
+                  lens.example.com/multiline:
+                    first line
+                    second line with  tab
+Status:           Running
+IP:               10.244.0.43
+IPs:
+  IP:  10.244.0.43
+Containers:
+  app:
+    Container ID:   containerd://5a354adedd6eb3be360dc729aa634c498c511c5ff1f9344fa04cd45763af3ab3
+    Image:          registry.k8s.io/pause:3.10
+    Image ID:       docker.io/library/import-2026-10-08@sha256:dc1748e23e55ea520ab205d089250ec7359abe2fd28eed5e35260466ad170bba
+    Port:           <none>
+    Host Port:      <none>
+    State:          Running
+      Started:      Thu, 08 Oct 2026 03:10:25 -0500
+    Ready:          True
+    Restart Count:  0
+    Environment:    <none>
+    Mounts:
+      /var/run/secrets/kubernetes.io/serviceaccount from kube-api-access-rfzmk (ro)
+Conditions:
+  Type                        Status
+  PodReadyToStartContainers   True 
+  Initialized                 True 
+  Ready                       True 
+  ContainersReady             True 
+  PodScheduled                True 
+Volumes:
+  kube-api-access-rfzmk:
+    Type:                    Projected (a volume that contains injected data from multiple sources)
+    TokenExpirationSeconds:  3607
+    ConfigMapName:           kube-root-ca.crt
+    Optional:                false
+    DownwardAPI:             true
+QoS Class:                   BestEffort
+Node-Selectors:              <none>
+Tolerations:                 node.kubernetes.io/not-ready:NoExecute op=Exists for 300s
+                             node.kubernetes.io/unreachable:NoExecute op=Exists for 300s
+Events:
+  Type    Reason     Age    From               Message
+  ----    ------     ----   ----               -------
+  Normal  Scheduled  5m18s  default-scheduler  Successfully assigned tern-test-edge/labels-odd to kube-lens-dev-control-plane
+  Normal  Pulled     5m18s  kubelet            Container image "registry.k8s.io/pause:3.10" already present on machine and can be accessed by the pod
+  Normal  Created    5m18s  kubelet            Container created
+  Normal  Started    5m17s  kubelet            Container started

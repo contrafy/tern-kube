@@ -1,0 +1,18 @@
+Name:         gizmo
+Namespace:    tern-test-crd
+Labels:       app=widgets
+Annotations:  <none>
+API Version:  lens.example.com/v1alpha1
+Kind:         Widget
+Metadata:
+  Creation Timestamp:  2026-10-08T08:10:26Z
+  Generation:          1
+  Resource Version:    3977
+  UID:                 b2c859a9-5ccd-447b-a554-66f507b64c79
+Spec:
+  Color:        blue
+  Description:  A small blue gizmo
+  Enabled:      true
+  Owner:        team-platform
+  Size:         3
+Events:         <none>

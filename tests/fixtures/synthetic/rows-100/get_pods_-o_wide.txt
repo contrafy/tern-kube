@@ -1,0 +1,101 @@
+NAME                                                   READY   STATUS             RESTARTS          AGE      IP              NODE                                        NOMINATED NODE   READINESS GATES
+api-gateway-8248h                                      0/1     ImagePullBackOff   0                 36m      10.244.1.64     prod-worker-06                              <none>           <none>
+api-gateway-h9qtv                                      1/1     Running            4 (56m ago)       56m      10.244.0.1      prod-worker-04                              <none>           <none>
+api-gateway-lhj7b                                      1/1     Running            3 (57m ago)       57m      10.244.14.34    prod-worker-05                              <none>           <none>
+api-gateway-p2dj2                                      1/1     Running            3 (107s ago)      107s     10.244.12.22    prod-worker-04                              <none>           <none>
+api-gateway-tn6h6                                      1/1     Running            0                 206d     10.244.5.189    prod-worker-02                              <none>           <none>
+api-gateway-v7fz7                                      1/1     Running            0                 2y186d   10.244.10.216   prod-worker-05                              <none>           <none>
+auth-service-lh88n8b8h-szmf7                           2/2     Running            0                 20h      10.244.1.152    prod-worker-01                              <none>           <none>
+cart-7w4cxns7n-59t7d                                   1/1     Running            4 (48m ago)       22h      10.244.4.40     prod-worker-06                              <none>           <none>
+cart-7w4cxns7n-c5jgd                                   1/1     Running            0                 5d14h    10.244.6.117    prod-worker-06                              <none>           1/1
+cart-7w4cxns7n-h6s29                                   0/1     Running            0                 107d     10.244.5.244    gke-prod-default-pool-8c1f2a3b-q7xz         <none>           1/1
+checkout-service-t7vvzdh7p-25xxk                       2/2     Running            0                 4d22h    10.244.12.92    gke-prod-default-pool-8c1f2a3b-q7xz         <none>           <none>
+checkout-service-t7vvzdh7p-5t2dj                       0/2     Completed          0                 3y54d    10.244.15.123   prod-worker-01                              <none>           <none>
+checkout-service-t7vvzdh7p-7zw2m                       2/2     Running            3 (106s ago)      106s     10.244.9.112    prod-worker-03                              <none>           <none>
+checkout-service-t7vvzdh7p-985xr                       2/2     Running            0                 2d11h    10.244.3.148    gke-prod-default-pool-8c1f2a3b-q7xz         <none>           <none>
+checkout-service-t7vvzdh7p-bfdqw                       2/2     Running            0                 11h      10.244.7.124    prod-worker-01                              <none>           <none>
+checkout-service-t7vvzdh7p-bhrgf                       2/2     Running            0                 129m     10.244.8.38     gke-prod-default-pool-8c1f2a3b-q7xz         <none>           <none>
+checkout-service-t7vvzdh7p-cbldb                       2/2     Running            0                 103s     10.244.11.19    ip-10-0-142-17.us-west-2.compute.internal   <none>           <none>
+checkout-service-t7vvzdh7p-rlr4v                       2/2     Running            0                 71s      10.244.10.112   prod-worker-01                              <none>           <none>
+coredns-xmw9rp66j2-zqplv                               1/2     Running            0                 9s       10.244.12.86    gke-prod-default-pool-8c1f2a3b-q7xz         <none>           <none>
+elasticsearch-data-l4kpkn7nk-8chd5                     1/1     Running            1 (4h33m ago)     4d18h    10.244.13.253   prod-worker-03                              <none>           <none>
+elasticsearch-data-l4kpkn7nk-mfnzl                     1/1     Running            4 (119s ago)      119s     10.244.1.18     prod-worker-02                              <none>           <none>
+elasticsearch-data-l4kpkn7nk-nfmdj                     0/1     Running            0                 100s     10.244.9.190    gke-prod-default-pool-8c1f2a3b-q7xz         <none>           <none>
+elasticsearch-data-l4kpkn7nk-pnsz9                     1/1     Running            2 (57m ago)       25h      10.244.9.168    prod-worker-05                              <none>           <none>
+elasticsearch-data-l4kpkn7nk-pzms9                     1/1     Running            0                 18h      10.244.8.109    prod-worker-05                              <none>           <none>
+elasticsearch-data-l4kpkn7nk-twdpm                     0/1     CrashLoopBackOff   201 (3h18m ago)   5d16h    10.244.11.111   prod-worker-05                              <none>           <none>
+elasticsearch-data-l4kpkn7nk-vk2dh                     1/1     Running            2 (4h8m ago)      6d2h     10.244.11.119   prod-worker-05                              <none>           <none>
+elasticsearch-data-l4kpkn7nk-z9k94                     1/1     Running            2 (178m ago)      178m     10.244.11.251   prod-worker-01                              <none>           <none>
+frontend-dcjz682rz9-72r2r                              3/3     Running            0                 163m     10.244.11.234   prod-worker-02                              <none>           1/1
+frontend-dcjz682rz9-7brf2                              3/3     Running            2 (54m ago)       113m     10.244.8.129    prod-worker-06                              <none>           <none>
+frontend-dcjz682rz9-krp9z                              0/3     ImagePullBackOff   0                 3y11d    10.244.3.225    prod-worker-05                              <none>           <none>
+frontend-dcjz682rz9-qlv2l                              0/3     Completed          0                 137d     10.244.2.57     prod-worker-01                              <none>           <none>
+frontend-dcjz682rz9-w6kdd                              3/3     Running            0                 12h      10.244.1.136    prod-worker-04                              <none>           <none>
+frontend-dcjz682rz9-zvvj7                              3/3     Running            0                 13m      10.244.12.98    prod-worker-02                              <none>           <none>
+image-resizer-16                                       2/3     CrashLoopBackOff   117 (4h43m ago)   4d3h     10.244.9.184    prod-worker-06                              <none>           <none>
+image-resizer-29                                       3/3     Running            0                 2y334d   10.244.1.241    prod-worker-04                              <none>           <none>
+image-resizer-41                                       2/3     CrashLoopBackOff   210 (107m ago)    107m     10.244.0.186    ip-10-0-142-17.us-west-2.compute.internal   <none>           <none>
+image-resizer-6                                        3/3     Running            0                 111s     10.244.4.109    prod-worker-03                              <none>           <none>
+image-resizer-66                                       0/3     Pending            0                 11s      <none>          <none>                                      <none>           <none>
+image-resizer-71                                       3/3     Running            0                 31s      10.244.9.23     prod-worker-03                              <none>           <none>
+image-resizer-94                                       2/3     Running            0                 303d     10.244.15.250   ip-10-0-142-17.us-west-2.compute.internal   <none>           <none>
+image-resizer-98                                       3/3     Running            0                 5d14h    10.244.1.159    prod-worker-04                              <none>           <none>
+kafka-29113318-4sfg8                                   0/2     Completed          0                 3y358d   10.244.3.224    prod-worker-06                              <none>           <none>
+kafka-29212973-slnd9                                   0/2     Completed          0                 103m     10.244.10.43    prod-worker-02                              <none>           <none>
+kafka-29341346-b5nrv                                   0/2     Completed          0                 7d21h    10.244.13.38    prod-worker-02                              <none>           <none>
+kafka-29438350-562ph                                   0/2     Completed          0                 169m     10.244.13.210   prod-worker-02                              <none>           <none>
+kafka-29801972-wxhvz                                   0/2     Completed          0                 5d10h    10.244.0.39     gke-prod-default-pool-8c1f2a3b-q7xz         <none>           <none>
+kube-proxy-2cm49n79z-6hsgg                             0/1     Init:0/1           0                 104m     10.244.0.237    prod-worker-02                              <none>           <none>
+node-exporter-gftd2fs7n-2mplx                          3/3     Running            0                 5d16h    10.244.12.80    ip-10-0-142-17.us-west-2.compute.internal   <none>           <none>
+node-exporter-gftd2fs7n-fs2xs                          3/3     Running            0                 6d3h     10.244.9.165    gke-prod-default-pool-8c1f2a3b-q7xz         <none>           <none>
+node-exporter-gftd2fs7n-mpsc4                          3/3     Running            0                 5d20h    10.244.9.58     prod-worker-04                              <none>           <none>
+node-exporter-gftd2fs7n-xs4bp                          0/3     Pending            0                 43s      <none>          <none>                                      <none>           <none>
+notification-sender-29041920-6h6ll                     0/3     Completed          0                 3y219d   10.244.4.13     prod-worker-03                              <none>           <none>
+notification-sender-29126754-5mdc4                     0/3     Completed          0                 108s     10.244.8.178    prod-worker-06                              <none>           <none>
+notification-sender-29446212-nlrxl                     2/3     CrashLoopBackOff   187 (100s ago)    100s     10.244.13.75    prod-worker-05                              <none>           <none>
+notification-sender-29641232-xqq59                     0/3     Completed          0                 44h      10.244.3.50     ip-10-0-142-17.us-west-2.compute.internal   <none>           <none>
+notification-sender-29715103-jw5bj                     2/3     Running            4 (20m ago)       151m     10.244.15.217   gke-prod-default-pool-8c1f2a3b-q7xz         <none>           <none>
+notification-sender-29979266-v7xqv                     0/3     Completed          0                 60s      10.244.10.62    prod-worker-02                              <none>           <none>
+payments-worker-s44ctv8jkr-9xbvs                       2/2     Running            0                 2d8h     10.244.0.39     prod-worker-01                              <none>           <none>
+payments-worker-s44ctv8jkr-mw6f2                       2/2     Running            0                 25h      10.244.6.36     prod-worker-04                              <none>           <none>
+payments-worker-s44ctv8jkr-sz8gt                       0/2     Pending            0                 2y68d    <none>          prod-worker-06                              <none>           <none>
+payments-worker-s44ctv8jkr-ztcv7                       0/2     Init:0/1           0                 4d9h     10.244.12.208   ip-10-0-142-17.us-west-2.compute.internal   <none>           <none>
+postgres-kz9gdvc6mv-24jqq                              1/1     Running            0                 294d     10.244.12.49    gke-prod-default-pool-8c1f2a3b-q7xz         <none>           <none>
+postgres-kz9gdvc6mv-7jq9v                              0/1     Error              0                 67s      10.244.10.60    prod-worker-04                              <none>           <none>
+postgres-kz9gdvc6mv-859rr                              0/1     ImagePullBackOff   0                 144m     10.244.13.54    prod-worker-06                              <none>           <none>
+postgres-kz9gdvc6mv-9x7z5                              1/1     Running            0                 42m      10.244.6.198    prod-worker-05                              <none>           <none>
+postgres-kz9gdvc6mv-g7h96                              1/1     Running            0                 287d     10.244.2.181    prod-worker-05                              <none>           <none>
+postgres-kz9gdvc6mv-mwpgj                              1/1     Running            0                 94m      10.244.7.156    prod-worker-03                              <none>           <none>
+postgres-kz9gdvc6mv-nfgfc                              1/1     Running            0                 109m     10.244.4.57     prod-worker-01                              <none>           <none>
+postgres-kz9gdvc6mv-vpfj6                              1/1     Running            0                 2s       10.244.5.64     prod-worker-02                              <none>           <none>
+prometheus-server-ccxmm                                0/3     ImagePullBackOff   0                 255d     10.244.8.181    prod-worker-01                              <none>           <none>
+prometheus-server-rvjrf                                2/3     Running            1 (5h51m ago)     6d12h    10.244.9.58     prod-worker-03                              <none>           <none>
+prometheus-server-wlt9r                                0/3     ImagePullBackOff   0                 80s      10.244.3.146    gke-prod-default-pool-8c1f2a3b-q7xz         <none>           <none>
+prometheus-server-wrc4j                                3/3     Running            0                 37h      10.244.2.243    gke-prod-default-pool-8c1f2a3b-q7xz         <none>           <none>
+recommendation-engine-batch-scoring-6p86j29xzz-9rcss   0/3     Error              0                 169m     10.244.7.56     prod-worker-02                              <none>           <none>
+recommendation-engine-batch-scoring-6p86j29xzz-f58g8   3/3     Running            0                 5d14h    10.244.13.178   prod-worker-03                              <none>           <none>
+recommendation-engine-batch-scoring-6p86j29xzz-gcffb   2/3     OOMKilled          185 (92s ago)     92s      10.244.9.54     gke-prod-default-pool-8c1f2a3b-q7xz         <none>           <none>
+recommendation-engine-batch-scoring-6p86j29xzz-m2jnr   3/3     Running            0                 33h      10.244.3.161    prod-worker-01                              <none>           <none>
+recommendation-engine-batch-scoring-6p86j29xzz-svt4v   0/3     Completed          0                 185d     10.244.11.194   prod-worker-03                              <none>           <none>
+redis-29168860-jnzwh                                   0/2     Completed          0                 22h      10.244.6.104    gke-prod-default-pool-8c1f2a3b-q7xz         <none>           <none>
+redis-29432524-pf2rs                                   0/2     Pending            0                 101m     <none>          <none>                                      <none>           0/1
+redis-29509185-5r5fk                                   0/2     Pending            0                 111s     <none>          <none>                                      <none>           <none>
+redis-29569835-shdw5                                   2/2     Running            0                 5d10h    10.244.5.29     prod-worker-06                              <none>           <none>
+redis-29976486-fktzs                                   0/2     Completed          0                 46m      10.244.3.142    prod-worker-03                              <none>           <none>
+report-generator-dhgxtbtc4-82qlc                       2/2     Running            0                 29m      10.244.14.233   prod-worker-04                              <none>           <none>
+report-generator-dhgxtbtc4-c74n2                       2/2     Running            0                 3y91d    10.244.5.9      ip-10-0-142-17.us-west-2.compute.internal   <none>           <none>
+report-generator-dhgxtbtc4-klwp9                       0/2     Completed          0                 32s      10.244.1.225    gke-prod-default-pool-8c1f2a3b-q7xz         <none>           <none>
+report-generator-dhgxtbtc4-ldb4q                       1/2     Running            0                 34h      10.244.0.32     gke-prod-default-pool-8c1f2a3b-q7xz         <none>           <none>
+report-generator-dhgxtbtc4-mz52s                       2/2     Running            0                 125m     10.244.9.10     prod-worker-04                              <none>           1/1
+report-generator-dhgxtbtc4-t8t7q                       2/2     Running            0                 298d     10.244.5.214    gke-prod-default-pool-8c1f2a3b-q7xz         <none>           <none>
+search-indexer-228s8                                   3/3     Running            0                 5d22h    10.244.15.197   prod-worker-04                              <none>           <none>
+search-indexer-f5bqf                                   0/3     ImagePullBackOff   0                 140m     10.244.7.160    prod-worker-03                              <none>           <none>
+search-indexer-klcqn                                   2/3     CrashLoopBackOff   153 (5m8s ago)    5m8s     10.244.12.214   prod-worker-01                              <none>           <none>
+search-indexer-klvpn                                   3/3     Running            0                 34s      10.244.0.163    prod-worker-01                              <none>           <none>
+search-indexer-mtsj5                                   3/3     Running            0                 31d      10.244.7.211    prod-worker-06                              <none>           <none>
+user-profile-5xf7xdff6-6zm4t                           1/1     Running            0                 239d     10.244.10.225   ip-10-0-142-17.us-west-2.compute.internal   <none>           <none>
+user-profile-5xf7xdff6-b9g6r                           1/1     Running            0                 58s      10.244.3.223    prod-worker-02                              <none>           1/1
+user-profile-5xf7xdff6-n8rlm                           0/1     Completed          0                 258d     10.244.6.119    prod-worker-04                              <none>           <none>
+user-profile-5xf7xdff6-wx9hr                           0/1     Running            0                 110d     10.244.8.160    prod-worker-01                              <none>           <none>
+user-profile-5xf7xdff6-xlkwf                           1/1     Running            0                 79s      10.244.8.17     prod-worker-04                              <none>           <none>
+user-profile-5xf7xdff6-zvb4q                           0/1     Completed          0                 121m     10.244.11.19    prod-worker-05                              <none>           <none>

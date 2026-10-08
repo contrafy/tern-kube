@@ -1,0 +1,61 @@
+Name:             crashloop
+Namespace:        tern-test-apps
+Priority:         0
+Service Account:  default
+Node:             kube-lens-dev-control-plane/172.18.0.2
+Start Time:       Thu, 08 Oct 2026 03:10:24 -0500
+Labels:           app=crashloop
+Annotations:      <none>
+Status:           Running
+IP:               10.244.0.36
+IPs:
+  IP:  10.244.0.36
+Containers:
+  app:
+    Container ID:  containerd://846afb1daea19a1f23f47bdc830faf97c765b2481c933100d2262783fc90436c
+    Image:         busybox:1.37
+    Image ID:      docker.io/library/import-2026-10-08@sha256:e7078203d9319787b215f5dfd21b1bfa5530eb59f65af59e2ced60217a9f63ce
+    Port:          <none>
+    Host Port:     <none>
+    Command:
+      sh
+      -c
+      echo 'starting app'; echo 'fatal: config file /etc/app/config.yaml not found' >&2; exit 1
+    State:          Waiting
+      Reason:       CrashLoopBackOff
+    Last State:     Terminated
+      Reason:       Error
+      Exit Code:    1
+      Started:      Thu, 08 Oct 2026 03:13:24 -0500
+      Finished:     Thu, 08 Oct 2026 03:13:24 -0500
+    Ready:          False
+    Restart Count:  5
+    Environment:    <none>
+    Mounts:
+      /var/run/secrets/kubernetes.io/serviceaccount from kube-api-access-fcbxn (ro)
+Conditions:
+  Type                        Status
+  PodReadyToStartContainers   True 
+  Initialized                 True 
+  Ready                       False 
+  ContainersReady             False 
+  PodScheduled                True 
+Volumes:
+  kube-api-access-fcbxn:
+    Type:                    Projected (a volume that contains injected data from multiple sources)
+    TokenExpirationSeconds:  3607
+    ConfigMapName:           kube-root-ca.crt
+    Optional:                false
+    DownwardAPI:             true
+QoS Class:                   BestEffort
+Node-Selectors:              <none>
+Tolerations:                 node.kubernetes.io/not-ready:NoExecute op=Exists for 300s
+                             node.kubernetes.io/unreachable:NoExecute op=Exists for 300s
+Events:
+  Type     Reason     Age                    From               Message
+  ----     ------     ----                   ----               -------
+  Normal   Scheduled  5m17s                  default-scheduler  Successfully assigned tern-test-apps/crashloop to kube-lens-dev-control-plane
+  Normal   Pulled     2m17s (x6 over 5m17s)  kubelet            Container image "busybox:1.37" already present on machine and can be accessed by the pod
+  Normal   Created    2m17s (x6 over 5m17s)  kubelet            Container created
+  Normal   Started    2m17s (x6 over 5m17s)  kubelet            Container started
+  Warning  BackOff    57s (x6 over 5m15s)    kubelet            Back-off restarting failed container app in pod crashloop_tern-test-apps(1451ed21-57ff-42c8-a382-a57698d4bd26)

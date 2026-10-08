@@ -1,0 +1,71 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: widgets.lens.example.com
+  labels:
+    lens.example.com/fixture-world: "true"
+spec:
+  group: lens.example.com
+  scope: Namespaced
+  names:
+    kind: Widget
+    singular: widget
+    plural: widgets
+    listKind: WidgetList
+    shortNames:
+      - wd
+    categories:
+      - lens
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      subresources:
+        status: {}
+      additionalPrinterColumns:
+        - name: Color
+          type: string
+          jsonPath: .spec.color
+        - name: Size
+          type: integer
+          jsonPath: .spec.size
+        - name: Description
+          type: string
+          jsonPath: .spec.description
+        - name: Age
+          type: date
+          jsonPath: .metadata.creationTimestamp
+        - name: Owner
+          type: string
+          priority: 1
+          jsonPath: .spec.owner
+        - name: Enabled
+          type: boolean
+          priority: 1
+          jsonPath: .spec.enabled
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              required:
+                - color
+                - size
+              properties:
+                color:
+                  type: string
+                size:
+                  type: integer
+                  minimum: 0
+                description:
+                  type: string
+                owner:
+                  type: string
+                enabled:
+                  type: boolean
+            status:
+              type: object
+              properties:
+                phase:
+                  type: string

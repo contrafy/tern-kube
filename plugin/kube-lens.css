@@ -1,29 +1,115 @@
 /* Lens table: a CSS grid of `el` divs. Rows are `display: contents` so their
    cells align across rows while the row keeps its click action; the inline
-   inspector spans every column. */
+   inspector spans every column. Columns take their content width and only
+   long ones shrink (with an ellipsis) when the pane is narrow. */
+
+.kl-wrap {
+	width: 100%;
+	overflow-x: auto;
+}
 
 .kl-grid {
 	display: grid;
 	width: 100%;
+	justify-content: start;
 }
 
-.kl-cols-1 { grid-template-columns: minmax(0, 1fr); }
-.kl-cols-2 { grid-template-columns: minmax(0, 1fr) repeat(1, max-content); }
-.kl-cols-3 { grid-template-columns: minmax(0, 1fr) repeat(2, max-content); }
-.kl-cols-4 { grid-template-columns: minmax(0, 1fr) repeat(3, max-content); }
-.kl-cols-5 { grid-template-columns: minmax(0, 1fr) repeat(4, max-content); }
-.kl-cols-6 { grid-template-columns: minmax(0, 1fr) repeat(5, max-content); }
-.kl-cols-7 { grid-template-columns: minmax(0, 1fr) repeat(6, max-content); }
-.kl-cols-8 { grid-template-columns: minmax(0, 1fr) repeat(7, max-content); }
-.kl-cols-9 { grid-template-columns: minmax(0, 1fr) repeat(8, max-content); }
-.kl-cols-10 { grid-template-columns: minmax(0, 1fr) repeat(9, max-content); }
-.kl-cols-11 { grid-template-columns: minmax(0, 1fr) repeat(10, max-content); }
-.kl-cols-12 { grid-template-columns: minmax(0, 1fr) repeat(11, max-content); }
+.kl-cols-1 { grid-template-columns: repeat(1, minmax(0, max-content)); }
+.kl-cols-2 { grid-template-columns: repeat(2, minmax(0, max-content)); }
+.kl-cols-3 { grid-template-columns: repeat(3, minmax(0, max-content)); }
+.kl-cols-4 { grid-template-columns: repeat(4, minmax(0, max-content)); }
+.kl-cols-5 { grid-template-columns: repeat(5, minmax(0, max-content)); }
+.kl-cols-6 { grid-template-columns: repeat(6, minmax(0, max-content)); }
+.kl-cols-7 { grid-template-columns: repeat(7, minmax(0, max-content)); }
+.kl-cols-8 { grid-template-columns: repeat(8, minmax(0, max-content)); }
+.kl-cols-9 { grid-template-columns: repeat(9, minmax(0, max-content)); }
+.kl-cols-10 { grid-template-columns: repeat(10, minmax(0, max-content)); }
+.kl-cols-11 { grid-template-columns: repeat(11, minmax(0, max-content)); }
+.kl-cols-12 { grid-template-columns: repeat(12, minmax(0, max-content)); }
+.kl-cols-13 { grid-template-columns: repeat(13, minmax(0, max-content)); }
+.kl-cols-14 { grid-template-columns: repeat(14, minmax(0, max-content)); }
+.kl-cols-15 { grid-template-columns: repeat(15, minmax(0, max-content)); }
+.kl-cols-16 { grid-template-columns: repeat(16, minmax(0, max-content)); }
+
+/* Responsive column priorities (render/grid.luau): kl-p0 never hides; p3
+   (wide extras) hides first, then p2, then p1. Hidden cells leave the grid
+   flow, so each tier swaps in the grid's visible column count (kl-a/b/c-N).
+   Tern 0.6.2 rejects `@container` and its `max-width` media feature compares
+   to the window, not the pane: a narrow window hides columns, a narrow split
+   of a wide window only shrinks long cells. */
+@media (max-width: 1000px) {
+	.kl-a-1 { grid-template-columns: repeat(1, minmax(0, max-content)); }
+	.kl-a-2 { grid-template-columns: repeat(2, minmax(0, max-content)); }
+	.kl-a-3 { grid-template-columns: repeat(3, minmax(0, max-content)); }
+	.kl-a-4 { grid-template-columns: repeat(4, minmax(0, max-content)); }
+	.kl-a-5 { grid-template-columns: repeat(5, minmax(0, max-content)); }
+	.kl-a-6 { grid-template-columns: repeat(6, minmax(0, max-content)); }
+	.kl-a-7 { grid-template-columns: repeat(7, minmax(0, max-content)); }
+	.kl-a-8 { grid-template-columns: repeat(8, minmax(0, max-content)); }
+	.kl-a-9 { grid-template-columns: repeat(9, minmax(0, max-content)); }
+	.kl-a-10 { grid-template-columns: repeat(10, minmax(0, max-content)); }
+	.kl-a-11 { grid-template-columns: repeat(11, minmax(0, max-content)); }
+	.kl-a-12 { grid-template-columns: repeat(12, minmax(0, max-content)); }
+	.kl-a-13 { grid-template-columns: repeat(13, minmax(0, max-content)); }
+	.kl-a-14 { grid-template-columns: repeat(14, minmax(0, max-content)); }
+	.kl-a-15 { grid-template-columns: repeat(15, minmax(0, max-content)); }
+	.kl-a-16 { grid-template-columns: repeat(16, minmax(0, max-content)); }
+	.kl-grid .kl-p3 { display: none; }
+}
+
+@media (max-width: 760px) {
+	.kl-b-1 { grid-template-columns: repeat(1, minmax(0, max-content)); }
+	.kl-b-2 { grid-template-columns: repeat(2, minmax(0, max-content)); }
+	.kl-b-3 { grid-template-columns: repeat(3, minmax(0, max-content)); }
+	.kl-b-4 { grid-template-columns: repeat(4, minmax(0, max-content)); }
+	.kl-b-5 { grid-template-columns: repeat(5, minmax(0, max-content)); }
+	.kl-b-6 { grid-template-columns: repeat(6, minmax(0, max-content)); }
+	.kl-b-7 { grid-template-columns: repeat(7, minmax(0, max-content)); }
+	.kl-b-8 { grid-template-columns: repeat(8, minmax(0, max-content)); }
+	.kl-b-9 { grid-template-columns: repeat(9, minmax(0, max-content)); }
+	.kl-b-10 { grid-template-columns: repeat(10, minmax(0, max-content)); }
+	.kl-b-11 { grid-template-columns: repeat(11, minmax(0, max-content)); }
+	.kl-b-12 { grid-template-columns: repeat(12, minmax(0, max-content)); }
+	.kl-b-13 { grid-template-columns: repeat(13, minmax(0, max-content)); }
+	.kl-b-14 { grid-template-columns: repeat(14, minmax(0, max-content)); }
+	.kl-b-15 { grid-template-columns: repeat(15, minmax(0, max-content)); }
+	.kl-b-16 { grid-template-columns: repeat(16, minmax(0, max-content)); }
+	.kl-grid .kl-p2, .kl-grid .kl-p3 { display: none; }
+}
+
+@media (max-width: 520px) {
+	.kl-c-1 { grid-template-columns: repeat(1, minmax(0, max-content)); }
+	.kl-c-2 { grid-template-columns: repeat(2, minmax(0, max-content)); }
+	.kl-c-3 { grid-template-columns: repeat(3, minmax(0, max-content)); }
+	.kl-c-4 { grid-template-columns: repeat(4, minmax(0, max-content)); }
+	.kl-c-5 { grid-template-columns: repeat(5, minmax(0, max-content)); }
+	.kl-c-6 { grid-template-columns: repeat(6, minmax(0, max-content)); }
+	.kl-c-7 { grid-template-columns: repeat(7, minmax(0, max-content)); }
+	.kl-c-8 { grid-template-columns: repeat(8, minmax(0, max-content)); }
+	.kl-c-9 { grid-template-columns: repeat(9, minmax(0, max-content)); }
+	.kl-c-10 { grid-template-columns: repeat(10, minmax(0, max-content)); }
+	.kl-c-11 { grid-template-columns: repeat(11, minmax(0, max-content)); }
+	.kl-c-12 { grid-template-columns: repeat(12, minmax(0, max-content)); }
+	.kl-c-13 { grid-template-columns: repeat(13, minmax(0, max-content)); }
+	.kl-c-14 { grid-template-columns: repeat(14, minmax(0, max-content)); }
+	.kl-c-15 { grid-template-columns: repeat(15, minmax(0, max-content)); }
+	.kl-c-16 { grid-template-columns: repeat(16, minmax(0, max-content)); }
+	.kl-grid .kl-p1, .kl-grid .kl-p2, .kl-grid .kl-p3 { display: none; }
+}
 
 .kl-grid .kl-h {
 	color: var(--t3);
 	padding: 2px 14px 4px 6px;
 	cursor: pointer;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	user-select: none;
+}
+
+.kl-grid .kl-h:hover,
+.kl-grid .kl-sorted {
+	color: var(--t1);
 }
 
 .kl-grid .kl-r {
@@ -37,6 +123,21 @@
 	white-space: nowrap;
 	overflow: hidden;
 	text-overflow: ellipsis;
+	min-width: 0;
+}
+
+/* A text node wraps by word on its own; cells and headers stay on one line
+   and shrink with an ellipsis instead. */
+.kl-grid .kl-c .sf-text,
+.kl-grid .kl-h .sf-text {
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.kl-grid .kl-num {
+	font-variant-numeric: tabular-nums;
+	text-align: right;
 }
 
 .kl-grid .kl-r:hover .kl-c,
@@ -48,6 +149,48 @@
 	grid-column: 1 / -1;
 	padding: 6px 12px 10px 18px;
 	background: var(--l1);
+	border-top: 1px solid var(--l2);
+}
+
+/* Header bar, chips, breadcrumb, help. */
+
+[data-role="kube-lens.header"] {
+	padding-bottom: 4px;
+	border-bottom: 1px solid var(--l2);
+}
+
+/* Tern overlays the block's lens/Native/Raw toolbar on the top right of the
+   focused block; the header's first row wraps before running under it. */
+[data-role="kube-lens.bar"] {
+	padding-right: 240px;
+}
+
+@media (max-width: 760px) {
+	[data-role="kube-lens.bar"] {
+		padding-right: 0;
+	}
+}
+
+[data-role="kube-lens.chips"] .sf-badge,
+[data-role="kube-lens.chips"] [data-role="kube-lens.chip"],
+[data-role="kube-lens.chips"] [data-role="kube-lens.chip-on"],
+[data-role="kube-lens.pages"] [data-role="kube-lens.chip"],
+[data-role="kube-lens.pages"] [data-role="kube-lens.chip-on"],
+[data-role="kube-lens.inspector"] .sf-act,
+[data-role="kube-lens.inspect"] .sf-act {
+	cursor: pointer;
+}
+
+[data-role="kube-lens.kind"] {
+	margin-top: 8px;
+}
+
+[data-role="kube-lens.breadcrumb"] {
+	align-items: center;
+}
+
+[data-role="kube-lens.help"] {
+	max-width: 760px;
 }
 
 .kl-btn {

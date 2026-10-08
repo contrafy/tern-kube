@@ -1,0 +1,4 @@
+NAMESPACE        NAME         DESIRED   CURRENT   READY   UP-TO-DATE   AVAILABLE   NODE SELECTOR            AGE
+kube-system      kindnet      1         1         1       1            1           kubernetes.io/os=linux   27m
+kube-system      kube-proxy   1         1         1       1            1           kubernetes.io/os=linux   27m
+tern-test-apps   node-agent   1         1         1       1            1           <none>                   5m20s

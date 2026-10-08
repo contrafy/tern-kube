@@ -1,0 +1,3 @@
+NAMESPACE         NAME       STATUS     COMPLETIONS   DURATION   AGE
+tern-test-batch   done-job   Complete   1/1           3s         5m19s
+tern-test-batch   fail-job   Failed     0/1           5m19s      5m19s

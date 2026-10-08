@@ -1,0 +1,2 @@
+NAME                          STATUS   ROLES           AGE   VERSION   LABELS
+kube-lens-dev-control-plane   Ready    control-plane   27m   v1.37.0   beta.kubernetes.io/arch=arm64,beta.kubernetes.io/os=linux,kubernetes.io/arch=arm64,kubernetes.io/hostname=kube-lens-dev-control-plane,kubernetes.io/os=linux,node-role.kubernetes.io/control-plane=

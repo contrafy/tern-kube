@@ -1,0 +1,11 @@
+NAME                 STATUS   AGE
+default              Active   27m
+kube-node-lease      Active   27m
+kube-public          Active   27m
+kube-system          Active   27m
+local-path-storage   Active   26m
+tern-test-apps       Active   5m14s
+tern-test-batch      Active   5m14s
+tern-test-crd        Active   5m14s
+tern-test-edge       Active   5m14s
+tern-test-empty      Active   5m14s

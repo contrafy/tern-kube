@@ -1,0 +1,549 @@
+#!/bin/sh
+# kube-lens-aliases: opt-in lens claims for shell aliases of kubectl.
+# Run with --help for usage and limitations.
+
+set -u
+
+prog=kube-lens-aliases
+BEGIN_MARK='# BEGIN kube-lens aliases'
+END_MARK='# END kube-lens aliases'
+
+usage() {
+	cat <<'EOF'
+usage: kube-lens-aliases [--shell zsh|bash|fish] [--plugin-dir DIR] [--force]
+                         (add NAME... | remove NAME... | list | detect | check)
+
+Adds Tern lens claims (manifest globs) for shell aliases of kubectl or
+kubecolor to the installed kube-lens plugin, so `k get pods` gets the same
+lens as `kubectl get pods`.
+
+  detect        list aliases and functions of your interactive shell that
+                run kubectl/kubecolor, and whether `add` accepts them;
+                changes nothing
+  add NAME...   verify each NAME resolves to kubectl/kubecolor in your shell,
+                then write its globs into the manifest's alias block
+  remove NAME...  drop the globs of each NAME (no shell probe)
+  list          print the names in the manifest's alias block
+  check         verify every name in the block still resolves; exit 1 if not
+
+options:
+  --shell SH        shell to probe (default: basename of $SHELL)
+  --plugin-dir DIR  plugin directory holding plugin.toml (default: the
+                    installed or linked kube-lens under `tern plugin dir`)
+  --force           also accept shell functions and wrapper executables;
+                    their behavior is opaque to this script
+  -h, --help        this help
+
+What `add` accepts: an alias whose whole value is `kubectl`, `kubecolor` or
+an absolute path ending in either (alias chains such as k -> kc -> kubectl
+are followed), or a command on PATH that is (a symlink to) kubectl/kubecolor.
+Refused: aliases carrying arguments (`alias kp='kubectl get pods'`, `alias
+kprod='kubectl --context prod'`), because the lens would attribute the
+output to the wrong command, namespace or context; aliases to anything else;
+functions and wrapper scripts unless --force.
+
+Probes run `zsh -ic`, `bash -ic` or `fish -ic` as you, with your HOME, stdin
+from /dev/null and a time limit (KUBE_LENS_ALIASES_TIMEOUT seconds, default
+10). Output printed by rc files is ignored. The probe refuses to run when
+HOME (or ZDOTDIR/XDG_CONFIG_HOME) is not owned by you, so it never sources
+another user's rc files. bash reads ~/.bashrc only: aliases defined in
+~/.bash_profile alone are not seen.
+
+Limitations:
+  - Globs are static manifest entries. `tern plugin install --force` (and
+    plugin updates) replace the manifest: re-run `add` afterwards. Run
+    `tern plugin reload` after every change; this script never runs it.
+  - bash and fish report the line as typed, so the alias glob is what
+    matches. zsh reports alias-expanded lines and fish abbreviations expand
+    before running, so neither needs alias globs (adding them is harmless).
+  - Renaming or deleting an alias leaves its claim behind; run `check`.
+  - A claim cannot be declined at run time: an alias that stops running
+    kubectl still hides Tern's built-in lenses for those lines.
+  - A linked plugin (kube-lens.path) is edited in place, in its source tree.
+EOF
+}
+
+die() {
+	printf '%s: %s\n' "$prog" "$*" >&2
+	exit 2
+}
+
+note() {
+	printf '%s\n' "$*" >&2
+}
+
+shell=
+plugin_dir=
+force=0
+cmd=
+names=
+
+while [ $# -gt 0 ]; do
+	case $1 in
+	-h | --help)
+		usage
+		exit 0
+		;;
+	--shell)
+		[ $# -ge 2 ] || die "--shell needs a value"
+		shell=$2
+		shift
+		;;
+	--shell=*) shell=${1#--shell=} ;;
+	--plugin-dir)
+		[ $# -ge 2 ] || die "--plugin-dir needs a value"
+		plugin_dir=$2
+		shift
+		;;
+	--plugin-dir=*) plugin_dir=${1#--plugin-dir=} ;;
+	--force) force=1 ;;
+	--) ;;
+	-*) die "unknown option: $1 (see --help)" ;;
+	*)
+		if [ -z "$cmd" ]; then
+			cmd=$1
+		else
+			# Names become manifest globs: plain command-name characters only.
+			case $1 in
+			kubectl | kubecolor) die "$1 is already claimed by the manifest" ;;
+			.* | '') die "invalid name: '$1'" ;;
+			*[!A-Za-z0-9_.+-]*) die "invalid name: '$1' (letters, digits, _ . + - only)" ;;
+			esac
+			names="$names $1"
+		fi
+		;;
+	esac
+	shift
+done
+
+case $cmd in
+add | remove)
+	[ -n "$names" ] || die "$cmd needs at least one NAME"
+	;;
+list | detect | check)
+	[ -z "$names" ] || die "$cmd takes no names"
+	;;
+'') die "missing command (see --help)" ;;
+*) die "unknown command: $cmd (see --help)" ;;
+esac
+
+tmp=$(mktemp -d "${TMPDIR:-/tmp}/kube-lens-aliases.XXXXXX") || die "cannot create a temp dir"
+trap 'rm -rf "$tmp"' EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+# ---------------------------------------------------------------- manifest
+
+resolve_manifest() {
+	if [ -z "$plugin_dir" ]; then
+		tern_bin=${TERN_BIN:-tern}
+		command -v "$tern_bin" >/dev/null 2>&1 || die "tern not found; pass --plugin-dir DIR"
+		pdir=$("$tern_bin" plugin dir 2>/dev/null) || die "\`$tern_bin plugin dir\` failed; pass --plugin-dir DIR"
+		[ -n "$pdir" ] || die "\`$tern_bin plugin dir\` printed nothing; pass --plugin-dir DIR"
+		if [ -f "$pdir/kube-lens.path" ]; then
+			IFS= read -r plugin_dir <"$pdir/kube-lens.path" || [ -n "$plugin_dir" ] || die "empty $pdir/kube-lens.path"
+			note "kube-lens is linked: editing its source manifest in $plugin_dir"
+		elif [ -d "$pdir/kube-lens" ]; then
+			plugin_dir=$pdir/kube-lens
+		else
+			die "kube-lens is not installed in $pdir; pass --plugin-dir DIR"
+		fi
+	fi
+	manifest=$plugin_dir/plugin.toml
+	[ -f "$manifest" ] || die "no plugin.toml in $plugin_dir"
+	# Exactly one BEGIN before exactly one END, inside lens "kubectl".
+	awk -v b="$BEGIN_MARK" -v e="$END_MARK" '
+		{ t = $0; gsub(/^[ \t]+|[ \t]+$/, "", t) }
+		t ~ /^\[\[?[^]]*\]\]?$/ { lens = "" }
+		t ~ /^id[ \t]*=/ { lens = t }
+		t == b { nb++; if (nb == 1) { bl = NR; blens = lens } }
+		t == e { ne++; if (ne == 1) el = NR }
+		END {
+			if (nb == 0 && ne == 0) { print "missing"; exit }
+			if (nb != 1 || ne != 1 || bl > el) { print "malformed"; exit }
+			if (blens !~ /^id[ \t]*=[ \t]*"kubectl"$/) { print "misplaced"; exit }
+			print "ok"
+		}' "$manifest" >"$tmp/markers" || die "cannot read $manifest"
+	case $(cat "$tmp/markers") in
+	ok) ;;
+	missing) die "$manifest has no '$BEGIN_MARK' / '$END_MARK' block; refusing to edit it (reinstall kube-lens)" ;;
+	malformed) die "$manifest needs exactly one '$BEGIN_MARK' line before one '$END_MARK' line" ;;
+	*) die "the alias block in $manifest is not inside lens \"kubectl\"" ;;
+	esac
+}
+
+# Names already in the block, sorted and unique.
+block_names() {
+	awk -v b="$BEGIN_MARK" -v e="$END_MARK" '
+		{ t = $0; gsub(/^[ \t]+|[ \t]+$/, "", t) }
+		t == e { inb = 0 }
+		inb && t ~ /^"/ { s = substr(t, 2); sub(/[ "].*/, "", s); if (s != "") print s }
+		t == b { inb = 1 }' "$manifest" | LC_ALL=C sort -u
+}
+
+# Rewrites the block with globs for every name in $1 (file, one per line),
+# mirroring the manifest's own "kubectl ..." claims.
+write_block() {
+	awk -v b="$BEGIN_MARK" -v e="$END_MARK" -v namesfile="$1" '
+		BEGIN { while ((getline n < namesfile) > 0) if (n != "") names[++nn] = n }
+		{ lines[NR] = $0; t = $0; gsub(/^[ \t]+|[ \t]+$/, "", t) }
+		t == b { bl = NR; ind = $0; sub(/[^ \t].*/, "", ind) }
+		t == e { el = NR }
+		!(bl && !el) && t ~ /^"kubectl( [^"]*)?",$/ {
+			s = substr(t, 9); sub(/",$/, "", s); forms[++nf] = s
+		}
+		END {
+			if (nf == 0) { print "no \"kubectl ...\" claims to mirror" > "/dev/stderr"; exit 1 }
+			for (i = 1; i <= bl; i++) print lines[i]
+			for (j = 1; j <= nn; j++)
+				for (k = 1; k <= nf; k++) printf "%s\"%s%s\",\n", ind, names[j], forms[k]
+			for (i = el; i <= NR; i++) print lines[i]
+		}' "$manifest" >"$tmp/plugin.toml" || die "could not rewrite $manifest"
+	if cmp -s "$tmp/plugin.toml" "$manifest"; then
+		return 1
+	fi
+	cp "$tmp/plugin.toml" "$manifest.kube-lens-aliases.tmp" &&
+		mv -f "$manifest.kube-lens-aliases.tmp" "$manifest" ||
+		die "could not write $manifest"
+	return 0
+}
+
+reload_hint() {
+	note "run \`tern plugin reload\` to apply"
+}
+
+# ------------------------------------------------------------------- probe
+
+# owns DIR: DIR belongs to the current user (`test -O` is not POSIX).
+owns() {
+	[ "$(ls -ldn -- "$1" 2>/dev/null | awk '{ print $3 }')" = "$(id -u)" ]
+}
+
+probe_shell() {
+	if [ -z "$shell" ]; then
+		shell=$(basename -- "${SHELL:-}")
+	fi
+	case $shell in
+	zsh | bash | fish) ;;
+	'') die "\$SHELL is unset; pass --shell zsh|bash|fish" ;;
+	*) die "unsupported shell '$shell'; pass --shell zsh|bash|fish" ;;
+	esac
+	command -v "$shell" >/dev/null 2>&1 || die "$shell is not installed"
+
+	[ -n "${HOME:-}" ] && [ -d "$HOME" ] || die "HOME is not a directory"
+	owns "$HOME" || die "refusing to probe: HOME ($HOME) is not owned by you, its rc files are not yours"
+	case $shell in
+	zsh) rcdir=${ZDOTDIR:-} ;;
+	fish) rcdir=${XDG_CONFIG_HOME:-} ;;
+	*) rcdir= ;;
+	esac
+	if [ -n "$rcdir" ] && [ -d "$rcdir" ] && ! owns "$rcdir"; then
+		die "refusing to probe: $rcdir is not owned by you, its rc files are not yours"
+	fi
+
+	case $shell in
+	zsh)
+		code='() {
+	emulate -L zsh
+	print -r -- @@KLA:A@@
+	alias -r
+	print -r -- @@KLA:F@@
+	local f
+	for f in ${(ok)functions}; do
+		[[ $f == _* ]] && continue
+		[[ ${functions[$f]} == *kube(ctl|color)* ]] && print -r -- $f
+	done
+	print -r -- @@KLA:P@@
+	for f in ${=KUBE_LENS_ALIASES_NAMES}; do print -r -- "$f	$(whence -p -- $f)"; done
+	print -r -- @@KLA:END@@
+}'
+		;;
+	bash)
+		code='set +eu; set +o pipefail 2>/dev/null
+printf "%s\n" @@KLA:A@@
+alias
+printf "%s\n" @@KLA:F@@
+compgen -A function | while IFS= read -r f; do
+	case $f in _*) continue ;; esac
+	case $(declare -f "$f") in *kubectl* | *kubecolor*) printf "%s\n" "$f" ;; esac
+done
+printf "%s\n" @@KLA:P@@
+for f in $KUBE_LENS_ALIASES_NAMES; do printf "%s\t%s\n" "$f" "$(type -P -- "$f")"; done
+printf "%s\n" @@KLA:END@@'
+		;;
+	fish)
+		code='echo @@KLA:A@@
+alias
+echo @@KLA:F@@
+for f in (functions -n)
+	string match -q -- "_*" $f; and continue
+	functions -- $f | string match -q -r "kube(ctl|color)"; and echo $f
+end
+echo @@KLA:P@@
+for f in (string split " " -- $KUBE_LENS_ALIASES_NAMES)
+	test -n "$f"; or continue
+	printf "%s\t%s\n" $f (command -s -- $f)
+end
+echo @@KLA:END@@'
+		;;
+	esac
+
+	limit=${KUBE_LENS_ALIASES_TIMEOUT:-10}
+	case $limit in '' | *[!0-9]*) die "KUBE_LENS_ALIASES_TIMEOUT must be whole seconds" ;; esac
+
+	KUBE_LENS_ALIASES_NAMES=$names "$shell" -ic "$code" </dev/null >"$tmp/probe.out" 2>/dev/null &
+	probe_pid=$!
+	(
+		sleep "$limit"
+		kill -TERM "$probe_pid" 2>/dev/null && sleep 1 && kill -KILL "$probe_pid" 2>/dev/null
+	) >/dev/null 2>&1 &
+	watch_pid=$!
+	wait "$probe_pid"
+	probe_status=$?
+	kill "$watch_pid" 2>/dev/null
+	wait "$watch_pid" 2>/dev/null
+
+	if ! grep -q '^@@KLA:END@@$' "$tmp/probe.out"; then
+		if [ "$probe_status" -gt 128 ]; then
+			die "$shell -ic did not finish within ${limit}s (an rc file may wait for input); raise KUBE_LENS_ALIASES_TIMEOUT"
+		fi
+		die "$shell -ic exited $probe_status before listing aliases"
+	fi
+
+	# Split the sections; rc noise before the first sentinel is dropped.
+	awk -v dir="$tmp" -v sh="$shell" '
+		function unq(v,   out, i, c, st) {
+			out = ""; st = 0
+			for (i = 1; i <= length(v); i++) {
+				c = substr(v, i, 1)
+				if (st == 1) {
+					if (c == "\047") st = 0
+					else if (sh == "fish" && c == "\\" && i < length(v) && index("\047\\", substr(v, i + 1, 1))) { i++; out = out substr(v, i, 1) }
+					else out = out c
+				} else if (c == "\047") st = 1
+				else if (c == "\\") { i++; out = out substr(v, i, 1) }
+				else if (c == "\"" || c == "$") return "\001BAD"
+				else out = out c
+			}
+			return st ? "\001OPEN" : out
+		}
+		function alias_line(l,   name, v, r) {
+			if (sh == "fish") {
+				if (l !~ /^alias [^ ]+ /) return
+				sub(/^alias /, "", l); name = l; sub(/ .*/, "", name); v = substr(l, length(name) + 2)
+			} else {
+				if (sh == "bash") sub(/^alias /, "", l)
+				if (l !~ /^[^=\047"]+=/) return
+				name = l; sub(/=.*/, "", name); v = substr(l, length(name) + 2)
+			}
+			r = unq(v)
+			if (r == "\001OPEN") { pend_name = name; pend = v; return }
+			emit(name, r)
+		}
+		function emit(name, r) {
+			if (r == "\001BAD") printf "%s\tbad\t\n", name > (dir "/aliases.tsv")
+			else { gsub(/[\t\n]/, " ", r); printf "%s\tok\t%s\n", name, r > (dir "/aliases.tsv") }
+		}
+		/^@@KLA:A@@$/ { sec = "A"; next }
+		/^@@KLA:F@@$/ { sec = "F"; next }
+		/^@@KLA:P@@$/ { sec = "P"; next }
+		/^@@KLA:END@@$/ { sec = ""; next }
+		sec == "A" && pend_name != "" {
+			pend = pend "\n" $0; r = unq(pend)
+			if (r != "\001OPEN") { emit(pend_name, r); pend_name = "" }
+			next
+		}
+		sec == "A" { alias_line($0) }
+		sec == "F" && $0 != "" { print > (dir "/functions.txt") }
+		sec == "P" && $0 != "" { print > (dir "/paths.tsv") }
+		END { if (pend_name != "") emit(pend_name, "\001BAD") }
+	' "$tmp/probe.out"
+	: >>"$tmp/aliases.tsv"
+	: >>"$tmp/functions.txt"
+	: >>"$tmp/paths.tsv"
+
+	# Resolve symlinks of commands found on PATH so `kc -> kubectl` counts.
+	: >"$tmp/resolved.tsv"
+	while IFS='	' read -r n p; do
+		[ -n "$p" ] || continue
+		hops=0
+		while [ -L "$p" ] && [ "$hops" -lt 40 ]; do
+			l=$(readlink -- "$p") || break
+			case $l in
+			/*) p=$l ;;
+			*) p=$(dirname -- "$p")/$l ;;
+			esac
+			hops=$((hops + 1))
+		done
+		printf '%s\t%s\n' "$n" "$p" >>"$tmp/resolved.tsv"
+	done <"$tmp/paths.tsv"
+}
+
+# Prints "name<TAB>verdict<TAB>kind<TAB>detail" for each name in file $1, or
+# for every kubectl-related alias/function when $1 is empty. Verdicts: ok,
+# force (accepted with --force), refused, missing.
+classify() {
+	if [ -n "$1" ]; then
+		wantfile=$1
+	else
+		wantfile=$tmp/none
+		: >"$wantfile"
+	fi
+	awk -F '\t' -v sh="$shell" -v all="$([ -n "$1" ] && echo 0 || echo 1)" '
+		function kube(w,   b) {
+			b = w; sub(/.*\//, "", b)
+			return (b == "kubectl" || b == "kubecolor") && (w !~ /\// || w ~ /^\//)
+		}
+		function out(name, verdict, kind, detail, relevant) {
+			if (all && !relevant) return
+			printf "%s\t%s\t%s\t%s\n", name, verdict, kind, detail
+		}
+		function cls(name,   cur, v, n, w, d, chain, words, p) {
+			if (name in alias) {
+				cur = name; chain = name
+				for (d = 0; d < 20; d++) {
+					if (!aliasok[cur]) return out(name, "refused", "alias", "cannot read the value of alias " cur, 0)
+					v = alias[cur]; sub(/^[ \t]+/, "", v); sub(/[ \t]+$/, "", v)
+					if (v ~ /[][;&|<>(){}`$\\"\047*?=]/)
+						return out(name, "refused", "alias", "alias runs shell code: " v, v ~ /kube(ctl|color)/)
+					n = split(v, words, /[ \t]+/)
+					if (n == 0 || v == "") return out(name, "refused", "alias", "empty alias", 0)
+					w = words[1]
+					if (kube(w)) {
+						if (n > 1)
+							return out(name, "refused", "alias", "alias carries arguments (" v "); the lens would misread its output", 1)
+						return out(name, "ok", "alias", chain " -> " w, 1)
+					}
+					if ((w in alias) && w != cur) { cur = w; chain = chain " -> " w; continue }
+					return out(name, "refused", "alias", "alias for \"" v "\", not kubectl/kubecolor", v ~ /kube(ctl|color)/)
+				}
+				return out(name, "refused", "alias", "alias chain too long: " chain, 0)
+			}
+			if (name in fn)
+				return out(name, "force", "function", "function body is opaque; add it with --force if it runs kubectl unchanged", 1)
+			if (name in path) {
+				p = path[name]
+				if (kube(p)) return out(name, "ok", "command", p, 1)
+				return out(name, "force", "command", p " is an opaque wrapper; add it with --force if it runs kubectl unchanged", 0)
+			}
+			return out(name, "missing", "-", "not an alias, function or command in " sh, 0)
+		}
+		FILENAME == ARGV[1] { alias[$1] = $3; aliasok[$1] = ($2 == "ok"); next }
+		FILENAME == ARGV[2] { if (sh != "fish" || !($1 in alias)) fn[$1] = 1; next }
+		FILENAME == ARGV[3] { if ($2 != "") path[$1] = $2; next }
+		FILENAME == ARGV[4] { if ($1 != "") want[++nw] = $1; next }
+		END {
+			if (all) {
+				for (a in alias) cls(a)
+				for (f in fn) if (!(f in alias)) cls(f)
+			} else
+				for (i = 1; i <= nw; i++) cls(want[i])
+		}' "$tmp/aliases.tsv" "$tmp/functions.txt" "$tmp/resolved.tsv" "$wantfile"
+}
+
+accepted() {
+	case $1 in
+	ok) return 0 ;;
+	force) [ "$force" = 1 ] ;;
+	*) return 1 ;;
+	esac
+}
+
+print_verdicts() {
+	while IFS='	' read -r n v k d; do
+		if [ "$v" = force ] && [ "$force" = 1 ]; then
+			s=forced
+			d="$k accepted with --force"
+		elif [ "$v" = force ]; then
+			s=needs-force
+		else
+			s=$v
+		fi
+		printf '%-16s %-9s %-12s %s\n' "$n" "$k" "$s" "$d"
+	done
+}
+
+zsh_note() {
+	if [ "$shell" = zsh ]; then
+		note "note: zsh reports alias-expanded command lines, so zsh aliases of kubectl already get the lens"
+	fi
+}
+
+# --------------------------------------------------------------- commands
+
+case $cmd in
+detect)
+	probe_shell
+	classify "" | LC_ALL=C sort >"$tmp/verdicts"
+	if [ -s "$tmp/verdicts" ]; then
+		print_verdicts <"$tmp/verdicts"
+	else
+		note "no aliases or functions of kubectl/kubecolor found in $shell"
+	fi
+	zsh_note
+	;;
+add)
+	resolve_manifest
+	probe_shell
+	printf '%s\n' $names >"$tmp/want"
+	classify "$tmp/want" >"$tmp/verdicts"
+	print_verdicts <"$tmp/verdicts"
+	bad=0
+	while IFS='	' read -r n v k d; do
+		accepted "$v" || bad=1
+	done <"$tmp/verdicts"
+	if [ "$bad" = 1 ]; then
+		note "nothing changed: every NAME must resolve to kubectl/kubecolor"
+		exit 1
+	fi
+	{
+		block_names
+		printf '%s\n' $names
+	} | LC_ALL=C sort -u >"$tmp/names"
+	if write_block "$tmp/names"; then
+		note "updated $manifest"
+		reload_hint
+	else
+		note "$manifest already claims:$names"
+	fi
+	zsh_note
+	;;
+remove)
+	resolve_manifest
+	printf '%s\n' $names | LC_ALL=C sort -u >"$tmp/drop"
+	block_names | LC_ALL=C comm -23 - "$tmp/drop" >"$tmp/names"
+	if write_block "$tmp/names"; then
+		note "updated $manifest"
+		reload_hint
+	else
+		note "$manifest does not claim:$names"
+	fi
+	;;
+list)
+	resolve_manifest
+	block_names
+	;;
+check)
+	resolve_manifest
+	block_names >"$tmp/want"
+	if [ ! -s "$tmp/want" ]; then
+		note "no aliases in $manifest"
+		exit 0
+	fi
+	names=$(tr '\n' ' ' <"$tmp/want")
+	probe_shell
+	classify "$tmp/want" >"$tmp/verdicts"
+	print_verdicts <"$tmp/verdicts"
+	while IFS='	' read -r n v k d; do
+		if accepted "$v"; then
+			continue
+		elif [ "$v" = force ]; then
+			note "$n is a $k; pass --force to accept it, or \`$prog remove $n\`"
+		else
+			note "$n no longer resolves to kubectl/kubecolor in $shell: \`$prog remove $n\`"
+		fi
+		bad=1
+	done <"$tmp/verdicts"
+	[ "${bad:-0}" = 0 ] || exit 1
+	;;
+esac

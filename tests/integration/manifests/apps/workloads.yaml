@@ -1,0 +1,135 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web
+  namespace: tern-test-apps
+  labels:
+    app: web
+    tier: frontend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: web
+  template:
+    metadata:
+      labels:
+        app: web
+        tier: frontend
+    spec:
+      terminationGracePeriodSeconds: 1
+      containers:
+        - name: web
+          image: registry.k8s.io/pause:3.10
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+              name: http
+          resources:
+            requests:
+              cpu: 5m
+              memory: 8Mi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: broken-image
+  namespace: tern-test-apps
+  labels:
+    app: broken-image
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: broken-image
+  template:
+    metadata:
+      labels:
+        app: broken-image
+    spec:
+      terminationGracePeriodSeconds: 1
+      containers:
+        - name: app
+          image: registry.invalid/kube-lens/missing:0.0.0
+          imagePullPolicy: IfNotPresent
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: crashloop
+  namespace: tern-test-apps
+  labels:
+    app: crashloop
+spec:
+  terminationGracePeriodSeconds: 1
+  restartPolicy: Always
+  containers:
+    - name: app
+      image: busybox:1.37
+      imagePullPolicy: IfNotPresent
+      command: ["sh", "-c", "echo 'starting app'; echo 'fatal: config file /etc/app/config.yaml not found' >&2; exit 1"]
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pending
+  namespace: tern-test-apps
+  labels:
+    app: pending
+spec:
+  terminationGracePeriodSeconds: 1
+  nodeSelector:
+    lens.example.com/never-scheduled: "true"
+  containers:
+    - name: app
+      image: registry.k8s.io/pause:3.10
+      imagePullPolicy: IfNotPresent
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: db
+  namespace: tern-test-apps
+  labels:
+    app: db
+spec:
+  serviceName: db-headless
+  replicas: 1
+  selector:
+    matchLabels:
+      app: db
+  template:
+    metadata:
+      labels:
+        app: db
+    spec:
+      terminationGracePeriodSeconds: 1
+      containers:
+        - name: db
+          image: registry.k8s.io/pause:3.10
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 5432
+              name: postgres
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: node-agent
+  namespace: tern-test-apps
+  labels:
+    app: node-agent
+spec:
+  selector:
+    matchLabels:
+      app: node-agent
+  template:
+    metadata:
+      labels:
+        app: node-agent
+    spec:
+      terminationGracePeriodSeconds: 1
+      containers:
+        - name: agent
+          image: registry.k8s.io/pause:3.10
+          imagePullPolicy: IfNotPresent

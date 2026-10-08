@@ -1,0 +1,38 @@
+Name:                   web
+Namespace:              tern-test-apps
+CreationTimestamp:      Thu, 08 Oct 2026 03:10:24 -0500
+Labels:                 app=web
+                        tier=frontend
+Annotations:            deployment.kubernetes.io/revision: 1
+Selector:               app=web
+Replicas:               2 desired | 2 updated | 2 total | 2 available | 0 unavailable
+StrategyType:           RollingUpdate
+MinReadySeconds:        0
+RollingUpdateStrategy:  25% max unavailable, 25% max surge
+Pod Template:
+  Labels:  app=web
+           tier=frontend
+  Containers:
+   web:
+    Image:      registry.k8s.io/pause:3.10
+    Port:       8080/TCP (http)
+    Host Port:  0/TCP (http)
+    Requests:
+      cpu:         5m
+      memory:      8Mi
+    Environment:   <none>
+    Mounts:        <none>
+  Volumes:         <none>
+  Node-Selectors:  <none>
+  Tolerations:     <none>
+Conditions:
+  Type           Status  Reason
+  ----           ------  ------
+  Available      True    MinimumReplicasAvailable
+  Progressing    True    NewReplicaSetAvailable
+OldReplicaSets:  <none>
+NewReplicaSet:   web-65d7d99975 (2/2 replicas created)
+Events:
+  Type    Reason             Age    From                   Message
+  ----    ------             ----   ----                   -------
+  Normal  ScalingReplicaSet  5m17s  deployment-controller  Scaled up replica set web-65d7d99975 from 0 to 2

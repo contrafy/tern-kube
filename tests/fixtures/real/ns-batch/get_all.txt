@@ -1,0 +1,11 @@
+NAME                 READY   STATUS      RESTARTS   AGE
+pod/done-job-s576z   0/1     Completed   0          5m17s
+pod/fail-job-5hlth   0/1     Error       0          5m17s
+
+NAME                           SCHEDULE       TIMEZONE   SUSPEND   ACTIVE   LAST SCHEDULE   AGE
+cronjob.batch/nightly-report   0 3 * * *      Etc/UTC    False     0        <none>          5m17s
+cronjob.batch/paused-cleanup   */15 * * * *   <none>     True      0        <none>          5m17s
+
+NAME                 STATUS     COMPLETIONS   DURATION   AGE
+job.batch/done-job   Complete   1/1           3s         5m17s
+job.batch/fail-job   Failed     0/1           5m17s      5m17s

@@ -1,0 +1,2 @@
+NAME                          STATUS   ROLES           AGE   VERSION
+kube-lens-dev-control-plane   Ready    control-plane   27m   v1.37.0

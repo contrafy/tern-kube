@@ -1,0 +1,17 @@
+Name:             web
+Labels:           app=web
+Namespace:        tern-test-apps
+Address:          
+Ingress Class:    <none>
+Default backend:  <default>
+TLS:
+  web-tls terminates app.example.com,api.example.com
+Rules:
+  Host             Path  Backends
+  ----             ----  --------
+  app.example.com  
+                   /   web:http (10.244.0.35:8080,10.244.0.34:8080)
+  api.example.com  
+                   /v1   web:80 (10.244.0.35:8080,10.244.0.34:8080)
+Annotations:       <none>
+Events:            <none>

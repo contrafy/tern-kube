@@ -1,0 +1,5 @@
+NAME                 ADDRESSTYPE   PORTS       ENDPOINTS                 AGE
+db-headless-hlk4p    IPv4          5432        10.244.0.38               5m16s
+web-lb-tppcz         IPv4          8080,8080   10.244.0.35,10.244.0.34   5m16s
+web-nodeport-rkxv6   IPv4          8080        10.244.0.35,10.244.0.34   5m16s
+web-vkq58            IPv4          8080        10.244.0.35,10.244.0.34   5m16s

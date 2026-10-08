@@ -7,6 +7,7 @@
 export type Span = { t: string, s: string?, href: string? }
 export type Node = { k: string, p: { [string]: any }?, c: { Node }? }
 export type SpanLike = Span | string
+export type TreeNode = { id: string, label: { Span }, open: boolean?, children: { TreeNode }? }
 
 local M = {}
 
@@ -81,6 +82,49 @@ function M.kv(items: { { { SpanLike } } }): Node
 		out[i] = { k = M.spans(pair[1]), v = M.spans(pair[2]) }
 	end
 	return { k = "kv", p = { items = out } }
+end
+
+local function withProps(p: { [string]: any }, props: { [string]: any }?): { [string]: any }
+	if props then
+		for k, v in props do
+			p[k] = v
+		end
+	end
+	return p
+end
+
+-- Prop names follow the SDK's own encoders (tern-sdk python ui/_kinds.py).
+function M.card(head: { SpanLike }, children: { Node }, props: { [string]: any }?): Node
+	return { k = "card", p = withProps({ head = M.spans(head) }, props), c = children }
+end
+
+function M.section(head: { SpanLike }, children: { Node }, props: { [string]: any }?): Node
+	return { k = "section", p = withProps({ head = M.spans(head) }, props), c = children }
+end
+
+function M.code(text: string, lang: string?, start: number?, props: { [string]: any }?): Node
+	return { k = "code", p = withProps({ text = text, lang = lang, start = start }, props) }
+end
+
+function M.tree(nodes: { TreeNode }, props: { [string]: any }?): Node
+	return { k = "tree", p = withProps({ nodes = nodes }, props) }
+end
+
+function M.lines(children: { Node }, props: { [string]: any }?): Node
+	return { k = "lines", p = withProps({}, props), c = children }
+end
+
+function M.rule(label: { SpanLike }?, props: { [string]: any }?): Node
+	return { k = "rule", p = withProps(if label then { label = M.spans(label) } else {}, props) }
+end
+
+function M.muted(text: string, props: { [string]: any }?): Node
+	return M.text({ M.span(text, "muted") }, props)
+end
+
+-- Same output as `tern.ui.overflow(hidden)`.
+function M.overflow(hidden: number): Node
+	return M.muted("… " .. hidden .. " more (Raw shows everything)")
 end
 
 return M

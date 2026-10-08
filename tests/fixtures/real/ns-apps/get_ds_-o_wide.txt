@@ -1,0 +1,2 @@
+NAME         DESIRED   CURRENT   READY   UP-TO-DATE   AVAILABLE   NODE SELECTOR   AGE     CONTAINERS   IMAGES                       SELECTOR
+node-agent   1         1         1       1            1           <none>          5m16s   agent        registry.k8s.io/pause:3.10   app=node-agent

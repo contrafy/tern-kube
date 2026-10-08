@@ -1,0 +1,19 @@
+# components.yaml is the unmodified metrics-server v0.9.0 release manifest:
+# https://github.com/kubernetes-sigs/metrics-server/releases/download/v0.9.0/components.yaml
+# sha256 1cec29a5267809306a2c6ec74a3e449abbb705b4a8beed0c8a1963910f72c79b
+# kind kubelets serve self-signed certs, hence --kubelet-insecure-tls.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - components.yaml
+patches:
+  - target:
+      group: apps
+      version: v1
+      kind: Deployment
+      name: metrics-server
+      namespace: kube-system
+    patch: |-
+      - op: add
+        path: /spec/template/spec/containers/0/args/-
+        value: --kubelet-insecure-tls
