@@ -1,11 +1,23 @@
-# Tern SDK capability matrix (M0)
+# Tern SDK capability matrix (M0 + M2 quick actions)
 
-Verified against Tern 0.6.2 (4b3ed42) on macOS arm64, 2026-10-08, in an
+Verified against Tern 0.6.2 (4b3ed42) on macOS arm64, 2026-10-08. M0 rows ran in an
 isolated sandbox (`scripts/dev-tern.sh`, sandbox `/tmp/kl-tern`) with the
 plugin in `plugin/` linked and the fake kubectl in `tests/bin/`. Evidence
 quotes are from `tern ctl --control /tmp/kl-tern/ctl.sock ...` replies, the
 sandbox logs (`tern-daemon.log` = host half, `tern.log` = window half) or
 `tern ctl shot` PNGs.
+
+The M2 quick-action rows (prefixed "Quick:") ran in sandbox `/tmp/kl-tern-qa`
+(`KL_TERN_SANDBOX=/tmp/kl-tern-qa scripts/dev-tern.sh start`; panes get a
+neutral zsh with `ZDOTDIR=<sandbox>/zsh` and `KUBECONFIG=.sandbox/kubeconfig`)
+against kind cluster `kube-lens-dev` (context `kind-kube-lens-dev`) with the
+toolbox from `tests/integration/manifests/qa/toolbox.yaml` (Deployment +
+Service `kl-qa-shell` in `tern-test-mutate`, containers `web` (busybox httpd
+on 8080) and `ticker`). Probes ran first in a throwaway plugin copy whose
+window handler split with diagnostic commands; rows marked "real" were
+repeated with the shipped `plugin/window.luau` +
+`plugin/lib/actions/quick.luau` (links built by `Quick.encode`, opened from
+the Explore block with `cx:open`).
 
 Status: **Verified** (observed in this build), **Workaround** (the direct
 capability is missing; the named substitute was observed working),
@@ -34,6 +46,7 @@ on verified pieces, the composition itself not exercised),
 | Rehydration after reload | Verified | After `dev-tern.sh reload`, a header click on an old lens block logged `lens.open kubectl get pods` -> `lens.view lines=7` (lines replayed) -> view shows `6 rows · sorted by NAME`; an earlier run logged `lens.open` -> `lens.finish` -> `lens.event` -> `lens.view` with the state from the action value. | `open/line/finish` must stay side-effect free. Running blocks (Explore) are not re-initialized by a reload; their timers and pending callbacks are dropped. |
 | Plugin auto-reload on save | Verified | Saving a broken `host.luau` logged `plugin failed to load ... host.luau:225: Expected identifier`; saving fixes reloaded without `tern plugin reload`. Manifest `styles` CSS changes applied on reload. | At window start the log says `cannot watch the tree root=<cfg>/plugins` when the folder does not exist yet; after `link` created it, auto-reload worked. |
 | Lens -> block | Verified | Inspector `Explore` badge -> `cx:open("kube-lens://explore?kind=pods&name=db-0")` -> `tern.log`: `route.link kube-lens://explore?... pane=4294967297` -> `explore.init ["kube-lens://explore?kind=pods&name=db-0"] pane=4294967299`; block opened as a split beside the lens pane. Screenshot `screenshots/m0-explore-block.png`. | |
+| Lens action value with `=` and `&` (quick-action chips, M2) | Verified | Inspector chip `actions = { click = "act=kube-lens://act/shell?kind=Pod&name=kl-qa-shell-...&namespace=tern-test-mutate" }`: the lens `event` got `act="act"` and the whole URL as `value` (split at the first `=`); `cx:open(value)` -> `tern.log` `route.link kube-lens://act/shell?kind=Pod&name=kl-qa-shell-5f6b8bff9b-djlsb&namespace=tern-test-mutate` -> `quick action shell ... pane=7`; the split's interactive shell echoed typed input (e2e `16-quick-actions`). | The host decodes the value with `Quick.decode` before `cx:open` and drops anything else, so no unvalidated URL reaches the window. |
 | Unclaimed custom-scheme `cx:open` | Verified (hazard) | `route.link` returning nil for `kube-lens://...` -> `tern.log`: `the host failed a shell call call="open_url" error=no application could open kube-lens://explore?kind=pods&name=db-0`, and macOS showed a system dialog "There is no application set to open the URL ..." on the user's screen. | Any lens `cx:open` of `kube-lens://` must be claimed by the window half or the user sees an OS dialog. See design consequences. |
 | Palette command -> block | Verified | `plugins run plugin.kube-lens.explore` -> `cx:new_block("kube-lens.explore", {"palette"}, "beside")` opened the block. | |
 | Block keys | Verified | `key j`, `key j`, `key down`, `key k` -> `explore.key {"name":"j","text":"j",...}`, `{"name":"down"}`; `.sf-item.sel` moved. `escape` -> `cx:exit(0)` closed the pane. | Return `false` for unused keys. |
@@ -56,6 +69,26 @@ on verified pieces, the composition itself not exercised),
 | Pane env | Verified | Pane env: `TERM_PROGRAM=tern`, `TERM_PROGRAM_VERSION=0.6.2`, `TERN_PANE=4294967309`, `TERN_PANE_SOCKET=<daemon sock>`, `TERN_LENSES=1`, `TERN_WINDOW_KEY=` (empty), `TERN_WINDOW_SOCKET=` (empty), plus the window's launch env (`TERN_CONFIG_DIR`, `TERN_DAEMON_SOCKET`). | `TERN_LENSES=1` tells a wrapper that lenses are on. |
 | Spawn env injection | Verified | `tern.on("spawn", ...)` setting `spec.env.KUBE_LENS_SPOOL`; a new tab's shell printed `SPOOL=/tmp/kl-tern/cfg/plugin-data/kube-lens/spool`. Shells started before the plugin loaded do not have it. | `TERN_BLOB_DIR` in the spawn env points at `~/Library/Caches/Tern/blobs` even in the sandbox. |
 | Node shapes / pure builders | Verified | `tern.json.encode` of builders: `text` = `{"k":"text","p":{"spans":[{"s":"muted","t":"a"},{"t":"b"}]}}`; `badge` = `{"k":"badge","p":{"text":"x","tone":"error"}}`; `col`/`row` add `p.gap="sm"`; `kv` = `{"k":"kv","p":{"items":[{"k":[spans],"v":[spans]}]}}`; `table` fills col defaults and row ids `r0..`; `list` = `{"k":"list","c":[{"k":"item","p":{label/detail/value as spans}}]}`; `el` = `{"k":"el","p":{"tag":"td","text":"t","class":"c"},"c":[...]}`; `overflow(3)` = muted text `… 3 more (Raw shows everything)`. `encode(ui.node("item",{label="x"})) == encode({k="item",p={label="x"}})` -> `true`. Plain `{k,p,c}` tables built in Luau rendered identically in the lens (grid mode). | `plugin/lib/ui.luau` builds these without the `tern` global. |
+| Quick: `route.link` split (1) | Verified | `route.link` calls `cx.layout:split(link.pane, dir, {command = ...})` and returns `{handled = true}`; handler time around the split (os.clock): 0.044-0.078 ms, first call 1.58 ms, within the 50 ms budget. `split` returns the new pane id and focuses it. Real: `kube-lens quick action shell ... pane=33`. | |
+| Quick: `split` on an unknown pane (1a) | Verified | `split(999999, "right", ...)` -> nil, no error. | The window copies the command and toasts (fallback). |
+| Quick: `split` with an invalid direction (1b) | Verified (raises) | `unknown direction 'sideways' (right, down, left or up)`. | |
+| Quick: `route.link` handler that raises (1c) | Verified (hazard) | Log: `plugin handler failed hook="route.link"` followed by `open_url ... no application could open kube-lens://...`. | The URL falls through to the OS; the window wraps quick actions in pcall and always returns `{handled = true}`. |
+| Quick: `cx.layout:new_tab({command = ...})` (1d) | Verified | Placement `tab` opened a new tab titled by the action (real, config-driven). | |
+| Quick: placement `down` (1e) | Verified | Real, config `quick_actions.placement = "down"`: the Explore pane and the new pane share a Column split. | Config is re-read per link (`config_host.load()`); changing the file needs no reload. |
+| Quick: shell running `Launch.command` (2) | Verified | `ps`: `/bin/zsh -l -c printf ...`, parent `tern daemon --socket /tmp/kl-tern-qa/d.sock`. `$-` = `569Xl` (login, not interactive). | `$SHELL -l -c <command>`. |
+| Quick: split environment (2a) | Verified | `KUBECONFIG` = sandbox kubeconfig (set in the sandbox `.zshenv`); `KUBE_LENS_KUBECTL` (set only in the sandbox `.zshrc`) empty; a marker exported in the window's own environment (`KLQA_MARK`) empty. `PATH` = path_helper login PATH (`/usr/local/bin:...:/opt/homebrew/bin:/Applications/Tern.app/Contents/MacOS`); `TERN_PANE` = new pane id; cwd = the originating pane's directory. | Daemon environment + login rc files, NOT the interactive rc. A `KUBECONFIG` exported only in `.zshrc`/`.bashrc` does not reach the split. |
+| Quick: user shell independence (2b) | Verified (zsh, bash) | The same line under `/bin/zsh -c` and `/bin/bash -c` with a fake kubectl printing argv: identical argv, including a context `it's $(id) \`x\`; y` and kubeconfig `/tmp/a b/c'd` (no expansion). | Every line is `sh -c '<script>'`. fish not installed; the outer line is a single word with POSIX `'\''` escapes, which fish also parses (not executed). |
+| Quick: command exits 0 (3) | Verified | Env probe (exit 0) and `exit` from the pod shell: pane removed within ~2 s. | Pane closes by itself. |
+| Quick: command exits non-zero (3a) | Verified | `exit 3`: sheet "Shell exited with 3" with Restart / Close (Cmd+W) and an inbox notification; `tern ls` shows `exited: 3`. Ctrl+C on `logs -f` left `exited: 1`. A port-forward whose local port is taken exits 1 with kubectl's `address already in use` visible; Restart re-runs the same line. | Pane stays with an exit sheet. |
+| Quick: pane title (3b) | Verified | `tern ls` title: `kube-lens shell tern-test-mutate/kl-qa-shell-...:web @ kind-kube-lens-dev`. | OSC 0 from the script sets it; the tab chip shows the first word of the command (`sh`/`printf`), not the OSC title. |
+| Quick: `link.pane` from a lens (4) | Verified | Lens on pane 5, row inspector "Explore live" -> `link.pane=5`. | `EffectCx:open` from a lens event: the pane holding the lensed command. |
+| Quick: `link.pane` from a block (4a) | Verified | Explore block `cx.pane=13` -> `link.pane=13` (also for every real quick action). | `BlockCx:open`: the block's pane. |
+| Quick: `kubectl exec -it` in the split (5) | Verified | Real: `kubectl exec -it --kubeconfig <sandbox> --context kind-kube-lens-dev -n tern-test-mutate <pod> -c web -- sh -c 'command -v bash ... \|\| exec sh'`; typed `echo ok-from-split; hostname` -> `ok-from-split`, `kl-qa-shell-5f6b8bff9b-djlsb`; `exit` closed the pane. | Shell on the Deployment through the resolved pod prints kubectl's `Defaulted container "web" out of: web, ticker`. |
+| Quick: `kubectl logs -f` in a split (6) | Verified | Real, unpinned context: first line `kube-lens: context kind-kube-lens-dev`, then `[pod/<pod>/ticker] ticker: tick N` / `[pod/<pod>/web] ...` streaming (`-l app=kl-qa-shell --prefix --all-containers --max-log-requests=10`). | Pod logs without a container use `--all-containers --prefix`. |
+| Quick: `kubectl port-forward` in a split (6a) | Verified | Real `svc/kl-qa-shell` port 80 -> `Forwarding from 127.0.0.1:8080 -> 8080`; `curl http://127.0.0.1:8080/index.html` -> `kl-qa-ok` (also from another Tern pane). Deployment without a known port: the script resolved the first declared port (8080) at run time. After closing the panes, curl failed to connect and no `port-forward` process remained. | Closing the pane stops it. |
+| Quick: mutating actions in M2 (6b) | Verified (refused) | Real: debug-pod link -> toast "Kube Lens: Debug needs confirmation (coming in M3)", no pane. | |
+| Quick: invalid links (6c) | Verified (refused, claimed) | `name=x%3Breboot` -> toast "invalid quick action: name must be a DNS-1123 subdomain"; `act/rm` -> "unknown action \"rm\"". No OS fallthrough in the log. | |
+| Quick: remote (ssh) hosts, fish login shell | Unverified | Not exercised: the split would run on the pane's host while the window reads its own config file; fish not installed. | |
 | Performance | Verified | See "Performance" below. | |
 | Screenshots of the real window | Verified | `tern ctl --control <ctl> shot NAME` -> `{"png":"target/shots/tern/live/NAME.png","size":[2560,1600]}` relative to the window's cwd; PNGs show the plugin view. | |
 | Headless `tern shot` | Verified (no user plugins) | `tern shot headless.txt --out ...` with `TERN_CONFIG_DIR` = sandbox (kube-lens linked) ran a real shell and rendered the built-in `kubectl get` table, not the plugin view. | CI cannot screenshot the plugin headlessly; use the real-window `--control` path. |
@@ -131,3 +164,31 @@ on verified pieces, the composition itself not exercised),
 9. **Testing uses the real window.** Headless `tern shot` loads no user
    plugins; `tern --control` + `tern ctl` (`plugins expect`, `click`,
    `shot`) drives the plugin, with the fake kubectl first on PATH.
+10. **Quick actions are one POSIX `sh -c '<script>'` line.** `Launch.command`
+    runs `$SHELL -l -c <line>` (login, non-interactive: only login rc files
+    are read), so the line is a single word with POSIX quoting and the
+    script runs in `sh`, independent of the user's zsh/bash/fish.
+11. **Exit status drives the pane.** Exit 0 closes the pane; non-zero
+    leaves an exit sheet with Restart (re-runs the same line). Ctrl+C on
+    `logs -f` exits 1 and leaves the sheet; a port-forward stops when its
+    pane closes.
+12. **Splits open beside the origin.** `link.pane` is the lensed command's
+    pane for lens-opened links and the block's pane for block-opened links,
+    so `split(link.pane, ...)` places the action next to where it was
+    clicked. An unknown pane makes `split` return nil: copy the command and
+    toast.
+13. **`route.link` must pcall and always return `{handled = true}`** (row
+    1c): a raising handler falls through to the OS "no application" dialog
+    just like an unclaimed link.
+14. **Pin the cluster, do not trust the split's env.** A `KUBECONFIG`
+    exported only in the interactive rc (`.zshrc`/`.bashrc`) does not reach
+    the split. Actions pin `--kubeconfig`/`--context` when known, otherwise
+    print the effective context first (`kube-lens: context ...`). An opt-in
+    KUBECONFIG capture is planned for M3 with the shell activation snippet.
+15. **Responsive layout uses window-width media queries.** `@container`
+    queries are rejected in plugin style sheets and a lens cannot know its
+    pane width (lens view callbacks get no cols; only blocks get `cx.cols`).
+    `plugin/kube-lens.css` hides column priority tiers (`kl-p3`, then `p2`,
+    then `p1`) with `@media (max-width: 1000px | 760px | 520px)`, which
+    compare to the window: a narrow split of a wide window only shrinks long
+    cells.

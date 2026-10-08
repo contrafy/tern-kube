@@ -404,13 +404,108 @@ describe("json.redactSecrets", function()
 		)
 	end)
 
-	it("never masks ConfigMap data", function()
+	it("never masks ConfigMap data by default", function()
 		local r = Json.parse(
 			[[{"apiVersion":"v1","kind":"ConfigMap","metadata":{"name":"c"},"data":{"password":"plain"}}]],
 			decode
 		)
-		local shown = Json.redactSecrets(r.resources[1])
+		local shown, masked = Json.redactSecrets(r.resources[1])
 		expect(shown.data.password).toBe("plain")
+		expect(masked).toBe(false)
+	end)
+
+	it("reports whether anything was hidden", function()
+		local r = Json.parse(secretJson, decode)
+		local _, masked = Json.redactSecrets(r.resources[1])
+		expect(masked).toBe(true)
+	end)
+
+	-- The user opted in to seeing Secret values: every native view shows them.
+	it("shows Secret values when the policy allows it", function()
+		local r = Json.parse(secretJson, decode)
+		local shown, masked = Json.redactSecrets(r.resources[1], { showSecrets = true, strict = false })
+		expect(shown.data.password).toBe("aHVudGVyMg==")
+		expect(shown.stringData.token).toBe("abc")
+		expect(shown.metadata.annotations["kubectl.kubernetes.io/last-applied-configuration"]).toContain("aHVudGVyMg==")
+		expect(masked).toBe(false)
+	end)
+
+	-- The object tree masks objects the capture already masked; the sizes
+	-- must stay those of the original values.
+	it("is idempotent", function()
+		local r = Json.parse(secretJson, decode)
+		local once = Json.redactSecrets(r.resources[1])
+		local twice = Json.redactObject(once)
+		expect(twice.data.password).toBe("<redacted: 12 bytes base64>")
+		expect(twice.metadata.annotations["kubectl.kubernetes.io/last-applied-configuration"]).toBe(
+			"<redacted: 36 bytes>"
+		)
+	end)
+end)
+
+describe("json.redactObject strict mode", function()
+	local STRICT = { showSecrets = false, strict = true }
+	local pod = [[{
+    "apiVersion": "v1",
+    "kind": "Pod",
+    "metadata": {
+        "name": "web",
+        "annotations": {
+            "kubectl.kubernetes.io/last-applied-configuration": "{\"env\":[{\"name\":\"DB_PASSWORD\",\"value\":\"hunter2\"}]}"
+        }
+    },
+    "spec": {
+        "containers": [{
+            "name": "app",
+            "env": [
+                {"name": "DB_PASSWORD", "value": "hunter2"},
+                {"name": "tokenizer_mode", "value": "fast"},
+                {"name": "API_TOKEN", "valueFrom": {"secretKeyRef": {"name": "creds", "key": "token"}}}
+            ]
+        }],
+        "volumes": [{"name": "creds", "secret": {"secretName": "creds"}}]
+    }
+}]]
+
+	it("masks env values and mapping values under sensitive names", function()
+		local obj = decode(pod)
+		local shown, masked = Json.redactObject(obj, STRICT)
+		local env = shown.spec.containers[1].env
+		expect(env[1]).toEqual({ name = "DB_PASSWORD", value = "<redacted: 7 bytes>" })
+		expect(env[2].value).toBe("fast")
+		expect(env[3].valueFrom).toEqual({ secretKeyRef = { name = "creds", key = "token" } })
+		expect(shown.spec.volumes[1].secret.secretName).toBe("creds")
+		expect(masked).toBe(true)
+		expect(obj.spec.containers[1].env[1].value).toBe("hunter2")
+	end)
+
+	-- The annotation is a verbatim copy of the applied manifest, so it would
+	-- leak every value the heuristic just hid.
+	it("masks the last-applied annotation of an object it masked", function()
+		local shown = Json.redactObject(decode(pod), STRICT)
+		expect(shown.metadata.annotations["kubectl.kubernetes.io/last-applied-configuration"]).toBe(
+			"<redacted: 50 bytes>"
+		)
+	end)
+
+	it("masks sensitive ConfigMap keys and leaves the rest", function()
+		local cm =
+			decode([[{"kind":"ConfigMap","metadata":{"name":"c"},"data":{"db_password":"pw","LOG_LEVEL":"info"}}]])
+		local shown, masked = Json.redactObject(cm, STRICT)
+		expect(shown.data).toEqual({ db_password = "<redacted: 2 bytes>", LOG_LEVEL = "info" })
+		expect(masked).toBe(true)
+	end)
+
+	it("returns the object itself when nothing matches", function()
+		local cm = decode([[{"kind":"ConfigMap","metadata":{"name":"c"},"data":{"LOG_LEVEL":"info"}}]])
+		local shown, masked = Json.redactObject(cm, STRICT)
+		expect(shown == cm).toBe(true)
+		expect(masked).toBe(false)
+	end)
+
+	it("still masks other objects when Secret values are shown", function()
+		local shown = Json.redactObject(decode(pod), { showSecrets = true, strict = true })
+		expect(shown.spec.containers[1].env[1].value).toBe("<redacted: 7 bytes>")
 	end)
 end)
 

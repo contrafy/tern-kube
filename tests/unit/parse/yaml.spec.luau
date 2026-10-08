@@ -228,9 +228,9 @@ local SECRETS = {
 	"kind: List", -- 26
 }
 
-describe("yaml.redactSecretData", function()
+describe("yaml.redact", function()
 	local split = Yaml.split(text(SECRETS))
-	local shown = Yaml.redactSecretData(SECRETS, split.docs)
+	local shown = Yaml.redact(SECRETS, split.docs)
 
 	it("keeps line numbering so rows and docs still map onto Raw", function()
 		expect(#shown).toBe(#SECRETS)
@@ -260,7 +260,7 @@ describe("yaml.redactSecretData", function()
 		end
 	end)
 
-	it("never masks ConfigMap data", function()
+	it("never masks ConfigMap data by default", function()
 		expect(shown[22]).toBe("    password: plain")
 	end)
 
@@ -270,18 +270,100 @@ describe("yaml.redactSecretData", function()
 
 	it("masks a single Secret object and data given in flow style", function()
 		local lines = { "apiVersion: v1", "data: {a: YQ==}", "kind: Secret", "metadata:", "  name: s" }
-		local out = Yaml.redactSecretData(lines, Yaml.split(text(lines)).docs)
+		local out = Yaml.redact(lines, Yaml.split(text(lines)).docs)
 		expect(out[2]).toBe("data: '<redacted: 9 bytes>'")
 		local empty = { "kind: Secret", "data: {}", "metadata:", "  name: s" }
-		expect(Yaml.redactSecretData(empty, Yaml.split(text(empty)).docs)[2]).toBe("data: {}")
+		expect(Yaml.redact(empty, Yaml.split(text(empty)).docs)[2]).toBe("data: {}")
 	end)
 
 	it("masks a data entry written on the item's dash line", function()
 		local lines =
 			{ "items:", "- data:", "    k: dg==", "  kind: Secret", "  metadata:", "    name: s", "kind: List" }
-		local out = Yaml.redactSecretData(lines, Yaml.split(text(lines)).docs)
+		local out = Yaml.redact(lines, Yaml.split(text(lines)).docs)
 		expect(out[2]).toBe("- data:")
 		expect(out[3]).toBe("    k: '<redacted: 4 bytes base64>'")
+	end)
+end)
+
+describe("yaml.redact with show_secret_values", function()
+	-- The user opted in: the YAML view shows Secrets exactly as kubectl printed them.
+	it("leaves Secret data and the last-applied annotation visible", function()
+		local shown = Yaml.redact(SECRETS, Yaml.split(text(SECRETS)).docs, { showSecrets = true, strict = false })
+		expect(shown).toEqual(SECRETS)
+	end)
+end)
+
+local POD = {
+	"apiVersion: v1", -- 1
+	"kind: Pod", -- 2
+	"metadata:", -- 3
+	"  annotations:", -- 4
+	"    kubectl.kubernetes.io/last-applied-configuration: |", -- 5
+	'      {"env":[{"name":"DB_PASSWORD","value":"hunter2"}]}', -- 6
+	"  name: web", -- 7
+	"spec:", -- 8
+	"  containers:", -- 9
+	"  - env:", -- 10
+	"    - name: DB_PASSWORD", -- 11
+	"      value: hunter2", -- 12
+	"    - name: tokenizer_mode", -- 13
+	"      value: fast", -- 14
+	"    - name: API_TOKEN", -- 15
+	"      valueFrom:", -- 16
+	"        secretKeyRef:", -- 17
+	"          key: token", -- 18
+	"          name: creds", -- 19
+	"    - name: GITHUB_TOKEN", -- 20
+	'      value: "ghp_abc"', -- 21
+	"    name: app", -- 22
+	"  volumes:", -- 23
+	"  - name: creds", -- 24
+	"    secret:", -- 25
+	"      secretName: creds", -- 26
+	"---", -- 27
+	"apiVersion: v1", -- 28
+	"kind: ConfigMap", -- 29
+	"data:", -- 30
+	"  LOG_LEVEL: info", -- 31
+	"  db_password: |", -- 32
+	"    s3cr3t", -- 33
+	"metadata:", -- 34
+	"  name: settings", -- 35
+}
+
+describe("yaml.redact strict mode", function()
+	local STRICT = { showSecrets = false, strict = true }
+	local shown = Yaml.redact(POD, Yaml.split(text(POD)).docs, STRICT)
+
+	it("masks env values whose name looks sensitive", function()
+		expect(shown[12]).toBe("      value: '<redacted: 7 bytes>'")
+		expect(shown[21]).toBe("      value: '<redacted: 7 bytes>'")
+	end)
+
+	it("masks mapping values under sensitive keys, block scalars included", function()
+		expect(shown[32]).toBe("  db_password: '<redacted: 6 bytes>'")
+		expect(shown[33]).toBe("")
+	end)
+
+	-- The annotation repeats the manifest, so it would leak the env value.
+	it("masks the last-applied annotation of a document it masked", function()
+		expect(shown[5]).toBe("    kubectl.kubernetes.io/last-applied-configuration: '<redacted: 50 bytes>'")
+		expect(shown[6]).toBe("")
+	end)
+
+	it("leaves unrelated names, Secret references and structure visible", function()
+		for _, i in { 1, 2, 3, 4, 7, 10, 11, 13, 14, 15, 16, 17, 18, 19, 20, 22, 24, 25, 26, 27, 30, 31, 34, 35 } do
+			expect(shown[i]).toBe(POD[i])
+		end
+	end)
+
+	it("changes nothing when strict mode is off", function()
+		expect(Yaml.redact(POD, Yaml.split(text(POD)).docs)).toEqual(POD)
+	end)
+
+	it("still masks when Secret values are shown", function()
+		local both = Yaml.redact(POD, Yaml.split(text(POD)).docs, { showSecrets = true, strict = true })
+		expect(both[12]).toBe("      value: '<redacted: 7 bytes>'")
 	end)
 end)
 
@@ -313,12 +395,15 @@ describe("yaml.split performance", function()
 		local source = text(lines)
 		local started = os.clock()
 		local r = Yaml.split(source)
-		local shown = Yaml.redactSecretData(Yaml.lines(source), r.docs)
+		local shown = Yaml.redact(Yaml.lines(source), r.docs)
 		local elapsed = os.clock() - started
 		expect(#r.docs).toBe(1000)
 		expect(r.docs[1000].name).toBe("pod-1000")
 		expect(#shown).toBe(#lines)
 		expect(elapsed < 0.2).toBe(true)
+		started = os.clock()
+		Yaml.redact(Yaml.lines(source), r.docs, { showSecrets = false, strict = true })
+		expect(os.clock() - started < 0.2).toBe(true)
 	end)
 end)
 

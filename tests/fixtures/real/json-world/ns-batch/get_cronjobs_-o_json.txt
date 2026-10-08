@@ -1,0 +1,124 @@
+{
+    "apiVersion": "v1",
+    "items": [
+        {
+            "apiVersion": "batch/v1",
+            "kind": "CronJob",
+            "metadata": {
+                "annotations": {
+                    "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"batch/v1\",\"kind\":\"CronJob\",\"metadata\":{\"annotations\":{},\"labels\":{\"app\":\"reports\"},\"name\":\"nightly-report\",\"namespace\":\"tern-test-batch\"},\"spec\":{\"jobTemplate\":{\"spec\":{\"backoffLimit\":0,\"template\":{\"spec\":{\"containers\":[{\"command\":[\"sh\",\"-c\",\"echo nightly\"],\"image\":\"busybox:1.37\",\"imagePullPolicy\":\"IfNotPresent\",\"name\":\"report\"}],\"restartPolicy\":\"Never\"}}}},\"schedule\":\"0 3 * * *\",\"suspend\":false,\"timeZone\":\"Etc/UTC\"}}\n"
+                },
+                "creationTimestamp": "2026-10-08T08:10:24Z",
+                "generation": 1,
+                "labels": {
+                    "app": "reports"
+                },
+                "name": "nightly-report",
+                "namespace": "tern-test-batch",
+                "resourceVersion": "3864",
+                "uid": "7cf00588-48e1-4235-86ff-d68dded7d223"
+            },
+            "spec": {
+                "concurrencyPolicy": "Allow",
+                "failedJobsHistoryLimit": 1,
+                "jobTemplate": {
+                    "metadata": {},
+                    "spec": {
+                        "backoffLimit": 0,
+                        "template": {
+                            "metadata": {},
+                            "spec": {
+                                "containers": [
+                                    {
+                                        "command": [
+                                            "sh",
+                                            "-c",
+                                            "echo nightly"
+                                        ],
+                                        "image": "busybox:1.37",
+                                        "imagePullPolicy": "IfNotPresent",
+                                        "name": "report",
+                                        "resources": {},
+                                        "terminationMessagePath": "/dev/termination-log",
+                                        "terminationMessagePolicy": "File"
+                                    }
+                                ],
+                                "dnsPolicy": "ClusterFirst",
+                                "restartPolicy": "Never",
+                                "schedulerName": "default-scheduler",
+                                "securityContext": {},
+                                "terminationGracePeriodSeconds": 30
+                            }
+                        }
+                    }
+                },
+                "schedule": "0 3 * * *",
+                "successfulJobsHistoryLimit": 3,
+                "suspend": false,
+                "timeZone": "Etc/UTC"
+            },
+            "status": {}
+        },
+        {
+            "apiVersion": "batch/v1",
+            "kind": "CronJob",
+            "metadata": {
+                "annotations": {
+                    "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"batch/v1\",\"kind\":\"CronJob\",\"metadata\":{\"annotations\":{},\"labels\":{\"app\":\"cleanup\"},\"name\":\"paused-cleanup\",\"namespace\":\"tern-test-batch\"},\"spec\":{\"jobTemplate\":{\"spec\":{\"backoffLimit\":0,\"template\":{\"spec\":{\"containers\":[{\"command\":[\"sh\",\"-c\",\"echo cleanup\"],\"image\":\"busybox:1.37\",\"imagePullPolicy\":\"IfNotPresent\",\"name\":\"cleanup\"}],\"restartPolicy\":\"Never\"}}}},\"schedule\":\"*/15 * * * *\",\"suspend\":true}}\n"
+                },
+                "creationTimestamp": "2026-10-08T08:10:24Z",
+                "generation": 1,
+                "labels": {
+                    "app": "cleanup"
+                },
+                "name": "paused-cleanup",
+                "namespace": "tern-test-batch",
+                "resourceVersion": "3865",
+                "uid": "4d0483ef-f67e-4cdc-869d-4ee61a8e9f8b"
+            },
+            "spec": {
+                "concurrencyPolicy": "Allow",
+                "failedJobsHistoryLimit": 1,
+                "jobTemplate": {
+                    "metadata": {},
+                    "spec": {
+                        "backoffLimit": 0,
+                        "template": {
+                            "metadata": {},
+                            "spec": {
+                                "containers": [
+                                    {
+                                        "command": [
+                                            "sh",
+                                            "-c",
+                                            "echo cleanup"
+                                        ],
+                                        "image": "busybox:1.37",
+                                        "imagePullPolicy": "IfNotPresent",
+                                        "name": "cleanup",
+                                        "resources": {},
+                                        "terminationMessagePath": "/dev/termination-log",
+                                        "terminationMessagePolicy": "File"
+                                    }
+                                ],
+                                "dnsPolicy": "ClusterFirst",
+                                "restartPolicy": "Never",
+                                "schedulerName": "default-scheduler",
+                                "securityContext": {},
+                                "terminationGracePeriodSeconds": 30
+                            }
+                        }
+                    }
+                },
+                "schedule": "*/15 * * * *",
+                "successfulJobsHistoryLimit": 3,
+                "suspend": true
+            },
+            "status": {}
+        }
+    ],
+    "kind": "List",
+    "metadata": {
+        "resourceVersion": ""
+    }
+}

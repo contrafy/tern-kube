@@ -6,6 +6,7 @@
 local Capture = require("../lens/capture")
 local Grid = require("./grid")
 local Query = require("../lens/query")
+local Redact = require("../model/redact")
 local Types = require("../model/types")
 local Viewstate = require("../lens/viewstate")
 local Yaml = require("../parse/yaml")
@@ -170,14 +171,18 @@ end
 function M.render(capture: Capture, vs: ViewState, vsm: typeof(Viewstate)): Node
 	local split = capture.yaml
 	local children: { Node } = {}
-	if capture.sensitive then
+	for i, notice in Redact.notices(capture.policy, capture.sensitive, capture.masked, M.SENSITIVE) do
 		table.insert(
 			children,
-			ui.text({ ui.span(M.SENSITIVE, "warning") }, { tone = "warning", role = "kube-lens.sensitive" })
+			ui.text({ ui.span(notice, "warning") }, {
+				key = if i == 1 then "sensitive" else "sensitive" .. i,
+				tone = "warning",
+				role = "kube-lens.sensitive",
+			})
 		)
 	end
 	if split then
-		local lines = capture.yamlLines or Yaml.redactSecretData(capture.lines, split.docs)
+		local lines = capture.yamlLines or Yaml.redact(capture.lines, split.docs, capture.policy)
 		for _, n in diagnosticNodes(split.diagnostics) do
 			table.insert(children, n)
 		end

@@ -3,6 +3,7 @@
 -- typed, stdout and stderr lines in one stream, exit status from `.exit`.
 
 local Capture = require("../../plugin/lib/lens/capture")
+local Redact = require("../../plugin/lib/model/redact")
 local fixtures = require("./fixtures")
 local json = require("./json")
 
@@ -17,8 +18,9 @@ local function words(command: string): { string }
 end
 
 -- `path` is "real/<scenario>/<key>" without extension; `command` the argv as
--- typed ("kubectl describe pod x -n ns"; split on spaces, so no quoting).
-function M.build(path: string, command: string): Capture.Capture
+-- typed ("kubectl describe pod x -n ns"; split on spaces, so no quoting);
+-- `policy` the redaction policy (nil = default masking).
+function M.build(path: string, command: string, policy: Redact.Policy?): Capture.Capture
 	local lines: { string } = {}
 	for _, ext in { ".txt", ".stderr" } do
 		if fixtures.has(path .. ext) then
@@ -32,13 +34,13 @@ function M.build(path: string, command: string): Capture.Capture
 		else 0
 	local argv = words(command)
 	local program = table.remove(argv, 1) :: string
-	return Capture.build({ program = program, args = argv }, lines, status, { decode = json.decode })
+	return Capture.build({ program = program, args = argv }, lines, status, { decode = json.decode, policy = policy })
 end
 
-function M.fromLines(command: string, lines: { string }, status: number?): Capture.Capture
+function M.fromLines(command: string, lines: { string }, status: number?, policy: Redact.Policy?): Capture.Capture
 	local argv = words(command)
 	local program = table.remove(argv, 1) :: string
-	return Capture.build({ program = program, args = argv }, lines, status, { decode = json.decode })
+	return Capture.build({ program = program, args = argv }, lines, status, { decode = json.decode, policy = policy })
 end
 
 return M

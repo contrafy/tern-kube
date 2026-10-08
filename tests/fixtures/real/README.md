@@ -17,12 +17,34 @@ The script only talks to the cluster through `.sandbox/kubeconfig` (verified by
 and no `KUBECTL_EXTERNAL_DIFF`, waits for steady state (jobs complete/failed,
 ImagePullBackOff reached, metrics-server serving pod and node metrics, and the
 `crashloop` pod freshly in a CrashLoopBackOff back-off before every capture group that
-shows it, so it never appears as a momentary Running/Error), wipes this directory except this README, captures in
+shows it, so it never appears as a momentary Running/Error), wipes this directory except this README and
+`json-world/`, captures in
 a fixed order, and fails if any capture exits with an unexpected status or if
 certificate/key/token material from the kubeconfig shows up in a fixture.
 
 Ages, UIDs, IPs, resourceVersions, pod name hashes, restart counts and event
 timing differ between runs; everything else is reproducible.
+
+## JSON world
+
+`json-world/` holds `kubectl get <kind> -n <ns> -o json` per kind for every fixture
+namespace plus `get nodes -o json`, captured read-only from the existing world by
+`sh scripts/fixtures/capture-json.sh` (nothing in the cluster is changed; argv in
+`json-world/MANIFEST.tsv`). The Explore relation specs resolve their queries against
+it. Secrets are listed with `-o name` only, and `kube-root-ca.crt` (the cluster CA
+certificate) is excluded from the ConfigMap JSON and listed by name only.
+
+## Mutation previews
+
+`mutate-preview/` holds `kubectl diff` and `--dry-run=server` output against the
+existing world, captured by `sh scripts/fixtures/capture-mutate-preview.sh` (the
+script refuses any argv that is neither `diff` nor `--dry-run=server` and any
+namespace outside `tern-test-*`, so nothing in the cluster changes; argv in
+`mutate-preview/MANIFEST.tsv`, context always pinned). Inputs live in
+`tests/integration/manifests/preview/` and are never applied: a create + modify +
+unchanged mix, CRD objects (including a dotted name and a prune deletion), and
+cluster-scoped creates (empty namespace in the diff file name). `capture.sh` keeps
+this directory; re-run the preview script after rebuilding the world.
 
 ## Layout
 

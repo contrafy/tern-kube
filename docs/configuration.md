@@ -1,0 +1,208 @@
+# Configuration
+
+kube-lens reads one optional JSON file. Without it every setting has its
+default; the defaults are the safe choice (secret values hidden, Explore
+never polls, mutations go through preview and confirmation).
+
+## Location
+
+1. `$XDG_CONFIG_HOME/kube-lens/config.json` when `XDG_CONFIG_HOME` is set to
+   an absolute path (relative values are ignored, as the XDG spec requires);
+2. otherwise `$HOME/.config/kube-lens/config.json`.
+
+The variables are read from the Tern daemon's environment, which is the
+environment the Tern window was launched with, not your shell's.
+
+To start, copy the complete example:
+
+```sh
+mkdir -p "${XDG_CONFIG_HOME:-$HOME/.config}/kube-lens"
+cp examples/config.json "${XDG_CONFIG_HOME:-$HOME/.config}/kube-lens/config.json"
+```
+
+## When the file is read
+
+- Once when the plugin loads (Tern start, `tern plugin reload`).
+- Again whenever a kube-lens block (such as Explore) opens, so opening a new
+  Explore block picks up edits.
+- Never while a command lens renders: the lens callbacks (`open`, `line`,
+  `finish`, `view`, `event`) must not do I/O, so the `kubectl` lens uses the
+  config cached by the last read. To apply an edit to lenses, open any
+  kube-lens block or run `tern plugin reload`.
+
+The file must be a regular file of at most 262144 bytes. A symlinked file
+(stow, chezmoi, home-manager) is supported: Tern's capped read refuses
+symlinks, so kube-lens resolves the link with `realpath` in the background
+and reads the target with the same cap. Until that finishes (milliseconds
+after plugin load) the defaults apply. A link to anything other than a
+regular file is rejected.
+
+## Errors and diagnostics
+
+A bad config never stops kube-lens. Each problem produces a diagnostic, and
+the rest of the file still applies:
+
+| Problem | Result | Level |
+| --- | --- | --- |
+| File missing, empty or only whitespace | all defaults | none |
+| Invalid JSON | all defaults; message gives the byte offset, line and column | error |
+| Top level is not a JSON object | all defaults | error |
+| Value has the wrong type or is out of range | that key keeps its default; message names the key path, the expected value and the default used | error |
+| Section (e.g. `explore`) is not an object | that section keeps its defaults | error |
+| Invalid entry in `aliases.additional` | that entry is dropped, the others kept | error |
+| Unknown key, at any level | ignored | warning |
+| `schema_version` newer than this kube-lens | known keys apply, unknown keys are ignored | warning |
+| `explore.auto_refresh` set to `true` | kept `false` | warning |
+| Keys inside `gitops` | ignored until the GitOps milestone | info |
+
+Example messages:
+
+```text
+general.max_rendered_rows: expected an integer between 1 and 10000, got string "lots"; using the default 500.
+quick_actions.placement: expected one of "right", "down", "tab", got string "left"; using the default "right".
+genral: unknown key; it is ignored. Check the spelling against docs/configuration.md.
+config.json is not valid JSON at byte 29 (line 1, column 29): trailing comma at line 1 column 29. Using the defaults for every setting until the file is fixed.
+```
+
+Diagnostics are written to Tern's log (target `tern::plugin`; errors and
+warnings at `warn`, notes at `info`) each time they change.
+
+`null` for any key means "use the default" (Tern's JSON decoder drops null
+members).
+
+## Keys
+
+Paths are relative to the top-level object. "Integer" means a JSON number
+without a fractional part, within the stated range.
+
+### Top level
+
+| Key | Type | Default | Effect |
+| --- | --- | --- | --- |
+| `schema_version` | integer >= 1 | `1` | Version of this file's format. kube-lens understands version 1. A newer value is accepted with a warning: keys this version knows apply, the rest are ignored. |
+| `kubectl` | string: program name on `PATH` or absolute path (`~/` allowed) | `"kubectl"` | The kubectl binary Explore and quick actions run. The daemon's `PATH` is not your shell's, so an absolute path is the reliable choice. Relative paths with a `/` are rejected because the daemon's working directory is not yours. |
+| `kubeconfig` | string: absolute path (`~/` allowed), or `null` | `null` | Kubeconfig passed as `--kubeconfig` when an Explore link does not name one. |
+| `gitops` | object | `{}` | Reserved for the GitOps milestone (manifest index, drift, export). Accepted and ignored; keys inside are not validated yet. |
+
+Effective `kubectl` program, first match wins: the Tern kv key `kubectl`
+(set by tests and the settings flow), then `kubectl` from this file when it
+is anything other than the bare default `"kubectl"`, then the daemon
+environment variable `KUBE_LENS_KUBECTL`, then `kubectl` on the daemon's
+`PATH`.
+
+Effective kubeconfig for Explore, first match wins: the `kubeconfig` of the
+lensed command (its `--kubeconfig` flag), then `kubeconfig` from this file,
+then the daemon's `KUBECONFIG`, then `$HOME/.kube/config`. Explore always
+pins `--context` (and `--kubeconfig` when known) on every command it runs.
+
+### `general`
+
+| Key | Type | Default | Effect |
+| --- | --- | --- | --- |
+| `native_default` | boolean | `true` | `false`: the lens returns no native view, every lensed command shows Tern's raw output; equivalent to disabling the lens. Plugins cannot drive the Raw toggle, so there is no per-block native switch. |
+| `max_rows` | integer 1-100000 | `20000` | Output lines a lens records for its native view from one command; past this many lines the block falls back to Tern's raw output. |
+| `max_rendered_rows` | integer 1-10000 | `500` | Rows drawn at once. Lens tables page by this many rows (page chips switch pages); Explore lists draw the page that holds the selection and count the rest in an overflow note. |
+| `max_capture_bytes` | integer 65536-268435456 | `16777216` | Output bytes a lens captures from one command; beyond it the block falls back to Tern's raw output. |
+
+### `aliases`
+
+| Key | Type | Default | Effect |
+| --- | --- | --- | --- |
+| `additional` | list of command names (letters, digits, `_`, `.`, `-`; at most 64 characters) | `[]` | Informational: the alias names you intend kube-lens to claim. It claims nothing by itself. Lens claims for aliases are written into the plugin manifest by `scripts/kube-lens-aliases add NAME`, which first verifies that your shell resolves NAME to kubectl or kubecolor. |
+
+### `explore`
+
+| Key | Type | Default | Effect |
+| --- | --- | --- | --- |
+| `allow_live_queries` | boolean | `true` | `false` disables the Explore block's cluster reads: it opens but runs no `kubectl` command. |
+| `auto_refresh` | boolean | `false` | Only `false` is supported. Explore never polls the cluster; refresh with `r` or the Refresh chip. `true` is kept `false` with a warning. |
+| `query_timeout_ms` | integer 500-600000 | `10000` | Each Explore `kubectl` call is killed after this many milliseconds and shown as an error. |
+| `relationship_max_nodes` | integer 1-5000 | `250` | Maximum objects in a relations graph; larger graphs are truncated with a note. |
+
+### `mutations`
+
+Read by the mutation engine (milestone M3); validated now so a file written
+today keeps working.
+
+| Key | Type | Default | Effect |
+| --- | --- | --- | --- |
+| `enabled` | boolean | `true` | `false` hides every mutating action (apply, delete, rollout restart, scale, debug containers, CronJob run-now). |
+| `interactive_guard` | boolean | `false` | Marks the opt-in shell guard as wanted; the guard functions themselves are installed separately. |
+| `require_target_confirmation` | boolean | `true` | Mutations need the target context confirmed (named by `--context` or chosen and confirmed in Explore), never inferred from the current context alone. |
+| `allow_failed_preview_override` | boolean | `false` | `true` allows confirming a mutation whose server dry-run or diff failed. |
+
+### `security`
+
+| Key | Type | Default | Effect |
+| --- | --- | --- | --- |
+| `show_secret_values` | boolean | `false` | `false` masks the values of Secret `data`/`stringData` and the Secret's `kubectl.kubernetes.io/last-applied-configuration` annotation (which embeds them) in the native views: lens JSON and YAML views, the lens object tree and the Explore object view. A banner notes that the raw output contains Secret data. `true` shows the values, with a warning banner that the output contains Secret values. Set `true` only on a machine and screen you trust. Tern's raw output is kubectl's own and is never masked. |
+| `sensitive_output_strict_mode` | boolean | `false` | `true` additionally masks values that look sensitive outside Secret data. Heuristic, advisory only: a value is masked when its key or env var name contains, case-insensitively, one of `password`, `passwd`, `secret`, `token`, `apikey`, `api_key`, `private_key` or `credentials` (plurals included) as a whole name segment; names are split at `_`, `-`, `.` and camelCase, so `DB_PASSWORD`, `apiKey` and `GITHUB_TOKEN` match while `tokenizer_mode` does not. Names ending in `name` or `ref` (`secretName`, `tokenSecretRef`) are references and stay visible. Applies to the native views of the lens and Explore: describe (fields such as pod `Environment` entries and ConfigMap `Data` keys), YAML (`key: value` lines and env `name`/`value` pairs) and JSON/object trees (mapping keys and `{name, value}` env entries); when anything in an object is masked, its last-applied annotation is masked too. It cannot recognise every secret: values under innocuous names or embedded in larger strings stay visible, and raw output is never masked. |
+
+### `quick_actions`
+
+Quick actions open a new split (or tab) running a visible `kubectl` command:
+shell, follow logs, port-forward, and the mutating debug and CronJob
+actions. They never type into existing panes.
+
+| Key | Type | Default | Effect |
+| --- | --- | --- | --- |
+| `placement` | `"right"`, `"down"` or `"tab"` | `"right"` | Where the action's terminal opens: a split to the right of or below the originating pane, or a new tab. |
+| `shell_command` | non-empty list of up to 32 non-empty strings | `["sh", "-c", "command -v bash >/dev/null 2>&1 && exec bash \|\| exec sh"]` | Program and arguments run inside the container by the Shell action (`kubectl exec -it ... -- <shell_command>`). The default starts bash when the image has it, else sh. |
+| `logs_tail` | integer 1-100000 | `200` | Lines of history the Logs action shows before following (`kubectl logs -f --tail=<n>`). |
+| `debug_image` | container image reference without spaces | `"busybox:1.36"` | Image for the debug actions (`kubectl debug ... --image=<image>`). These mutate the cluster and go through the confirmation tier. |
+
+## Complete example
+
+This is `examples/config.json`: every key at its default. Delete the keys
+you do not change; missing keys keep their defaults.
+
+```json
+{
+  "schema_version": 1,
+  "general": {
+    "native_default": true,
+    "max_rows": 20000,
+    "max_rendered_rows": 500,
+    "max_capture_bytes": 16777216
+  },
+  "aliases": {
+    "additional": []
+  },
+  "explore": {
+    "allow_live_queries": true,
+    "auto_refresh": false,
+    "query_timeout_ms": 10000,
+    "relationship_max_nodes": 250
+  },
+  "mutations": {
+    "enabled": true,
+    "interactive_guard": false,
+    "require_target_confirmation": true,
+    "allow_failed_preview_override": false
+  },
+  "security": {
+    "show_secret_values": false,
+    "sensitive_output_strict_mode": false
+  },
+  "quick_actions": {
+    "placement": "right",
+    "shell_command": ["sh", "-c", "command -v bash >/dev/null 2>&1 && exec bash || exec sh"],
+    "logs_tail": 200,
+    "debug_image": "busybox:1.36"
+  },
+  "kubectl": "kubectl",
+  "kubeconfig": null,
+  "gitops": {}
+}
+```
+
+A typical small file:
+
+```json
+{
+  "schema_version": 1,
+  "kubectl": "/opt/homebrew/bin/kubectl",
+  "quick_actions": { "placement": "down", "logs_tail": 500 },
+  "explore": { "query_timeout_ms": 20000 }
+}
+```

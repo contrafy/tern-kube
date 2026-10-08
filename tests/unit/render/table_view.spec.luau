@@ -3,6 +3,7 @@
 -- inspector, Inspect shows everything about one row, pages cap rendering,
 -- and every click carries the rest of the view state along.
 local Capture = require("../../../plugin/lib/lens/capture")
+local Quick = require("../../../plugin/lib/actions/quick")
 local TableView = require("../../../plugin/lib/render/table_view")
 local json = require("../../lib/json")
 local nodes = require("../../lib/nodes")
@@ -194,6 +195,111 @@ describe("table view", function()
 	it("returns nil when there is no table (error-only output)", function()
 		local node = TableView.render(build("errors/get_foos"), vsm.default())
 		expect(node).toBeNil()
+	end)
+
+	it("max_rendered_rows sets the page size", function()
+		local c = build("synthetic/rows-1000/get_pods")
+		local node, counts = TableView.render(c, vsm.default(), { pageSize = 200 })
+		assert(node, "expected a table body")
+		expect(counts).toEqual({ shown = 200, matched = 1000, total = 1000 })
+		expect(nodes.text(nodes.find(node, nodes.role("kube-lens.pages")) :: any)).toContain("801-1000")
+	end)
+end)
+
+-- Quick actions are two clicks from any row: open the row, click a chip. The
+-- chip's only payload is a kube-lens://act/ link the window validates again,
+-- so what it decodes to is what would run.
+describe("table view quick-action chips", function()
+	-- The fixture's output under a command line that pins the target, as a
+	-- user would type it.
+	local function pinned(id: string, flags: { string }): Capture.Capture
+		local f = runs.load(id)
+		local args = table.clone(flags)
+		table.move(f.run.args, 1, #f.run.args, #args + 1, args)
+		return Capture.build({ program = f.run.program, args = args }, f.lines, f.status, { decode = json.decode })
+	end
+
+	local function quick(c: Capture.Capture, key: string): { [string]: Quick.Request }
+		local node = render(c, vsm.opened(vsm.default(), key))
+		local insp = nodes.find(node, nodes.role("kube-lens.inspector")) :: any
+		local out: { [string]: Quick.Request } = {}
+		for _, chip in nodes.findAll(insp, nodes.role("kube-lens.quick")) do
+			local action = nodes.action(chip) :: string
+			expect(string.sub(action, 1, 4 + #Quick.SCHEME)).toBe("act=" .. Quick.SCHEME)
+			local req, err = Quick.decode(string.sub(action, 5))
+			assert(req, err)
+			out[nodes.ownText(chip)] = req
+		end
+		return out
+	end
+
+	local function labels(chips: { [string]: Quick.Request }): { string }
+		local out: { string } = {}
+		for label in chips do
+			table.insert(out, label)
+		end
+		table.sort(out)
+		return out
+	end
+
+	it("a pod row offers Shell, Logs and Port-forward for that pod", function()
+		local chips = quick(build("ns-apps/get_pods"), "/Pod/tern-test-apps/db-0")
+		expect(labels(chips)).toEqual({ "Logs", "Port-forward", "Shell" })
+		local shell = chips.Shell
+		expect(shell.action).toBe("shell")
+		expect(shell.ref.kind).toBe("Pod")
+		expect(shell.ref.name).toBe("db-0")
+		expect(shell.ref.namespace).toBe("tern-test-apps")
+		expect(chips.Logs.action).toBe("logs-follow")
+		expect(chips["Port-forward"].action).toBe("port-forward")
+	end)
+
+	it("pins the lensed command's --context and --kubeconfig in every chip", function()
+		local c = pinned("ns-apps/get_pods", { "--context", "kind-kube-lens-dev", "--kubeconfig", "/tmp/k c/config" })
+		for _, req in quick(c, "/Pod/tern-test-apps/db-0") do
+			expect(req.target.context).toBe("kind-kube-lens-dev")
+			expect(req.target.kubeconfig).toBe("/tmp/k c/config")
+		end
+	end)
+
+	it("an unpinned command leaves the context out, so the split prints the effective one", function()
+		for _, req in quick(build("ns-apps/get_pods"), "/Pod/tern-test-apps/db-0") do
+			expect(req.target.context).toBeNil()
+		end
+	end)
+
+	it("a deployment row offers Logs and Port-forward but no Shell (no ready pod is known)", function()
+		local chips = quick(build("ns-apps/get_deployments"), "apps/Deployment/tern-test-apps/web")
+		expect(labels(chips)).toEqual({ "Logs", "Port-forward" })
+		expect(chips.Logs.ref.group).toBe("apps")
+	end)
+
+	it("a service row forwards its first service port from PORT(S)", function()
+		local chips = quick(build("ns-apps/get_svc"), "/Service/tern-test-apps/web-lb")
+		expect(labels(chips)).toEqual({ "Port-forward" })
+		expect(chips["Port-forward"].opts.port).toBe(80)
+	end)
+
+	it("kinds without quick actions get no chips", function()
+		expect(labels(quick(build("ns-apps/get_configmaps"), "/ConfigMap/tern-test-apps/app-config"))).toEqual({})
+	end)
+
+	it("chips leave the view state alone: no chip action is a v= state change", function()
+		local vs = vsm.opened(vsm.sortedBy(vsm.default(), "AGE"), "/Pod/tern-test-apps/db-0")
+		local node = render(build("ns-apps/get_pods"), vs)
+		local seen = 0
+		for _, chip in nodes.findAll(node, nodes.role("kube-lens.quick")) do
+			seen += 1
+			expect(decodeAction(nodes.action(chip) :: string)).toBeNil()
+		end
+		expect(seen).toBe(3)
+	end)
+
+	it("parses service ports from PORT(S) cells", function()
+		expect(TableView.servicePorts("80:30081/TCP,443:30443/TCP")).toEqual({ 80, 443 })
+		expect(TableView.servicePorts("5432/TCP")).toEqual({ 5432 })
+		expect(TableView.servicePorts("<none>")).toEqual({})
+		expect(TableView.servicePorts("99999/TCP")).toEqual({})
 	end)
 end)
 

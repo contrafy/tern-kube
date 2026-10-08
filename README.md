@@ -33,6 +33,27 @@ lensed.
 | --- | --- |
 | ![get all](docs/screenshots/m1-get-all-dark-wide.png) | ![describe](docs/screenshots/m1-describe-light-wide.png) |
 
+## Explore
+
+**Explore live** on a row, or **Kube Lens: Explore** in the palette, opens a
+live block beside the pane. It pins the context it queries, shows where that
+context came from, and only refreshes when you ask.
+
+![Relations of a Deployment](docs/screenshots/m2-relations-dark-wide.png)
+
+| Keys | |
+| --- | --- |
+| `j` `k` `gg` `G` `enter` `esc` | move, open, back |
+| `/` | filter |
+| `d` `y` `L` `R` | describe, object, last logs, relations |
+| `s` `l` `shift+f` | shell, follow logs, port-forward in a split |
+| `c` `n` `:` | context, namespace, kind |
+| `r` `Y` `?` | refresh, copy the command, help |
+
+Shell, logs and port-forward are also chips in the lens inspector (two
+clicks from any row). They open beside the pane by default; see
+[configuration](docs/configuration.md).
+
 ## Install
 
 ```sh
@@ -55,13 +76,14 @@ To remove: `tern plugin unlink kube-lens`.
 ## Status
 
 - [x] Generic lens: tables, describe, top, YAML/JSON, mutation results
-- [ ] Explore: live view with relations, keyboard navigation, and one-key
+- [x] Explore: live view with relations, keyboard navigation, and one-key
       shell, logs and port-forward in a split
 - [ ] Mutations with server dry-run, per-resource diff and risk-tiered
       confirmation; opt-in zsh/bash/fish guard for typed commands
 - [ ] GitOps: open and diff a resource's manifest, drift reports
       (YAML, Kustomize, Helm, Argo CD/Flux aware), export, CI drift check
-- [ ] Settings, CI, releases
+- [x] Settings file ([configuration](docs/configuration.md))
+- [ ] Settings UI, CI, releases
 
 ## Development
 

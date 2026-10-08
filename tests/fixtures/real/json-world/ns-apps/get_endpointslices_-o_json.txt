@@ -1,0 +1,290 @@
+{
+    "apiVersion": "v1",
+    "items": [
+        {
+            "addressType": "IPv4",
+            "apiVersion": "discovery.k8s.io/v1",
+            "endpoints": [
+                {
+                    "addresses": [
+                        "10.244.0.38"
+                    ],
+                    "conditions": {
+                        "ready": true,
+                        "serving": true,
+                        "terminating": false
+                    },
+                    "hostname": "db-0",
+                    "nodeName": "kube-lens-dev-control-plane",
+                    "targetRef": {
+                        "kind": "Pod",
+                        "name": "db-0",
+                        "namespace": "tern-test-apps",
+                        "uid": "8aa7a2bd-744f-4a09-ba04-b8d8e077d92b"
+                    }
+                }
+            ],
+            "kind": "EndpointSlice",
+            "metadata": {
+                "annotations": {
+                    "endpoints.kubernetes.io/last-change-trigger-time": "2026-10-08T08:10:24Z"
+                },
+                "creationTimestamp": "2026-10-08T08:10:24Z",
+                "generateName": "db-headless-",
+                "generation": 2,
+                "labels": {
+                    "app": "db",
+                    "endpointslice.kubernetes.io/managed-by": "endpointslice-controller.k8s.io",
+                    "kubernetes.io/service-name": "db-headless",
+                    "service.kubernetes.io/headless": ""
+                },
+                "name": "db-headless-hlk4p",
+                "namespace": "tern-test-apps",
+                "ownerReferences": [
+                    {
+                        "apiVersion": "v1",
+                        "blockOwnerDeletion": true,
+                        "controller": true,
+                        "kind": "Service",
+                        "name": "db-headless",
+                        "uid": "dac1b212-f5a5-4343-82dc-90a7e7c4139b"
+                    }
+                ],
+                "resourceVersion": "3949",
+                "uid": "8eb0588e-de20-48a7-ab36-d69549d6abbd"
+            },
+            "ports": [
+                {
+                    "name": "postgres",
+                    "port": 5432,
+                    "protocol": "TCP"
+                }
+            ]
+        },
+        {
+            "addressType": "IPv4",
+            "apiVersion": "discovery.k8s.io/v1",
+            "endpoints": [
+                {
+                    "addresses": [
+                        "10.244.0.35"
+                    ],
+                    "conditions": {
+                        "ready": true,
+                        "serving": true,
+                        "terminating": false
+                    },
+                    "nodeName": "kube-lens-dev-control-plane",
+                    "targetRef": {
+                        "kind": "Pod",
+                        "name": "web-65d7d99975-bmgbn",
+                        "namespace": "tern-test-apps",
+                        "uid": "43385b9a-41ce-45d0-a6f0-403300d08ae5"
+                    }
+                },
+                {
+                    "addresses": [
+                        "10.244.0.34"
+                    ],
+                    "conditions": {
+                        "ready": true,
+                        "serving": true,
+                        "terminating": false
+                    },
+                    "nodeName": "kube-lens-dev-control-plane",
+                    "targetRef": {
+                        "kind": "Pod",
+                        "name": "web-65d7d99975-zsb95",
+                        "namespace": "tern-test-apps",
+                        "uid": "32b66555-7fe8-448d-bd70-13e1c623f122"
+                    }
+                }
+            ],
+            "kind": "EndpointSlice",
+            "metadata": {
+                "creationTimestamp": "2026-10-08T08:10:24Z",
+                "generateName": "web-lb-",
+                "generation": 3,
+                "labels": {
+                    "app": "web",
+                    "endpointslice.kubernetes.io/managed-by": "endpointslice-controller.k8s.io",
+                    "kubernetes.io/service-name": "web-lb"
+                },
+                "name": "web-lb-tppcz",
+                "namespace": "tern-test-apps",
+                "ownerReferences": [
+                    {
+                        "apiVersion": "v1",
+                        "blockOwnerDeletion": true,
+                        "controller": true,
+                        "kind": "Service",
+                        "name": "web-lb",
+                        "uid": "89f30ba5-8d04-4871-abc1-2100621b6af1"
+                    }
+                ],
+                "resourceVersion": "3932",
+                "uid": "4fe1572c-e859-43ca-98a3-41d40c87c18c"
+            },
+            "ports": [
+                {
+                    "name": "http",
+                    "port": 8080,
+                    "protocol": "TCP"
+                },
+                {
+                    "name": "https",
+                    "port": 8080,
+                    "protocol": "TCP"
+                }
+            ]
+        },
+        {
+            "addressType": "IPv4",
+            "apiVersion": "discovery.k8s.io/v1",
+            "endpoints": [
+                {
+                    "addresses": [
+                        "10.244.0.35"
+                    ],
+                    "conditions": {
+                        "ready": true,
+                        "serving": true,
+                        "terminating": false
+                    },
+                    "nodeName": "kube-lens-dev-control-plane",
+                    "targetRef": {
+                        "kind": "Pod",
+                        "name": "web-65d7d99975-bmgbn",
+                        "namespace": "tern-test-apps",
+                        "uid": "43385b9a-41ce-45d0-a6f0-403300d08ae5"
+                    }
+                },
+                {
+                    "addresses": [
+                        "10.244.0.34"
+                    ],
+                    "conditions": {
+                        "ready": true,
+                        "serving": true,
+                        "terminating": false
+                    },
+                    "nodeName": "kube-lens-dev-control-plane",
+                    "targetRef": {
+                        "kind": "Pod",
+                        "name": "web-65d7d99975-zsb95",
+                        "namespace": "tern-test-apps",
+                        "uid": "32b66555-7fe8-448d-bd70-13e1c623f122"
+                    }
+                }
+            ],
+            "kind": "EndpointSlice",
+            "metadata": {
+                "creationTimestamp": "2026-10-08T08:10:24Z",
+                "generateName": "web-nodeport-",
+                "generation": 3,
+                "labels": {
+                    "app": "web",
+                    "endpointslice.kubernetes.io/managed-by": "endpointslice-controller.k8s.io",
+                    "kubernetes.io/service-name": "web-nodeport"
+                },
+                "name": "web-nodeport-rkxv6",
+                "namespace": "tern-test-apps",
+                "ownerReferences": [
+                    {
+                        "apiVersion": "v1",
+                        "blockOwnerDeletion": true,
+                        "controller": true,
+                        "kind": "Service",
+                        "name": "web-nodeport",
+                        "uid": "e008d35f-7428-46c1-b262-de043de1e0e7"
+                    }
+                ],
+                "resourceVersion": "3933",
+                "uid": "c306b3ac-d26f-41a2-be79-373eb50e83af"
+            },
+            "ports": [
+                {
+                    "name": "http",
+                    "port": 8080,
+                    "protocol": "TCP"
+                }
+            ]
+        },
+        {
+            "addressType": "IPv4",
+            "apiVersion": "discovery.k8s.io/v1",
+            "endpoints": [
+                {
+                    "addresses": [
+                        "10.244.0.35"
+                    ],
+                    "conditions": {
+                        "ready": true,
+                        "serving": true,
+                        "terminating": false
+                    },
+                    "nodeName": "kube-lens-dev-control-plane",
+                    "targetRef": {
+                        "kind": "Pod",
+                        "name": "web-65d7d99975-bmgbn",
+                        "namespace": "tern-test-apps",
+                        "uid": "43385b9a-41ce-45d0-a6f0-403300d08ae5"
+                    }
+                },
+                {
+                    "addresses": [
+                        "10.244.0.34"
+                    ],
+                    "conditions": {
+                        "ready": true,
+                        "serving": true,
+                        "terminating": false
+                    },
+                    "nodeName": "kube-lens-dev-control-plane",
+                    "targetRef": {
+                        "kind": "Pod",
+                        "name": "web-65d7d99975-zsb95",
+                        "namespace": "tern-test-apps",
+                        "uid": "32b66555-7fe8-448d-bd70-13e1c623f122"
+                    }
+                }
+            ],
+            "kind": "EndpointSlice",
+            "metadata": {
+                "creationTimestamp": "2026-10-08T08:10:24Z",
+                "generateName": "web-",
+                "generation": 3,
+                "labels": {
+                    "app": "web",
+                    "endpointslice.kubernetes.io/managed-by": "endpointslice-controller.k8s.io",
+                    "kubernetes.io/service-name": "web"
+                },
+                "name": "web-vkq58",
+                "namespace": "tern-test-apps",
+                "ownerReferences": [
+                    {
+                        "apiVersion": "v1",
+                        "blockOwnerDeletion": true,
+                        "controller": true,
+                        "kind": "Service",
+                        "name": "web",
+                        "uid": "bfca2d96-2f95-4ef4-ba67-db88cc688857"
+                    }
+                ],
+                "resourceVersion": "3935",
+                "uid": "18db371a-ede0-46c7-9792-31236dbf8932"
+            },
+            "ports": [
+                {
+                    "name": "http",
+                    "port": 8080,
+                    "protocol": "TCP"
+                }
+            ]
+        }
+    ],
+    "kind": "List",
+    "metadata": {
+        "resourceVersion": ""
+    }
+}

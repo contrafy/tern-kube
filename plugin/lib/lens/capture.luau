@@ -8,6 +8,7 @@ local Describe = require("../parse/describe")
 local Json = require("../parse/json")
 local Kinds = require("../kubectl/kinds")
 local Mutation = require("../parse/mutation")
+local Redact = require("../model/redact")
 local Resource = require("../model/resource")
 local TableParser = require("../parse/table")
 local Types = require("../model/types")
@@ -34,11 +35,15 @@ export type Capture = {
 	diagnostics: { Types.Diagnostic },
 	-- Output lines that were neither table rows nor recognised kubectl messages.
 	unparsed: number,
+	-- The raw output contains Secret data (whatever the native view shows).
 	sensitive: boolean,
+	policy: Redact.Policy,
+	-- The native view hides at least one value of the raw output.
+	masked: boolean,
 }
 
 export type Run = { program: string, args: { string } }
-export type Deps = { decode: (string) -> any }
+export type Deps = { decode: (string) -> any, policy: Redact.Policy? }
 
 type ParsedTable = Types.ParsedTable
 type SnapshotTable = Types.SnapshotTable
@@ -452,7 +457,9 @@ local function buildJson(inv: Invocation, lines: { string }, status: number?, ca
 				rawLines = {},
 				warnings = {},
 			})
-			objects[key] = Json.redactSecrets(res)
+			local shown, masked = Json.redactSecrets(res, capture.policy)
+			objects[key] = shown
+			capture.masked = capture.masked or masked
 			if ref.kind == "Secret" then
 				capture.sensitive = true
 			end
@@ -481,14 +488,122 @@ end
 
 local function buildYaml(lines: { string }, capture: Capture)
 	local split = Yaml.splitLines(lines)
+	local shown = Yaml.redact(lines, split.docs, capture.policy)
 	capture.yaml = split
-	capture.yamlLines = Yaml.redactSecretData(lines, split.docs)
+	capture.yamlLines = shown
 	capture.diagnostics = split.diagnostics
 	for _, doc in split.docs do
 		if doc.kind == "Secret" then
 			capture.sensitive = true
 		end
 	end
+	for i, line in shown do
+		if line ~= lines[i] then
+			capture.masked = true
+			break
+		end
+	end
+end
+
+local function describeText(field: Types.DescribeField): string
+	return if #field.values > 1 then table.concat(field.values, "\n") else field.value
+end
+
+local function maskedField(field: Types.DescribeField, text: string): Types.DescribeField
+	local copy = table.clone(field)
+	local mask = Redact.maskValue(text)
+	copy.value = mask
+	copy.values = { mask }
+	return copy
+end
+
+-- The `key:` line over `----` that describe prints for each ConfigMap key;
+-- the parser reads it as a header-only table.
+local function dataKey(field: Types.DescribeField): string?
+	local tbl = field.table
+	if field.key ~= "" or tbl == nil or #tbl.columns ~= 1 or #tbl.rows > 0 then
+		return nil
+	end
+	return string.match(tbl.columns[1].name, "^(.-):$")
+end
+
+local function plainValue(field: Types.DescribeField): boolean
+	return field.key == "" and field.table == nil and #field.children == 0 and field.value ~= "BinaryData"
+end
+
+-- Strict mode over describe output: values of fields with sensitive names
+-- (pod Environment entries, CRD spec fields) and ConfigMap data under
+-- sensitive keys. Values kubectl already replaced by a `<...>` marker
+-- (secretKeyRef, <none>) are left alone.
+local function redactFields(fields: { Types.DescribeField }): ({ Types.DescribeField }, boolean)
+	local out: { Types.DescribeField } = table.create(#fields)
+	local changed = false
+	local i = 1
+	while i <= #fields do
+		local field = fields[i]
+		local key = dataKey(field)
+		if key and Redact.sensitiveKey(key) then
+			table.insert(out, field)
+			local parts: { string } = {}
+			local j = i + 1
+			while j <= #fields and plainValue(fields[j]) do
+				table.insert(parts, describeText(fields[j]))
+				j += 1
+			end
+			if #parts > 0 then
+				table.insert(out, maskedField(fields[i + 1], table.concat(parts, "\n")))
+				changed = true
+			end
+			i = j
+			continue
+		end
+		local copy = field
+		if #field.children > 0 then
+			local children, nested = redactFields(field.children)
+			if nested then
+				copy = table.clone(field)
+				copy.children = children
+				changed = true
+			end
+		end
+		if field.key ~= "" and field.value ~= "" and string.sub(field.value, 1, 1) ~= "<" then
+			if Redact.sensitiveKey(field.key) then
+				copy = maskedField(copy, describeText(field))
+				changed = true
+			end
+		end
+		table.insert(out, copy)
+		i += 1
+	end
+	return if changed then out else fields, changed
+end
+
+local function redactDescribe(parsed: Types.DescribeParse, inv: Invocation): (Types.DescribeParse, boolean)
+	local secrets = #inv.resources > 0
+	for _, r in inv.resources do
+		secrets = secrets and r.kind == "Secret"
+	end
+	local objects: { Types.DescribeObject } = table.create(#parsed.objects)
+	local masked = false
+	for i, obj in parsed.objects do
+		objects[i] = obj
+		if secrets or obj.kind == "Secret" then
+			continue
+		end
+		local fields, changed = redactFields(obj.fields)
+		if changed then
+			local copy = table.clone(obj)
+			copy.fields = fields
+			objects[i] = copy
+			masked = true
+		end
+	end
+	if not masked then
+		return parsed, false
+	end
+	local copy = table.clone(parsed)
+	copy.objects = objects
+	return copy, true
 end
 
 function M.build(run: Run, rawLines: { string }, status: number?, deps: Deps): Capture
@@ -512,6 +627,8 @@ function M.build(run: Run, rawLines: { string }, status: number?, deps: Deps): C
 		diagnostics = {},
 		unparsed = 0,
 		sensitive = false,
+		policy = deps.policy or Redact.DEFAULT,
+		masked = false,
 	}
 	if mode == "table" then
 		buildTable(inv, lines, status, capture)
@@ -525,6 +642,9 @@ function M.build(run: Run, rawLines: { string }, status: number?, deps: Deps): C
 		local parsed = Describe.parse(lines)
 		capture.describe = parsed
 		capture.diagnostics = parsed.diagnostics
+		if capture.policy.strict then
+			capture.describe, capture.masked = redactDescribe(parsed, inv)
+		end
 	elseif mode == "mutation" then
 		local verb = if inv.verb == "rollout" then "rollout restart" else inv.verb :: string
 		local parsed = Mutation.parse(verb, lines)

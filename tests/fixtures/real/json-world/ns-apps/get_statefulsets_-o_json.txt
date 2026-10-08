@@ -1,0 +1,91 @@
+{
+    "apiVersion": "v1",
+    "items": [
+        {
+            "apiVersion": "apps/v1",
+            "kind": "StatefulSet",
+            "metadata": {
+                "annotations": {
+                    "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"apps/v1\",\"kind\":\"StatefulSet\",\"metadata\":{\"annotations\":{},\"labels\":{\"app\":\"db\"},\"name\":\"db\",\"namespace\":\"tern-test-apps\"},\"spec\":{\"replicas\":1,\"selector\":{\"matchLabels\":{\"app\":\"db\"}},\"serviceName\":\"db-headless\",\"template\":{\"metadata\":{\"labels\":{\"app\":\"db\"}},\"spec\":{\"containers\":[{\"image\":\"registry.k8s.io/pause:3.10\",\"imagePullPolicy\":\"IfNotPresent\",\"name\":\"db\",\"ports\":[{\"containerPort\":5432,\"name\":\"postgres\"}]}],\"terminationGracePeriodSeconds\":1}}}}\n"
+                },
+                "creationTimestamp": "2026-10-08T08:10:24Z",
+                "generation": 1,
+                "labels": {
+                    "app": "db"
+                },
+                "name": "db",
+                "namespace": "tern-test-apps",
+                "resourceVersion": "3948",
+                "uid": "70da8092-eecf-400a-9ff4-9a9c91da2dd5"
+            },
+            "spec": {
+                "persistentVolumeClaimRetentionPolicy": {
+                    "whenDeleted": "Retain",
+                    "whenScaled": "Retain"
+                },
+                "podManagementPolicy": "OrderedReady",
+                "replicas": 1,
+                "revisionHistoryLimit": 10,
+                "selector": {
+                    "matchLabels": {
+                        "app": "db"
+                    }
+                },
+                "serviceName": "db-headless",
+                "template": {
+                    "metadata": {
+                        "labels": {
+                            "app": "db"
+                        }
+                    },
+                    "spec": {
+                        "containers": [
+                            {
+                                "image": "registry.k8s.io/pause:3.10",
+                                "imagePullPolicy": "IfNotPresent",
+                                "name": "db",
+                                "ports": [
+                                    {
+                                        "containerPort": 5432,
+                                        "name": "postgres",
+                                        "protocol": "TCP"
+                                    }
+                                ],
+                                "resources": {},
+                                "terminationMessagePath": "/dev/termination-log",
+                                "terminationMessagePolicy": "File"
+                            }
+                        ],
+                        "dnsPolicy": "ClusterFirst",
+                        "restartPolicy": "Always",
+                        "schedulerName": "default-scheduler",
+                        "securityContext": {},
+                        "terminationGracePeriodSeconds": 1
+                    }
+                },
+                "updateStrategy": {
+                    "rollingUpdate": {
+                        "maxUnavailable": 1,
+                        "partition": 0
+                    },
+                    "type": "RollingUpdate"
+                }
+            },
+            "status": {
+                "availableReplicas": 1,
+                "collisionCount": 0,
+                "currentReplicas": 1,
+                "currentRevision": "db-7f49d5454d",
+                "observedGeneration": 1,
+                "readyReplicas": 1,
+                "replicas": 1,
+                "updateRevision": "db-7f49d5454d",
+                "updatedReplicas": 1
+            }
+        }
+    ],
+    "kind": "List",
+    "metadata": {
+        "resourceVersion": ""
+    }
+}

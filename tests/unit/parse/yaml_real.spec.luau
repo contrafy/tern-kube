@@ -52,13 +52,13 @@ describe("yaml.split against real kubectl output", function()
 	end)
 end)
 
-describe("yaml.redactSecretData against real kubectl output", function()
+describe("yaml.redact against real kubectl output", function()
 	it("removes the fake secret from data and from the last-applied annotation", function()
 		local lines = fixtures.lines("real/ns-apps/get_secret_app-secret_-o_yaml.txt")
 		local original = table.concat(lines, "\n")
 		-- Guard the fixture itself: the leak this test protects against must be present.
 		expect(original).toContain("kube-lens-test-not-a-secret")
-		local shown = Yaml.redactSecretData(lines, Yaml.splitLines(lines).docs)
+		local shown = Yaml.redact(lines, Yaml.splitLines(lines).docs)
 		expect(#shown).toBe(#lines)
 		local text = table.concat(shown, "\n")
 		expect((string.find(text, "kube-lens-test-not-a-secret", 1, true))).toBeNil()
@@ -75,7 +75,23 @@ describe("yaml.redactSecretData against real kubectl output", function()
 
 	it("leaves ConfigMap data visible", function()
 		local lines = fixtures.lines("real/ns-edge/get_configmap_unicode-config_-o_yaml.txt")
-		expect(Yaml.redactSecretData(lines, Yaml.splitLines(lines).docs)).toEqual(lines)
+		expect(Yaml.redact(lines, Yaml.splitLines(lines).docs)).toEqual(lines)
+	end)
+
+	-- Strict mode is a heuristic; on ordinary objects (service account token
+	-- volumes, secret volume references) it must not hide anything.
+	it("strict mode leaves ordinary pods, deployments and ConfigMaps untouched", function()
+		local strict = { showSecrets = false, strict = true }
+		for _, path in
+			{
+				"real/ns-apps/get_pods_-o_yaml.txt",
+				"real/ns-apps/get_deployment_web_-o_yaml.txt",
+				"real/ns-edge/get_configmap_unicode-config_-o_yaml.txt",
+			}
+		do
+			local lines = fixtures.lines(path)
+			expect(Yaml.redact(lines, Yaml.splitLines(lines).docs, strict)).toEqual(lines)
+		end
 	end)
 end)
 

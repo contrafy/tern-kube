@@ -1,9 +1,10 @@
 --!strict
 -- The snapshot header: what ran, against which target, what the view shows,
 -- and everything the user should distrust (exit status, unparsed lines,
--- kubectl errors, Secret data in Raw).
+-- kubectl errors, Secret data in Raw, values the native view masks).
 
 local Capture = require("../lens/capture")
+local Redact = require("../model/redact")
 local Types = require("../model/types")
 local Viewstate = require("../lens/viewstate")
 local ui = require("../ui")
@@ -15,6 +16,8 @@ type ViewState = Viewstate.ViewState
 export type Counts = { shown: number, matched: number, total: number }
 
 local M = {}
+
+M.SENSITIVE = "Raw output contains Secret data; native view masks it"
 
 local function basename(path: string): string
 	return string.match(path, "([^/]+)$") or path
@@ -164,14 +167,16 @@ function M.render(capture: Capture, vs: ViewState, counts: Counts?): Node
 	)
 	local children: { Node } = { ui.row(top, { key = "bar", wrap = true, role = "kube-lens.bar" }) }
 	-- yaml_view shows its own banner next to the masked YAML.
-	if capture.sensitive and capture.mode ~= "yaml" then
-		table.insert(
-			children,
-			ui.text(
-				{ ui.span("Raw output contains Secret data; native view masks it", "warning") },
-				{ key = "sensitive", role = "kube-lens.sensitive" }
+	if capture.mode ~= "yaml" then
+		for i, notice in Redact.notices(capture.policy, capture.sensitive, capture.masked, M.SENSITIVE) do
+			table.insert(
+				children,
+				ui.text(
+					{ ui.span(notice, "warning") },
+					{ key = if i == 1 then "sensitive" else "sensitive" .. i, role = "kube-lens.sensitive" }
+				)
 			)
-		)
+		end
 	end
 	local diags = if bodyReports then nil else diagnosticsNode(capture.diagnostics)
 	if diags then

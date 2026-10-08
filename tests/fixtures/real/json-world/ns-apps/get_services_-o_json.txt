@@ -1,0 +1,219 @@
+{
+    "apiVersion": "v1",
+    "items": [
+        {
+            "apiVersion": "v1",
+            "kind": "Service",
+            "metadata": {
+                "annotations": {
+                    "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"v1\",\"kind\":\"Service\",\"metadata\":{\"annotations\":{},\"labels\":{\"app\":\"db\"},\"name\":\"db-headless\",\"namespace\":\"tern-test-apps\"},\"spec\":{\"clusterIP\":\"None\",\"ports\":[{\"name\":\"postgres\",\"port\":5432}],\"selector\":{\"app\":\"db\"}}}\n"
+                },
+                "creationTimestamp": "2026-10-08T08:10:24Z",
+                "labels": {
+                    "app": "db"
+                },
+                "name": "db-headless",
+                "namespace": "tern-test-apps",
+                "resourceVersion": "3796",
+                "uid": "dac1b212-f5a5-4343-82dc-90a7e7c4139b"
+            },
+            "spec": {
+                "clusterIP": "None",
+                "clusterIPs": [
+                    "None"
+                ],
+                "internalTrafficPolicy": "Cluster",
+                "ipFamilies": [
+                    "IPv4"
+                ],
+                "ipFamilyPolicy": "SingleStack",
+                "ports": [
+                    {
+                        "name": "postgres",
+                        "port": 5432,
+                        "protocol": "TCP",
+                        "targetPort": 5432
+                    }
+                ],
+                "selector": {
+                    "app": "db"
+                },
+                "sessionAffinity": "None",
+                "type": "ClusterIP"
+            },
+            "status": {
+                "loadBalancer": {}
+            }
+        },
+        {
+            "apiVersion": "v1",
+            "kind": "Service",
+            "metadata": {
+                "annotations": {
+                    "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"v1\",\"kind\":\"Service\",\"metadata\":{\"annotations\":{},\"name\":\"external-docs\",\"namespace\":\"tern-test-apps\"},\"spec\":{\"externalName\":\"docs.example.com\",\"type\":\"ExternalName\"}}\n"
+                },
+                "creationTimestamp": "2026-10-08T08:10:24Z",
+                "name": "external-docs",
+                "namespace": "tern-test-apps",
+                "resourceVersion": "3805",
+                "uid": "9263eda4-fe64-464f-b763-559479847202"
+            },
+            "spec": {
+                "externalName": "docs.example.com",
+                "sessionAffinity": "None",
+                "type": "ExternalName"
+            },
+            "status": {
+                "loadBalancer": {}
+            }
+        },
+        {
+            "apiVersion": "v1",
+            "kind": "Service",
+            "metadata": {
+                "annotations": {
+                    "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"v1\",\"kind\":\"Service\",\"metadata\":{\"annotations\":{},\"labels\":{\"app\":\"web\"},\"name\":\"web\",\"namespace\":\"tern-test-apps\"},\"spec\":{\"ports\":[{\"name\":\"http\",\"port\":80,\"targetPort\":\"http\"}],\"selector\":{\"app\":\"web\"},\"type\":\"ClusterIP\"}}\n"
+                },
+                "creationTimestamp": "2026-10-08T08:10:24Z",
+                "labels": {
+                    "app": "web"
+                },
+                "name": "web",
+                "namespace": "tern-test-apps",
+                "resourceVersion": "3788",
+                "uid": "bfca2d96-2f95-4ef4-ba67-db88cc688857"
+            },
+            "spec": {
+                "clusterIP": "10.96.50.91",
+                "clusterIPs": [
+                    "10.96.50.91"
+                ],
+                "internalTrafficPolicy": "Cluster",
+                "ipFamilies": [
+                    "IPv4"
+                ],
+                "ipFamilyPolicy": "SingleStack",
+                "ports": [
+                    {
+                        "name": "http",
+                        "port": 80,
+                        "protocol": "TCP",
+                        "targetPort": "http"
+                    }
+                ],
+                "selector": {
+                    "app": "web"
+                },
+                "sessionAffinity": "None",
+                "type": "ClusterIP"
+            },
+            "status": {
+                "loadBalancer": {}
+            }
+        },
+        {
+            "apiVersion": "v1",
+            "kind": "Service",
+            "metadata": {
+                "annotations": {
+                    "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"v1\",\"kind\":\"Service\",\"metadata\":{\"annotations\":{},\"labels\":{\"app\":\"web\"},\"name\":\"web-lb\",\"namespace\":\"tern-test-apps\"},\"spec\":{\"ports\":[{\"name\":\"http\",\"nodePort\":30081,\"port\":80,\"targetPort\":\"http\"},{\"name\":\"https\",\"nodePort\":30443,\"port\":443,\"targetPort\":\"http\"}],\"selector\":{\"app\":\"web\"},\"type\":\"LoadBalancer\"}}\n"
+                },
+                "creationTimestamp": "2026-10-08T08:10:24Z",
+                "labels": {
+                    "app": "web"
+                },
+                "name": "web-lb",
+                "namespace": "tern-test-apps",
+                "resourceVersion": "3802",
+                "uid": "89f30ba5-8d04-4871-abc1-2100621b6af1"
+            },
+            "spec": {
+                "allocateLoadBalancerNodePorts": true,
+                "clusterIP": "10.96.71.110",
+                "clusterIPs": [
+                    "10.96.71.110"
+                ],
+                "externalTrafficPolicy": "Cluster",
+                "internalTrafficPolicy": "Cluster",
+                "ipFamilies": [
+                    "IPv4"
+                ],
+                "ipFamilyPolicy": "SingleStack",
+                "ports": [
+                    {
+                        "name": "http",
+                        "nodePort": 30081,
+                        "port": 80,
+                        "protocol": "TCP",
+                        "targetPort": "http"
+                    },
+                    {
+                        "name": "https",
+                        "nodePort": 30443,
+                        "port": 443,
+                        "protocol": "TCP",
+                        "targetPort": "http"
+                    }
+                ],
+                "selector": {
+                    "app": "web"
+                },
+                "sessionAffinity": "None",
+                "type": "LoadBalancer"
+            },
+            "status": {
+                "loadBalancer": {}
+            }
+        },
+        {
+            "apiVersion": "v1",
+            "kind": "Service",
+            "metadata": {
+                "annotations": {
+                    "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"v1\",\"kind\":\"Service\",\"metadata\":{\"annotations\":{},\"labels\":{\"app\":\"web\"},\"name\":\"web-nodeport\",\"namespace\":\"tern-test-apps\"},\"spec\":{\"ports\":[{\"name\":\"http\",\"nodePort\":30080,\"port\":80,\"targetPort\":\"http\"}],\"selector\":{\"app\":\"web\"},\"type\":\"NodePort\"}}\n"
+                },
+                "creationTimestamp": "2026-10-08T08:10:24Z",
+                "labels": {
+                    "app": "web"
+                },
+                "name": "web-nodeport",
+                "namespace": "tern-test-apps",
+                "resourceVersion": "3793",
+                "uid": "e008d35f-7428-46c1-b262-de043de1e0e7"
+            },
+            "spec": {
+                "clusterIP": "10.96.103.172",
+                "clusterIPs": [
+                    "10.96.103.172"
+                ],
+                "externalTrafficPolicy": "Cluster",
+                "internalTrafficPolicy": "Cluster",
+                "ipFamilies": [
+                    "IPv4"
+                ],
+                "ipFamilyPolicy": "SingleStack",
+                "ports": [
+                    {
+                        "name": "http",
+                        "nodePort": 30080,
+                        "port": 80,
+                        "protocol": "TCP",
+                        "targetPort": "http"
+                    }
+                ],
+                "selector": {
+                    "app": "web"
+                },
+                "sessionAffinity": "None",
+                "type": "NodePort"
+            },
+            "status": {
+                "loadBalancer": {}
+            }
+        }
+    ],
+    "kind": "List",
+    "metadata": {
+        "resourceVersion": ""
+    }
+}

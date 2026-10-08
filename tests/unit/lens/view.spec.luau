@@ -123,6 +123,35 @@ describe("lens view", function()
 		expect(nodes.find(node, nodes.role("kube-lens.sensitive")) ~= nil).toBe(true)
 	end)
 
+	local function sensitiveText(c: Capture.Capture): string?
+		local node = nodes.find(View.render(c, vsm.default()) :: any, nodes.role("kube-lens.sensitive"))
+		return if node then nodes.text(node) else nil
+	end
+
+	-- The masking banner would be false once values are shown; the warning
+	-- that the block holds Secret values must stay.
+	it("swaps the masking banner for a warning when Secret values are shown", function()
+		local text = [[{"apiVersion":"v1","kind":"Secret","metadata":{"name":"s","namespace":"n"},"data":{"k":"dg=="}}]]
+		local run = runs.run("kubectl get secret s -n n -o json")
+		local masked = Capture.build(run, { text }, 0, { decode = json.decode })
+		expect(sensitiveText(masked)).toBe("Raw output contains Secret data; native view masks it")
+		local shown = Capture.build(run, { text }, 0, {
+			decode = json.decode,
+			policy = { showSecrets = true, strict = false },
+		})
+		expect(sensitiveText(shown)).toBe("Output contains Secret values (security.show_secret_values is on)")
+	end)
+
+	it("notes strict-mode masking of non-Secret output", function()
+		local lines = { "Name:  web-1", "Namespace:  apps", "Environment:", "  DB_PASSWORD:  hunter2" }
+		local run = runs.run("kubectl describe pod web-1 -n apps")
+		local strict =
+			Capture.build(run, lines, 0, { decode = json.decode, policy = { showSecrets = false, strict = true } })
+		expect(sensitiveText(strict)).toContain("sensitive_output_strict_mode")
+		expect((string.find(nodes.text(View.render(strict, vsm.default()) :: any), "hunter2", 1, true))).toBeNil()
+		expect(sensitiveText(Capture.build(run, lines, 0, { decode = json.decode }))).toBeNil()
+	end)
+
 	it("the ? chip toggles the cheat sheet and keeps the rest of the state", function()
 		local vs = vsm.sortedBy(vsm.default(), "AGE")
 		local node = View.render(build("ns-apps/get_pods"), vs) :: any

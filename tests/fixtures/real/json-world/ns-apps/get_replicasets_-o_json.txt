@@ -1,0 +1,167 @@
+{
+    "apiVersion": "v1",
+    "items": [
+        {
+            "apiVersion": "apps/v1",
+            "kind": "ReplicaSet",
+            "metadata": {
+                "annotations": {
+                    "deployment.kubernetes.io/desired-replicas": "1",
+                    "deployment.kubernetes.io/max-replicas": "2",
+                    "deployment.kubernetes.io/revision": "1"
+                },
+                "creationTimestamp": "2026-10-08T08:10:24Z",
+                "generation": 1,
+                "labels": {
+                    "app": "broken-image",
+                    "pod-template-hash": "68986f4958"
+                },
+                "name": "broken-image-68986f4958",
+                "namespace": "tern-test-apps",
+                "ownerReferences": [
+                    {
+                        "apiVersion": "apps/v1",
+                        "blockOwnerDeletion": true,
+                        "controller": true,
+                        "kind": "Deployment",
+                        "name": "broken-image",
+                        "uid": "de9cc24e-d7d4-4646-9387-0a170724510e"
+                    }
+                ],
+                "resourceVersion": "3829",
+                "uid": "926ca98a-29d8-4864-96f0-c7525de10aa3"
+            },
+            "spec": {
+                "replicas": 1,
+                "selector": {
+                    "matchLabels": {
+                        "app": "broken-image",
+                        "pod-template-hash": "68986f4958"
+                    }
+                },
+                "template": {
+                    "metadata": {
+                        "labels": {
+                            "app": "broken-image",
+                            "pod-template-hash": "68986f4958"
+                        }
+                    },
+                    "spec": {
+                        "containers": [
+                            {
+                                "image": "registry.invalid/kube-lens/missing:0.0.0",
+                                "imagePullPolicy": "IfNotPresent",
+                                "name": "app",
+                                "resources": {},
+                                "terminationMessagePath": "/dev/termination-log",
+                                "terminationMessagePolicy": "File"
+                            }
+                        ],
+                        "dnsPolicy": "ClusterFirst",
+                        "restartPolicy": "Always",
+                        "schedulerName": "default-scheduler",
+                        "securityContext": {},
+                        "terminationGracePeriodSeconds": 1
+                    }
+                }
+            },
+            "status": {
+                "fullyLabeledReplicas": 1,
+                "observedGeneration": 1,
+                "replicas": 1,
+                "terminatingReplicas": 0
+            }
+        },
+        {
+            "apiVersion": "apps/v1",
+            "kind": "ReplicaSet",
+            "metadata": {
+                "annotations": {
+                    "deployment.kubernetes.io/desired-replicas": "2",
+                    "deployment.kubernetes.io/max-replicas": "3",
+                    "deployment.kubernetes.io/revision": "1"
+                },
+                "creationTimestamp": "2026-10-08T08:10:24Z",
+                "generation": 1,
+                "labels": {
+                    "app": "web",
+                    "pod-template-hash": "65d7d99975",
+                    "tier": "frontend"
+                },
+                "name": "web-65d7d99975",
+                "namespace": "tern-test-apps",
+                "ownerReferences": [
+                    {
+                        "apiVersion": "apps/v1",
+                        "blockOwnerDeletion": true,
+                        "controller": true,
+                        "kind": "Deployment",
+                        "name": "web",
+                        "uid": "8352ff74-5659-43df-987c-45ef74621d25"
+                    }
+                ],
+                "resourceVersion": "3931",
+                "uid": "4a9b989b-845d-4dc3-8a75-2488f7f5c3c8"
+            },
+            "spec": {
+                "replicas": 2,
+                "selector": {
+                    "matchLabels": {
+                        "app": "web",
+                        "pod-template-hash": "65d7d99975"
+                    }
+                },
+                "template": {
+                    "metadata": {
+                        "labels": {
+                            "app": "web",
+                            "pod-template-hash": "65d7d99975",
+                            "tier": "frontend"
+                        }
+                    },
+                    "spec": {
+                        "containers": [
+                            {
+                                "image": "registry.k8s.io/pause:3.10",
+                                "imagePullPolicy": "IfNotPresent",
+                                "name": "web",
+                                "ports": [
+                                    {
+                                        "containerPort": 8080,
+                                        "name": "http",
+                                        "protocol": "TCP"
+                                    }
+                                ],
+                                "resources": {
+                                    "requests": {
+                                        "cpu": "5m",
+                                        "memory": "8Mi"
+                                    }
+                                },
+                                "terminationMessagePath": "/dev/termination-log",
+                                "terminationMessagePolicy": "File"
+                            }
+                        ],
+                        "dnsPolicy": "ClusterFirst",
+                        "restartPolicy": "Always",
+                        "schedulerName": "default-scheduler",
+                        "securityContext": {},
+                        "terminationGracePeriodSeconds": 1
+                    }
+                }
+            },
+            "status": {
+                "availableReplicas": 2,
+                "fullyLabeledReplicas": 2,
+                "observedGeneration": 1,
+                "readyReplicas": 2,
+                "replicas": 2,
+                "terminatingReplicas": 0
+            }
+        }
+    ],
+    "kind": "List",
+    "metadata": {
+        "resourceVersion": ""
+    }
+}

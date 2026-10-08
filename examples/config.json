@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "general": {
+    "native_default": true,
+    "max_rows": 20000,
+    "max_rendered_rows": 500,
+    "max_capture_bytes": 16777216
+  },
+  "aliases": {
+    "additional": []
+  },
+  "explore": {
+    "allow_live_queries": true,
+    "auto_refresh": false,
+    "query_timeout_ms": 10000,
+    "relationship_max_nodes": 250
+  },
+  "mutations": {
+    "enabled": true,
+    "interactive_guard": false,
+    "require_target_confirmation": true,
+    "allow_failed_preview_override": false
+  },
+  "security": {
+    "show_secret_values": false,
+    "sensitive_output_strict_mode": false
+  },
+  "quick_actions": {
+    "placement": "right",
+    "shell_command": ["sh", "-c", "command -v bash >/dev/null 2>&1 && exec bash || exec sh"],
+    "logs_tail": 200,
+    "debug_image": "busybox:1.36"
+  },
+  "kubectl": "kubectl",
+  "kubeconfig": null,
+  "gitops": {}
+}

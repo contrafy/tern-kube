@@ -2,6 +2,7 @@
 # Standalone luau has no file I/O, so fixture files are embedded verbatim into
 # a generated Luau module that specs can require. Regenerate after adding or
 # changing fixtures: `make fixtures` (or `sh scripts/fixtures/embed.sh`).
+# examples/ is embedded too (key "examples/<file>") so specs can check it.
 set -eu
 
 cd "$(dirname "$0")/../.."
@@ -11,7 +12,7 @@ tmp="$out.tmp.$$"
 trap 'rm -f "$tmp"' EXIT INT TERM
 
 dirs=""
-for d in tests/fixtures/kubectl tests/fixtures/real tests/fixtures/synthetic; do
+for d in tests/fixtures/kubectl tests/fixtures/real tests/fixtures/synthetic examples; do
 	[ -d "$d" ] && dirs="$dirs $d"
 done
 

@@ -86,6 +86,47 @@ describe("objtree", function()
 		expect(text).toContain("redacted")
 	end)
 
+	it("shows Secret values when the policy allows it", function()
+		local secret = { kind = "Secret", metadata = { name = "s" }, data = { password = "aHVudGVyMg==" } }
+		local text = nodes.text(Objtree.tree(secret, { policy = { showSecrets = true, strict = false } }))
+		expect(text).toContain("aHVudGVyMg==")
+		expect((string.find(text, "redacted", 1, true))).toBeNil()
+	end)
+
+	-- Captures hand the tree objects they already masked; masking again must
+	-- keep the size of the original value, not of the mask text.
+	it("keeps an existing mask as it is", function()
+		local masked =
+			{ kind = "Secret", metadata = { name = "s" }, data = { password = "<redacted: 12 bytes base64>" } }
+		local text = nodes.text(Objtree.tree(masked))
+		expect(text).toContain("<redacted: 12 bytes base64>")
+	end)
+
+	it("strict mode masks sensitive env values in every List item and their last-applied copy", function()
+		local pod = {
+			kind = "Pod",
+			metadata = {
+				name = "p",
+				annotations = { ["kubectl.kubernetes.io/last-applied-configuration"] = "DB_PASSWORD=hunter2" },
+			},
+			spec = {
+				containers = {
+					{
+						name = "app",
+						env = { { name = "DB_PASSWORD", value = "hunter2" }, { name = "MODE", value = "fast" } },
+					},
+				},
+			},
+		}
+		local strict = { policy = { showSecrets = false, strict = true }, openDepth = 99 }
+		for _, obj in { pod :: any, { kind = "List", items = { pod } } } do
+			local text = nodes.text(Objtree.tree(obj, strict))
+			expect((string.find(text, "hunter2", 1, true))).toBeNil()
+			expect(text).toContain("fast")
+		end
+		expect(nodes.text(Objtree.tree(pod))).toContain("hunter2")
+	end)
+
 	it("caps children per node with an overflow line instead of rendering everything", function()
 		local big = {}
 		for i = 1, 1000 do

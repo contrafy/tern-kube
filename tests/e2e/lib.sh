@@ -113,7 +113,18 @@ real() {
 	sh_line kl_real
 }
 
+# Back to one shell pane: splits a failed scenario left open (Explore, quick
+# actions) are closed right-most first, so the original pane survives.
 reset_pane() {
+	i=0
+	while [ "$(ctl state | jq '.panes | length')" -gt 1 ] && [ $i -lt 8 ]; do
+		ctl focus right >/dev/null
+		ctl close >/dev/null
+		sleep 0.4
+		i=$((i + 1))
+	done
+	# The survivor is the left-most pane; a click there gives it the keyboard.
+	[ $i -gt 0 ] && ctl click 30 600 >/dev/null
 	real
 	sh_line clear
 }
@@ -204,4 +215,75 @@ clip_restore() {
 
 clip() {
 	pbpaste 2>/dev/null || true
+}
+
+# --- Explore block and quick actions ------------------------------------------
+
+EX="[data-surface='plugin.kube-lens.explore']"
+
+# xtext [SEL]: text inside the Explore block (SEL relative to it).
+xtext() {
+	alltext "$EX ${1:-*}" | tr '\n' ' '
+}
+
+# The first cell of the selected Explore row.
+xsel() {
+	texts "$EX .kl-sel .kl-c" | jq -r '.[0] // empty'
+}
+
+# xkey KEY...: send keys to the focused pane (the Explore block once open).
+xkey() {
+	for k in "$@"; do
+		ctl key "$k" >/dev/null
+	done
+	sleep 0.4
+}
+
+x_loaded() {
+	! printf '%s' "$(xtext '[data-role="kube-lens.explore-header"] *')" | grep -q 'fetching via'
+}
+
+# xwait TEXT [SEL]: wait until the Explore block shows TEXT (and no fetch runs).
+xwait() {
+	E2E_WAIT=${E2E_WAIT:-15} wait_for "Explore to show \"$1\"" x_has "$1" "${2:-*}"
+}
+
+x_has() {
+	x_loaded && case $(xtext "$2") in *"$1"*) true ;; *) false ;; esac
+}
+
+explore_open() {
+	E2E_WAIT=15 wait_for "Explore block" has "$EX"
+}
+
+explore_close() {
+	i=0
+	while has "$EX" && [ $i -lt 6 ]; do
+		ctl key escape >/dev/null
+		sleep 0.3
+		i=$((i + 1))
+	done
+	lacks "$EX" || fail "Explore block did not close"
+}
+
+pane_count() {
+	ctl state | jq '.panes | length'
+}
+
+focused_title() {
+	ctl state | jq -r '.focused.label // ""'
+}
+
+# Wait for a new split whose title (set by the quick action) contains TEXT.
+quick_pane() {
+	E2E_WAIT=${E2E_WAIT:-15} wait_for "a \"$1\" split" focused_has "$1"
+}
+
+focused_has() {
+	case $(focused_title) in *"$1"*) true ;; *) false ;; esac
+}
+
+# expect_grid TEXT: `ctl expect` itself waits up to 20 s for the grid text.
+expect_grid() {
+	ctl expect "\"$1\"" | grep -q '"ok":true' || fail "\"$1\" never appeared in a terminal"
 }

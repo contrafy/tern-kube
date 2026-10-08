@@ -1,0 +1,2 @@
+configmap/app-config
+configmap/kube-root-ca.crt

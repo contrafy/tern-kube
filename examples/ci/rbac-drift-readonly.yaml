@@ -1,0 +1,101 @@
+# Least-privilege identity for kube-lens-drift (`kubectl diff`) in CI.
+#
+# `kubectl diff` reads each live object (get) and asks the API server what
+# applying the manifest would produce with a server-side dry run: a PATCH for
+# existing objects, a CREATE for objects missing from the cluster. RBAC does
+# not distinguish dry-run requests from real ones, so `create` and `patch`
+# alone would also allow real writes. The ValidatingAdmissionPolicy below
+# closes that gap: every write from this ServiceAccount is rejected unless it
+# is a dry run (Kubernetes 1.30+; admission runs for dry-run requests too).
+#
+# Verbs, per resource type your manifests contain:
+#   get     read the live object (always needed)
+#   patch   dry-run the change to an existing object (always needed)
+#   create  dry-run objects missing from the cluster (needed to report them;
+#           without it `kubectl diff` fails with Forbidden on the first one)
+#   list    only for `kube-lens-drift --unmanaged`
+# Not needed: update, delete, watch, escalate, bind.
+#
+# Adjust before applying:
+#   - kube-lens-drift: namespace and name of the CI ServiceAccount
+#   - my-app: each namespace the manifests target (one RoleBinding each)
+#   - the resource list: exactly the kinds in your manifests
+# Secrets: diffing them needs `get` on secrets, which lets the token read
+# every Secret in the namespace (the report itself masks Secret values).
+# Leave secrets out unless you need them. RBAC objects (roles, rolebindings)
+# additionally need `escalate`/`bind` or holding every permission they grant,
+# because the API server checks escalation on dry runs as well.
+#
+# Verified on kind by tests/integration/drift-rbac/run.sh.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kube-lens-drift
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kube-lens-drift
+  namespace: kube-lens-drift
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kube-lens-drift
+rules:
+  - apiGroups: [""]
+    resources: [configmaps, services, serviceaccounts, persistentvolumeclaims]
+    verbs: [get, list, create, patch]
+  - apiGroups: [apps]
+    resources: [deployments, statefulsets, daemonsets]
+    verbs: [get, list, create, patch]
+  - apiGroups: [batch]
+    resources: [jobs, cronjobs]
+    verbs: [get, list, create, patch]
+  - apiGroups: [networking.k8s.io]
+    resources: [ingresses, networkpolicies]
+    verbs: [get, list, create, patch]
+---
+# One RoleBinding per target namespace keeps the grant namespaced even though
+# the rules live in a ClusterRole.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: kube-lens-drift
+  namespace: my-app
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: kube-lens-drift
+subjects:
+  - kind: ServiceAccount
+    name: kube-lens-drift
+    namespace: kube-lens-drift
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: kube-lens-drift-dry-run-only
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: ["*"]
+        apiVersions: ["*"]
+        operations: [CREATE, UPDATE, DELETE, CONNECT]
+        resources: ["*/*"]
+  matchConditions:
+    - name: drift-service-account
+      expression: request.userInfo.username == "system:serviceaccount:kube-lens-drift:kube-lens-drift"
+  validations:
+    - expression: has(request.dryRun) && request.dryRun == true
+      message: kube-lens-drift may only send dry-run requests
+      reason: Forbidden
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: kube-lens-drift-dry-run-only
+spec:
+  policyName: kube-lens-drift-dry-run-only
+  validationActions: [Deny]

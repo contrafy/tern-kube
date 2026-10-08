@@ -6,6 +6,7 @@
 -- sequences and multi-line flow scalars (their content is always deeper).
 -- Identity comes from the top-level `kind`, `apiVersion` and the
 -- `metadata.name`/`metadata.namespace` children; nothing else is interpreted.
+local Redact = require("../model/redact")
 local Resource = require("../model/resource")
 local Types = require("../model/types")
 
@@ -522,34 +523,176 @@ local function maskValues(
 	end
 end
 
--- For native display only: masks the values under `data:`/`stringData:` of
--- Secret documents and the last-applied annotation (which embeds them). The
--- line count is preserved (masked continuation lines become empty) so line
+local function maskSecretValues(out: { string }, source: { string }, doc: Doc, entries: { Entry })
+	for k, entry in entries do
+		if entry.key == "data" then
+			maskValues(out, source, entries, k, doc.endLine, " base64")
+		elseif entry.key == "stringData" then
+			maskValues(out, source, entries, k, doc.endLine, "")
+		end
+	end
+end
+
+-- The annotation embeds the applied manifest verbatim, so it leaks whatever
+-- was masked elsewhere in the document.
+local function maskLastApplied(out: { string }, source: { string }, doc: Doc, entries: { Entry })
+	local m = find(entries, "metadata")
+	if m == nil then
+		return
+	end
+	local stop = blockLast(entries, m, doc.endLine)
+	local metadata = children(source, entries, m, doc.endLine)
+	local a = if metadata then find(metadata, "annotations") else nil
+	local annotations = if metadata and a then children(source, metadata, a, stop) else nil
+	local applied = if annotations then find(annotations, LAST_APPLIED) else nil
+	if metadata and a and annotations and applied then
+		local annotationsLast = blockLast(metadata, a, stop)
+		maskEntry(out, source, annotations[applied], blockLast(annotations, applied, annotationsLast), "")
+	end
+end
+
+-- Mapping key on a line, reading `- key:` as if the dash were a space so
+-- the first key of a sequence item lines up with its siblings.
+local function lineEntry(source: { string }, i: number): (Entry?, number)
+	local text = undash(source[i]) or source[i]
+	local indent = contentIndent(text)
+	if indent == nil then
+		return nil, 0
+	end
+	local key, colon = parseKey(text, indent + 1)
+	if key == nil then
+		return nil, 0
+	end
+	return { key = key, line = i, colon = colon, value = string.sub(text, colon + 1) }, indent
+end
+
+-- Last line belonging to the value of a key at `indent`.
+local function valueLast(source: { string }, line: number, indent: number, last: number): number
+	local stop = line
+	for j = line + 1, last do
+		local ci = contentIndent(source[j])
+		if ci then
+			if ci <= indent then
+				break
+			end
+			stop = j
+		end
+	end
+	return stop
+end
+
+-- Scalars and block scalars; nested mappings, sequences and flow
+-- collections are left to their own keys.
+local function scalarValue(entry: Entry): boolean
+	local raw = trim((string.gsub(entry.value, "^%s*#.*$", "")))
+	local c = string.sub(raw, 1, 1)
+	return raw ~= "" and c ~= "{" and c ~= "[" and c ~= "&" and c ~= "*"
+end
+
+-- Sibling `value:` of a `name:` key at `indent` within the same mapping
+-- (for env, the same sequence item: the next item's dash sits shallower).
+local function siblingValue(source: { string }, nameLine: number, indent: number, first: number, last: number): Entry?
+	local start = first
+	if undash(source[nameLine]) then
+		start = nameLine
+	else
+		for j = nameLine - 1, first, -1 do
+			local ci = contentIndent(source[j])
+			if ci and ci < indent then
+				local _, keyIndent = lineEntry(source, j)
+				start = if undash(source[j]) and keyIndent == indent then j else j + 1
+				break
+			end
+		end
+	end
+	for j = start, last do
+		local ci = contentIndent(source[j])
+		if j > start and ci and ci < indent then
+			break
+		end
+		local entry, keyIndent = lineEntry(source, j)
+		if entry and keyIndent == indent and entry.key == "value" then
+			return entry
+		end
+	end
+	return nil
+end
+
+local function skipRanges(doc: Doc, entries: { Entry }): { [number]: boolean }
+	local skip: { [number]: boolean } = {}
+	if doc.kind ~= "Secret" then
+		return skip
+	end
+	for k, entry in entries do
+		if entry.key == "data" or entry.key == "stringData" then
+			for i = entry.line, blockLast(entries, k, doc.endLine) do
+				skip[i] = true
+			end
+		end
+	end
+	return skip
+end
+
+-- Strict mode, line by line: values under sensitive keys and the `value:` of
+-- `- name: X` items (container env) with a sensitive X. Returns whether
+-- anything was masked.
+local function maskStrict(out: { string }, source: { string }, doc: Doc, entries: { Entry }): boolean
+	local skip = skipRanges(doc, entries)
+	local found = false
+	local function mask(entry: Entry, indent: number)
+		if out[entry.line] == source[entry.line] and scalarValue(entry) then
+			maskEntry(out, source, entry, valueLast(source, entry.line, indent, doc.endLine), "")
+			found = true
+		end
+	end
+	for i = doc.startLine, doc.endLine do
+		if skip[i] or out[i] ~= source[i] then
+			continue
+		end
+		local entry, indent = lineEntry(source, i)
+		if entry == nil then
+			continue
+		end
+		if Redact.sensitiveKey(entry.key) then
+			mask(entry, indent)
+		elseif entry.key == "name" then
+			local name = scalar(entry.value)
+			if name and Redact.sensitiveKey(name) then
+				local value = siblingValue(source, i, indent, doc.startLine, doc.endLine)
+				if value then
+					mask(value, indent)
+				end
+			end
+		end
+	end
+	return found
+end
+
+-- For native display only: masks what `policy` hides (Secret `data` /
+-- `stringData` values and the Secret's last-applied annotation unless
+-- showSecrets; strict-mode matches plus that document's annotation). The line
+-- count is preserved (masked continuation lines become empty) so line
 -- numbers in docs and diagnostics still refer to the original output; the
 -- input is not modified.
-local function redactSecretData(source: { string }, docs: { Doc }): { string }
+local function redact(source: { string }, docs: { Doc }, policy: Redact.Policy?): { string }
+	local p = policy or Redact.DEFAULT
 	local out = table.clone(source)
 	for _, doc in docs do
-		if doc.kind ~= "Secret" then
+		local secret = doc.kind == "Secret"
+		if not p.strict and (p.showSecrets or not secret) then
 			continue
 		end
 		local entries = scanEntries(source, doc.startLine, doc.endLine, doc.indent, undash(source[doc.startLine]))
-		for k, entry in entries do
-			if entry.key == "data" then
-				maskValues(out, source, entries, k, doc.endLine, " base64")
-			elseif entry.key == "stringData" then
-				maskValues(out, source, entries, k, doc.endLine, "")
-			elseif entry.key == "metadata" then
-				local stop = blockLast(entries, k, doc.endLine)
-				local metadata = children(source, entries, k, doc.endLine)
-				local a = if metadata then find(metadata, "annotations") else nil
-				local annotations = if metadata and a then children(source, metadata, a, stop) else nil
-				local applied = if annotations then find(annotations, LAST_APPLIED) else nil
-				if metadata and a and annotations and applied then
-					local annotationsLast = blockLast(metadata, a, stop)
-					maskEntry(out, source, annotations[applied], blockLast(annotations, applied, annotationsLast), "")
-				end
-			end
+		local annotate = false
+		if secret and not p.showSecrets then
+			maskSecretValues(out, source, doc, entries)
+			annotate = true
+		end
+		if p.strict and maskStrict(out, source, doc, entries) then
+			annotate = true
+		end
+		if annotate then
+			maskLastApplied(out, source, doc, entries)
 		end
 	end
 	return out
@@ -559,5 +702,5 @@ return {
 	split = split,
 	splitLines = splitLines,
 	lines = lines,
-	redactSecretData = redactSecretData,
+	redact = redact,
 }
