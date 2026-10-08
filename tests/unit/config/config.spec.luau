@@ -46,6 +46,8 @@ describe("config defaults", function()
 		expect(cfg.mutations.interactive_guard).toBe(false)
 		expect(cfg.mutations.require_target_confirmation).toBe(true)
 		expect(cfg.mutations.allow_failed_preview_override).toBe(false)
+		expect(cfg.mutations.preview_timeout_ms).toBe(30000)
+		expect(cfg.mutations.execute_timeout_ms).toBe(300000)
 		expect(cfg.quick_actions.placement).toBe("right")
 		expect(cfg.quick_actions.shell_command).toEqual({
 			"sh",
@@ -101,7 +103,7 @@ describe("config values", function()
 			"explore": {"allow_live_queries": false, "auto_refresh": false, "query_timeout_ms": 30000,
 				"relationship_max_nodes": 50},
 			"mutations": {"enabled": false, "interactive_guard": true, "require_target_confirmation": true,
-				"allow_failed_preview_override": true},
+				"allow_failed_preview_override": true, "preview_timeout_ms": 5000, "execute_timeout_ms": 60000},
 			"security": {"show_secret_values": true, "sensitive_output_strict_mode": true},
 			"quick_actions": {"placement": "tab", "shell_command": ["bash", "-l"], "logs_tail": 1000,
 				"debug_image": "nicolaka/netshoot:v0.13"},
@@ -121,6 +123,8 @@ describe("config values", function()
 		expect(cfg.mutations.enabled).toBe(false)
 		expect(cfg.mutations.interactive_guard).toBe(true)
 		expect(cfg.mutations.allow_failed_preview_override).toBe(true)
+		expect(cfg.mutations.preview_timeout_ms).toBe(5000)
+		expect(cfg.mutations.execute_timeout_ms).toBe(60000)
 		expect(cfg.security.show_secret_values).toBe(true)
 		expect(cfg.security.sensitive_output_strict_mode).toBe(true)
 		expect(cfg.quick_actions.placement).toBe("tab")
@@ -158,6 +162,16 @@ describe("config values", function()
 		expect(cfg.kubeconfig).toBeNil()
 		local d = find(diags, "kubeconfig")
 		expect(d and d.level).toBe("error")
+	end)
+
+	-- A zero timeout would kill every preview before kubectl starts, and an
+	-- unbounded execute would leave a hung mutation with no end.
+	it("bounds the mutation timeouts", function()
+		local cfg, diags = parse([[{"mutations": {"preview_timeout_ms": 0, "execute_timeout_ms": 99999999}}]])
+		expect(cfg.mutations.preview_timeout_ms).toBe(30000)
+		expect(cfg.mutations.execute_timeout_ms).toBe(300000)
+		expect(find(diags, "mutations.preview_timeout_ms") ~= nil).toBe(true)
+		expect(find(diags, "mutations.execute_timeout_ms") ~= nil).toBe(true)
 	end)
 end)
 

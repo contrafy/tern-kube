@@ -1,0 +1,45 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: klm-web
+  namespace: tern-test-mutate
+  labels:
+    app: klm-web
+    app.kubernetes.io/part-of: kube-lens-mutate-it
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: klm-web
+  template:
+    metadata:
+      labels:
+        app: klm-web
+    spec:
+      terminationGracePeriodSeconds: 1
+      containers:
+        - name: web
+          image: registry.k8s.io/pause:3.10
+          imagePullPolicy: IfNotPresent
+          resources:
+            requests:
+              cpu: 5m
+              memory: 8Mi
+            limits:
+              cpu: 50m
+              memory: 32Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: klm-web
+  namespace: tern-test-mutate
+  labels:
+    app.kubernetes.io/part-of: kube-lens-mutate-it
+spec:
+  selector:
+    app: klm-web
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080

@@ -48,11 +48,29 @@ context came from, and only refreshes when you ask.
 | `d` `y` `L` `R` | describe, object, last logs, relations |
 | `s` `l` `shift+f` | shell, follow logs, port-forward in a split |
 | `c` `n` `:` | context, namespace, kind |
+| `ctrl+d` `ctrl+r` `shift+s` | delete, rollout restart, scale |
 | `r` `Y` `?` | refresh, copy the command, help |
 
 Shell, logs and port-forward are also chips in the lens inspector (two
 clicks from any row). They open beside the pane by default; see
 [configuration](docs/configuration.md).
+
+## Changes
+
+Delete, restart, scale, debug, CronJob run-now (Explore keys or inspector
+chips) and **Kube Lens: Apply file or directory** open an approval block
+first: server dry run, `kubectl diff` per resource, then a confirmation
+scaled to the risk. Deletes and other broad changes need the target typed.
+Nothing runs if the preview fails or the inputs or target change before
+you confirm.
+
+![Approving an apply with per-resource diffs](docs/screenshots/m3-diff-expanded-dark-wide.png)
+
+Typed commands can get the same preview with the opt-in shell guard for
+zsh, bash and fish: `kubectl apply`, `delete`, `scale` and
+`rollout restart` wait for your approval in Tern; everything else runs
+untouched. It is a seatbelt, not a policy: `command kubectl` and scripts
+bypass it. Setup: [shell/README.md](shell/README.md).
 
 ## Install
 
@@ -78,7 +96,7 @@ To remove: `tern plugin unlink kube-lens`.
 - [x] Generic lens: tables, describe, top, YAML/JSON, mutation results
 - [x] Explore: live view with relations, keyboard navigation, and one-key
       shell, logs and port-forward in a split
-- [ ] Mutations with server dry-run, per-resource diff and risk-tiered
+- [x] Mutations with server dry-run, per-resource diff and risk-tiered
       confirmation; opt-in zsh/bash/fish guard for typed commands
 - [ ] GitOps: open and diff a resource's manifest, drift reports
       (YAML, Kustomize, Helm, Argo CD/Flux aware), export, CI drift check

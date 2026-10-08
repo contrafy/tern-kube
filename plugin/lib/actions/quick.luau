@@ -41,7 +41,7 @@ export type Info = {
 	selector: string?,
 	-- Declared ports; the first one is forwarded.
 	ports: { number }?,
-	-- The M3 confirm tier exists; until then mutating actions are not offered.
+	-- Offer the mutating actions (config mutations.enabled); they go through the approve block.
 	allowMutations: boolean?,
 }
 
@@ -339,9 +339,9 @@ local function validate(action: string, f: { [string]: string }, group: string?)
 	elseif action == "port-forward" and f["local"] and f.port == nil then
 		return nil, "a local port needs a port"
 	elseif action == "cronjob-run" then
-		if f.suffix == nil then
-			return nil, "cronjob-run needs a suffix"
-		elseif #f.name + #"-manual-" + #f.suffix > 63 then
+		-- Chips carry no suffix; the approve block picks one before the
+		-- preview, and the confirmed link (and so the split) carries it.
+		if f.suffix and #f.name + #"-manual-" + #f.suffix > 63 then
 			return nil, "job name would exceed 63 characters"
 		end
 	end
@@ -528,6 +528,9 @@ function M.command(action: string, target: Target, ref: Ref, opts: Opts?, settin
 	end
 	local r = req.ref
 	o = req.opts
+	if action == "cronjob-run" and o.suffix == nil then
+		return nil, "cronjob-run needs a job name suffix"
+	end
 	local program = if target.program and target.program ~= "" then target.program else "kubectl"
 	local conn = connection(req.target)
 	local ns: { string } = if r.namespace then { "-n", r.namespace } else {}
@@ -667,7 +670,7 @@ end
 export type Chip = { label: string, url: string, title: string }
 
 -- Pointer chips for a resource: one per available action whose link
--- validates. Mutating actions follow available() (hidden until M3).
+-- validates. Mutating actions follow available() (info.allowMutations).
 function M.chipsFor(kind: string, ref: Ref, target: Target, info: Info?, settings: Settings?): { Chip }
 	local i: Info = info or {}
 	local opts: Opts = {
@@ -691,7 +694,15 @@ function M.chipsFor(kind: string, ref: Ref, target: Target, info: Info?, setting
 			table.insert(out, {
 				label = a.label,
 				url = url,
-				title = "Opens a new split running: " .. Command.format(launch.argv),
+				title = (if a.mutates
+					then "Previews in the approve block, then opens a new split running: "
+					else "Opens a new split running: ") .. Command.format(launch.argv),
+			})
+		elseif url and a.mutates then
+			table.insert(out, {
+				label = a.label,
+				url = url,
+				title = "Previews in the approve block, then opens a new split running it",
 			})
 		end
 	end

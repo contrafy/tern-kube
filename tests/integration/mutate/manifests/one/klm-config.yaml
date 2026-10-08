@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: klm-config
+  namespace: tern-test-mutate
+  labels:
+    app.kubernetes.io/part-of: kube-lens-mutate-it
+data:
+  LOG_LEVEL: info

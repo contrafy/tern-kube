@@ -2,13 +2,13 @@
 local Capture = require("./lib/lens/capture")
 local Command = require("./lib/kubectl/command")
 local ConfigHost = require("./config_host")
+local Link = require("./lib/mutation/link")
 local Quick = require("./lib/actions/quick")
 local Redact = require("./lib/model/redact")
 local Values = require("./lib/model/values")
 local View = require("./lib/lens/view")
 local Viewstate = require("./lib/lens/viewstate")
 
-local ui = tern.ui
 local json = tern.json
 local log = tern.log
 
@@ -22,15 +22,6 @@ pcall(tern.fs.mkdir, SPOOL)
 
 local function ms(t0: number): number
 	return math.floor((os.clock() - t0) * 100000) / 100
-end
-
-local function with_props(node: Node, props: { [string]: any }): Node
-	local p: { [string]: any } = node.p or {}
-	for k, v in props do
-		p[k] = v
-	end
-	node.p = p
-	return node
 end
 
 -- Lens `kubectl` ---------------------------------------------------------------
@@ -52,6 +43,7 @@ type LensState = {
 	maxLines: number,
 	maxBytes: number,
 	pageSize: number,
+	mutations: boolean,
 	policy: Redact.Policy,
 }
 
@@ -151,6 +143,17 @@ local function quickAction(url: string, cx: EffectCx)
 	cx:open(url)
 end
 
+-- Delete / Restart / Scale chips carry a kube-lens://mutate link; the window
+-- opens the approve block for it, which previews before anything runs.
+local function mutateAction(url: string, cx: EffectCx)
+	local req, err = Link.decode(url)
+	if req == nil then
+		log.warn("kube-lens lens mutation ignored", url, tostring(err))
+		return
+	end
+	cx:open(url)
+end
+
 tern.lens.define("kubectl", {
 	open = function(run: LensRun, _cx: EffectCx): LensState
 		local cfg = ConfigHost.current()
@@ -167,6 +170,7 @@ tern.lens.define("kubectl", {
 			maxLines = cfg.general.max_rows,
 			maxBytes = cfg.general.max_capture_bytes,
 			pageSize = cfg.general.max_rendered_rows,
+			mutations = cfg.mutations.enabled,
 			policy = Redact.fromConfig(cfg),
 		}
 	end,
@@ -195,7 +199,7 @@ tern.lens.define("kubectl", {
 			if capture == nil then
 				return nil
 			end
-			return View.render(capture, state.view, { pageSize = state.pageSize }) :: any
+			return View.render(capture, state.view, { pageSize = state.pageSize, mutations = state.mutations }) :: any
 		end)
 		if not ok then
 			warnOnce(state, "view", node)
@@ -225,6 +229,8 @@ tern.lens.define("kubectl", {
 				exploreAction(state, value, cx)
 			elseif ev.act == "act" then
 				quickAction(value, cx)
+			elseif ev.act == "mutate" then
+				mutateAction(value, cx)
 			end
 		end)
 		if not ok then
@@ -234,89 +240,7 @@ tern.lens.define("kubectl", {
 })
 
 require("./explore_host").register()
-
--- Block `approve` ------------------------------------------------------------
-
-type ApproveState = { path: string, req: any, err: string?, done: boolean }
-
-local function decide(state: ApproveState, decision: string, cx: BlockCx)
-	if state.done then
-		return
-	end
-	local resp = (string.gsub(state.path, "req%-([%w%-]+)%.json$", "resp-%1.json"))
-	local nonce = if type(state.req) == "table" then state.req.nonce else nil
-	local ok, err = pcall(function()
-		tern.fs.write(resp, json.encode({ nonce = nonce, decision = decision, at = os.time() }))
-	end)
-	if not ok then
-		log.error("kube-lens approve: cannot write response", resp, tostring(err))
-	end
-	state.done = true
-	-- `tern open --wait` ignores the block's exit code and a non-zero exit
-	-- leaves an "exited" sheet that blocks the wait until closed by hand; the
-	-- decision travels in the response file only.
-	cx:exit(0)
-end
-
-tern.block.define("approve", {
-	init = function(_cx: BlockCx, block_args: { string }, _saved: any): ApproveState
-		local path = block_args[1] or ""
-		local state: ApproveState = { path = path, req = nil, err = nil, done = false }
-		local ok, text = pcall(tern.fs.read, path, 65536)
-		if not ok then
-			state.err = tostring(text)
-			return state
-		end
-		local okj, doc = pcall(json.decode, text)
-		if okj then
-			state.req = doc
-		else
-			state.err = "unreadable request"
-		end
-		return state
-	end,
-	view = function(state: ApproveState, _cx: BlockCx): BlockView
-		local argv = if type(state.req) == "table" and type(state.req.argv) == "table"
-			then table.concat(state.req.argv, " ")
-			else "?"
-		return {
-			main = ui.col({
-				with_props(ui.text({ ui.span("kube-lens guard ", "strong"), ui.span(argv, "mono") }), { key = "head" }),
-				with_props(ui.text(ui.span(state.err or state.path, "muted")), { key = "path" }),
-				with_props(
-					ui.row({
-						ui.el("button", {
-							key = "approve",
-							class = "kl-btn",
-							text = "Approve",
-							actions = { click = "decide=approve" },
-						}),
-						ui.el(
-							"button",
-							{ key = "deny", class = "kl-btn", text = "Deny", actions = { click = "decide=deny" } }
-						),
-					}),
-					{ key = "buttons" }
-				),
-			}),
-		}
-	end,
-	title = function(_state: ApproveState): string?
-		return "Kube Approve"
-	end,
-	key = function(state: ApproveState, key: Key, cx: BlockCx): boolean?
-		if key.name == "escape" then
-			decide(state, "deny", cx)
-			return true
-		end
-		return false
-	end,
-	event = function(state: ApproveState, ev: UiEvent, cx: BlockCx)
-		if ev.ev == "action" and ev.act == "decide" and state.err == nil then
-			decide(state, if ev.value == "approve" then "approve" else "deny", cx)
-		end
-	end,
-})
+require("./mutate_host").register()
 
 -- Hooks ----------------------------------------------------------------------
 

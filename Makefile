@@ -58,3 +58,14 @@ check: fmt-check lint typecheck test-runner-selfcheck test bench
 .PHONY: test-shell-aliases
 test-shell-aliases:
 	@sh tests/shell/aliases/run.sh
+
+.PHONY: guard-flags guard-flags-check test-shell-guard
+# Regenerates the flag table embedded in shell/kube-lens-guard.
+guard-flags:
+	@LUAU=$(LUAU) sh scripts/guard/gen-flags
+
+guard-flags-check:
+	@LUAU=$(LUAU) sh scripts/guard/gen-flags --check
+
+test-shell-guard: guard-flags-check
+	@LUAU=$(LUAU) sh tests/shell/guard/run.sh

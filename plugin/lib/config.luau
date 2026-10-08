@@ -32,6 +32,8 @@ export type Config = {
 		interactive_guard: boolean,
 		require_target_confirmation: boolean,
 		allow_failed_preview_override: boolean,
+		preview_timeout_ms: number,
+		execute_timeout_ms: number,
 	},
 	security: {
 		show_secret_values: boolean,
@@ -97,6 +99,8 @@ function M.defaults(): Config
 			interactive_guard = false,
 			require_target_confirmation = true,
 			allow_failed_preview_override = false,
+			preview_timeout_ms = 30000,
+			execute_timeout_ms = 300000,
 		},
 		security = {
 			show_secret_values = false,
@@ -397,6 +401,8 @@ local SECTIONS: { { key: string, fields: { Field } } } = {
 			{ key = "interactive_guard", check = bool() },
 			{ key = "require_target_confirmation", check = bool() },
 			{ key = "allow_failed_preview_override", check = bool() },
+			{ key = "preview_timeout_ms", check = int(1000, 600000) },
+			{ key = "execute_timeout_ms", check = int(1000, 3600000) },
 		},
 	},
 	{

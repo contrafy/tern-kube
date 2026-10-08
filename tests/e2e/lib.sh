@@ -287,3 +287,93 @@ focused_has() {
 expect_grid() {
 	ctl expect "\"$1\"" | grep -q '"ok":true' || fail "\"$1\" never appeared in a terminal"
 }
+
+# --- Mutations (M3) -------------------------------------------------------------
+# Mutating scenarios touch only tern-test-mutate (and Jobs they create in
+# tern-test-batch), create their own kl-e2e-* objects and delete them again.
+
+AP="[data-surface='plugin.kube-lens.approve']"
+MNS=tern-test-mutate
+
+# kc ARGS...: the real kubectl, pinned to the sandbox kubeconfig and kind.
+kc() {
+	KUBECONFIG=$E2E_REPO/.sandbox/kubeconfig "${E2E_REAL_KUBECTL:-kubectl}" --context kind-kube-lens-dev "$@"
+}
+
+# jp NS KIND/NAME JSONPATH: one field of a live object ("" when absent).
+jp() {
+	kc -n "$1" get "$2" -o jsonpath="$3" 2>/dev/null || true
+}
+
+atext() {
+	alltext "$AP *" | tr '\n' ' '
+}
+
+a_has() {
+	case $(atext) in *"$1"*) true ;; *) false ;; esac
+}
+
+# await TEXT: wait until the approve block shows TEXT.
+await() {
+	E2E_WAIT=${E2E_WAIT:-20} wait_for "the approve block to show \"$1\"" a_has "$1"
+}
+
+approve_open() {
+	E2E_WAIT=15 wait_for "the approve block" has "$AP"
+}
+
+approve_closed() {
+	E2E_WAIT=10 wait_for "the approve block to close" lacks "$AP"
+}
+
+# Phases by their dock hints: input, ready (simple or typed), done.
+a_input() { await "enter preview"; }
+a_ready() { await "tab next diff"; }
+a_done() { await "r requery"; }
+
+# absent NS KIND/NAME: the object does not exist (fails on API errors).
+absent() {
+	out=$(kc -n "$1" get "$2" -o name --ignore-not-found) && [ -z "$out" ]
+}
+
+# e2e_manifest REPLICAS LEVEL: a disposable Deployment (pause image) and
+# ConfigMap as YAML.
+e2e_manifest() {
+	cat <<EOF
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kl-e2e-web
+  namespace: $MNS
+  labels: {app: kl-e2e-web}
+spec:
+  replicas: $1
+  selector: {matchLabels: {app: kl-e2e-web}}
+  template:
+    metadata: {labels: {app: kl-e2e-web}}
+    spec:
+      terminationGracePeriodSeconds: 1
+      containers:
+        - name: web
+          image: registry.k8s.io/pause:3.10
+          imagePullPolicy: IfNotPresent
+          resources: {limits: {cpu: 50m, memory: 32Mi}}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kl-e2e-cm
+  namespace: $MNS
+data: {LEVEL: $2}
+EOF
+}
+
+e2e_objects() {
+	e2e_manifest 1 info | kc apply -f - >/dev/null
+	kc -n "$MNS" rollout status deploy/kl-e2e-web --timeout=60s >/dev/null || fail "kl-e2e-web not ready"
+}
+
+e2e_objects_delete() {
+	kc -n "$MNS" delete deploy/kl-e2e-web configmap/kl-e2e-cm configmap/kl-e2e-applied \
+		--ignore-not-found --wait=true >/dev/null 2>&1
+}

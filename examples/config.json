@@ -19,7 +19,9 @@
     "enabled": true,
     "interactive_guard": false,
     "require_target_confirmation": true,
-    "allow_failed_preview_override": false
+    "allow_failed_preview_override": false,
+    "preview_timeout_ms": 30000,
+    "execute_timeout_ms": 300000
   },
   "security": {
     "show_secret_values": false,

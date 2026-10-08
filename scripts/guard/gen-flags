@@ -1,0 +1,61 @@
+#!/bin/sh
+# Regenerates (default) or checks (--check) the flag-arity table embedded in
+# shell/kube-lens-guard from plugin/lib/kubectl/flags.luau, so the guard's
+# verb scan cannot drift from the plugin's argv parser.
+#
+#   scripts/guard/gen-flags [--check]
+
+set -u
+
+repo=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
+luau=${LUAU:-$repo/.tools/bin/luau}
+case $luau in
+/*) ;;
+*) luau=$PWD/$luau ;;
+esac
+guard=$repo/shell/kube-lens-guard
+
+case ${1-} in
+'' | --check) ;;
+*)
+	echo "usage: scripts/guard/gen-flags [--check]" >&2
+	exit 2
+	;;
+esac
+
+[ -x "$luau" ] || {
+	echo "gen-flags: missing $luau: run 'make bootstrap'" >&2
+	exit 2
+}
+
+tmp=$(mktemp "${TMPDIR:-/tmp}/klg-flags.XXXXXX") || exit 2
+trap 'rm -f "$tmp" "$tmp.new"' EXIT
+
+(cd "$repo/scripts/guard" && "$luau" gen-flags.luau) >"$tmp" || {
+	echo "gen-flags: generator failed" >&2
+	exit 2
+}
+
+[ "$(grep -c '^# BEGIN generated flags' "$guard")" = 1 ] && [ "$(grep -c '^# END generated flags$' "$guard")" = 1 ] || {
+	echo "gen-flags: $guard must contain exactly one generated-flags block" >&2
+	exit 2
+}
+
+awk -v gen="$tmp" '
+	/^# BEGIN generated flags/ { while ((getline l < gen) > 0) print l; skip = 1; next }
+	/^# END generated flags$/ { skip = 0; next }
+	!skip { print }
+' "$guard" >"$tmp.new" || exit 2
+
+if [ "${1-}" = --check ]; then
+	if cmp -s "$guard" "$tmp.new"; then
+		exit 0
+	fi
+	echo "gen-flags: shell/kube-lens-guard flag table is stale; run 'make guard-flags'" >&2
+	diff -u "$guard" "$tmp.new" >&2
+	exit 1
+fi
+
+if ! cmp -s "$guard" "$tmp.new"; then
+	cat "$tmp.new" >"$guard"
+fi

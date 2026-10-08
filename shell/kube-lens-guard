@@ -1,0 +1,675 @@
+#!/bin/sh
+# kube-lens-guard: approval gate for mutating kubectl commands in Tern.
+#
+#   kube-lens-guard kubectl [ARGS...]   run kubectl, asking Tern for approval
+#                                       first when the verb mutates
+#   kube-lens-guard status              print what the guard would do here
+#
+# Normally reached through the `kubectl` function that shell/kube-lens.zsh,
+# shell/kube-lens.bash or shell/kube-lens.fish define. The request/response
+# protocol is specified in shell/PROTOCOL.md; keep both in sync.
+
+# BEGIN generated flags (scripts/guard/gen-flags from plugin/lib/kubectl/flags.luau, kubectl v1.34.1; do not edit)
+klg_g_lb='|disable-compression|help|insecure-skip-tls-verify|match-server-version|warnings-as-errors|'
+klg_g_lv='|as|as-group|as-uid|cache-dir|certificate-authority|client-certificate|client-key|cluster|context|kubeconfig|kuberc|log-flush-frequency|namespace|password|profile|profile-output|request-timeout|server|tls-server-name|token|user|username|v|vmodule|'
+klg_g_sb='|h|'
+klg_g_sv='|n|s|v|'
+klg_opt='|cascade|dry-run|validate|'
+klg_apply_lb='|all|allow-missing-template-keys|force|force-conflicts|openapi-patch|overwrite|prune|recursive|server-side|show-managed-fields|wait|'
+klg_apply_lv='|cascade|dry-run|field-manager|filename|grace-period|kustomize|output|prune-allowlist|selector|subresource|template|timeout|validate|'
+klg_apply_sb='|R|'
+klg_apply_sv='|f|k|l|o|'
+klg_delete_lb='|all|all-namespaces|force|ignore-not-found|interactive|now|recursive|wait|'
+klg_delete_lv='|cascade|dry-run|field-selector|filename|grace-period|kustomize|output|raw|selector|timeout|'
+klg_delete_sb='|A|R|i|'
+klg_delete_sv='|f|k|l|o|'
+klg_scale_lb='|all|allow-missing-template-keys|recursive|show-managed-fields|'
+klg_scale_lv='|current-replicas|dry-run|filename|kustomize|output|replicas|resource-version|selector|template|timeout|'
+klg_scale_sb='|R|'
+klg_scale_sv='|f|k|l|o|'
+klg_restart_lb='|allow-missing-template-keys|recursive|show-managed-fields|'
+klg_restart_lv='|field-manager|filename|kustomize|output|selector|template|'
+klg_restart_sb='|R|'
+klg_restart_sv='|f|k|l|o|'
+# END generated flags
+
+klg_err() {
+	printf 'kube-lens guard: %s\n' "$*" >&2
+}
+
+klg_cleanup() {
+	[ -n "${klg_work-}" ] && rm -rf "$klg_work"
+	[ -n "${klg_req-}" ] && rm -f "$klg_req"
+	[ -n "${klg_resp-}" ] && rm -f "$klg_resp"
+	return 0
+}
+
+# Every refusal ends here: nothing has been executed, nothing will be.
+klg_refuse() {
+	klg_err "$@"
+	klg_err "nothing was executed. To run it anyway, without preview or confirmation, use: command kubectl ..."
+	klg_cleanup
+	exit 1
+}
+
+klg_in() {
+	case $1 in *"|$2|"*) return 0 ;; esac
+	return 1
+}
+
+klg_long_arity() {
+	if klg_in "$klg_g_lb" "$1" || klg_in "$klg_v_lb" "$1"; then
+		klg_a=bool
+	elif klg_in "$klg_g_lv" "$1"; then
+		klg_a=value
+	elif klg_in "$klg_v_lv" "$1"; then
+		if klg_in "$klg_opt" "$1"; then klg_a=optional; else klg_a=value; fi
+	else
+		klg_a=unknown
+	fi
+}
+
+klg_short_arity() {
+	if klg_in "$klg_g_sb" "$1" || klg_in "$klg_v_sb" "$1"; then
+		klg_a=bool
+	elif klg_in "$klg_g_sv" "$1" || klg_in "$klg_v_sv" "$1"; then
+		klg_a=value
+	else
+		klg_a=unknown
+	fi
+	case $1 in
+	f) klg_n=filename ;;
+	k) klg_n=kustomize ;;
+	R) klg_n=recursive ;;
+	n) klg_n=namespace ;;
+	*) klg_n=$1 ;;
+	esac
+}
+
+# Tokenises args the way pflag does (flags anywhere, shorthand clusters, `--`
+# ends flags) against the global set plus the current verb set, calling
+# klg_on_flag NAME VALUE, klg_on_unknown RAW and klg_on_pos WORD. A handler
+# stops the walk by setting klg_stop=1.
+klg_walk() {
+	klg_stop=0
+	while [ $# -gt 0 ] && [ "$klg_stop" = 0 ]; do
+		klg_t=$1
+		shift
+		case $klg_t in
+		--)
+			while [ $# -gt 0 ] && [ "$klg_stop" = 0 ]; do
+				klg_on_pos "$1"
+				shift
+			done
+			;;
+		--*=*)
+			klg_b=${klg_t#--}
+			klg_long_arity "${klg_b%%=*}"
+			if [ "$klg_a" = unknown ]; then
+				klg_on_unknown "$klg_t"
+			else
+				klg_on_flag "${klg_b%%=*}" "${klg_b#*=}"
+			fi
+			;;
+		--?*)
+			klg_b=${klg_t#--}
+			klg_long_arity "$klg_b"
+			case $klg_a in
+			bool) klg_on_flag "$klg_b" true ;;
+			optional) klg_on_flag "$klg_b" "" ;;
+			value)
+				if [ $# -gt 0 ]; then
+					klg_on_flag "$klg_b" "$1"
+					shift
+				else
+					klg_on_unknown "$klg_t"
+				fi
+				;;
+			*) klg_on_unknown "$klg_t" ;;
+			esac
+			;;
+		-?*)
+			klg_r=${klg_t#-}
+			while [ -n "$klg_r" ]; do
+				klg_c=${klg_r%"${klg_r#?}"}
+				klg_r=${klg_r#?}
+				klg_short_arity "$klg_c"
+				if [ "$klg_a" = unknown ]; then
+					klg_on_unknown "-$klg_c"
+					break
+				fi
+				case $klg_r in
+				=*)
+					klg_on_flag "$klg_n" "${klg_r#=}"
+					break
+					;;
+				esac
+				if [ "$klg_a" = bool ]; then
+					klg_on_flag "$klg_n" true
+				elif [ -n "$klg_r" ]; then
+					klg_on_flag "$klg_n" "$klg_r"
+					break
+				elif [ $# -gt 0 ]; then
+					klg_on_flag "$klg_n" "$1"
+					shift
+				else
+					klg_on_unknown "-$klg_c"
+				fi
+			done
+			;;
+		*) klg_on_pos "$klg_t" ;;
+		esac
+	done
+}
+
+# Phase 1: find the verb with the global flag set only (as cobra does while
+# it searches for the subcommand).
+klg_on_flag() { :; }
+klg_on_unknown() {
+	[ -z "$klg_sub" ] && [ -z "$klg_unknown" ] && klg_unknown=$1
+	return 0
+}
+klg_on_pos() {
+	if [ -z "$klg_verb" ]; then
+		klg_verb=$1
+		[ "$1" = rollout ] || klg_stop=1
+	else
+		klg_sub=$1
+		klg_stop=1
+	fi
+}
+
+klg_find_verb() {
+	klg_verb=
+	klg_sub=
+	klg_unknown=
+	klg_v_lb='|'
+	klg_v_lv='|'
+	klg_v_sb='|'
+	klg_v_sv='|'
+	klg_walk "$@"
+	case $klg_verb in
+	apply | delete | scale) klg_guarded=$klg_verb ;;
+	rollout) [ "$klg_sub" = restart ] && klg_guarded=restart ;;
+	esac
+	[ -n "$klg_guarded" ] || [ -z "$klg_unknown" ] && return 0
+	# An unknown flag before the verb may have swallowed it: fail closed when
+	# a mutating verb could be the real one.
+	for klg_t in "$@"; do
+		case $klg_t in
+		apply | delete | scale | rollout)
+			klg_err "cannot tell which kubectl command this is: unknown flag $klg_unknown before the command name may take '$klg_t' or another word as its value."
+			klg_refuse "move the flag after the command name (kubectl $klg_t ... $klg_unknown) and retry."
+			;;
+		esac
+	done
+	return 0
+}
+
+# Phase 2: the guarded verb is known; collect what the request needs.
+klg_add_raw() {
+	case $2 in
+	*'
+'*) klg_refuse "a -$1 value contains a newline; the guard cannot fingerprint it." ;;
+	esac
+	klg_raw="$klg_raw$1 $2
+"
+}
+
+klg_on_flag2() {
+	case $1 in
+	context) klg_flag_ctx=$2 ;;
+	namespace) klg_ns=$2 ;;
+	kubeconfig) klg_flag_kc=$2 ;;
+	dry-run) klg_dry=$2 ;;
+	recursive)
+		case $2 in
+		true | 1 | t | T | TRUE | True) klg_rec=1 ;;
+		*) klg_rec= ;;
+		esac
+		;;
+	filename)
+		case $2 in
+		*'"'*) klg_refuse "-f values containing a double quote are not supported by the guard." ;;
+		esac
+		klg_rest=$2,
+		while [ -n "$klg_rest" ]; do
+			klg_add_raw f "${klg_rest%%,*}"
+			klg_rest=${klg_rest#*,}
+		done
+		;;
+	kustomize) klg_add_raw k "$2" ;;
+	esac
+}
+
+klg_scan_guarded() {
+	eval "klg_v_lb=\$klg_${klg_guarded}_lb klg_v_lv=\$klg_${klg_guarded}_lv klg_v_sb=\$klg_${klg_guarded}_sb klg_v_sv=\$klg_${klg_guarded}_sv"
+	klg_flag_ctx=
+	klg_flag_kc=
+	klg_ns=
+	klg_ns_set=
+	klg_dry=none
+	klg_rec=
+	klg_raw=
+	klg_unknown2=
+	klg_on_flag() {
+		[ "$1" = namespace ] && klg_ns_set=1
+		klg_on_flag2 "$@"
+	}
+	klg_on_unknown() { klg_unknown2=$1; }
+	klg_on_pos() { :; }
+	klg_walk "$@"
+}
+
+klg_sha_tool() {
+	if command -v sha256sum >/dev/null 2>&1; then
+		klg_sha=sha256sum
+	elif command -v shasum >/dev/null 2>&1; then
+		klg_sha='shasum -a 256'
+	else
+		klg_refuse "neither sha256sum nor shasum is available to fingerprint the request."
+	fi
+}
+
+klg_len() {
+	klg_l=$(printf '%s' "$1" | wc -c)
+	klg_l=$((klg_l + 0))
+}
+
+klg_canon_field() {
+	klg_len "$2"
+	printf '%s %s:%s\n' "$1" "$klg_l" "$2"
+}
+
+klg_resolve_context() {
+	if [ -n "$klg_flag_ctx" ]; then
+		klg_ctx=$klg_flag_ctx
+		klg_ctx_src=flag
+		return 0
+	fi
+	if [ -n "$klg_flag_kc" ]; then
+		klg_ctx=$(command kubectl --kubeconfig "$klg_flag_kc" config current-context </dev/null) || klg_ctx=
+	else
+		klg_ctx=$(command kubectl config current-context </dev/null) || klg_ctx=
+	fi
+	[ -n "$klg_ctx" ] || klg_refuse "could not resolve the current kubectl context ('kubectl config current-context' failed); pass --context explicitly."
+	klg_ctx_src=current-context
+}
+
+# Writes the sorted, de-duplicated absolute input paths to $klg_work/paths.
+klg_list_inputs() {
+	: >"$klg_work/paths.raw"
+	klg_ifs=$IFS
+	IFS='
+'
+	set -f
+	for klg_line in $klg_raw; do
+		IFS=$klg_ifs
+		set +f
+		klg_kind=${klg_line%% *}
+		klg_p=${klg_line#* }
+		case $klg_p in
+		-) klg_refuse "reading manifests from stdin (-f -) cannot be previewed; save them to a file and pass -f FILE." ;;
+		'') klg_refuse "empty -f/-k value." ;;
+		http://* | https://*) klg_refuse "remote manifests ($klg_p) cannot be fingerprinted; download them and pass -f FILE." ;;
+		/*) ;;
+		*) klg_p=$klg_cwd/$klg_p ;;
+		esac
+		if [ -d "$klg_p" ]; then
+			while :; do
+				case $klg_p in
+				/) break ;;
+				*/) klg_p=${klg_p%/} ;;
+				*) break ;;
+				esac
+			done
+			if [ -n "$(cd -- "$klg_p" && find . -name '*
+*' 2>/dev/null)" ]; then
+				klg_refuse "a file name under $klg_p contains a newline; the guard cannot fingerprint it."
+			fi
+			if [ "$klg_kind" = k ]; then
+				(cd -- "$klg_p" && find . ! -type d) >"$klg_work/found" ||
+					klg_refuse "cannot list $klg_p."
+			elif [ -n "$klg_rec" ]; then
+				(cd -- "$klg_p" && find . ! -type d \( -name '*.json' -o -name '*.yaml' -o -name '*.yml' \)) >"$klg_work/found" ||
+					klg_refuse "cannot list $klg_p."
+			else
+				(cd -- "$klg_p" && find . -mindepth 1 -maxdepth 1 ! -type d \( -name '*.json' -o -name '*.yaml' -o -name '*.yml' \)) >"$klg_work/found" ||
+					klg_refuse "cannot list $klg_p."
+			fi
+			[ "$klg_p" = / ] && klg_p=
+			while IFS= read -r klg_f; do
+				printf '%s/%s\n' "$klg_p" "${klg_f#./}"
+			done <"$klg_work/found" >>"$klg_work/paths.raw"
+		elif [ "$klg_kind" = k ]; then
+			klg_refuse "-k needs a directory: $klg_p"
+		elif [ -e "$klg_p" ]; then
+			[ -f "$klg_p" ] || klg_refuse "$klg_p is not a regular file (stdin, devices and pipes cannot be previewed)."
+			printf '%s\n' "$klg_p" >>"$klg_work/paths.raw"
+		else
+			klg_refuse "no such file or directory: $klg_p"
+		fi
+		IFS='
+'
+		set -f
+	done
+	IFS=$klg_ifs
+	set +f
+	LC_ALL=C sort -u "$klg_work/paths.raw" >"$klg_work/paths"
+}
+
+# Fresh fingerprint of the invocation: sets klg_ctx, klg_ctx_src, klg_fp and
+# writes "size sha256 path" lines to $klg_work/files.
+klg_compute() {
+	klg_resolve_context
+	klg_cwd=$(pwd -P) || klg_refuse "cannot determine the working directory."
+	klg_list_inputs
+	: >"$klg_work/files"
+	while IFS= read -r klg_f; do
+		[ -f "$klg_f" ] || klg_refuse "$klg_f is not a regular file (stdin, devices and pipes cannot be previewed)."
+		klg_size=$(wc -c <"$klg_f") || klg_refuse "cannot read $klg_f."
+		klg_h=$($klg_sha <"$klg_f") || klg_refuse "cannot hash $klg_f."
+		klg_h=${klg_h%%[!0-9a-f]*}
+		[ ${#klg_h} = 64 ] || klg_refuse "unexpected digest for $klg_f."
+		printf '%s %s %s\n' "$((klg_size + 0))" "$klg_h" "$klg_f" >>"$klg_work/files"
+	done <"$klg_work/paths"
+	{
+		printf 'kube-lens/fp/v1\n'
+		printf 'argv %s\n' "$#"
+		for klg_t in "$@"; do
+			klg_len "$klg_t"
+			printf '%s:%s\n' "$klg_l" "$klg_t"
+		done
+		klg_canon_field context "$klg_ctx"
+		if [ -n "${KUBECONFIG-}" ]; then
+			klg_canon_field kubeconfig "$KUBECONFIG"
+		else
+			printf 'kubeconfig -\n'
+		fi
+		klg_canon_field namespace "$klg_ns"
+		klg_canon_field cwd "$klg_cwd"
+		printf 'files %s\n' "$(wc -l <"$klg_work/files" | tr -d ' ')"
+		while IFS= read -r klg_line; do
+			klg_file_line
+			klg_len "$klg_f"
+			printf '%s:%s %s %s\n' "$klg_l" "$klg_f" "$klg_size" "$klg_h"
+		done <"$klg_work/files"
+	} >"$klg_work/canon"
+	klg_fp=$($klg_sha <"$klg_work/canon") || klg_refuse "cannot hash the request."
+	klg_fp=${klg_fp%%[!0-9a-f]*}
+}
+
+# Splits a "size sha256 path" line of $klg_work/files (paths may hold spaces).
+klg_file_line() {
+	klg_size=${klg_line%% *}
+	klg_f=${klg_line#* }
+	klg_h=${klg_f%% *}
+	klg_f=${klg_f#* }
+}
+
+# JSON string literal of $1: escapes quote, backslash and control bytes;
+# other bytes (UTF-8 included) pass through unchanged.
+klg_json() {
+	klg_fmt=$(printf '%s' "$1" | od -An -v -tu1 | awk '
+		BEGIN { for (i = 0; i < 32; i++) esc[i] = sprintf("\\\\u%04x", i)
+			esc[8] = "\\\\b"; esc[9] = "\\\\t"; esc[10] = "\\\\n"; esc[12] = "\\\\f"; esc[13] = "\\\\r" }
+		{ for (i = 1; i <= NF; i++) {
+			d = $i + 0
+			if (d in esc) s = esc[d]
+			else if (d == 34) s = "\\\\\""
+			else if (d == 92) s = "\\\\\\\\"
+			else if (d == 37) s = "%%"
+			else s = sprintf("\\%03o", d)
+			printf "%s", s
+		} }')
+	printf '"'
+	# shellcheck disable=SC2059
+	printf "$klg_fmt"
+	printf '"'
+}
+
+klg_write_request() {
+	{
+		printf '{"version":1,"nonce":"%s","argv":[' "$klg_nonce"
+		klg_sep=
+		for klg_t in "$@"; do
+			printf '%s' "$klg_sep"
+			klg_json "$klg_t"
+			klg_sep=,
+		done
+		printf '],"program":'
+		klg_json "$klg_program"
+		printf ',"cwd":'
+		klg_json "$klg_cwd"
+		printf ',"kubeconfig":'
+		if [ -n "${KUBECONFIG-}" ]; then klg_json "$KUBECONFIG"; else printf null; fi
+		printf ',"context":'
+		klg_json "$klg_ctx"
+		printf ',"context_source":"%s","namespace":' "$klg_ctx_src"
+		if [ -n "$klg_ns_set" ]; then klg_json "$klg_ns"; else printf null; fi
+		printf ',"pane":'
+		klg_json "$TERN_PANE"
+		printf ',"files":['
+		klg_sep=
+		while IFS= read -r klg_line; do
+			klg_file_line
+			printf '%s{"path":' "$klg_sep"
+			klg_json "$klg_f"
+			printf ',"size":%s,"sha256":"%s"}' "$klg_size" "$klg_h"
+			klg_sep=,
+		done <"$klg_work/files"
+		printf '],"fingerprint":"%s","created_at":%s,"timeout_s":%s}\n' "$klg_fp" "$klg_created" "$klg_timeout"
+	} >"$klg_req"
+}
+
+klg_mark_cancel() {
+	(
+		set -C
+		printf 'cancelled_at=%s\n' "$(date +%s)" >"$klg_spool/cancel-$klg_nonce"
+	) 2>/dev/null
+	return 0
+}
+
+klg_stop_waiting() {
+	[ -n "${klg_wpid-}" ] && kill -TERM "$klg_wpid" 2>/dev/null
+	[ -n "${klg_tpid-}" ] && kill -TERM "$klg_tpid" 2>/dev/null
+	klg_wpid=
+	klg_tpid=
+	return 0
+}
+
+klg_on_signal() {
+	trap '' INT TERM HUP
+	klg_stop_waiting
+	klg_mark_cancel
+	klg_cleanup
+	klg_err "cancelled; nothing was executed."
+	exit 130
+}
+
+klg_status() {
+	printf 'kube-lens guard core: %s\n' "$0"
+	printf 'flag table: %s\n' "$(sed -n 's/^# BEGIN generated flags.*\(kubectl v[^;]*\);.*/\1/p' "$0")"
+	printf 'kubectl: %s\n' "$(command -v kubectl 2>/dev/null || echo 'not found on PATH')"
+	printf 'tern: %s\n' "$(command -v "${TERN_BIN:-tern}" 2>/dev/null || echo 'not found on PATH')"
+	printf 'approval timeout: %ss\n' "${KUBE_LENS_GUARD_TIMEOUT:-600}"
+	printf 'guarded verbs: apply, delete, rollout restart, scale\n'
+	if [ "${TERM_PROGRAM-}" != tern ] || [ -z "${TERN_PANE-}" ]; then
+		printf 'this shell: not a Tern pane; guarded verbs are refused\n'
+	elif [ -z "${KUBE_LENS_SPOOL-}" ]; then
+		printf 'this shell: Tern pane without KUBE_LENS_SPOOL (started before the plugin loaded?); guarded verbs are refused until you open a new pane\n'
+	else
+		printf 'this shell: Tern pane %s; guarded verbs ask for approval (spool %s)\n' "$TERN_PANE" "$KUBE_LENS_SPOOL"
+	fi
+}
+
+klg_guard() {
+	klg_scan_guarded "$@"
+	case $klg_dry in
+	client | server)
+		# Already a no-op on the cluster: nothing to approve.
+		[ -z "$klg_unknown2" ] && exec kubectl "$@"
+		;;
+	esac
+	klg_ifs=$IFS
+	IFS='
+'
+	set -f
+	for klg_line in $klg_raw; do
+		[ "${klg_line#* }" = - ] && klg_refuse "reading manifests from stdin (-f -) cannot be previewed; save them to a file and pass -f FILE."
+	done
+	set +f
+	IFS=$klg_ifs
+
+	[ "${TERM_PROGRAM-}" = tern ] && [ -n "${TERN_PANE-}" ] ||
+		klg_refuse "kubectl $klg_verb needs approval in Tern, but this shell is not a Tern pane (TERM_PROGRAM=tern and TERN_PANE are required). Run it in a Tern pane."
+	[ -n "${KUBE_LENS_SPOOL-}" ] ||
+		klg_refuse "KUBE_LENS_SPOOL is not set: this pane was started before the kube-lens plugin loaded. Open a new Tern pane and retry."
+	case $KUBE_LENS_SPOOL in
+	/*) ;;
+	*) klg_refuse "KUBE_LENS_SPOOL must be an absolute path: $KUBE_LENS_SPOOL" ;;
+	esac
+	klg_timeout=${KUBE_LENS_GUARD_TIMEOUT:-600}
+	case $klg_timeout in
+	'' | *[!0-9]* | 0) klg_refuse "KUBE_LENS_GUARD_TIMEOUT must be a positive number of seconds: $klg_timeout" ;;
+	esac
+	klg_program=$(command -v kubectl) || klg_refuse "kubectl is not on PATH."
+	case $klg_program in
+	/*) ;;
+	*) klg_program=$(pwd -P)/$klg_program ;;
+	esac
+	klg_sha_tool
+
+	klg_umask=$(umask)
+	umask 077
+	klg_spool=$KUBE_LENS_SPOOL
+	[ -L "$klg_spool" ] && klg_refuse "the spool $klg_spool is a symlink."
+	[ -d "$klg_spool" ] || mkdir -p "$klg_spool" || klg_refuse "cannot create the spool $klg_spool."
+	[ -O "$klg_spool" ] || klg_refuse "the spool $klg_spool is not owned by you."
+	chmod 700 "$klg_spool" || klg_refuse "cannot restrict the spool $klg_spool."
+	klg_spool=$(cd -P -- "$klg_spool" && pwd -P) || klg_refuse "cannot enter the spool."
+	find "$klg_spool" -mindepth 1 -maxdepth 1 -type f \( -name 'req-*.json' -o -name 'resp-*.env' -o -name 'cancel-*' \) \
+		-mmin +$((klg_timeout / 60 + 1440)) -exec rm -f {} + 2>/dev/null
+
+	klg_nonce=$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')
+	case $klg_nonce in
+	*[!0-9a-f]*) klg_refuse "cannot read /dev/urandom." ;;
+	esac
+	[ ${#klg_nonce} = 32 ] || klg_refuse "cannot read /dev/urandom."
+	klg_work=$klg_spool/work-$klg_nonce
+	mkdir "$klg_work" || klg_refuse "cannot create $klg_work."
+	trap klg_on_signal INT TERM HUP
+
+	klg_compute kubectl "$@"
+	klg_req_fp=$klg_fp
+	klg_req_ctx=$klg_ctx
+	klg_created=$(date +%s)
+	klg_req=$klg_spool/req-$klg_nonce.json
+	klg_resp=$klg_spool/resp-$klg_nonce.env
+	(set -C && : >"$klg_req") 2>/dev/null || klg_refuse "cannot create $klg_req."
+	klg_write_request kubectl "$@" || klg_refuse "cannot write $klg_req."
+
+	klg_err "waiting for approval in Tern (context $klg_ctx; Ctrl-C cancels)..."
+	"${TERN_BIN:-tern}" open --wait "$klg_req" </dev/null >/dev/null &
+	klg_tpid=$!
+	(
+		trap 'kill "$klg_s" 2>/dev/null; exit 0' TERM
+		sleep "$klg_timeout" &
+		klg_s=$!
+		wait "$klg_s"
+		: >"$klg_work/timeout"
+		kill -TERM "$klg_tpid" 2>/dev/null
+	) &
+	klg_wpid=$!
+	wait "$klg_tpid"
+	klg_st=$?
+	klg_tpid=
+	klg_stop_waiting
+
+	if [ -e "$klg_work/timeout" ]; then
+		klg_mark_cancel
+		klg_refuse "no decision within ${klg_timeout}s (KUBE_LENS_GUARD_TIMEOUT); the request was withdrawn."
+	fi
+	if [ "$klg_st" != 0 ]; then
+		klg_mark_cancel
+		klg_refuse "'tern open --wait' failed (exit $klg_st); is Tern running?"
+	fi
+	[ -e "$klg_resp" ] ||
+		klg_refuse "Tern returned without an approval response; the kube-lens approve block did not handle the request (plugin not loaded or disabled? It may have opened in an editor instead)."
+	[ -f "$klg_resp" ] && [ ! -L "$klg_resp" ] && [ -O "$klg_resp" ] ||
+		klg_refuse "the approval response $klg_resp is not a regular file owned by you."
+
+	klg_r_nonce=
+	klg_r_decision=
+	klg_r_fp=
+	klg_r_ctx=
+	klg_r_at=
+	klg_r_reason=
+	klg_dup=
+	while IFS= read -r klg_line || [ -n "$klg_line" ]; do
+		klg_k=${klg_line%%=*}
+		klg_v=${klg_line#*=}
+		case $klg_k in
+		nonce | decision | fingerprint | context | approved_at | reason)
+			eval "[ -n \"\${klg_seen_$klg_k-}\" ] && klg_dup=$klg_k; klg_seen_$klg_k=1"
+			;;
+		esac
+		case $klg_k in
+		nonce) klg_r_nonce=$klg_v ;;
+		decision) klg_r_decision=$klg_v ;;
+		fingerprint) klg_r_fp=$klg_v ;;
+		context) klg_r_ctx=$klg_v ;;
+		approved_at) klg_r_at=$klg_v ;;
+		reason) klg_r_reason=$(printf '%s' "$klg_v" | LC_ALL=C tr -cd '[:print:]') ;;
+		esac
+	done <"$klg_resp"
+	[ -z "$klg_dup" ] || klg_refuse "the approval response repeats '$klg_dup'; refusing it."
+	[ "$klg_r_nonce" = "$klg_nonce" ] || klg_refuse "the approval response belongs to another request (nonce mismatch)."
+	case $klg_r_decision in
+	approve) ;;
+	deny)
+		if [ -n "$klg_r_reason" ]; then
+			klg_err "denied in Tern: $klg_r_reason"
+		else
+			klg_err "denied in Tern; nothing was executed."
+		fi
+		klg_cleanup
+		exit 1
+		;;
+	*) klg_refuse "the approval response has no valid decision." ;;
+	esac
+	case $klg_r_at in
+	'' | *[!0-9]*) klg_refuse "the approval response has no valid approved_at." ;;
+	esac
+	[ "$klg_r_at" -ge "$klg_created" ] && [ "$klg_r_at" -le $((klg_created + klg_timeout)) ] &&
+		[ "$(date +%s)" -le $((klg_created + klg_timeout)) ] ||
+		klg_refuse "the approval is outside the ${klg_timeout}s window of the request."
+
+	klg_compute kubectl "$@"
+	[ "$klg_ctx" = "$klg_req_ctx" ] && [ "$klg_ctx" = "$klg_r_ctx" ] ||
+		klg_refuse "the target context changed since the request (requested '$klg_req_ctx', approved '$klg_r_ctx', now '$klg_ctx')."
+	[ "$klg_fp" = "$klg_req_fp" ] && [ "$klg_fp" = "$klg_r_fp" ] ||
+		klg_refuse "the command or its input files changed since approval (fingerprint mismatch); run it again to preview the current state."
+
+	trap - INT TERM HUP
+	klg_cleanup
+	umask "$klg_umask"
+	exec kubectl "$@"
+}
+
+case ${1-} in
+kubectl)
+	shift
+	klg_guarded=
+	klg_find_verb "$@"
+	[ -n "$klg_guarded" ] || exec kubectl "$@"
+	klg_guard "$@"
+	;;
+status)
+	klg_status
+	;;
+*)
+	echo "usage: kube-lens-guard kubectl [ARGS...] | kube-lens-guard status" >&2
+	exit 2
+	;;
+esac

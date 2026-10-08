@@ -209,4 +209,46 @@ describe("mutation view: interaction", function()
 	end)
 end)
 
+-- With the opt-in shell guard, a typed `kubectl scale` the user denied (or
+-- cancelled, or the guard refused) still reaches the lens; claiming it was
+-- executed would contradict the guard's own message.
+describe("mutation view: stopped by the shell guard", function()
+	local command = "kubectl scale deploy/web --replicas=3 " .. NS
+	local waiting = "kube-lens guard: waiting for approval in Tern (context kind-dev; Ctrl-C cancels) ..."
+
+	local cases: { { name: string, line: string, status: number } } = {
+		{ name = "denied", line = "kube-lens guard: denied in Tern; nothing was executed.", status = 1 },
+		{ name = "denied with a reason", line = "kube-lens guard: denied in Tern: Mutations are disabled", status = 1 },
+		{ name = "cancelled", line = "kube-lens guard: cancelled; nothing was executed.", status = 130 },
+		{
+			name = "refused",
+			line = "kube-lens guard: nothing was executed. To run it anyway, without preview or confirmation, use: command kubectl ...",
+			status = 1,
+		},
+	}
+	for _, case in cases do
+		it("says nothing was executed when " .. case.name, function()
+			local view = MutationView.render(
+				captures.fromLines(command, { waiting, case.line }, case.status),
+				Viewstate.default(),
+				Viewstate
+			)
+			local text = nodes.text(nodes.find(view, nodes.role("kube-lens.mutation-banner")) :: Node)
+			expect(text).toContain(MutationView.GUARD_BANNER)
+			expect(string.find(text, MutationView.BANNER, 1, true) == nil).toBe(true)
+			expect(toneOf(badge(view, "Not executed"))).toBe("warning")
+			expect(badge(view, "Executed")).toBeNil()
+		end)
+	end
+
+	it("still reports an approved run as executed", function()
+		local view = MutationView.render(
+			captures.fromLines(command, { waiting, "deployment.apps/web scaled" }, 0),
+			Viewstate.default(),
+			Viewstate
+		)
+		expect(badge(view, "Executed") ~= nil).toBe(true)
+	end)
+end)
+
 return nil

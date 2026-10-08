@@ -1,0 +1,224 @@
+# Tern is closed beta and not installable here: the e2e suite (make e2e) stays
+# local; see docs/testing.md and the release smoke test in docs/releasing.md.
+# Suites that do not exist on older milestone branches are skipped by name.
+name: ci
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  HOMEBREW_NO_AUTO_UPDATE: "1"
+  HOMEBREW_NO_INSTALL_CLEANUP: "1"
+
+jobs:
+  check:
+    name: check (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        # macOS arm64 and Linux x86_64: the hosts scripts/bootstrap.sh supports.
+        os: [macos-14, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Cache .tools
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .tools
+          key: tools-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/bootstrap.sh') }}
+
+      - name: Install shells (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q --no-install-recommends fish zsh
+
+      - name: Install fish (macOS)
+        if: runner.os == 'macOS'
+        run: brew install fish
+
+      - name: Bootstrap pinned tools
+        run: make bootstrap
+
+      - name: make check
+        run: make check
+
+      - name: make test-shell-aliases
+        run: |
+          if [ -f tests/shell/aliases/run.sh ]; then
+            make test-shell-aliases
+          else
+            echo "skipped: tests/shell/aliases/run.sh is not on this branch"
+          fi
+
+      - name: make test-shell-guard
+        run: |
+          if [ -f tests/shell/guard/run.sh ]; then
+            make test-shell-guard
+          else
+            echo "skipped: tests/shell/guard/run.sh is not on this branch"
+          fi
+
+      - name: make test-shell-drift
+        run: |
+          if [ -f tests/shell/drift/run.sh ]; then
+            make test-shell-drift
+          else
+            echo "skipped: tests/shell/drift/run.sh is not on this branch"
+          fi
+
+  integration:
+    name: integration (kind)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Cache .tools
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .tools
+          key: tools-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/bootstrap.sh') }}
+
+      - name: Install test dependencies
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q --no-install-recommends xxd
+
+      - name: Bootstrap pinned tools
+        run: make bootstrap
+
+      - name: Tool versions
+        run: |
+          kubectl version --client
+          docker version --format 'docker {{.Server.Version}}'
+          .tools/bin/kind version
+
+      - name: Create kind cluster
+        id: cluster
+        run: sh scripts/cluster.sh create
+
+      - name: Mutation scenarios
+        if: ${{ !cancelled() && steps.cluster.outcome == 'success' }}
+        run: |
+          if [ -f tests/integration/mutate/run.sh ]; then
+            sh tests/integration/mutate/rbac.sh create
+            sh tests/integration/mutate/run.sh
+          else
+            echo "skipped: tests/integration/mutate/run.sh is not on this branch"
+          fi
+
+      - name: Drift CLI read-only RBAC
+        if: ${{ !cancelled() && steps.cluster.outcome == 'success' }}
+        run: |
+          if [ -f tests/integration/drift-rbac/run.sh ]; then
+            sh tests/integration/drift-rbac/run.sh
+          else
+            echo "skipped: tests/integration/drift-rbac/run.sh is not on this branch"
+          fi
+
+      - name: GitOps export round trip
+        if: ${{ !cancelled() && steps.cluster.outcome == 'success' }}
+        run: |
+          if [ -f tests/integration/gitops/roundtrip.sh ]; then
+            sh tests/integration/gitops/roundtrip.sh
+          else
+            echo "skipped: tests/integration/gitops/roundtrip.sh is not on this branch"
+          fi
+
+      # Evidence only: kubeconfigs (.sandbox/kubeconfig, .sandbox/rbac,
+      # .sandbox/drift-rbac, the harness HOME) are never copied or uploaded.
+      - name: Collect logs
+        if: failure()
+        run: |
+          logs=$RUNNER_TEMP/kl-logs
+          mkdir -p "$logs"
+          if [ -d .sandbox/mutate-it ]; then
+            cp -R .sandbox/mutate-it "$logs/mutate-it"
+            rm -rf "$logs/mutate-it/home"
+          fi
+          .tools/bin/kind export logs --name kube-lens-dev "$logs/kind" || true
+          kubectl --kubeconfig .sandbox/kubeconfig get events -A --sort-by=.lastTimestamp \
+            >"$logs/events.txt" 2>&1 || true
+
+      - name: Upload logs
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: integration-logs
+          retention-days: 7
+          if-no-files-found: ignore
+          path: ${{ runner.temp }}/kl-logs
+
+  package:
+    name: package
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Validate plugin/
+        shell: python3 {0}
+        run: |
+          import pathlib, re, subprocess, sys, tomllib
+
+          root = pathlib.Path("plugin")
+          errors = []
+          manifest = tomllib.loads((root / "plugin.toml").read_text())
+
+          for key in ("schema", "id", "name", "version", "host", "window"):
+              if key not in manifest:
+                  errors.append(f"plugin.toml: missing {key}")
+          version = str(manifest.get("version", ""))
+          if not re.fullmatch(r"\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?", version):
+              errors.append(f"plugin.toml: version {version!r} is not SemVer")
+          for key in ("host", "window"):
+              if key in manifest and not (root / manifest[key]).is_file():
+                  errors.append(f"plugin.toml: {key} {manifest[key]} does not exist")
+          for style in manifest.get("styles", []):
+              if not (root / style).is_file():
+                  errors.append(f"plugin.toml: style {style} does not exist")
+
+          # Shipped = tracked files under plugin/: Luau sources, styles and the manifest.
+          tracked = subprocess.run(
+              ["git", "ls-files", "-z", "--", str(root)], check=True, capture_output=True, text=True
+          ).stdout.split("\0")
+          shipped = [pathlib.Path(p) for p in tracked if p]
+          for path in shipped:
+              parts = {part.lower() for part in path.parts}
+              if parts & {"test", "tests", "spec", "specs", "fixtures", "testdata"}:
+                  errors.append(f"{path}: test or fixture directory inside plugin/")
+              elif path.name.endswith((".spec.luau", ".test.luau")):
+                  errors.append(f"{path}: spec file inside plugin/")
+              elif not (path.suffix in (".luau", ".css") or path == root / "plugin.toml"):
+                  errors.append(f"{path}: not a shippable file (.luau, .css, plugin.toml)")
+
+          sources = "\n".join(p.read_text() for p in shipped if p.suffix == ".luau")
+          for kind, table in (("lens", "lenses"), ("block", "blocks")):
+              for entry in manifest.get(table, []):
+                  ident = entry.get("id", "")
+                  if not re.search(rf'tern\.{kind}\.define\(\s*"{re.escape(ident)}"', sources):
+                      errors.append(f"plugin.toml: {kind} {ident!r} has no tern.{kind}.define")
+
+          for e in errors:
+              print(f"::error::{e}")
+          print(f"{len(shipped)} shipped files, {len(errors)} problem(s)")
+          sys.exit(1 if errors else 0)

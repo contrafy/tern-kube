@@ -1,0 +1,15 @@
+# Preview-only input (scripts/fixtures/capture-mutate-preview.sh): never applied.
+# Cluster-scoped creates: kubectl diff names them with an empty namespace.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: tern-test-preview
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: tern-test-preview-wildcard
+rules:
+  - apiGroups: ["*"]
+    resources: ["*"]
+    verbs: ["*"]

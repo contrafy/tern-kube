@@ -4,3 +4,4 @@
 *.log
 .DS_Store
 tests/fixtures/generated.luau
+tests/integration/mutate/.transcripts/
