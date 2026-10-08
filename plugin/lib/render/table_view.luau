@@ -290,6 +290,20 @@ local function actionChips(
 				actions = { click = "explore=" .. row.key },
 			})
 		)
+		table.insert(
+			out,
+			ui.badge("Manifest", "accent", {
+				title = "Find its manifest in this shell's repository and open it at the line",
+				actions = { click = "explore-route=manifest|" .. row.key },
+			})
+		)
+		table.insert(
+			out,
+			ui.badge("Diff vs manifest", "accent", {
+				title = "kubectl diff of its manifest against the live object (Explore)",
+				actions = { click = "explore-route=diff|" .. row.key },
+			})
+		)
 		for _, n in quickChips(capture, tbl, row, ref, mutations) do
 			table.insert(out, n)
 		end

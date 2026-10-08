@@ -12,6 +12,10 @@ M.DEFAULT_SHELL_COMMAND = table.freeze({ "sh", "-c", "command -v bash >/dev/null
 
 export type Placement = "right" | "down" | "tab"
 
+-- `helm template <release> <chart> [-n namespace] [-f values]...`; paths are
+-- absolute or relative to the repository root.
+export type HelmRelease = { chart: string, release: string, namespace: string?, values: { string } }
+
 export type Config = {
 	schema_version: number,
 	general: {
@@ -47,7 +51,16 @@ export type Config = {
 	},
 	kubectl: string,
 	kubeconfig: string?,
-	gitops: { [string]: any },
+	gitops: {
+		helm: { HelmRelease },
+		-- Kinds checked for unmanaged objects; nil = the kinds the source declares.
+		unmanaged_kinds: { string }?,
+		max_files: number,
+		max_bytes: number,
+		max_file_bytes: number,
+		render_kustomize: boolean,
+		gh: string,
+	},
 }
 
 export type Level = "error" | "warning" | "info"
@@ -114,7 +127,15 @@ function M.defaults(): Config
 		},
 		kubectl = "kubectl",
 		kubeconfig = nil,
-		gitops = {},
+		gitops = {
+			helm = {},
+			unmanaged_kinds = nil,
+			max_files = 2000,
+			max_bytes = 33554432,
+			max_file_bytes = 1048576,
+			render_kustomize = true,
+			gh = "gh",
+		},
 	}
 	return freezeDeep(cfg)
 end
@@ -372,6 +393,103 @@ local function schemaVersion(): Check
 	end
 end
 
+local function dnsLabel(s: any): boolean
+	return type(s) == "string"
+		and #s <= 63
+		and string.find(s, "^[a-z0-9][a-z0-9%-]*$") ~= nil
+		and string.find(s, "[a-z0-9]$") ~= nil
+end
+
+local function relPath(v: any, ctx: Ctx): string?
+	if type(v) ~= "string" or v == "" or #v > 4096 or string.find(v, "%c") then
+		return nil
+	end
+	return (expandHome(v, ctx))
+end
+
+-- `gitops.helm`: releases rendered by `helm template` for diff and drift.
+local function helmReleases(): Check
+	return function(v, path, default, ctx)
+		if not isArray(v) then
+			reject(ctx, path, "a list of {chart, release, namespace?, values?} objects", v, default)
+			return default
+		end
+		local out: { HelmRelease } = {}
+		for i, item in v do
+			local at = string.format("%s[%d]", path, i)
+			local problem: string? = nil
+			local chart = if isObject(item) then relPath(item.chart, ctx) else nil
+			local values: { string } = {}
+			if not isObject(item) then
+				problem = "expected an object with chart and release"
+			elseif chart == nil then
+				problem = "chart must be a path (absolute or relative to the repository root)"
+			elseif not dnsLabel(item.release) then
+				problem = "release must be a lowercase DNS label"
+			elseif item.namespace ~= nil and not dnsLabel(item.namespace) then
+				problem = "namespace must be a lowercase DNS label"
+			elseif item.values ~= nil and not isArray(item.values) then
+				problem = "values must be a list of paths"
+			else
+				for _, f in (item.values or {}) :: { any } do
+					local p = relPath(f, ctx)
+					if p == nil then
+						problem = "values must be a list of paths"
+						break
+					end
+					table.insert(values, p)
+				end
+			end
+			if problem then
+				add(ctx, "error", at, problem .. "; the entry is ignored.")
+			else
+				table.insert(out, {
+					chart = chart :: string,
+					release = item.release,
+					namespace = item.namespace,
+					values = values,
+				})
+			end
+		end
+		return out
+	end
+end
+
+local KIND_TOKEN = "^[%a][%w%-]*[%.%w%-]*$"
+
+-- `gitops.unmanaged_kinds`: Kind or kind.group tokens.
+local function kindList(): Check
+	return function(v, path, default, ctx)
+		if not isArray(v) or #v == 0 or #v > 64 then
+			reject(
+				ctx,
+				path,
+				'a non-empty list of up to 64 kinds (e.g. "Deployment", "widgets.example.com")',
+				v,
+				default
+			)
+			return default
+		end
+		local out: { string } = {}
+		for i, item in v do
+			if type(item) == "string" and #item <= 253 and string.find(item, KIND_TOKEN) then
+				table.insert(out, item)
+			else
+				add(
+					ctx,
+					"error",
+					string.format("%s[%d]", path, i),
+					string.format(
+						'expected a kind such as "Deployment", got %s; the entry is ignored.',
+						describeGot(item)
+					)
+				)
+			end
+		end
+		return if #out > 0 then out else default
+	end
+end
+
 -- Schema ----------------------------------------------------------------------
 
 local SECTIONS: { { key: string, fields: { Field } } } = {
@@ -421,6 +539,18 @@ local SECTIONS: { { key: string, fields: { Field } } } = {
 			{ key = "debug_image", check = image() },
 		},
 	},
+	{
+		key = "gitops",
+		fields = {
+			{ key = "helm", check = helmReleases() },
+			{ key = "unmanaged_kinds", check = kindList() },
+			{ key = "max_files", check = int(1, 20000) },
+			{ key = "max_bytes", check = int(1048576, 268435456) },
+			{ key = "max_file_bytes", check = int(4096, 16777216) },
+			{ key = "render_kustomize", check = bool() },
+			{ key = "gh", check = filePath(true) },
+		},
+	},
 }
 
 local TOP_LEVEL: { Field } = {
@@ -429,7 +559,7 @@ local TOP_LEVEL: { Field } = {
 	{ key = "kubeconfig", check = filePath(false) },
 }
 
-local KNOWN_TOP: { [string]: boolean } = { gitops = true }
+local KNOWN_TOP: { [string]: boolean } = {}
 for _, s in SECTIONS do
 	KNOWN_TOP[s.key] = true
 end
@@ -587,21 +717,6 @@ function M.parse(text: string?, decode: (string) -> any, opts: ParseOptions?): (
 			out[f.key] = f.check(value[f.key], f.key, dflt[f.key], ctx)
 		end
 	end
-
-	local gitops = value.gitops
-	if gitops ~= nil then
-		if not isObject(gitops) then
-			reject(ctx, "gitops", "an object", gitops, {})
-		elseif next(gitops) ~= nil then
-			add(
-				ctx,
-				"info",
-				"gitops",
-				"section is reserved for a later kube-lens milestone; its keys are not read yet."
-			)
-		end
-	end
-
 	warnUnknown(value, KNOWN_TOP, "", ctx)
 	return freezeDeep(out) :: any, diags
 end

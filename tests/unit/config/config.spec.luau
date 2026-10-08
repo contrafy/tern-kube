@@ -59,7 +59,15 @@ describe("config defaults", function()
 		expect(cfg.kubectl).toBe("kubectl")
 		expect(cfg.kubeconfig).toBeNil()
 		expect(cfg.aliases.additional).toEqual({})
-		expect(cfg.gitops).toEqual({})
+		expect(cfg.gitops).toEqual({
+			helm = {},
+			unmanaged_kinds = nil,
+			max_files = 2000,
+			max_bytes = 33554432,
+			max_file_bytes = 1048576,
+			render_kustomize = true,
+			gh = "gh",
+		})
 	end)
 
 	-- Secret values must stay hidden unless the user opts in explicitly.
@@ -294,14 +302,51 @@ describe("config validation", function()
 		end
 	end)
 
-	it("reserves the gitops section without validating its keys yet", function()
-		local cfg, diags = parse([[{"gitops": {"roots": ["~/src/infra"]}}]])
-		expect(cfg.gitops).toEqual({})
-		expect(find(diags, "gitops").level).toBe("info")
-		local _, bad = parse([[{"gitops": []}]])
-		expect(#bad).toBe(0)
-		local _, wrong = parse([[{"gitops": "on"}]])
-		expect(find(wrong, "gitops").level).toBe("error")
+	-- Helm releases feed `helm template` argv: anything that is not a plain
+	-- path / DNS label is dropped with an error instead of reaching a process.
+	it("validates gitops helm releases entry by entry", function()
+		local cfg, diags = parse(
+			[[{"gitops": {"helm": [
+				{"chart": "charts/web", "release": "web", "namespace": "tern-test-helm", "values": ["~/v.yaml", "values-staging.yaml"]},
+				{"chart": "charts/api", "release": "Bad_Release"},
+				{"chart": "", "release": "x"},
+				{"chart": "c", "release": "y", "values": "v.yaml"},
+				"web"
+			]}}]],
+			{ home = "/home/u" }
+		)
+		expect(cfg.gitops.helm).toEqual({
+			{
+				chart = "charts/web",
+				release = "web",
+				namespace = "tern-test-helm",
+				values = { "/home/u/v.yaml", "values-staging.yaml" },
+			},
+		})
+		for _, path in { "gitops.helm[2]", "gitops.helm[3]", "gitops.helm[4]", "gitops.helm[5]" } do
+			expect(find(diags, path).level).toBe("error")
+		end
+	end)
+
+	it("reads the gitops scan limits, unmanaged kinds and gh program", function()
+		local cfg, diags = parse([[{"gitops": {"max_files": 50, "max_bytes": 2097152, "max_file_bytes": 8192,
+			"render_kustomize": false, "unmanaged_kinds": ["Deployment", "widgets.example.com", "bad kind"],
+			"gh": "/opt/bin/gh"}}]])
+		expect(cfg.gitops.max_files).toBe(50)
+		expect(cfg.gitops.max_bytes).toBe(2097152)
+		expect(cfg.gitops.max_file_bytes).toBe(8192)
+		expect(cfg.gitops.render_kustomize).toBe(false)
+		expect(cfg.gitops.unmanaged_kinds).toEqual({ "Deployment", "widgets.example.com" })
+		expect(cfg.gitops.gh).toBe("/opt/bin/gh")
+		expect(find(diags, "gitops.unmanaged_kinds[3]").level).toBe("error")
+		local bad, wrong = parse([[{"gitops": {"max_files": 0, "gh": "bin/gh", "roots": []}}]])
+		expect(bad.gitops.max_files).toBe(2000)
+		expect(bad.gitops.gh).toBe("gh")
+		expect(find(wrong, "gitops.max_files").level).toBe("error")
+		expect(find(wrong, "gitops.gh").level).toBe("error")
+		expect(find(wrong, "gitops.roots").level).toBe("warning")
+		local _, notObject = parse([[{"gitops": "on"}]])
+		expect(find(notObject, "gitops").level).toBe("error")
 	end)
 
 	it("reports diagnostics in a stable order", function()

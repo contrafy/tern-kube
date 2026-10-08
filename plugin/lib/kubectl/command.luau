@@ -136,9 +136,11 @@ function M.urldecode(s: string): string
 	)
 end
 
-local EXPLORE_FIELDS = { "kind", "group", "name", "namespace", "context", "kubeconfig" }
+local EXPLORE_FIELDS = { "kind", "group", "name", "namespace", "context", "kubeconfig", "route", "cwd" }
 
-function M.exploreUrl(inv: Invocation, ref: Ref): string
+-- `route` opens a GitOps view on top of the object (`manifest`, `diff`);
+-- `cwd` is where the manifest index is built (the lensed shell's directory).
+function M.exploreUrl(inv: Invocation, ref: Ref, extra: { route: string?, cwd: string? }?): string
 	local values: { [string]: string? } = {
 		kind = ref.kind,
 		group = ref.group,
@@ -146,6 +148,8 @@ function M.exploreUrl(inv: Invocation, ref: Ref): string
 		namespace = ref.namespace,
 		context = inv.context,
 		kubeconfig = inv.kubeconfig,
+		route = extra and extra.route,
+		cwd = extra and extra.cwd,
 	}
 	local parts: { string } = {}
 	for _, k in EXPLORE_FIELDS do

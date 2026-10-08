@@ -1,4 +1,5 @@
 --!strict
+local Command = require("./lib/kubectl/command")
 local ConfigHost = require("./config_host")
 local Link = require("./lib/mutation/link")
 local PaneEnv = require("./lib/actions/pane_env")
@@ -127,12 +128,18 @@ tern.route.open(function(req: OpenRequest, _cx: WindowCx): RouteDecision?
 	return { block = APPROVE, args = { req.path } }
 end)
 
+-- The focused pane's directory goes along: the GitOps views index the
+-- repository that contains it.
 tern.command({
 	id = "explore",
 	title = "Kube Lens: Explore",
 	icon = "box",
 	run = function(cx: WindowCx)
-		if cx:new_block("kube-lens.explore", { "palette" }, "beside") == nil then
+		local focused = cx.session:focused()
+		local info = if focused then cx.session:pane(focused) else nil
+		local cwd = if info and info.cwd and string.sub(info.cwd, 1, 1) == "/" then info.cwd else nil
+		local arg = if cwd then "kube-lens://explore?cwd=" .. Command.urlencode(cwd) else "palette"
+		if cx:new_block("kube-lens.explore", { arg }, "beside") == nil then
 			cx:toast("error", "Kube Lens is not loaded on this host")
 		end
 	end,

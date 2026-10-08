@@ -7,6 +7,8 @@
 local Cells = require("../render/cells")
 local Command = require("../kubectl/command")
 local DescribeView = require("../render/describe_view")
+local Gitops = require("./gitops")
+local GitopsView = require("../gitops/view")
 local Grid = require("../render/grid")
 local ObjTree = require("../render/objtree")
 local Link = require("../mutation/link")
@@ -184,9 +186,12 @@ local function targetNodes(s: State): { Node }
 	return out
 end
 
-local function crumbLabel(route: Route): string
+local function crumbLabel(s: State, route: Route): string
 	if route.kind == "list" then
 		return route.resource or "pods"
+	end
+	if Gitops.isRoute(route.kind) then
+		return GitopsView.crumb(s.gitops, route)
 	end
 	local title = ROUTE_TITLE[route.kind] or route.kind
 	local ref = route.ref
@@ -227,7 +232,7 @@ local function header(s: State): Node
 		if i > 1 then
 			table.insert(crumbs, ui.text({ ui.span("›", "muted") }))
 		end
-		local label = crumbLabel(route)
+		local label = crumbLabel(s, route)
 		if i == #s.stack then
 			table.insert(crumbs, ui.text({ ui.span(label, "strong") }, { key = "c" .. i }))
 		else
@@ -347,6 +352,22 @@ local function pagedGrid(
 		)
 	end
 	return out
+end
+
+-- What the GitOps views need: the shared paged grid and chip builders.
+local function gitopsView(s: State, route: Route, object: any?): GitopsView.Ctx
+	local selected = State.selectedItem(s)
+	return {
+		g = s.gitops,
+		gctx = State.gitopsCtx(s),
+		route = route,
+		selectedKey = if selected then selected.key else nil,
+		grid = function(key, headers, types, rows, sel, cell)
+			return pagedGrid(key, headers, types, rows :: any, sel, s, cell)
+		end,
+		chip = chip,
+		object = object,
+	}
 end
 
 local function selectedIndexIn(s: State, keys: { string }): number
@@ -471,6 +492,22 @@ local function actionChips(s: State, ref: Ref): Node
 			)
 		end
 	end
+	table.insert(
+		chips,
+		chip("Manifest (m)", "gitops=manifest", { key = "g-manifest", title = "Open its manifest at the line" })
+	)
+	table.insert(
+		chips,
+		chip("Diff vs manifest (=)", "gitops=diff", { key = "g-diff", title = "kubectl diff of its manifest" })
+	)
+	table.insert(
+		chips,
+		chip(
+			"Export (E)",
+			"gitops=export",
+			{ key = "g-export", title = "Write it as a clean manifest (preview first)" }
+		)
+	)
 	table.insert(chips, chip("Copy id", "copy=id", { key = "a-id" }))
 	table.insert(chips, chip("Copy command (Y)", "copy=cmd", { key = "a-cmd" }))
 	if ref.kind == "Pod" then
@@ -579,6 +616,10 @@ local function detailBody(s: State, route: Route, load: Load?): { Node }
 		table.insert(out, ui.row(owners, { key = "owners", wrap = true, role = "kube-lens.chips" }))
 	end
 	table.insert(out, actionChips(s, ref))
+	local controller = GitopsView.controllerLine(gitopsView(s, route, obj), obj)
+	if controller then
+		table.insert(out, controller)
+	end
 	if data and obj then
 		local sensitive = type(obj) == "table" and obj.kind == "Secret"
 		for _, n in noticeNodes(s, sensitive, data.masked) do
@@ -781,6 +822,9 @@ local function body(s: State): Node
 		children = describeBody(s, load)
 	elseif route.kind == "logs" then
 		children = logsBody(s, route, load)
+	elseif Gitops.isRoute(route.kind) then
+		local ref = route.ref
+		children = GitopsView.body(gitopsView(s, route, if ref then State.findObject(s, ref) else nil))
 	else
 		children = namesBody(s, route, load)
 	end
@@ -804,7 +848,9 @@ local function dock(s: State): Node
 	local route = s.stack[#s.stack]
 	local load = State.currentLoad(s)
 	local spans: { ui.SpanLike }
-	if s.editing then
+	if s.editing and s.field then
+		spans = { ui.span(s.field .. ": ", "accent"), ui.span("type · enter applies · esc cancels", "muted") }
+	elseif s.editing then
 		spans = { ui.span("filter: ", "accent"), ui.span("type to narrow · enter keep · esc done", "muted") }
 	elseif s.targetError then
 		spans = { ui.span(s.targetError, "error") }
@@ -814,7 +860,8 @@ local function dock(s: State): Node
 		local first = string.match(load.error or "", "^[^\n]*") or ""
 		spans = { ui.span(first, "error"), ui.span("  · r retry · c contexts", "muted") }
 	else
-		spans = { ui.span(HINTS[route.kind] or "? help", "muted") }
+		local hint = if Gitops.isRoute(route.kind) then GitopsView.hint(route) else HINTS[route.kind]
+		spans = { ui.span(hint or "? help", "muted") }
 	end
 	return ui.col(
 		{ ui.text(spans, { key = "status", role = "kube-lens.status" }) },
@@ -844,6 +891,13 @@ M.KEYS = {
 	{ "ctrl+r", "Rollout restart (deployments, statefulsets, daemonsets): preview, then confirm", "Restart" },
 	{ "shift+s", "Scale: asks for replicas, previews, then confirm", "Scale" },
 	{ "Y", "Copy the kubectl command of this view", "Copy command" },
+	{ "m", "Open the object's manifest at its line (indexes the repository first)", "Manifest" },
+	{ "=", "Diff the live object against its manifest (kubectl diff)", "Diff vs manifest" },
+	{ "ctrl+g", "Drift report: choose a manifest source, compare it with the cluster", "" },
+	{ "E", "Export the object (or the filtered list) as clean manifests: preview, then w writes", "Export" },
+	{ "f / a / A / X", "Drift: filter, apply the selected manifest / the source, export all shown", "" },
+	{ "t / w / b", "Export: change directory, write the files, branch and commit", "" },
+	{ "b e p P o", "Git: branch, message, push, pull request, only exported files (enter runs)", "" },
 	{ "?", "This help", "?" },
 }
 
@@ -885,6 +939,9 @@ function M.view(s: State, _cols: number, _rows: number): View
 			},
 		})
 	end
+	for _, n in GitopsView.inputs(s.gitops, route, if s.editing then s.field else nil) do
+		table.insert(children, n)
+	end
 	table.insert(children, body(s))
 	return {
 		main = ui.col(children, { role = "kube-lens.explore" }),
@@ -896,7 +953,7 @@ end
 function M.title(s: State): string
 	local route = s.stack[#s.stack]
 	local ctx = s.target.context or "?"
-	return "Kube Explore · " .. crumbLabel(route) .. " · " .. ctx
+	return "Kube Explore · " .. crumbLabel(s, route) .. " · " .. ctx
 end
 
 return M

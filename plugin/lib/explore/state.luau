@@ -15,6 +15,8 @@
 local Capture = require("../lens/capture")
 local Command = require("../kubectl/command")
 local Config = require("../config")
+local ExploreTypes = require("./types")
+local Gitops = require("./gitops")
 local Json = require("../parse/json")
 local Kinds = require("../kubectl/kinds")
 local Link = require("../mutation/link")
@@ -32,20 +34,8 @@ type ColumnType = Types.ColumnType
 export type Target = Query.Target
 export type ContextSource = Query.ContextSource
 
-export type RouteKind = "list" | "detail" | "relations" | "describe" | "logs" | "contexts" | "namespaces" | "kinds"
-
-export type Route = {
-	kind: RouteKind,
-	-- list: resource token (`pods`, `deployments.apps`).
-	resource: string?,
-	-- list: explicit namespace; nil follows the target's namespace scope.
-	namespace: string?,
-	-- detail/relations/describe/logs.
-	ref: Ref?,
-	-- logs.
-	container: string?,
-	previous: boolean?,
-}
+export type RouteKind = ExploreTypes.RouteKind
+export type Route = ExploreTypes.Route
 
 export type LoadStatus = "idle" | "loading" | "ok" | "error"
 
@@ -83,9 +73,9 @@ export type RelationsData = {
 	graph: Relations.Graph?,
 }
 
-export type Item = { key: string, ref: Ref?, value: string? }
+export type Item = ExploreTypes.Item
 
-export type Decode = (string) -> any
+export type Decode = ExploreTypes.Decode
 
 export type Env = {
 	kubeconfig: string?,
@@ -95,6 +85,15 @@ export type Env = {
 	decode: Decode,
 	-- os.time() at init.
 	now: number?,
+	-- The block's working directory: where the manifest index is built.
+	cwd: string?,
+	-- tern.plugin.data (temporary manifests go to <dataDir>/tmp).
+	dataDir: string?,
+	-- Random token for temporary file names.
+	nonce: (() -> string)?,
+	-- Export: `[]` vs `{}` of decoded JSON, and the JSON null value.
+	isList: ((t: { [any]: any }) -> boolean)?,
+	null: any?,
 }
 
 export type Resolve = { phase: "current" | "verify" | "done" | "failed", gen: number }
@@ -124,41 +123,24 @@ export type State = {
 	-- First visible grid row per view, kept vim-like (scrolloff) by update().
 	offset: { [string]: number },
 	url: string?,
+	-- Manifest index, drift, export and git flow (gitops.luau).
+	gitops: Gitops.G,
+	-- While editing: the GitOps text field ("dir", "branch", "message");
+	-- nil edits the filter.
+	field: string?,
+	dataDir: string?,
+	nonce: () -> string,
+	isList: ((t: { [any]: any }) -> boolean)?,
+	null: any?,
 }
 
-export type Effect = {
-	t: "run" | "copy" | "toast" | "open" | "exit" | "save" | "focus" | "render",
-	tag: string?,
-	argv: { string }?,
-	timeout_ms: number?,
-	gen: number?,
-	text: string?,
-	sub: string?,
-	level: ("success" | "info" | "error")?,
-	url: string?,
-	id: string?,
-}
+export type Effect = ExploreTypes.Effect
 
-export type ProcessResult = { status: number, stdout: string, stderr: string, timed_out: boolean }
+export type ProcessResult = ExploreTypes.ProcessResult
 
-export type Key = { name: string, text: string?, ctrl: boolean?, alt: boolean?, shift: boolean?, meta: boolean? }
+export type Key = ExploreTypes.Key
 
-export type Msg = {
-	t: "key" | "action" | "result" | "tick" | "resize",
-	key: Key?,
-	act: string?,
-	value: string?,
-	tag: string?,
-	gen: number?,
-	result: ProcessResult?,
-	-- Set by the host when tern.process.run raised (kubectl not found).
-	spawnError: string?,
-	-- os.time() when the result arrived / of the tick.
-	at: number?,
-	now: number?,
-	-- resize: the block's height in lines.
-	rows: number?,
-}
+export type Msg = ExploreTypes.Msg
 
 local M = {}
 
@@ -289,6 +271,16 @@ function M.routeKey(s: State, route: Route): string
 		local sc = M.scope(s, route)
 		local ns = if sc.all then "*" else (sc.namespace or "")
 		return "list|" .. targetId(s.target) .. "|" .. (route.resource or "") .. "|" .. ns
+	elseif Gitops.isRoute(kind) then
+		-- Never a cache key: GitOps routes keep their data in s.gitops.
+		local parts = { "gitops-" .. kind, targetId(s.target) }
+		if route.ref then
+			table.insert(parts, Resource.key(route.ref))
+		end
+		table.insert(parts, route.source or "")
+		table.insert(parts, route.item or "")
+		table.insert(parts, tostring(route.doc or ""))
+		return table.concat(parts, "|")
 	end
 	local ref = route.ref :: Ref
 	local key = kind .. "|" .. targetId(s.target) .. "|" .. Resource.key(ref)
@@ -490,11 +482,30 @@ function M.findObject(s: State, ref: Ref): any?
 	return nil
 end
 
+-- What the GitOps routes need to know about the block.
+function M.gitopsCtx(s: State): Gitops.Ctx
+	return {
+		target = s.target,
+		program = s.program,
+		config = s.config,
+		decode = s.decode,
+		resolved = M.resolved(s),
+		now = s.now,
+		dataDir = s.dataDir,
+		nonce = s.nonce,
+		isList = s.isList,
+		null = s.null,
+	}
+end
+
 -- Selection over what the current route shows, after the filter.
 function M.items(s: State, route: Route?): { Item }
 	local r = route or top(s)
 	local key = M.routeKey(s, r)
 	local load = s.cache[key]
+	if Gitops.isRoute(r.kind) then
+		return Gitops.items(s.gitops, M.gitopsCtx(s), r)
+	end
 	local out: { Item } = {}
 	local f = string.lower(s.filter[key] or "")
 	if r.kind == "namespaces" then
@@ -562,6 +573,9 @@ function M.focusRef(s: State): Ref?
 			return item.ref
 		end
 		return if r.kind == "relations" then r.ref else nil
+	end
+	if Gitops.isRoute(r.kind) then
+		return Gitops.focusRef(s.gitops, M.gitopsCtx(s), r, M.selectedItem(s))
 	end
 	return r.ref
 end
@@ -684,8 +698,28 @@ local function startLoad(s: State, route: Route, force: boolean, effects: { Effe
 	table.insert(effects, runEffect(s, key, argv, s.gen))
 end
 
+-- Runs a GitOps call on a fresh copy of s.gitops.
+local function withGitops<R>(s: State, fn: (g: Gitops.G, ctx: Gitops.Ctx) -> R): R
+	local g = Gitops.clone(s.gitops)
+	local r = fn(g, M.gitopsCtx(s))
+	s.gitops = g
+	return r
+end
+
+local function enterGitops(s: State, route: Route, force: boolean, effects: { Effect })
+	withGitops(s, function(g, ctx)
+		Gitops.enter(g, ctx, route, force, effects)
+		return nil
+	end)
+end
+
 local function ensure(s: State, effects: { Effect })
-	startLoad(s, top(s), false, effects)
+	local route = top(s)
+	if Gitops.isRoute(route.kind) then
+		enterGitops(s, route, false, effects)
+		return
+	end
+	startLoad(s, route, false, effects)
 end
 
 local function pushRoute(s: State, route: Route, effects: { Effect })
@@ -797,6 +831,13 @@ local function linkRoutes(params: { { key: string, value: string } }): { Route }
 			source = "live",
 		}
 		table.insert(stack, { kind = "detail", ref = ref })
+		-- Lens chips "Manifest" / "Diff vs manifest".
+		local route = param(params, "route")
+		if route == "manifest" then
+			table.insert(stack, { kind = "manifest", ref = ref })
+		elseif route == "diff" then
+			table.insert(stack, { kind = "diff", ref = ref, doc = 1 })
+		end
 	end
 	return stack
 end
@@ -845,6 +886,9 @@ function M.init(args: { string }, saved: any, config: Config, env: Env): (State,
 		sel = stringMap(saved.sel)
 		filter = stringMap(saved.filter)
 	end
+	local linkCwd = param(params, "cwd")
+	local cwd = if linkCwd and string.sub(linkCwd, 1, 1) == "/" then linkCwd else nonEmpty(env.cwd)
+	local counter = 0
 	local s: State = {
 		target = target,
 		stack = stack,
@@ -865,6 +909,15 @@ function M.init(args: { string }, saved: any, config: Config, env: Env): (State,
 		url = url,
 		rows = nil,
 		offset = {},
+		gitops = Gitops.new(cwd),
+		field = nil,
+		dataDir = env.dataDir,
+		nonce = env.nonce or function(): string
+			counter += 1
+			return tostring(counter)
+		end,
+		isList = env.isList,
+		null = env.null,
 	}
 	local effects: { Effect } = {}
 	if not allowLive(s) then
@@ -897,10 +950,14 @@ local function savedRef(ref: Ref?): any
 	return { kind = ref.kind, group = ref.group, namespace = ref.namespace, name = ref.name }
 end
 
--- Navigation and target only: cached cluster data is never persisted.
+-- Navigation and target only: cached cluster data is never persisted, and
+-- GitOps routes are not restored (they would rescan without being asked).
 function M.save(s: State): any
 	local stack: { any } = {}
 	for i, r in s.stack do
+		if Gitops.isRoute(r.kind) then
+			break
+		end
 		stack[i] = {
 			kind = r.kind,
 			resource = r.resource,
@@ -1036,6 +1093,9 @@ end
 
 local function drill(s: State, effects: { Effect })
 	local r = top(s)
+	if Gitops.isRoute(r.kind) then
+		return
+	end
 	if r.kind == "detail" then
 		openRef(s, "relations", r.ref, effects)
 		return
@@ -1068,6 +1128,10 @@ end
 
 function M.refresh(s: State, effects: { Effect })
 	local r = top(s)
+	if Gitops.isRoute(r.kind) then
+		enterGitops(s, r, true, effects)
+		return
+	end
 	if r.kind == "contexts" or M.resolved(s) then
 		startLoad(s, r, true, effects)
 	end
@@ -1299,6 +1363,198 @@ local function mutate(s: State, op: string, effects: { Effect })
 	table.insert(effects, { t = "open", url = url })
 end
 
+-- GitOps ---------------------------------------------------------------------
+
+local function applyNav(s: State, nav: Gitops.Nav?, effects: { Effect })
+	if nav == nil then
+		return
+	end
+	if nav.push then
+		pushRoute(s, nav.push :: Route, effects)
+	elseif nav.replace then
+		local stack = table.clone(s.stack)
+		stack[#stack] = nav.replace :: Route
+		s.stack = stack
+		ensure(s, effects)
+	elseif nav.pop then
+		back(s, effects)
+	end
+end
+
+local function needTarget(s: State, effects: { Effect }): boolean
+	if M.resolved(s) then
+		return true
+	end
+	table.insert(effects, toast("error", "No cluster target yet", "Pick a context first (c)"))
+	return false
+end
+
+-- m: the manifest list of the focused object, opening its best manifest.
+local function manifestKey(s: State, effects: { Effect })
+	local ref = M.focusRef(s)
+	if ref == nil then
+		table.insert(effects, toast("error", "Select an object first"))
+		return
+	end
+	local r = top(s)
+	if not (r.kind == "manifest" and r.ref and Resource.key(r.ref) == Resource.key(ref)) then
+		pushRoute(s, { kind = "manifest", ref = ref }, effects)
+	end
+	withGitops(s, function(g, ctx)
+		Gitops.openManifest(g, ctx, ref, effects)
+		return nil
+	end)
+end
+
+-- =: the focused object diffed against its best manifest.
+local function diffKey(s: State, effects: { Effect })
+	local ref = M.focusRef(s)
+	if ref == nil then
+		table.insert(effects, toast("error", "Select an object first"))
+		return
+	end
+	if needTarget(s, effects) then
+		pushRoute(s, { kind = "diff", ref = ref, doc = 1 }, effects)
+	end
+end
+
+-- ctrl+g: the drift source chooser.
+local function driftKey(s: State, effects: { Effect })
+	if top(s).kind == "drift" and top(s).source == nil then
+		return
+	end
+	if needTarget(s, effects) then
+		pushRoute(s, { kind = "drift" }, effects)
+	end
+end
+
+-- E: export the object in view, or every row of the (filtered) list.
+local function exportKey(s: State, effects: { Effect })
+	local r = top(s)
+	local objects: { any } = {}
+	local label: string
+	if r.kind == "list" then
+		local key = M.currentKey(s)
+		local load = s.cache[key]
+		local f = string.lower(s.filter[key] or "")
+		if load and load.status == "ok" and load.data then
+			for _, row in (load.data :: ListData).rows do
+				if row.object and (f == "" or string.find(row.hay, f, 1, true)) then
+					table.insert(objects, row.object)
+				end
+			end
+		end
+		local sc = M.scope(s, r)
+		local where = if sc.all then "all namespaces" else (sc.namespace or "the default namespace")
+		local resource = r.resource or "pods"
+		local plural = string.match(resource, "^[^.]+") or resource
+		local info = Kinds.normalize(resource)
+		local one = if info.known then string.lower(info.kind) else plural
+		label = Gitops.count(#objects, one, plural) .. " from " .. where
+	else
+		local ref = M.focusRef(s)
+		local obj = if ref then M.findObject(s, ref) else nil
+		if ref == nil or obj == nil then
+			table.insert(effects, toast("error", "Nothing to export", "Open the object first (y)"))
+			return
+		end
+		table.insert(objects, obj)
+		label = string.lower(ref.kind) .. " " .. ref.name
+	end
+	if #objects == 0 then
+		table.insert(effects, toast("error", "Nothing to export", "The list is empty"))
+		return
+	end
+	withGitops(s, function(g, ctx)
+		Gitops.startExport(g, ctx, objects, { label = label, dir = nil, summary = nil }, effects)
+		return nil
+	end)
+	if r.kind == "export" then
+		ensure(s, effects)
+	else
+		pushRoute(s, { kind = "export" }, effects)
+	end
+end
+
+local FIELD_ROUTES: { [string]: string } = { dir = "export", branch = "git", message = "git" }
+
+M.FIELD_INPUTS = { dir = "main.gitops-dir", branch = "main.gitops-branch", message = "main.gitops-message" }
+
+local function startField(s: State, field: string, effects: { Effect }): boolean
+	if top(s).kind ~= FIELD_ROUTES[field] then
+		return false
+	end
+	local g = s.gitops
+	if (field == "dir" and g.export == nil) or (field ~= "dir" and (g.git == nil or g.git.status ~= "ready")) then
+		return false
+	end
+	withGitops(s, function(g2)
+		Gitops.setField(g2, field, Gitops.fieldValue(g2, field))
+		return nil
+	end)
+	s.editing = true
+	s.field = field
+	table.insert(effects, { t = "focus", id = M.FIELD_INPUTS[field] })
+	return true
+end
+
+local function fieldKey(s: State, key: Key, ch: string?, effects: { Effect }): boolean
+	local field = s.field :: string
+	local name = key.name
+	local current = Gitops.fieldValue(s.gitops, field)
+	if name == "enter" or name == "return" then
+		s.editing = false
+		s.field = nil
+		withGitops(s, function(g, ctx)
+			Gitops.commitField(g, ctx, field, effects)
+			return nil
+		end)
+	elseif name == "escape" then
+		s.editing = false
+		s.field = nil
+		withGitops(s, function(g)
+			local fields = table.clone(g.fields)
+			fields[field] = nil
+			g.fields = fields
+			return nil
+		end)
+	elseif name == "backspace" then
+		withGitops(s, function(g)
+			Gitops.setField(g, field, string.sub(current, 1, -2))
+			return nil
+		end)
+	elseif ch then
+		withGitops(s, function(g)
+			Gitops.setField(g, field, current .. ch)
+			return nil
+		end)
+	else
+		return false
+	end
+	return true
+end
+
+-- Route-specific keys of the GitOps views; false lets the global keys run.
+local function gitopsRouteKey(s: State, key: Key, ch: string?, effects: { Effect }): boolean
+	local r = top(s)
+	if not Gitops.isRoute(r.kind) then
+		return false
+	end
+	if r.kind == "export" and ch == "t" then
+		return startField(s, "dir", effects)
+	elseif r.kind == "git" and ch == "b" then
+		return startField(s, "branch", effects)
+	elseif r.kind == "git" and ch == "e" then
+		return startField(s, "message", effects)
+	end
+	local selected = M.selectedItem(s)
+	local g = Gitops.clone(s.gitops)
+	local handled, nav = Gitops.onKey(g, M.gitopsCtx(s), r, selected, ch, key, effects)
+	s.gitops = g
+	applyNav(s, nav, effects)
+	return handled
+end
+
 -- Keys -----------------------------------------------------------------------
 
 local FILTERABLE: { [string]: boolean } =
@@ -1365,6 +1621,9 @@ end
 local function onKey(s: State, key: Key, effects: { Effect }): boolean
 	local ch = printable(key)
 	if s.editing then
+		if s.field then
+			return fieldKey(s, key, ch, effects)
+		end
 		return editKey(s, key, ch)
 	end
 	local name = key.name
@@ -1372,6 +1631,9 @@ local function onKey(s: State, key: Key, effects: { Effect }): boolean
 	s.pendingG = false
 	if s.help and (name == "escape" or ch == "?") then
 		s.help = false
+		return true
+	end
+	if not s.help and gitopsRouteKey(s, key, ch, effects) then
 		return true
 	end
 	if ch == "g" then
@@ -1435,6 +1697,14 @@ local function onKey(s: State, key: Key, effects: { Effect }): boolean
 		quick(s, "logs-follow", effects)
 	elseif ch == "F" or (name == "f" and key.shift) then
 		quick(s, "port-forward", effects)
+	elseif key.ctrl and name == "g" then
+		driftKey(s, effects)
+	elseif ch == "m" then
+		manifestKey(s, effects)
+	elseif ch == "=" then
+		diffKey(s, effects)
+	elseif ch == "E" or (name == "e" and key.shift) then
+		exportKey(s, effects)
 	else
 		return false
 	end
@@ -1446,6 +1716,10 @@ end
 local function onAction(s: State, act: string, value: string, effects: { Effect }): boolean
 	if act == "open" then
 		selectKey(s, value)
+		if Gitops.isRoute(top(s).kind) then
+			gitopsRouteKey(s, { name = "enter" }, nil, effects)
+			return true
+		end
 		drill(s, effects)
 	elseif act == "sel" then
 		selectKey(s, value)
@@ -1518,6 +1792,30 @@ local function onAction(s: State, act: string, value: string, effects: { Effect 
 		s.editing = false
 	elseif act == "exit" then
 		table.insert(effects, { t = "exit" })
+	elseif act == "gitops" then
+		if value == "manifest" then
+			manifestKey(s, effects)
+		elseif value == "diff" then
+			diffKey(s, effects)
+		elseif value == "drift" then
+			driftKey(s, effects)
+		elseif value == "export" then
+			exportKey(s, effects)
+		else
+			return false
+		end
+	elseif act == "field-focus" then
+		return startField(s, value, effects)
+	elseif act == "gitops-key" then
+		local ch = if value == "enter" or value == "escape" then nil else value
+		return gitopsRouteKey(s, { name = value, text = ch }, ch, effects)
+	elseif string.sub(act, 1, 7) == "gitops-" then
+		local r = top(s)
+		local g = Gitops.clone(s.gitops)
+		local handled, nav = Gitops.onAction(g, M.gitopsCtx(s), r, act, value, effects)
+		s.gitops = g
+		applyNav(s, nav, effects)
+		return handled
 	else
 		return false
 	end
@@ -1676,6 +1974,11 @@ local function onResult(s: State, msg: Msg, effects: { Effect }): boolean
 	elseif tag == M.QUICK_TAG then
 		onQuick(s, msg, effects)
 		return true
+	elseif string.sub(tag, 1, 7) == "gitops|" then
+		local g = Gitops.clone(s.gitops)
+		Gitops.onResult(g, M.gitopsCtx(s), msg, effects)
+		s.gitops = g
+		return true
 	end
 	local key, sub = string.match(tag, "^(.-)\n(.*)$")
 	key = key or tag
@@ -1730,6 +2033,12 @@ local function onResult(s: State, msg: Msg, effects: { Effect }): boolean
 		upd.error = "Could not read kubectl output: " .. tostring(data)
 	end
 	setLoad(s, key :: string, upd)
+	if kind == "detail" and ok then
+		withGitops(s, function(g, ctx)
+			Gitops.noticeObject(g, ctx, (data :: DetailData).object, effects)
+			return nil
+		end)
+	end
 	if kind == "contexts" and ok then
 		contextsLoaded(s, (data :: NamesData).names, effects)
 	end
@@ -1778,6 +2087,10 @@ function M.update(state: State, msg: Msg): (State, { Effect })
 	elseif msg.t == "resize" and msg.rows then
 		s.rows = msg.rows
 		changed = msg.rows ~= state.rows
+	elseif msg.t == "progress" and msg.progress then
+		local g = Gitops.clone(s.gitops)
+		changed = Gitops.onProgress(g, msg)
+		s.gitops = g
 	end
 	if not changed then
 		return state, {}
