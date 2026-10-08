@@ -1,0 +1,45 @@
+apiVersion: v1
+data:
+  mode: staging
+kind: ConfigMap
+metadata:
+  name: shop-config
+  namespace: tern-test-staging
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app.kubernetes.io/part-of: shop
+  name: shop
+  namespace: tern-test-staging
+spec:
+  ports:
+  - port: 80
+    targetPort: 80
+  selector:
+    app: shop
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: shop
+    app.kubernetes.io/part-of: shop
+  name: shop
+  namespace: tern-test-staging
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: shop
+  template:
+    metadata:
+      labels:
+        app: shop
+    spec:
+      containers:
+      - image: nginx:1.27-alpine
+        name: shop
+        ports:
+        - containerPort: 80

@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: c
+  namespace: tern-test-mixed
+data:
+  mode: plain
