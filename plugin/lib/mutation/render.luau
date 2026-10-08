@@ -30,7 +30,7 @@ local MODE_LABEL: { [Session.Mode]: string } = {
 
 local SOURCE_LABEL: { [T.ContextSource]: string } = {
 	flag = "from --context",
-	chosen = "chosen in Kube Lens",
+	chosen = "chosen in Tern Kube",
 	inferred = "inferred from current-context",
 }
 
@@ -72,17 +72,17 @@ local function spinner(label: string, key: string?): Node
 end
 
 local function button(text: string, action: string?, class: string, key: string, title: string?): Node
-	local p: { [string]: any } = { key = key, class = "kl-mbtn " .. class, text = text, title = title }
+	local p: { [string]: any } = { key = key, class = "tk-mbtn " .. class, text = text, title = title }
 	if action then
 		p.actions = { click = action }
 	else
-		p.class ..= " kl-mbtn-off"
+		p.class ..= " tk-mbtn-off"
 	end
 	return ui.el("button", p)
 end
 
 local function chip(text: string, action: string, key: string, tone: string?): Node
-	return ui.badge(text, tone or "neutral", { key = key, actions = { click = action }, role = "kube-lens.chip" })
+	return ui.badge(text, tone or "neutral", { key = key, actions = { click = action }, role = "tern-kube.chip" })
 end
 
 local function opLabel(s: State): string
@@ -168,9 +168,9 @@ local function header(s: State): Node
 	local kp = kv.p :: { [string]: any }
 	kp.key = "target"
 	return ui.col({
-		ui.row(badges, { key = "bar", wrap = true, role = "kube-lens.bar" }),
+		ui.row(badges, { key = "bar", wrap = true, role = "tern-kube.bar" }),
 		kv,
-	}, { key = "header", role = "kube-lens.approve-header" })
+	}, { key = "header", role = "tern-kube.approve-header" })
 end
 
 -- Steps -----------------------------------------------------------------------
@@ -218,7 +218,7 @@ local function stepsCard(s: State): Node?
 		then "running"
 		elseif s.assessment and s.assessment.tier == "blocked" then "error"
 		else "done"
-	return ui.card({ "Preview" }, rows, { key = "steps", status = status, role = "kube-lens.approve-steps" })
+	return ui.card({ "Preview" }, rows, { key = "steps", status = status, role = "tern-kube.approve-steps" })
 end
 
 -- Summary and objects ---------------------------------------------------------
@@ -330,7 +330,7 @@ local function diffCards(s: State): Node?
 				selected = s.focus == i,
 				inset = true,
 				tone = ACTION_TONE[seg.action],
-				role = "kube-lens.approve-diff",
+				role = "tern-kube.approve-diff",
 			})
 		)
 	end
@@ -412,7 +412,7 @@ local function risksCard(s: State): Node?
 	return ui.card(
 		{ "Risks", ui.span("  heuristics are advisory; no policy conformance is claimed", "muted") },
 		rows,
-		{ key = "risks", role = "kube-lens.approve-risks" }
+		{ key = "risks", role = "tern-kube.approve-risks" }
 	)
 end
 
@@ -492,7 +492,7 @@ local function confirmNodes(s: State, out: { Node })
 				ui.card(
 					{ "Cannot be confirmed" },
 					lines,
-					{ key = "blocked", tone = "error", role = "kube-lens.approve-blocked" }
+					{ key = "blocked", tone = "error", role = "tern-kube.approve-blocked" }
 				)
 			)
 		elseif req.overrideAvailable and not s.override then
@@ -518,7 +518,7 @@ local function confirmNodes(s: State, out: { Node })
 					}, { key = "t" }),
 					if s.targetConfirmed
 						then ui.badge("target confirmed", "success", { key = "tc" })
-						else button("Confirm target", "target", "kl-mbtn-plain", "tc", "t"),
+						else button("Confirm target", "target", "tk-mbtn-plain", "tc", "t"),
 				}, { key = "target-confirm", wrap = true })
 			)
 		end
@@ -558,11 +558,11 @@ local function confirmNodes(s: State, out: { Node })
 	end
 	local buttons: { Node } = {}
 	if s.phase == "input" then
-		table.insert(buttons, button("Preview", "confirm", "kl-mbtn-primary", "go"))
+		table.insert(buttons, button("Preview", "confirm", "tk-mbtn-primary", "go"))
 	elseif s.phase == "ready" then
 		local canOverride = req and req.overrideAvailable and not s.override
 		if canOverride then
-			table.insert(buttons, button("Override failed preview", "override", "kl-mbtn-danger", "override"))
+			table.insert(buttons, button("Override failed preview", "override", "tk-mbtn-danger", "override"))
 		end
 		local ok = confirmable(s)
 		local danger = s.assessment and s.assessment.tier ~= "simple"
@@ -571,7 +571,7 @@ local function confirmNodes(s: State, out: { Node })
 			button(
 				confirmLabel(s),
 				if ok then "confirm" else nil,
-				if danger then "kl-mbtn-danger" else "kl-mbtn-primary",
+				if danger then "tk-mbtn-danger" else "tk-mbtn-primary",
 				"confirm",
 				if Session.typing(s) then "type the name, then enter" else "enter"
 			)
@@ -584,7 +584,7 @@ local function confirmNodes(s: State, out: { Node })
 		end
 		table.insert(
 			buttons,
-			button(cancelText, if s.phase == "executing" then nil else "cancel", "kl-mbtn-plain", "cancel", "esc")
+			button(cancelText, if s.phase == "executing" then nil else "cancel", "tk-mbtn-plain", "cancel", "esc")
 		)
 	end
 	if s.argv then
@@ -593,7 +593,7 @@ local function confirmNodes(s: State, out: { Node })
 			button(
 				if s.showCommand then "Hide exact command" else "View exact command",
 				"command",
-				"kl-mbtn-plain",
+				"tk-mbtn-plain",
 				"command",
 				"c"
 			)
@@ -601,11 +601,11 @@ local function confirmNodes(s: State, out: { Node })
 	end
 	if s.phase == "ready" or s.phase == "error" then
 		if s.argv and not s.decided then
-			table.insert(buttons, button("Preview again", "rerun", "kl-mbtn-plain", "rerun", "r"))
+			table.insert(buttons, button("Preview again", "rerun", "tk-mbtn-plain", "rerun", "r"))
 		end
 	end
-	table.insert(buttons, button("?", "help", "kl-mbtn-plain", "help", "help"))
-	table.insert(out, ui.row(buttons, { key = "buttons", wrap = true, role = "kube-lens.approve-buttons" }))
+	table.insert(buttons, button("?", "help", "tk-mbtn-plain", "help", "help"))
+	table.insert(out, ui.row(buttons, { key = "buttons", wrap = true, role = "tern-kube.approve-buttons" }))
 end
 
 local function commandNode(s: State): Node?
@@ -721,10 +721,10 @@ local function resultNodes(s: State, out: { Node })
 		ui.card({ "Result" }, children, {
 			key = "result",
 			status = if ex.status == 0 and not ex.timedOut then "done" else "error",
-			role = "kube-lens.approve-result",
+			role = "tern-kube.approve-result",
 		})
 	)
-	table.insert(out, ui.row({ button("Close", "close", "kl-mbtn-plain", "close", "esc") }, { key = "buttons" }))
+	table.insert(out, ui.row({ button("Close", "close", "tk-mbtn-plain", "close", "esc") }, { key = "buttons" }))
 end
 
 -- Dock and help -------------------------------------------------------------------
@@ -793,14 +793,17 @@ local function help(): Node
 		table.insert(items, { { ui.span(k[1], "mono strong") :: SpanLike }, { k[2] :: SpanLike } })
 	end
 	return ui.col({
-		ui.text({ ui.span("Kube Approve keys", "strong"), ui.span("   esc or ? closes", "muted") }, { key = "title" }),
+		ui.text(
+			{ ui.span("Tern Kube Approve keys", "strong"), ui.span("   esc or ? closes", "muted") },
+			{ key = "title" }
+		),
 		ui.kv(items),
 		ui.muted(
 			"Nothing runs before confirmation. The command, its input files and the target "
 				.. "are re-checked right before running; any change refuses. Risk findings marked "
 				.. "advisory are text heuristics, not policy checks."
 		),
-	}, { key = "help", role = "kube-lens.approve-help" })
+	}, { key = "help", role = "tern-kube.approve-help" })
 end
 
 -- View --------------------------------------------------------------------------
@@ -817,7 +820,7 @@ function M.view(s: State): View
 		for i, e in s.errors do
 			table.insert(rows, ui.text({ ui.span(e, "error") }, { key = "e" .. i }))
 		end
-		add(ui.card({ "Cannot continue" }, rows, { key = "errors", tone = "error", role = "kube-lens.error" }))
+		add(ui.card({ "Cannot continue" }, rows, { key = "errors", tone = "error", role = "tern-kube.error" }))
 	end
 	if s.phase == "expired" then
 		add(ui.card({ "Request expired" }, {
@@ -840,15 +843,15 @@ function M.view(s: State): View
 		confirmNodes(s, main)
 	end
 	return {
-		main = ui.col(main, { role = "kube-lens.approve" }),
-		dock = ui.col({ ui.text(hints(s), { key = "hints" }) }, { role = "kube-lens.approve-dock" }),
-		layer = if s.help then ui.col({ help() }, { role = "kube-lens.approve-layer" }) else nil,
+		main = ui.col(main, { role = "tern-kube.approve" }),
+		dock = ui.col({ ui.text(hints(s), { key = "hints" }) }, { role = "tern-kube.approve-dock" }),
+		layer = if s.help then ui.col({ help() }, { role = "tern-kube.approve-layer" }) else nil,
 	}
 end
 
 function M.title(s: State): string
 	local ctx = contextOf(s)
-	return "Kube Approve · " .. opLabel(s) .. (if ctx then " · " .. ctx else "")
+	return "Tern Kube Approve · " .. opLabel(s) .. (if ctx then " · " .. ctx else "")
 end
 
 return M

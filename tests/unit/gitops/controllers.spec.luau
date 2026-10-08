@@ -70,7 +70,7 @@ describe("controllers.parse", function()
 	it("reads Argo CD applications with sync and health", function()
 		local app = find(world(), "argocd", "guestbook")
 		expect(app.namespace).toBe("tern-test-gitops")
-		expect(app.repoURL).toBe("git@github.com:contrafy/tern-kube-lens.git")
+		expect(app.repoURL).toBe("git@github.com:contrafy/tern-kube.git")
 		expect(app.path).toBe("tests/integration/manifests/gitops/workloads")
 		expect(app.revision).toBe("4f2a9c1e8b7d6a5f4e3d2c1b0a9f8e7d6c5b4a39")
 		expect(app.sync).toBe("Synced")
@@ -82,7 +82,7 @@ describe("controllers.parse", function()
 		local app = find(world(), "argocd", "guestbook-drifted")
 		expect(#app.sources).toBe(2)
 		expect(app.sources[1].chart).toBe("guestbook")
-		expect(app.repoURL).toBe("https://github.com/contrafy/tern-kube-lens")
+		expect(app.repoURL).toBe("https://github.com/contrafy/tern-kube")
 		expect(app.path).toBe("tests/integration/manifests/drift/baseline")
 		expect(app.revision).toBe("4f2a9c1e8b7d6a5f4e3d2c1b0a9f8e7d6c5b4a39")
 		expect(app.sync).toBe("OutOfSync")
@@ -101,7 +101,7 @@ describe("controllers.parse", function()
 	it("resolves Flux Kustomization sources through their GitRepository", function()
 		local set = world()
 		local apps = find(set, "flux-kustomize", "apps")
-		expect(apps.repoURL).toBe("https://github.com/contrafy/tern-kube-lens.git")
+		expect(apps.repoURL).toBe("https://github.com/contrafy/tern-kube.git")
 		expect(apps.path).toBe("./tests/integration/manifests/gitops/workloads")
 		expect(apps.revision).toBe("master@sha1:4f2a9c1e8b7d6a5f4e3d2c1b0a9f8e7d6c5b4a39")
 		expect(apps.sync).toBe("Ready")
@@ -116,7 +116,7 @@ describe("controllers.parse", function()
 
 	it("resolves Flux HelmRelease charts stored in a GitRepository", function()
 		local hr = find(world(), "flux-helm", "podinfo")
-		expect(hr.repoURL).toBe("https://github.com/contrafy/tern-kube-lens.git")
+		expect(hr.repoURL).toBe("https://github.com/contrafy/tern-kube.git")
 		expect(hr.path).toBe("./charts/podinfo")
 		expect(hr.revision).toBe("6.7.0")
 		expect(hr.sync).toBe("Unknown")
@@ -286,35 +286,29 @@ describe("controllers.normalizeRemote", function()
 end)
 
 describe("controllers.localPath", function()
-	local repo = { root = "/home/u/tern-kube-lens", remotes = { "https://github.com/contrafy/tern-kube-lens.git" } }
+	local repo = { root = "/home/u/tern-kube", remotes = { "https://github.com/contrafy/tern-kube.git" } }
 
 	it("maps an Argo app on the same repo (ssh vs https) into the checkout", function()
 		local app = find(world(), "argocd", "guestbook")
-		expect(Controllers.localPath(app, repo)).toBe(
-			"/home/u/tern-kube-lens/tests/integration/manifests/gitops/workloads"
-		)
+		expect(Controllers.localPath(app, repo)).toBe("/home/u/tern-kube/tests/integration/manifests/gitops/workloads")
 	end)
 
 	it("uses the matching git source of a multi-source app", function()
 		local app = find(world(), "argocd", "guestbook-drifted")
-		expect(Controllers.localPath(app, repo)).toBe(
-			"/home/u/tern-kube-lens/tests/integration/manifests/drift/baseline"
-		)
+		expect(Controllers.localPath(app, repo)).toBe("/home/u/tern-kube/tests/integration/manifests/drift/baseline")
 	end)
 
 	it("maps Flux paths (./ prefixed) and chart dirs", function()
 		local set = world()
 		expect(Controllers.localPath(find(set, "flux-kustomize", "apps"), repo)).toBe(
-			"/home/u/tern-kube-lens/tests/integration/manifests/gitops/workloads"
+			"/home/u/tern-kube/tests/integration/manifests/gitops/workloads"
 		)
-		expect(Controllers.localPath(find(set, "flux-helm", "podinfo"), repo)).toBe(
-			"/home/u/tern-kube-lens/charts/podinfo"
-		)
+		expect(Controllers.localPath(find(set, "flux-helm", "podinfo"), repo)).toBe("/home/u/tern-kube/charts/podinfo")
 	end)
 
 	it("works from an owner() result too", function()
 		local o = Controllers.owner(workload("argo-label"), world()) :: Controllers.Owner
-		expect(Controllers.localPath(o, { root = "/r/", remotes = { "git@github.com:contrafy/tern-kube-lens" } })).toBe(
+		expect(Controllers.localPath(o, { root = "/r/", remotes = { "git@github.com:contrafy/tern-kube" } })).toBe(
 			"/r/tests/integration/manifests/gitops/workloads"
 		)
 	end)
@@ -327,7 +321,7 @@ describe("controllers.localPath", function()
 		local escaping: Controllers.Controller = {
 			controller = "argocd",
 			name = "x",
-			sources = { { repoURL = "https://github.com/contrafy/tern-kube-lens", path = "../../etc" } },
+			sources = { { repoURL = "https://github.com/contrafy/tern-kube", path = "../../etc" } },
 		}
 		expect(Controllers.localPath(escaping, repo)).toBeNil()
 	end)
@@ -336,9 +330,9 @@ describe("controllers.localPath", function()
 		local root: Controllers.Controller = {
 			controller = "flux-kustomize",
 			name = "x",
-			sources = { { repoURL = "https://github.com/contrafy/tern-kube-lens", path = "./" } },
+			sources = { { repoURL = "https://github.com/contrafy/tern-kube", path = "./" } },
 		}
-		expect(Controllers.localPath(root, repo)).toBe("/home/u/tern-kube-lens")
+		expect(Controllers.localPath(root, repo)).toBe("/home/u/tern-kube")
 	end)
 end)
 

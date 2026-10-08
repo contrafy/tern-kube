@@ -3,7 +3,7 @@
 -- split running a visible kubectl command (shell, follow logs,
 -- port-forward, and the mutating debug/cronjob ones that M3 gates).
 --
--- They travel as `kube-lens://act/<action>?<params>` links to the window's
+-- They travel as `tern-kube://act/<action>?<params>` links to the window's
 -- route.link. The window never runs text taken from a URL: decode()
 -- validates every field against a strict per-action schema and command()
 -- rebuilds the command line from those fields with POSIX quoting.
@@ -75,7 +75,7 @@ export type Placement = { how: "split", dir: "right" | "down" } | { how: "tab" }
 
 local M = {}
 
-M.SCHEME = "kube-lens://act/"
+M.SCHEME = "tern-kube://act/"
 M.DEFAULT_IMAGE = "busybox:1.36"
 M.TAIL = "200"
 M.MAX_LOG_REQUESTS = "10"
@@ -432,7 +432,7 @@ end
 
 function M.decode(url: string): (Request?, string?)
 	if string.sub(url, 1, #M.SCHEME) ~= M.SCHEME then
-		return nil, "not a kube-lens://act/ link"
+		return nil, "not a tern-kube://act/ link"
 	end
 	local action, query = string.match(string.sub(url, #M.SCHEME + 1), "^([a-z%-]+)%?(.+)$")
 	if action == nil or query == nil then
@@ -597,12 +597,12 @@ function M.command(action: string, target: Target, ref: Ref, opts: Opts?, settin
 			table.insert(pre, "set -- $(" .. Command.format(get) .. ")")
 			table.insert(
 				pre,
-				"p=${1:-}; case $p in ''|*[!0-9]*) printf 'kube-lens: %s declares no port\\n' "
+				"p=${1:-}; case $p in ''|*[!0-9]*) printf 'tern-kube: %s declares no port\\n' "
 					.. Command.quote(typed)
 					.. " >&2; exit 1;; esac"
 			)
 			table.insert(pre, 'if [ "$p" -gt 1024 ]; then l=$p; else l=$((8000 + p)); fi')
-			table.insert(pre, 'printf \'kube-lens: forwarding localhost:%s -> %s\\n\' "$l" "$p"')
+			table.insert(pre, 'printf \'tern-kube: forwarding localhost:%s -> %s\\n\' "$l" "$p"')
 			table.insert(argv, "$l:$p")
 			title = "port-forward " .. where
 		end
@@ -627,20 +627,20 @@ function M.command(action: string, target: Target, ref: Ref, opts: Opts?, settin
 		append(argv, { r.name .. "-manual-" .. (o.suffix :: string), "--from=" .. typed })
 		title = "run cronjob " .. where
 		table.insert(post, "s=$?")
-		table.insert(post, "printf '\\nkube-lens: exit %s; press Enter to close\\n' \"$s\"")
+		table.insert(post, "printf '\\ntern-kube: exit %s; press Enter to close\\n' \"$s\"")
 		table.insert(post, "read -r _")
 		table.insert(post, 'exit "$s"')
 	end
 
 	local ctx = req.target.context
-	title = "kube-lens " .. title .. " @ " .. (ctx or "current context")
+	title = "tern-kube " .. title .. " @ " .. (ctx or "current context")
 
 	local script: { string } = { "printf '\\033]0;%s\\007' " .. Command.quote(title) }
 	if ctx == nil then
 		local current = { program }
 		append(current, connection({ kubeconfig = req.target.kubeconfig }))
 		append(current, { "config", "current-context" })
-		table.insert(script, "printf 'kube-lens: context %s\\n' \"$(" .. Command.format(current) .. ')"')
+		table.insert(script, "printf 'tern-kube: context %s\\n' \"$(" .. Command.format(current) .. ')"')
 	end
 	append(script, pre)
 	local run = Command.format(argv)

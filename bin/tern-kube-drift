@@ -1,10 +1,10 @@
 #!/bin/sh
-# kube-lens-drift: report drift between Kubernetes manifests and a cluster.
+# tern-kube-drift: report drift between Kubernetes manifests and a cluster.
 #
 # Runs `kubectl diff` (server-side dry run, never mutates) for one source and
 # reports per-resource changes as text, Markdown (PR comments, CI summaries)
 # or JSON. Segmentation follows plugin/lib/mutation/diffseg.luau in
-# github.com/contrafy/tern-kube-lens so the CLI and the Tern plugin agree.
+# github.com/contrafy/tern-kube so the CLI and the Tern plugin agree.
 #
 # Requires only a POSIX shell, awk, sed, sort, mktemp and kubectl (helm for
 # --helm). Exit status: 0 no drift, 1 drift, 2 error.
@@ -13,11 +13,11 @@ set -u
 if [ -n "${ZSH_VERSION-}" ]; then emulate sh; fi
 
 VERSION=0.1.0
-prog=kube-lens-drift
+prog=tern-kube-drift
 
 usage() {
 	cat <<'EOF'
-usage: kube-lens-drift SOURCE [options]
+usage: tern-kube-drift SOURCE [options]
 
 SOURCE (exactly one):
   -f, --filename PATH        manifest file or directory (repeatable)
@@ -248,7 +248,7 @@ command -v "$kubectl_bin" >/dev/null 2>&1 || die "kubectl not found (set KUBECTL
 # kubectl diff must print its built-in `diff -u -N` output.
 unset KUBECTL_EXTERNAL_DIFF
 
-tmp=$(mktemp -d "${TMPDIR:-/tmp}/kube-lens-drift.XXXXXX") || die "cannot create a temp dir"
+tmp=$(mktemp -d "${TMPDIR:-/tmp}/tern-kube-drift.XXXXXX") || die "cannot create a temp dir"
 trap 'rm -rf "$tmp"' EXIT
 trap 'exit 2' HUP INT TERM
 
@@ -374,9 +374,9 @@ if [ -n "$unmanaged" ]; then
 		LC_ALL=C sort -t "$(printf '\t')" -k3,3 -k4,4 -k5,5 >"$tmp/unmanaged.tsv"
 fi
 
-KLD_FORMAT=$format KLD_MAX_LINES=$max_lines KLD_MAX_BYTES=$max_bytes KLD_LABEL=$label \
-	KLD_SOURCE_TYPE=$src_type KLD_CONTEXT=$ctx_name KLD_NAMESPACE=$namespace \
-	KLD_UNMANAGED=$tmp/unmanaged.tsv KLD_UNMANAGED_ON=${unmanaged:+1} \
+TKD_FORMAT=$format TKD_MAX_LINES=$max_lines TKD_MAX_BYTES=$max_bytes TKD_LABEL=$label \
+	TKD_SOURCE_TYPE=$src_type TKD_CONTEXT=$ctx_name TKD_NAMESPACE=$namespace \
+	TKD_UNMANAGED=$tmp/unmanaged.tsv TKD_UNMANAGED_ON=${unmanaged:+1} \
 	LC_ALL=C awk '
 # Port of plugin/lib/mutation/diffseg.luau M.parse; keep the two in step
 # (tests/shell/drift checks them against the same golden inputs).
@@ -584,7 +584,7 @@ function emit(t) { OUT = OUT t "\n" }
 function fits(t) { return MAXB == 0 || length(OUT) + length(t) + RESERVE <= MAXB }
 
 function renderJSON(   s, j, to, total) {
-	printf "{\"version\":1,\"source\":{\"type\":%s,\"label\":%s},", jstr(ENVIRON["KLD_SOURCE_TYPE"]), jstr(LABEL)
+	printf "{\"version\":1,\"source\":{\"type\":%s,\"label\":%s},", jstr(ENVIRON["TKD_SOURCE_TYPE"]), jstr(LABEL)
 	printf "\"context\":%s,\"namespace\":%s,", jopt(CTX != "", CTX), jopt(NSP != "", NSP)
 	printf "\"drift\":%s,", drifted() ? "true" : "false"
 	printf "\"summary\":{\"resources\":%d,\"create\":%d,\"modify\":%d,\"delete\":%d,\"unknown\":%d,\"added\":%d,\"removed\":%d,\"unmanaged\":%s},", \
@@ -741,10 +741,10 @@ BEGIN {
 	JCTRL["\t"] = "\\t"; JCTRL["\n"] = "\\n"; JCTRL["\r"] = "\\r"; JCTRL["\b"] = "\\b"; JCTRL["\f"] = "\\f"
 	for (i = 32; i < 127; i++) ORD[sprintf("%c", i)] = i
 	MDSPECIAL = "&<>\"'\''`|\\*_[]~@#!()$:{}"
-	REDACTED = "*** (last-applied-configuration redacted by kube-lens-drift)"
-	FMT = ENVIRON["KLD_FORMAT"]; MAXL = ENVIRON["KLD_MAX_LINES"] + 0; MAXB = ENVIRON["KLD_MAX_BYTES"] + 0
-	LABEL = ENVIRON["KLD_LABEL"]; CTX = ENVIRON["KLD_CONTEXT"]; NSP = ENVIRON["KLD_NAMESPACE"]
-	UON = ENVIRON["KLD_UNMANAGED_ON"] != ""
+	REDACTED = "*** (last-applied-configuration redacted by tern-kube-drift)"
+	FMT = ENVIRON["TKD_FORMAT"]; MAXL = ENVIRON["TKD_MAX_LINES"] + 0; MAXB = ENVIRON["TKD_MAX_BYTES"] + 0
+	LABEL = ENVIRON["TKD_LABEL"]; CTX = ENVIRON["TKD_CONTEXT"]; NSP = ENVIRON["TKD_NAMESPACE"]
+	UON = ENVIRON["TKD_UNMANAGED_ON"] != ""
 	NL = 0; NSEG = 0; NN = 0; NU = 0; OUT = ""
 }
 { sub(/\r$/, ""); L[++NL] = $0 }
@@ -752,7 +752,7 @@ END {
 	parse()
 	redactSecrets()
 	if (UON) {
-		uf = ENVIRON["KLD_UNMANAGED"]
+		uf = ENVIRON["TKD_UNMANAGED"]
 		while ((getline line < uf) > 0) {
 			n = split(line, f, "\t")
 			if (n < 5) continue

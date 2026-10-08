@@ -39,30 +39,30 @@ describe("mutate links", function()
 	end)
 
 	it("builds apply argv from a file or a kustomization, with the input's directory as cwd", function()
-		local r = Link.decode("kube-lens://mutate?op=apply&file=%2Fw%2Fm%2Fa.yaml&recursive=1") :: Link.Request
+		local r = Link.decode("tern-kube://mutate?op=apply&file=%2Fw%2Fm%2Fa.yaml&recursive=1") :: Link.Request
 		expect(Link.argv(r, "kubectl")).toEqual({ "kubectl", "apply", "-f", "/w/m/a.yaml", "-R" })
 		expect(Link.cwd(r, "/home")).toBe("/w/m")
-		r = Link.decode("kube-lens://mutate?op=apply&kustomize=%2Fw%2Fover") :: Link.Request
+		r = Link.decode("tern-kube://mutate?op=apply&kustomize=%2Fw%2Fover") :: Link.Request
 		expect(Link.argv(r, "kubectl")).toEqual({ "kubectl", "apply", "-k", "/w/over" })
 	end)
 
 	it("rejects anything that is not a plain target", function()
 		local cases = {
-			"kube-lens://mutate?op=exec&kind=pod&name=x",
-			"kube-lens://mutate?op=delete&kind=pod&name=--all",
-			"kube-lens://mutate?op=delete&kind=pod&name=x&flags=--force",
-			"kube-lens://mutate?op=delete&kind=pod",
-			"kube-lens://mutate?op=delete&kind=pod&name=x&name=y",
-			"kube-lens://mutate?op=delete&kind=pod&name=x;rm",
-			"kube-lens://mutate?op=restart&kind=pod&name=x",
-			"kube-lens://mutate?op=scale&kind=service&name=x&replicas=1",
-			"kube-lens://mutate?op=scale&kind=deploy&name=x&replicas=-1",
-			"kube-lens://mutate?op=apply&file=relative.yaml",
-			"kube-lens://mutate?op=apply&file=%2Fa&kustomize=%2Fb",
-			"kube-lens://mutate?op=apply",
-			"kube-lens://mutate?op=delete&kind=node&name=n1&namespace=apps",
-			"kube-lens://mutate?op=delete&kind=pod&name=x&context=-x",
-			"kube-lens://mutate?op=delete&kind=pod&name=x&namespace=a%0Ab",
+			"tern-kube://mutate?op=exec&kind=pod&name=x",
+			"tern-kube://mutate?op=delete&kind=pod&name=--all",
+			"tern-kube://mutate?op=delete&kind=pod&name=x&flags=--force",
+			"tern-kube://mutate?op=delete&kind=pod",
+			"tern-kube://mutate?op=delete&kind=pod&name=x&name=y",
+			"tern-kube://mutate?op=delete&kind=pod&name=x;rm",
+			"tern-kube://mutate?op=restart&kind=pod&name=x",
+			"tern-kube://mutate?op=scale&kind=service&name=x&replicas=1",
+			"tern-kube://mutate?op=scale&kind=deploy&name=x&replicas=-1",
+			"tern-kube://mutate?op=apply&file=relative.yaml",
+			"tern-kube://mutate?op=apply&file=%2Fa&kustomize=%2Fb",
+			"tern-kube://mutate?op=apply",
+			"tern-kube://mutate?op=delete&kind=node&name=n1&namespace=apps",
+			"tern-kube://mutate?op=delete&kind=pod&name=x&context=-x",
+			"tern-kube://mutate?op=delete&kind=pod&name=x&namespace=a%0Ab",
 		}
 		for _, url in cases do
 			local r, e = Link.decode(url)
@@ -72,14 +72,14 @@ describe("mutate links", function()
 	end)
 
 	it("leaves a scale without replicas for the block to ask", function()
-		local r = Link.decode("kube-lens://mutate?op=scale&kind=sts&name=db") :: Link.Request
+		local r = Link.decode("tern-kube://mutate?op=scale&kind=sts&name=db") :: Link.Request
 		expect(Link.argv(r, "kubectl")).toBeNil()
 	end)
 
 	-- The palette's "Apply file or directory" opens the block with only the
 	-- focused pane's cwd; the user types the path there.
 	it("leaves an apply with only a cwd for the block to ask, and resolves the typed path", function()
-		local r = Link.decode("kube-lens://mutate?op=apply&cwd=%2Fw%2Frepo") :: Link.Request
+		local r = Link.decode("tern-kube://mutate?op=apply&cwd=%2Fw%2Frepo") :: Link.Request
 		expect(Link.argv(r, "kubectl")).toBeNil()
 		local function typed(input: string): { string }?
 			local out = Link.withPath(r, input, "/home/me")
@@ -96,7 +96,7 @@ describe("mutate links", function()
 	end)
 
 	it("refuses stdin, empty input and -R with -k at the apply prompt", function()
-		local r = Link.decode("kube-lens://mutate?op=apply&cwd=%2Fw") :: Link.Request
+		local r = Link.decode("tern-kube://mutate?op=apply&cwd=%2Fw") :: Link.Request
 		for _, input in { "", "   ", "-", "-f x", "-k -R d", "-k d -R" } do
 			local out, e = Link.withPath(r, input)
 			expect(out).toBeNil()
@@ -136,7 +136,7 @@ describe("mutate links", function()
 end)
 
 describe("quick-action grants", function()
-	local url = "kube-lens://act/debug-node?kind=Node&name=w1&context=kind-dev"
+	local url = "tern-kube://act/debug-node?kind=Node&name=w1&context=kind-dev"
 
 	it("lets a matching token through exactly once", function()
 		local grants = Link.addGrant(nil, TOKEN, url, 100) :: Link.Grants

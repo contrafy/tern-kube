@@ -11,7 +11,7 @@ cluster	get_ns	kubectl get ns	0	v1.34.1	v1.37.0
 cluster	get_crd	kubectl get crd	0	v1.34.1	v1.37.0
 cluster	get_crd_widgets.lens.example.com_-o_yaml	kubectl get crd widgets.lens.example.com -o yaml	0	v1.34.1	v1.37.0
 cluster	describe_node	kubectl describe node	0	v1.34.1	v1.37.0
-cluster	describe_node_kube-lens-dev-control-plane	kubectl describe node kube-lens-dev-control-plane	0	v1.34.1	v1.37.0
+cluster	describe_node_tern-kube-dev-control-plane	kubectl describe node tern-kube-dev-control-plane	0	v1.34.1	v1.37.0
 cluster	top_nodes	kubectl top nodes	0	v1.34.1	v1.37.0
 ns-apps	get_pods	kubectl get pods -n tern-test-apps	0	v1.34.1	v1.37.0
 ns-apps	get_po	kubectl get po -n tern-test-apps	0	v1.34.1	v1.37.0

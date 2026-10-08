@@ -33,7 +33,7 @@ M.LIVENESS_MS = 2000
 local function warnOnce(h: Host, what: string, err: any)
 	if not h.warned then
 		h.warned = true
-		log.warn("kube-lens explore " .. what .. " failed", tostring(err))
+		log.warn("tern-kube explore " .. what .. " failed", tostring(err))
 	end
 end
 
@@ -60,7 +60,7 @@ local function run(h: Host, e: Effect)
 			return
 		end
 		log.debug(
-			"kube-lens explore.run",
+			"tern-kube explore.run",
 			e.tag,
 			"status=" .. result.status,
 			"timed_out=" .. tostring(result.timed_out),
@@ -233,7 +233,7 @@ function exec(h: Host, effects: { Effect })
 		elseif e.t == "toast" then
 			h.cx:toast(e.level or "info", e.text or "", e.sub)
 		elseif e.t == "open" then
-			-- window.luau's route.link claims every kube-lens:// URL.
+			-- window.luau's route.link claims every tern-kube:// URL.
 			h.cx:open(e.url or "")
 		elseif e.t == "save" then
 			h.cx:save()
@@ -280,7 +280,7 @@ local function watch(h: Host)
 		if h.scan then
 			h.scan.cancel()
 		end
-		log.debug("kube-lens explore pane gone", h.cx.pane)
+		log.debug("tern-kube explore pane gone", h.cx.pane)
 	end
 	tern.timer(M.LIVENESS_MS, tick)
 end
@@ -293,7 +293,7 @@ local function errorView(err: any): BlockView
 			c = {
 				{
 					k = "text",
-					p = { spans = { { t = "Kube Explore could not render: " .. tostring(err), s = "error" } } },
+					p = { spans = { { t = "Tern Kube Explore could not render: " .. tostring(err), s = "error" } } },
 				},
 			},
 		} :: any,
@@ -337,7 +337,7 @@ function M.register()
 		end,
 		title = function(h: Host): string?
 			local ok, title = pcall(Render.title, h.s)
-			return if ok then title else "Kube Explore"
+			return if ok then title else "Tern Kube Explore"
 		end,
 		key = function(h: Host, key: Key, cx: BlockCx): boolean?
 			h.cx = cx

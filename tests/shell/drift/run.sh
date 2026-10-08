@@ -1,5 +1,5 @@
 #!/bin/sh
-# Tests for bin/kube-lens-drift without a cluster: a fake kubectl replays
+# Tests for bin/tern-kube-drift without a cluster: a fake kubectl replays
 # golden `kubectl diff` output and records every invocation. The cases pin
 # what CI users rely on: the per-resource split agrees with the plugin's
 # diffseg.luau on every shared golden input (so a PR comment and the Tern
@@ -14,7 +14,7 @@ set -u
 
 repo=$(CDPATH='' cd -- "$(dirname -- "$0")/../../.." && pwd -P)
 here=$repo/tests/shell/drift
-cli=$repo/bin/kube-lens-drift
+cli=$repo/bin/tern-kube-drift
 luau=${LUAU:-$repo/.tools/bin/luau}
 case $luau in
 /*) ;;
@@ -25,7 +25,7 @@ esac
 	exit 2
 }
 
-root=$(mktemp -d "${TMPDIR:-/tmp}/kld-test.XXXXXX") || exit 2
+root=$(mktemp -d "${TMPDIR:-/tmp}/tkd-test.XXXXXX") || exit 2
 root=$(cd -P "$root" && pwd -P)
 trap 'rm -rf "$root"' EXIT
 
@@ -59,7 +59,7 @@ fresh() {
 	case_name=$1
 	rm -rf "$FAKE_DIR" "$TMPDIR"
 	mkdir -p "$FAKE_DIR/get" "$TMPDIR"
-	echo kind-kube-lens-dev >"$FAKE_DIR/context"
+	echo kind-tern-kube-dev >"$FAKE_DIR/context"
 }
 
 # diff_from FILE [EXIT]: the fake's `kubectl diff` replays FILE.
@@ -187,7 +187,7 @@ for s in $shells; do
 	run "$s" -k overlays/prod --format json
 	expect_rc 1
 	expect_argv "kubectl [diff] [-k] [overlays/prod]"
-	expect_out '"context":"kind-kube-lens-dev"'
+	expect_out '"context":"kind-tern-kube-dev"'
 	expect_out '"source":{"type":"kustomize","label":"overlays/prod"}'
 
 	fresh "$s: no drift"
@@ -247,10 +247,10 @@ done
 fresh "help and version"
 run sh --help
 expect_rc 0
-expect_out "usage: kube-lens-drift"
+expect_out "usage: tern-kube-drift"
 run sh --version
 expect_rc 0
-expect_out "kube-lens-drift "
+expect_out "tern-kube-drift "
 
 # --- Markdown is safe to post as a PR comment ------------------------------
 
@@ -282,8 +282,8 @@ for fmt in text markdown json; do
 	diff_from "$here/cases/secret-last-applied.diff"
 	run sh -f a.yaml --format "$fmt"
 	expect_rc 1
-	expect_no_out 'kube-lens-test-not-a-secret'
-	expect_out '*** (last-applied-configuration redacted by kube-lens-drift)'
+	expect_no_out 'tern-kube-test-not-a-secret'
+	expect_out '*** (last-applied-configuration redacted by tern-kube-drift)'
 	expect_out "'*** (after)'"
 done
 

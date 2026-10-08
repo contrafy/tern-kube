@@ -13,7 +13,7 @@ local describe, it, expect = t.describe, t.it, t.expect
 
 local WORLD = "real/json-world/"
 local APPS, BATCH, CRD = "tern-test-apps", "tern-test-batch", "tern-test-crd"
-local NODE = "kube-lens-dev-control-plane"
+local NODE = "tern-kube-dev-control-plane"
 
 local cache: { [string]: { any } } = {}
 

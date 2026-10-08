@@ -17,9 +17,9 @@ local function present(x: any)
 	expect(x ~= nil).toBe(true)
 end
 
-local DELETE = "kube-lens://mutate?op=delete&kind=deployment&name=web&namespace=apps&context=kind-dev&source=chosen"
+local DELETE = "tern-kube://mutate?op=delete&kind=deployment&name=web&namespace=apps&context=kind-dev&source=chosen"
 local SCALE =
-	"kube-lens://mutate?op=scale&kind=deployment&name=web&namespace=apps&replicas=1&context=kind-dev&source=chosen"
+	"tern-kube://mutate?op=scale&kind=deployment&name=web&namespace=apps&replicas=1&context=kind-dev&source=chosen"
 
 local function ready(url: string, world: A.World?): (Session.State, A.Drive)
 	local s, effects = A.init(url)
@@ -60,7 +60,7 @@ describe("approve session: native preview", function()
 	end)
 
 	it("resolves the current-context when the link has none and marks it inferred", function()
-		local s, d = ready("kube-lens://mutate?op=restart&kind=deployment&name=web&namespace=apps")
+		local s, d = ready("tern-kube://mutate?op=restart&kind=deployment&name=web&namespace=apps")
 		present(A.find(d.runs, "run", "current"))
 		expect((s.plan :: any).contextSource).toBe("inferred")
 		expect((s.requirements :: any).targetConfirmation).toBe(true)
@@ -75,7 +75,7 @@ describe("approve session: native preview", function()
 
 	it("asks for a replica count when a scale link has none", function()
 		local s, effects =
-			A.init("kube-lens://mutate?op=scale&kind=deployment&name=web&namespace=apps&context=kind-dev")
+			A.init("tern-kube://mutate?op=scale&kind=deployment&name=web&namespace=apps&context=kind-dev")
 		expect(s.phase).toBe("input")
 		present(A.find(effects, "focus"))
 		local respond = A.cluster()
@@ -86,7 +86,7 @@ describe("approve session: native preview", function()
 	end)
 
 	it("asks for a path when the palette opens an apply with only a cwd", function()
-		local s, effects = A.init("kube-lens://mutate?op=apply&cwd=%2Fw%2Frepo&context=kind-dev")
+		local s, effects = A.init("tern-kube://mutate?op=apply&cwd=%2Fw%2Frepo&context=kind-dev")
 		expect(s.phase).toBe("input")
 		present(A.find(effects, "focus"))
 		local respond = A.cluster({ files = { { path = "/w/repo/k8s", size = 10, sha256 = string.rep("a", 64) } } })
@@ -103,7 +103,7 @@ describe("approve session: native preview", function()
 	end)
 
 	it("splits the diff into per-resource segments and counts them", function()
-		local s = ready("kube-lens://mutate?op=apply&file=%2Fw%2Fapps.yaml&context=kind-dev", {
+		local s = ready("tern-kube://mutate?op=apply&file=%2Fw%2Fapps.yaml&context=kind-dev", {
 			diff = Fixtures.read("real/mutate-preview/diff_-f_preview+apps-mix.yaml.txt"),
 			files = { { path = "/w/apps.yaml", size = 10, sha256 = string.rep("a", 64) } },
 		})
@@ -117,7 +117,7 @@ describe("approve session: native preview", function()
 	local SECRET_DIFF = Fixtures.read("tests/shell/drift/cases/secret-last-applied.diff")
 	local function secretPreview(config: Session.Config?): string
 		local s, effects =
-			A.init("kube-lens://mutate?op=apply&file=%2Fw%2Fsecret.yaml&context=kind-dev", { config = config })
+			A.init("tern-kube://mutate?op=apply&file=%2Fw%2Fsecret.yaml&context=kind-dev", { config = config })
 		A.drive(
 			s,
 			effects,
@@ -135,9 +135,9 @@ describe("approve session: native preview", function()
 
 	it("redacts Secret last-applied lines in diffs unless secret values are shown", function()
 		local text = secretPreview()
-		expect((string.find(text, "kube-lens-test-not-a-secret", 1, true))).toBeNil()
-		expect(text).toContain("      *** (last-applied-configuration redacted by kube-lens)")
-		expect(secretPreview(A.config({ showSecretValues = true }))).toContain("kube-lens-test-not-a-secret")
+		expect((string.find(text, "tern-kube-test-not-a-secret", 1, true))).toBeNil()
+		expect(text).toContain("      *** (last-applied-configuration redacted by tern-kube)")
+		expect(secretPreview(A.config({ showSecretValues = true }))).toContain("tern-kube-test-not-a-secret")
 	end)
 
 	it("refuses every native link when mutations are disabled, without running anything", function()
@@ -145,7 +145,7 @@ describe("approve session: native preview", function()
 		expect(s.phase).toBe("error")
 		expect(s.errors[1]).toBe(Session.DISABLED)
 		expect(#effects).toBe(0)
-		s, effects = A.init("kube-lens://act/cronjob-run?kind=CronJob&name=nightly&namespace=apps", {
+		s, effects = A.init("tern-kube://act/cronjob-run?kind=CronJob&name=nightly&namespace=apps", {
 			config = A.config({ enabled = false }),
 		})
 		expect(s.errors[1]).toBe(Session.DISABLED)
@@ -205,7 +205,7 @@ describe("approve session: native confirm and execute", function()
 	it("refuses when an input file changed after the preview, until previewed again", function()
 		local files = { { path = "/w/a.yaml", size = 10, sha256 = string.rep("a", 64) } }
 		local world: A.World = { files = files }
-		local s = ready("kube-lens://mutate?op=apply&file=%2Fw%2Fa.yaml&context=kind-dev", world)
+		local s = ready("tern-kube://mutate?op=apply&file=%2Fw%2Fa.yaml&context=kind-dev", world)
 		files[1] = { path = "/w/a.yaml", size = 11, sha256 = string.rep("b", 64) }
 		local d = A.send(s, A.key("enter"), A.cluster(world))
 		expect(A.find(d.runs, "run", "exec")).toBeNil()
@@ -226,7 +226,7 @@ describe("approve session: native confirm and execute", function()
 	end)
 
 	it("refuses an inferred target when the current-context moved", function()
-		local s = ready("kube-lens://mutate?op=restart&kind=deployment&name=web&namespace=apps")
+		local s = ready("tern-kube://mutate?op=restart&kind=deployment&name=web&namespace=apps")
 		A.send(s, A.key("t", "t"), A.cluster())
 		local d = A.send(s, A.key("enter"), A.cluster({ current = "prod" }))
 		expect(A.find(d.runs, "run", "exec")).toBeNil()
@@ -234,7 +234,7 @@ describe("approve session: native confirm and execute", function()
 	end)
 
 	it("requires confirming an inferred target before anything runs", function()
-		local s = ready("kube-lens://mutate?op=restart&kind=deployment&name=web&namespace=apps")
+		local s = ready("tern-kube://mutate?op=restart&kind=deployment&name=web&namespace=apps")
 		local d = A.send(s, A.key("enter"), A.cluster())
 		expect(#d.runs).toBe(0)
 		expect(s.confirmError).toContain("Confirm the target")
@@ -378,7 +378,7 @@ describe("approve session: guard requests", function()
 		local s, effects = A.init("/tmp/evil/req-" .. A.NONCE .. ".json", { request = A.request({}) })
 		A.drive(s, effects, A.cluster())
 		expect(s.phase).toBe("error")
-		expect(s.errors[1]).toContain("outside the kube-lens spool")
+		expect(s.errors[1]).toContain("outside the tern-kube spool")
 		local d = A.send(s, A.key("escape"), A.cluster())
 		expect(A.find(d.effects, "write")).toBeNil()
 	end)
@@ -433,7 +433,7 @@ describe("approve session: guard requests", function()
 end)
 
 describe("approve session: quick-action mutations", function()
-	local NODE = "kube-lens://act/debug-node?kind=Node&name=worker-1&context=kind-dev"
+	local NODE = "tern-kube://act/debug-node?kind=Node&name=worker-1&context=kind-dev"
 
 	it("previews the node and requires typing its name (privileged pod)", function()
 		local s = ready(NODE)
@@ -461,12 +461,12 @@ describe("approve session: quick-action mutations", function()
 	it("refuses links that already carry a token or do not mutate", function()
 		local s = A.init(NODE .. "&confirm=" .. A.TOKEN)
 		expect(s.errors[1]).toContain("token")
-		s = A.init("kube-lens://act/shell?kind=Pod&name=web&namespace=apps")
+		s = A.init("tern-kube://act/shell?kind=Pod&name=web&namespace=apps")
 		expect(s.errors[1]).toContain("does not need approval")
 	end)
 
 	it("dry-runs a cronjob run on the server", function()
-		local s, d = ready("kube-lens://act/cronjob-run?kind=CronJob&name=nightly&namespace=batch&suffix=abc12")
+		local s, d = ready("tern-kube://act/cronjob-run?kind=CronJob&name=nightly&namespace=batch&suffix=abc12")
 		expect(s.phase).toBe("ready")
 		local dry = A.find(d.runs, "run", "step:dry-run") :: Effect
 		expect(table.find(argvOf(dry), "--dry-run=server") ~= nil).toBe(true)
@@ -475,7 +475,7 @@ describe("approve session: quick-action mutations", function()
 	-- Chips carry no suffix: the block picks the job name once, previews
 	-- exactly that name, and the confirmed link makes the split create it.
 	it("names the job for a chip without a suffix and carries the name to the split", function()
-		local s, d = ready("kube-lens://act/cronjob-run?kind=CronJob&name=nightly&namespace=batch&context=kind-dev")
+		local s, d = ready("tern-kube://act/cronjob-run?kind=CronJob&name=nightly&namespace=batch&context=kind-dev")
 		expect(s.phase).toBe("ready")
 		local dry = A.find(d.runs, "run", "step:dry-run") :: Effect
 		expect(table.find(argvOf(dry), "nightly-manual-3e8") ~= nil).toBe(true)

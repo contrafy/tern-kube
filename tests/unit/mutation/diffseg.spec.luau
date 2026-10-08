@@ -207,7 +207,7 @@ describe("diffseg robustness", function()
 end)
 
 -- kubectl diff masks Secret data but not the last-applied-configuration
--- annotation, which embeds the applied values; bin/kube-lens-drift applies
+-- annotation, which embeds the applied values; bin/tern-kube-drift applies
 -- the same rule to the same golden capture, so the two never disagree.
 describe("diffseg secret redaction", function()
 	local golden = fixtures.read("tests/shell/drift/cases/secret-last-applied.diff")
@@ -216,8 +216,8 @@ describe("diffseg secret redaction", function()
 		local plain = Diffseg.parse(golden)
 		local red = Diffseg.redactSecrets(plain)
 		local text = Diffseg.text(red.segments[1])
-		expect((string.find(text, "kube-lens-test-not-a-secret", 1, true))).toBeNil()
-		expect((string.find(text, "kube-lens-test-user", 1, true))).toBeNil()
+		expect((string.find(text, "tern-kube-test-not-a-secret", 1, true))).toBeNil()
+		expect((string.find(text, "tern-kube-test-user", 1, true))).toBeNil()
 		expect(text).toContain("\n       " .. Diffseg.REDACTED .. "\n")
 		expect(text).toContain("+  password: '*** (after)'")
 		expect(brief(red)).toEqual(brief(plain))
@@ -227,7 +227,7 @@ describe("diffseg secret redaction", function()
 	it("leaves the parsed summary untouched", function()
 		local plain = Diffseg.parse(golden)
 		Diffseg.redactSecrets(plain)
-		expect(Diffseg.text(plain.segments[1])).toContain("kube-lens-test-not-a-secret")
+		expect(Diffseg.text(plain.segments[1])).toContain("tern-kube-test-not-a-secret")
 	end)
 
 	it("redacts added, removed and escaped JSON forms but never other kinds or headers", function()

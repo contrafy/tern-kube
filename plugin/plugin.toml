@@ -1,12 +1,12 @@
 schema = 1
-id = "kube-lens"
-name = "Kube Lens"
+id = "tern-kube"
+name = "Tern Kube"
 version = "0.0.1"
 description = "Native views for kubectl output, with an explicit Explore block and an opt-in mutation guard."
 icon = "box"
 host = "host.luau"
 window = "window.luau"
-styles = ["kube-lens.css", "explore.css", "mutate.css", "settings.css"]
+styles = ["tern-kube.css", "explore.css", "mutate.css", "settings.css"]
 
 # Globs over-claim (`kubectl -* get *` also matches `kubectl -n x logs pod get`);
 # the lens re-derives the verb from argv and returns raw for anything else.
@@ -45,22 +45,22 @@ match = [
 	"kubecolor -* delete *",
 	"kubecolor -* rollout restart *",
 	"kubecolor -* scale *",
-	# BEGIN kube-lens aliases
-	# END kube-lens aliases
+	# BEGIN tern-kube aliases
+	# END tern-kube aliases
 ]
 
 [[blocks]]
 id = "explore"
-title = "Kube Explore"
+title = "Tern Kube Explore"
 icon = "box"
 
 [[blocks]]
 id = "approve"
-title = "Kube Approve"
+title = "Tern Kube Approve"
 icon = "shield"
 palette = false
 
 [[blocks]]
 id = "settings"
-title = "Kube Lens Settings"
+title = "Tern Kube Settings"
 icon = "sliders"

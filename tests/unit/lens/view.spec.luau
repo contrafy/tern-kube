@@ -20,7 +20,7 @@ local function fromLines(command: string, lines: { string }, status: number?): C
 end
 
 local function header(node: any): any
-	return nodes.find(node, nodes.role("kube-lens.header"))
+	return nodes.find(node, nodes.role("tern-kube.header"))
 end
 
 describe("lens view", function()
@@ -82,8 +82,8 @@ describe("lens view", function()
 	it("error-only output shows the kubectl error and exit status natively", function()
 		local node = View.render(build("errors/get_foos"), vsm.default()) :: any
 		expect(node ~= nil).toBe(true)
-		expect(nodes.find(node, nodes.role("kube-lens.exit")) ~= nil).toBe(true)
-		local diag = nodes.find(node, nodes.role("kube-lens.diagnostics")) :: any
+		expect(nodes.find(node, nodes.role("tern-kube.exit")) ~= nil).toBe(true)
+		local diag = nodes.find(node, nodes.role("tern-kube.diagnostics")) :: any
 		expect(nodes.text(diag)).toContain("the server doesn't have a resource type")
 		expect(diag.p.collapsed).toBe(false)
 	end)
@@ -97,9 +97,9 @@ describe("lens view", function()
 	-- diagnostics and the mutation error card) and "exit 1" twice.
 	it("failed mutations show the error and exit status once, in the result view", function()
 		local node = View.render(build("errors/scale_deployment+api_--replicas=1"), vsm.default()) :: any
-		expect(nodes.find(node, nodes.role("kube-lens.error")) ~= nil).toBe(true)
-		expect(nodes.find(header(node), nodes.role("kube-lens.diagnostics"))).toBeNil()
-		expect(nodes.find(header(node), nodes.role("kube-lens.exit"))).toBeNil()
+		expect(nodes.find(node, nodes.role("tern-kube.error")) ~= nil).toBe(true)
+		expect(nodes.find(header(node), nodes.role("tern-kube.diagnostics"))).toBeNil()
+		expect(nodes.find(header(node), nodes.role("tern-kube.exit"))).toBeNil()
 		local _, count = string.gsub(nodes.text(node), "exit 1", "")
 		expect(count).toBe(1)
 	end)
@@ -107,24 +107,24 @@ describe("lens view", function()
 	it("No resources found reads as a note, not an error", function()
 		local node = View.render(build("ns-empty/get_pods"), vsm.default()) :: any
 		expect(nodes.text(node)).toContain("No resources found")
-		expect(nodes.find(node, nodes.role("kube-lens.exit"))).toBeNil()
-		expect(nodes.find(node, nodes.role("kube-lens.diagnostics"))).toBeNil()
+		expect(nodes.find(node, nodes.role("tern-kube.exit"))).toBeNil()
+		expect(nodes.find(node, nodes.role("tern-kube.diagnostics"))).toBeNil()
 	end)
 
 	it("partial captures say how many lines were not understood", function()
 		local c = fromLines("kubectl get pods", { "NAME   READY", "a      1/1", "   stray  text  here" }, 0)
 		local node = View.render(c, vsm.default()) :: any
-		expect(nodes.text(nodes.find(node, nodes.role("kube-lens.partial")) :: any)).toBe("partial: 1 unparsed line")
+		expect(nodes.text(nodes.find(node, nodes.role("tern-kube.partial")) :: any)).toBe("partial: 1 unparsed line")
 	end)
 
 	it("warns when raw output holds Secret data", function()
 		local text = [[{"apiVersion":"v1","kind":"Secret","metadata":{"name":"s","namespace":"n"},"data":{"k":"dg=="}}]]
 		local node = View.render(fromLines("kubectl get secret s -n n -o json", { text }, 0), vsm.default()) :: any
-		expect(nodes.find(node, nodes.role("kube-lens.sensitive")) ~= nil).toBe(true)
+		expect(nodes.find(node, nodes.role("tern-kube.sensitive")) ~= nil).toBe(true)
 	end)
 
 	local function sensitiveText(c: Capture.Capture): string?
-		local node = nodes.find(View.render(c, vsm.default()) :: any, nodes.role("kube-lens.sensitive"))
+		local node = nodes.find(View.render(c, vsm.default()) :: any, nodes.role("tern-kube.sensitive"))
 		return if node then nodes.text(node) else nil
 	end
 
@@ -155,13 +155,13 @@ describe("lens view", function()
 	it("the ? chip toggles the cheat sheet and keeps the rest of the state", function()
 		local vs = vsm.sortedBy(vsm.default(), "AGE")
 		local node = View.render(build("ns-apps/get_pods"), vs) :: any
-		expect(nodes.find(node, nodes.role("kube-lens.help"))).toBeNil()
+		expect(nodes.find(node, nodes.role("tern-kube.help"))).toBeNil()
 		local chip = nodes.find(node, nodes.key("help-chip")) :: any
 		local next = vsm.decode(string.sub(nodes.action(chip) :: string, 3))
 		expect(next.help).toBe(true)
 		expect(next.sort).toBe("AGE")
 		local withHelp = View.render(build("ns-apps/get_pods"), next) :: any
-		expect(nodes.text(nodes.find(withHelp, nodes.role("kube-lens.help")) :: any)).toContain("Click a column header")
+		expect(nodes.text(nodes.find(withHelp, nodes.role("tern-kube.help")) :: any)).toContain("Click a column header")
 	end)
 end)
 

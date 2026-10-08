@@ -4,6 +4,9 @@
 #
 #   scripts/fixtures/capture.sh          delete and rebuild every tern-test-* namespace, then capture
 #   scripts/fixtures/capture.sh --reuse  keep the existing world (faster; ages and restart counts drift)
+#   scripts/fixtures/capture.sh --world-only
+#                                        build the world (metrics-server, steady state, quick-action
+#                                        toolbox) for live tests; captures nothing, fixtures untouched
 #
 # Keys follow tests/bin/kubectl: argv minus connection flags (--context,
 # --kubeconfig, -n/--namespace, --cluster, --user), joined by "_", "/" -> "+".
@@ -17,7 +20,7 @@ OUT=$ROOT/tests/fixtures/real
 MANIFEST=$OUT/MANIFEST.tsv
 KIND=${KIND:-$ROOT/.tools/bin/kind}
 KUBECTL=${KUBECTL:-kubectl}
-CLUSTER=kube-lens-dev
+CLUSTER=tern-kube-dev
 NODE=$CLUSTER-control-plane
 IMAGES="registry.k8s.io/pause:3.10 busybox:1.37 registry.k8s.io/metrics-server/metrics-server:v0.9.0"
 
@@ -39,10 +42,12 @@ log() {
 }
 
 reuse=0
+world_only=0
 case ${1:-} in
 "") ;;
 --reuse) reuse=1 ;;
-*) die "usage: $0 [--reuse]" ;;
+--world-only) world_only=1 ;;
+*) die "usage: $0 [--reuse|--world-only]" ;;
 esac
 
 KUBECONFIG=$("$ROOT/scripts/cluster.sh" kubeconfig-path) || die "sandbox cluster is not usable; run scripts/cluster.sh create"
@@ -499,10 +504,22 @@ scan_for_credentials() {
 	[ "$found" = 0 ] || die "credential material found in fixtures (files listed above)"
 }
 
+apply_toolbox() {
+	log "applying the quick-action toolbox"
+	k apply -f "$MANIFESTS/mutate/namespace.yaml" -f "$MANIFESTS/qa/toolbox.yaml" >/dev/null
+	k rollout status deployment/tk-qa-shell -n "$MUTATE" --timeout=180s >/dev/null
+}
+
 main() {
 	preload_images
 	install_metrics_server
 	[ "$reuse" = 1 ] || delete_world
+	if [ "$world_only" = 1 ]; then
+		build_world
+		apply_toolbox
+		log "fixture world ready; nothing captured"
+		return 0
+	fi
 	delete_mutate_namespace
 	build_world
 
@@ -524,9 +541,7 @@ main() {
 	scan_for_credentials
 	# capture_mutations recreated tern-test-mutate; restore the quick-action
 	# toolbox only now so no fixture lists it.
-	log "applying the quick-action toolbox"
-	k apply -f "$MANIFESTS/qa/toolbox.yaml" >/dev/null
-	k rollout status deployment/kl-qa-shell -n "$MUTATE" --timeout=180s >/dev/null
+	apply_toolbox
 
 	count=$(($(wc -l <"$MANIFEST") - 1))
 	log "captured $count fixtures (kubectl $CLIENT_VERSION, server $SERVER_VERSION)"

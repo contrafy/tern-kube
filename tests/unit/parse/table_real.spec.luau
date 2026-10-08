@@ -172,7 +172,7 @@ describe("table.parse on real kubectl output", function()
 			{ expectedHeaders = { "NAME", "NODE" } }
 		).tables[1]
 		expect(names(tbl)).toEqual({ "NAME", "NODE" })
-		expect(tbl.rows[1].cells[2]).toBe("kube-lens-dev-control-plane")
+		expect(tbl.rows[1].cells[2]).toBe("tern-kube-dev-control-plane")
 	end)
 end)
 

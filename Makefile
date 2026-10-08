@@ -61,7 +61,7 @@ test-shell-aliases:
 	@sh tests/shell/aliases/run.sh
 
 .PHONY: guard-flags guard-flags-check test-shell-guard
-# Regenerates the flag table embedded in shell/kube-lens-guard.
+# Regenerates the flag table embedded in shell/tern-kube-guard.
 guard-flags:
 	@LUAU=$(LUAU) sh scripts/guard/gen-flags
 

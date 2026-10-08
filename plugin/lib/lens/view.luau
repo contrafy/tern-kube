@@ -23,7 +23,7 @@ local function wrap(capture: Capture, header: Node, body: Node?): Node
 	if body then
 		table.insert(children, body)
 	end
-	return ui.col(children, { key = "lens", role = "kube-lens." .. capture.mode })
+	return ui.col(children, { key = "lens", role = "tern-kube." .. capture.mode })
 end
 
 function M.render(capture: Capture, vs: ViewState, opts: Options?): Node?

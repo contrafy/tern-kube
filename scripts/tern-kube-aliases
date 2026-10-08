@@ -1,20 +1,20 @@
 #!/bin/sh
-# kube-lens-aliases: opt-in lens claims for shell aliases of kubectl.
+# tern-kube-aliases: opt-in lens claims for shell aliases of kubectl.
 # Run with --help for usage and limitations.
 
 set -u
 
-prog=kube-lens-aliases
-BEGIN_MARK='# BEGIN kube-lens aliases'
-END_MARK='# END kube-lens aliases'
+prog=tern-kube-aliases
+BEGIN_MARK='# BEGIN tern-kube aliases'
+END_MARK='# END tern-kube aliases'
 
 usage() {
 	cat <<'EOF'
-usage: kube-lens-aliases [--shell zsh|bash|fish] [--plugin-dir DIR] [--force]
+usage: tern-kube-aliases [--shell zsh|bash|fish] [--plugin-dir DIR] [--force]
                          (add NAME... | remove NAME... | list | detect | check)
 
 Adds Tern lens claims (manifest globs) for shell aliases of kubectl or
-kubecolor to the installed kube-lens plugin, so `k get pods` gets the same
+kubecolor to the installed tern-kube plugin, so `k get pods` gets the same
 lens as `kubectl get pods`.
 
   detect        list aliases and functions of your interactive shell that
@@ -29,7 +29,7 @@ lens as `kubectl get pods`.
 options:
   --shell SH        shell to probe (default: basename of $SHELL)
   --plugin-dir DIR  plugin directory holding plugin.toml (default: the
-                    installed or linked kube-lens under `tern plugin dir`)
+                    installed or linked tern-kube under `tern plugin dir`)
   --force           also accept shell functions and wrapper executables;
                     their behavior is opaque to this script
   -h, --help        this help
@@ -43,7 +43,7 @@ output to the wrong command, namespace or context; aliases to anything else;
 functions and wrapper scripts unless --force.
 
 Probes run `zsh -ic`, `bash -ic` or `fish -ic` as you, with your HOME, stdin
-from /dev/null and a time limit (KUBE_LENS_ALIASES_TIMEOUT seconds, default
+from /dev/null and a time limit (TKUBE_ALIASES_TIMEOUT seconds, default
 10). Output printed by rc files is ignored. The probe refuses to run when
 HOME (or ZDOTDIR/XDG_CONFIG_HOME) is not owned by you, so it never sources
 another user's rc files. bash reads ~/.bashrc only: aliases defined in
@@ -59,7 +59,7 @@ Limitations:
   - Renaming or deleting an alias leaves its claim behind; run `check`.
   - A claim cannot be declined at run time: an alias that stops running
     kubectl still hides Tern's built-in lenses for those lines.
-  - A linked plugin (kube-lens.path) is edited in place, in its source tree.
+  - A linked plugin (tern-kube.path) is edited in place, in its source tree.
 EOF
 }
 
@@ -127,7 +127,7 @@ list | detect | check)
 *) die "unknown command: $cmd (see --help)" ;;
 esac
 
-tmp=$(mktemp -d "${TMPDIR:-/tmp}/kube-lens-aliases.XXXXXX") || die "cannot create a temp dir"
+tmp=$(mktemp -d "${TMPDIR:-/tmp}/tern-kube-aliases.XXXXXX") || die "cannot create a temp dir"
 trap 'rm -rf "$tmp"' EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
@@ -140,13 +140,13 @@ resolve_manifest() {
 		command -v "$tern_bin" >/dev/null 2>&1 || die "tern not found; pass --plugin-dir DIR"
 		pdir=$("$tern_bin" plugin dir 2>/dev/null) || die "\`$tern_bin plugin dir\` failed; pass --plugin-dir DIR"
 		[ -n "$pdir" ] || die "\`$tern_bin plugin dir\` printed nothing; pass --plugin-dir DIR"
-		if [ -f "$pdir/kube-lens.path" ]; then
-			IFS= read -r plugin_dir <"$pdir/kube-lens.path" || [ -n "$plugin_dir" ] || die "empty $pdir/kube-lens.path"
-			note "kube-lens is linked: editing its source manifest in $plugin_dir"
-		elif [ -d "$pdir/kube-lens" ]; then
-			plugin_dir=$pdir/kube-lens
+		if [ -f "$pdir/tern-kube.path" ]; then
+			IFS= read -r plugin_dir <"$pdir/tern-kube.path" || [ -n "$plugin_dir" ] || die "empty $pdir/tern-kube.path"
+			note "tern-kube is linked: editing its source manifest in $plugin_dir"
+		elif [ -d "$pdir/tern-kube" ]; then
+			plugin_dir=$pdir/tern-kube
 		else
-			die "kube-lens is not installed in $pdir; pass --plugin-dir DIR"
+			die "tern-kube is not installed in $pdir; pass --plugin-dir DIR"
 		fi
 	fi
 	manifest=$plugin_dir/plugin.toml
@@ -166,7 +166,7 @@ resolve_manifest() {
 		}' "$manifest" >"$tmp/markers" || die "cannot read $manifest"
 	case $(cat "$tmp/markers") in
 	ok) ;;
-	missing) die "$manifest has no '$BEGIN_MARK' / '$END_MARK' block; refusing to edit it (reinstall kube-lens)" ;;
+	missing) die "$manifest has no '$BEGIN_MARK' / '$END_MARK' block; refusing to edit it (reinstall tern-kube)" ;;
 	malformed) die "$manifest needs exactly one '$BEGIN_MARK' line before one '$END_MARK' line" ;;
 	*) die "the alias block in $manifest is not inside lens \"kubectl\"" ;;
 	esac
@@ -202,8 +202,8 @@ write_block() {
 	if cmp -s "$tmp/plugin.toml" "$manifest"; then
 		return 1
 	fi
-	cp "$tmp/plugin.toml" "$manifest.kube-lens-aliases.tmp" &&
-		mv -f "$manifest.kube-lens-aliases.tmp" "$manifest" ||
+	cp "$tmp/plugin.toml" "$manifest.tern-kube-aliases.tmp" &&
+		mv -f "$manifest.tern-kube-aliases.tmp" "$manifest" ||
 		die "could not write $manifest"
 	return 0
 }
@@ -254,7 +254,7 @@ probe_shell() {
 		[[ ${functions[$f]} == *kube(ctl|color)* ]] && print -r -- $f
 	done
 	print -r -- @@KLA:P@@
-	for f in ${=KUBE_LENS_ALIASES_NAMES}; do print -r -- "$f	$(whence -p -- $f)"; done
+	for f in ${=TKUBE_ALIASES_NAMES}; do print -r -- "$f	$(whence -p -- $f)"; done
 	print -r -- @@KLA:END@@
 }'
 		;;
@@ -268,7 +268,7 @@ compgen -A function | while IFS= read -r f; do
 	case $(declare -f "$f") in *kubectl* | *kubecolor*) printf "%s\n" "$f" ;; esac
 done
 printf "%s\n" @@KLA:P@@
-for f in $KUBE_LENS_ALIASES_NAMES; do printf "%s\t%s\n" "$f" "$(type -P -- "$f")"; done
+for f in $TKUBE_ALIASES_NAMES; do printf "%s\t%s\n" "$f" "$(type -P -- "$f")"; done
 printf "%s\n" @@KLA:END@@'
 		;;
 	fish)
@@ -280,7 +280,7 @@ for f in (functions -n)
 	functions -- $f | string match -q -r "kube(ctl|color)"; and echo $f
 end
 echo @@KLA:P@@
-for f in (string split " " -- $KUBE_LENS_ALIASES_NAMES)
+for f in (string split " " -- $TKUBE_ALIASES_NAMES)
 	test -n "$f"; or continue
 	printf "%s\t%s\n" $f (command -s -- $f)
 end
@@ -288,10 +288,10 @@ echo @@KLA:END@@'
 		;;
 	esac
 
-	limit=${KUBE_LENS_ALIASES_TIMEOUT:-10}
-	case $limit in '' | *[!0-9]*) die "KUBE_LENS_ALIASES_TIMEOUT must be whole seconds" ;; esac
+	limit=${TKUBE_ALIASES_TIMEOUT:-10}
+	case $limit in '' | *[!0-9]*) die "TKUBE_ALIASES_TIMEOUT must be whole seconds" ;; esac
 
-	KUBE_LENS_ALIASES_NAMES=$names "$shell" -ic "$code" </dev/null >"$tmp/probe.out" 2>/dev/null &
+	TKUBE_ALIASES_NAMES=$names "$shell" -ic "$code" </dev/null >"$tmp/probe.out" 2>/dev/null &
 	probe_pid=$!
 	(
 		sleep "$limit"
@@ -305,7 +305,7 @@ echo @@KLA:END@@'
 
 	if ! grep -q '^@@KLA:END@@$' "$tmp/probe.out"; then
 		if [ "$probe_status" -gt 128 ]; then
-			die "$shell -ic did not finish within ${limit}s (an rc file may wait for input); raise KUBE_LENS_ALIASES_TIMEOUT"
+			die "$shell -ic did not finish within ${limit}s (an rc file may wait for input); raise TKUBE_ALIASES_TIMEOUT"
 		fi
 		die "$shell -ic exited $probe_status before listing aliases"
 	fi

@@ -5,7 +5,7 @@ metadata:
   namespace: tern-test-edge
   labels:
     app.kubernetes.io/name: odd-labels
-    app.kubernetes.io/part-of: kube-lens.fixtures
+    app.kubernetes.io/part-of: tern-kube.fixtures
     example.com/team: platform.core
     lens.example.com/long-value: this-value-is-deliberately-long-to-reach-the-63-character-limit
     lens.example.com/empty: ""

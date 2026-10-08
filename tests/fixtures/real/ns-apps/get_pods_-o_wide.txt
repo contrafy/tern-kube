@@ -1,8 +1,8 @@
 NAME                            READY   STATUS             RESTARTS        AGE     IP            NODE                          NOMINATED NODE   READINESS GATES
-broken-image-68986f4958-6qp2v   0/1     ImagePullBackOff   0               5m15s   10.244.0.37   kube-lens-dev-control-plane   <none>           <none>
-crashloop                       0/1     CrashLoopBackOff   5 (2m15s ago)   5m15s   10.244.0.36   kube-lens-dev-control-plane   <none>           <none>
-db-0                            1/1     Running            0               5m15s   10.244.0.38   kube-lens-dev-control-plane   <none>           <none>
-node-agent-bb754                1/1     Running            0               5m15s   10.244.0.39   kube-lens-dev-control-plane   <none>           <none>
+broken-image-68986f4958-6qp2v   0/1     ImagePullBackOff   0               5m15s   10.244.0.37   tern-kube-dev-control-plane   <none>           <none>
+crashloop                       0/1     CrashLoopBackOff   5 (2m15s ago)   5m15s   10.244.0.36   tern-kube-dev-control-plane   <none>           <none>
+db-0                            1/1     Running            0               5m15s   10.244.0.38   tern-kube-dev-control-plane   <none>           <none>
+node-agent-bb754                1/1     Running            0               5m15s   10.244.0.39   tern-kube-dev-control-plane   <none>           <none>
 pending                         0/1     Pending            0               5m15s   <none>        <none>                        <none>           <none>
-web-65d7d99975-bmgbn            1/1     Running            0               5m15s   10.244.0.35   kube-lens-dev-control-plane   <none>           <none>
-web-65d7d99975-zsb95            1/1     Running            0               5m15s   10.244.0.34   kube-lens-dev-control-plane   <none>           <none>
+web-65d7d99975-bmgbn            1/1     Running            0               5m15s   10.244.0.35   tern-kube-dev-control-plane   <none>           <none>
+web-65d7d99975-zsb95            1/1     Running            0               5m15s   10.244.0.34   tern-kube-dev-control-plane   <none>           <none>

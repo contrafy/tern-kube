@@ -1,7 +1,7 @@
-# kube-lens guard protocol (version 1)
+# tern-kube guard protocol (version 1)
 
-Contract between the shell guard (`shell/kube-lens-guard`, POSIX sh) and the
-kube-lens approve block (`kube-lens.approve`). The block never executes the
+Contract between the shell guard (`shell/tern-kube-guard`, POSIX sh) and the
+tern-kube approve block (`tern-kube.approve`). The block never executes the
 command; it only previews it and writes a decision. The guard executes
 `command kubectl` with the exact argv, and only after verifying that
 decision. Every failure is a refusal: nothing runs.
@@ -13,7 +13,7 @@ global flags before the verb) needs all of:
 
 - `TERM_PROGRAM=tern` and a non-empty `TERN_PANE` (any process that can reach
   the Tern daemon could raise an approval otherwise);
-- `KUBE_LENS_SPOOL`: absolute path, injected into new panes by the plugin's
+- `TKUBE_SPOOL`: absolute path, injected into new panes by the plugin's
   `spawn` hook (`<plugin data>/spool`). Panes started before the plugin
   loaded lack it: "open a new Tern pane";
 - no stdin input (`-f -`, `/dev/stdin`, any non-regular file), no remote
@@ -30,7 +30,7 @@ refused (it may have swallowed the verb).
 
 ## Spool
 
-`$KUBE_LENS_SPOOL`, mode 0700, owned by the user (the guard creates it if
+`$TKUBE_SPOOL`, mode 0700, owned by the user (the guard creates it if
 missing, refuses a symlink or foreign owner, and `chmod 700`s it). Paths the
 guard hands to `tern open` are physical (`pwd -P`), matching Tern's
 canonicalized paths (`/private/tmp/...` on macOS).
@@ -114,7 +114,7 @@ are not fingerprinted.
 are decimal byte counts; every line ends with `\n`:
 
 ```
-kube-lens/fp/v1
+tern-kube/fp/v1
 argv <n>
 <len>:<arg>                           (n lines, one per argv element, in order)
 context <len>:<context>
@@ -131,7 +131,7 @@ Length prefixes make values containing spaces or newlines unambiguous.
 
 The guard runs `${TERN_BIN:-tern} open --wait <req path>` (stdin
 `/dev/null`) in the background under a watchdog of
-`$KUBE_LENS_GUARD_TIMEOUT` seconds (default 600):
+`$TKUBE_GUARD_TIMEOUT` seconds (default 600):
 
 - timeout: the guard kills `tern open`, writes `cancel-<nonce>`, refuses;
 - SIGINT/SIGTERM/SIGHUP (Ctrl-C): the guard writes `cancel-<nonce>`
@@ -186,10 +186,10 @@ itself: 1 refusal or denial, 130 cancelled, 2 usage.
 
 The opt-in snippets (zsh `precmd`, bash `PROMPT_COMMAND`, fish `fish_prompt`)
 record each pane's effective `KUBECONFIG` so quick actions launched from that
-pane can pin it. On each prompt, when `TERN_PANE` and `KUBE_LENS_SPOOL` are set
+pane can pin it. On each prompt, when `TERN_PANE` and `TKUBE_SPOOL` are set
 and the spool exists, and only when `(spool, pane, $KUBECONFIG)` changed since
 the shell's last successful write (cached in a shell variable; no subprocess
-otherwise), the snippet writes `$KUBE_LENS_SPOOL/pane-$TERN_PANE.env`:
+otherwise), the snippet writes `$TKUBE_SPOOL/pane-$TERN_PANE.env`:
 
 ```
 kubeconfig=<value of $KUBECONFIG, empty when unset>

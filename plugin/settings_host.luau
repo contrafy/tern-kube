@@ -1,5 +1,5 @@
 --!strict
--- Host glue for the Kube Lens Settings block: reads the config file and the
+-- Host glue for the Tern Kube Settings block: reads the config file and the
 -- status facts, performs the atomic write the pure core (lib/settings)
 -- asks for, and feeds results back as messages. The only file it writes is
 -- the config file (through a temporary file in the same directory, renamed
@@ -25,7 +25,7 @@ M.PROBE_TIMEOUT_MS = 5000
 local function warnOnce(h: Host, what: string, err: any)
 	if not h.warned then
 		h.warned = true
-		log.warn("kube-lens settings " .. what .. " failed", tostring(err))
+		log.warn("tern-kube settings " .. what .. " failed", tostring(err))
 	end
 end
 
@@ -142,7 +142,7 @@ local function write(h: Host, e: Effect)
 		return
 	end
 	local tmp =
-		string.format("%s/.%s.kube-lens-%s.tmp", dir, string.match(target, "([^/]+)$") or "config.json", nonce())
+		string.format("%s/.%s.tern-kube-%s.tmp", dir, string.match(target, "([^/]+)$") or "config.json", nonce())
 	local ok, err = pcall(function()
 		tern.fs.mkdir(dir)
 		tern.fs.write(tmp, e.text or "")
@@ -159,7 +159,7 @@ local function write(h: Host, e: Effect)
 				finish(false, "mv failed: " .. (string.match(r.stderr, "^[^\n]*") or ""))
 				return
 			end
-			log.info("kube-lens settings wrote", target)
+			log.info("tern-kube settings wrote", target)
 			finish(true, nil)
 		end)
 	end)
@@ -203,7 +203,7 @@ local function probe(h: Host)
 
 	local cfg = ConfigHost.current()
 	local program = ConfigHost.kubectl()
-	local kenv = tern.getenv("KUBE_LENS_KUBECTL")
+	local kenv = tern.getenv("TKUBE_KUBECTL")
 	local kubectl: State.KubectlInfo = {
 		program = program,
 		source = State.kubectlSource(cfg, tern.kv.get("kubectl"), kenv),
@@ -296,7 +296,7 @@ local function errorView(err: any): BlockView
 			c = {
 				{
 					k = "text",
-					p = { spans = { { t = "Kube Lens Settings could not render: " .. tostring(err), s = "error" } } },
+					p = { spans = { { t = "Tern Kube Settings could not render: " .. tostring(err), s = "error" } } },
 				},
 			},
 		} :: any,
@@ -325,7 +325,7 @@ function M.register()
 		end,
 		title = function(h: Host): string?
 			local ok, title = pcall(Render.title, h.s)
-			return if ok then title else "Kube Lens Settings"
+			return if ok then title else "Tern Kube Settings"
 		end,
 		key = function(h: Host, key: Key, cx: BlockCx): boolean?
 			h.cx = cx

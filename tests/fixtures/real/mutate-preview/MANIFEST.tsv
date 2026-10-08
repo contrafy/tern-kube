@@ -1,11 +1,11 @@
 scenario	key	argv	exit	kubectl_version	server_version
-mutate-preview	diff_-f_preview+apps-mix.yaml	kubectl --context kind-kube-lens-dev diff -n tern-test-apps -f preview/apps-mix.yaml	1	v1.34.1	v1.37.0
-mutate-preview	apply_--dry-run=server_-f_preview+apps-mix.yaml	kubectl --context kind-kube-lens-dev apply -n tern-test-apps --dry-run=server -f preview/apps-mix.yaml	0	v1.34.1	v1.37.0
-mutate-preview	diff_-f_preview+widgets.yaml	kubectl --context kind-kube-lens-dev diff -n tern-test-crd -f preview/widgets.yaml	1	v1.34.1	v1.37.0
-mutate-preview	diff_-f_preview+widgets.yaml_--prune_-l_app=widgets_--prune-allowlist=lens.example.com+v1alpha1+Widget	kubectl --context kind-kube-lens-dev diff -n tern-test-crd -f preview/widgets.yaml --prune -l app=widgets --prune-allowlist=lens.example.com/v1alpha1/Widget	1	v1.34.1	v1.37.0
-mutate-preview	diff_-f_preview+cluster-scoped.yaml	kubectl --context kind-kube-lens-dev diff -f preview/cluster-scoped.yaml	1	v1.34.1	v1.37.0
-mutate-preview	delete_pods_-l_app=web_--dry-run=server	kubectl --context kind-kube-lens-dev delete pods -l app=web -n tern-test-apps --dry-run=server	0	v1.34.1	v1.37.0
-mutate-preview	delete_namespace_tern-test-empty_--dry-run=server	kubectl --context kind-kube-lens-dev delete namespace tern-test-empty --dry-run=server	0	v1.34.1	v1.37.0
-mutate-preview	scale_deployment+web_--replicas=3_--dry-run=server	kubectl --context kind-kube-lens-dev scale deployment/web --replicas=3 -n tern-test-apps --dry-run=server	0	v1.34.1	v1.37.0
-mutate-preview	create_job_nightly-report-manual-preview_--from=cronjob+nightly-report_--dry-run=server	kubectl --context kind-kube-lens-dev create job nightly-report-manual-preview --from=cronjob/nightly-report -n tern-test-batch --dry-run=server	0	v1.34.1	v1.37.0
-mutate-preview	delete_pod_crashloop_--dry-run=server_--as=system:serviceaccount:tern-test-apps:default	kubectl --context kind-kube-lens-dev delete pod crashloop -n tern-test-apps --dry-run=server --as=system:serviceaccount:tern-test-apps:default	1	v1.34.1	v1.37.0
+mutate-preview	diff_-f_preview+apps-mix.yaml	kubectl --context kind-tern-kube-dev diff -n tern-test-apps -f preview/apps-mix.yaml	1	v1.34.1	v1.37.0
+mutate-preview	apply_--dry-run=server_-f_preview+apps-mix.yaml	kubectl --context kind-tern-kube-dev apply -n tern-test-apps --dry-run=server -f preview/apps-mix.yaml	0	v1.34.1	v1.37.0
+mutate-preview	diff_-f_preview+widgets.yaml	kubectl --context kind-tern-kube-dev diff -n tern-test-crd -f preview/widgets.yaml	1	v1.34.1	v1.37.0
+mutate-preview	diff_-f_preview+widgets.yaml_--prune_-l_app=widgets_--prune-allowlist=lens.example.com+v1alpha1+Widget	kubectl --context kind-tern-kube-dev diff -n tern-test-crd -f preview/widgets.yaml --prune -l app=widgets --prune-allowlist=lens.example.com/v1alpha1/Widget	1	v1.34.1	v1.37.0
+mutate-preview	diff_-f_preview+cluster-scoped.yaml	kubectl --context kind-tern-kube-dev diff -f preview/cluster-scoped.yaml	1	v1.34.1	v1.37.0
+mutate-preview	delete_pods_-l_app=web_--dry-run=server	kubectl --context kind-tern-kube-dev delete pods -l app=web -n tern-test-apps --dry-run=server	0	v1.34.1	v1.37.0
+mutate-preview	delete_namespace_tern-test-empty_--dry-run=server	kubectl --context kind-tern-kube-dev delete namespace tern-test-empty --dry-run=server	0	v1.34.1	v1.37.0
+mutate-preview	scale_deployment+web_--replicas=3_--dry-run=server	kubectl --context kind-tern-kube-dev scale deployment/web --replicas=3 -n tern-test-apps --dry-run=server	0	v1.34.1	v1.37.0
+mutate-preview	create_job_nightly-report-manual-preview_--from=cronjob+nightly-report_--dry-run=server	kubectl --context kind-tern-kube-dev create job nightly-report-manual-preview --from=cronjob/nightly-report -n tern-test-batch --dry-run=server	0	v1.34.1	v1.37.0
+mutate-preview	delete_pod_crashloop_--dry-run=server_--as=system:serviceaccount:tern-test-apps:default	kubectl --context kind-tern-kube-dev delete pod crashloop -n tern-test-apps --dry-run=server --as=system:serviceaccount:tern-test-apps:default	1	v1.34.1	v1.37.0

@@ -1,6 +1,6 @@
 #!/bin/sh
 # Regenerates (default) or checks (--check) the flag-arity table embedded in
-# shell/kube-lens-guard from plugin/lib/kubectl/flags.luau, so the guard's
+# shell/tern-kube-guard from plugin/lib/kubectl/flags.luau, so the guard's
 # verb scan cannot drift from the plugin's argv parser.
 #
 #   scripts/guard/gen-flags [--check]
@@ -13,7 +13,7 @@ case $luau in
 /*) ;;
 *) luau=$PWD/$luau ;;
 esac
-guard=$repo/shell/kube-lens-guard
+guard=$repo/shell/tern-kube-guard
 
 case ${1-} in
 '' | --check) ;;
@@ -28,7 +28,7 @@ esac
 	exit 2
 }
 
-tmp=$(mktemp "${TMPDIR:-/tmp}/klg-flags.XXXXXX") || exit 2
+tmp=$(mktemp "${TMPDIR:-/tmp}/tkg-flags.XXXXXX") || exit 2
 trap 'rm -f "$tmp" "$tmp.new"' EXIT
 
 (cd "$repo/scripts/guard" && "$luau" gen-flags.luau) >"$tmp" || {
@@ -51,7 +51,7 @@ if [ "${1-}" = --check ]; then
 	if cmp -s "$guard" "$tmp.new"; then
 		exit 0
 	fi
-	echo "gen-flags: shell/kube-lens-guard flag table is stale; run 'make guard-flags'" >&2
+	echo "gen-flags: shell/tern-kube-guard flag table is stale; run 'make guard-flags'" >&2
 	diff -u "$guard" "$tmp.new" >&2
 	exit 1
 fi

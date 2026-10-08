@@ -26,8 +26,8 @@ end
 
 local function rowNames(node: any): { string }
 	local out: { string } = {}
-	for _, r in nodes.findAll(node, nodes.class("kl-r")) do
-		local first = nodes.find(r, nodes.class("kl-c")) :: any
+	for _, r in nodes.findAll(node, nodes.class("tk-r")) do
+		local first = nodes.find(r, nodes.class("tk-c")) :: any
 		table.insert(out, nodes.text(first))
 	end
 	return out
@@ -51,15 +51,15 @@ end
 describe("table view", function()
 	it("renders one grid with every pod and counts", function()
 		local node, counts = render(build("ns-apps/get_pods"), vsm.default())
-		expect(#nodes.findAll(node, nodes.class("kl-grid"))).toBe(1)
+		expect(#nodes.findAll(node, nodes.class("tk-grid"))).toBe(1)
 		expect(#rowNames(node)).toBe(7)
 		expect(counts).toEqual({ shown = 7, matched = 7, total = 7 })
 	end)
 
 	it("get all stacks one grid per kind under kind headings", function()
 		local node = render(build("ns-apps/get_all"), vsm.default())
-		expect(#nodes.findAll(node, nodes.class("kl-grid"))).toBe(6)
-		local headings = nodes.findAll(node, nodes.role("kube-lens.kind"))
+		expect(#nodes.findAll(node, nodes.class("tk-grid"))).toBe(6)
+		local headings = nodes.findAll(node, nodes.role("tern-kube.kind"))
 		expect(#headings).toBe(6)
 		expect(string.find(nodes.text(headings[4]), "Deployment", 1, true) ~= nil).toBe(true)
 	end)
@@ -91,8 +91,8 @@ describe("table view", function()
 			expect(n == "pending" or n == "crashloop").toBe(false)
 		end
 		expect(counts.matched < counts.total).toBe(true)
-		expect(nodes.text(nodes.find(node, nodes.class("kl-open")) :: any)).toContain("db-0")
-		local insp = nodes.find(node, nodes.role("kube-lens.inspector")) :: any
+		expect(nodes.text(nodes.find(node, nodes.class("tk-open")) :: any)).toContain("db-0")
+		local insp = nodes.find(node, nodes.role("tern-kube.inspector")) :: any
 		expect(nodes.text(insp)).toContain("db-0")
 	end)
 
@@ -100,13 +100,13 @@ describe("table view", function()
 		local c = build("ns-apps/get_pods")
 		local vs = vsm.toggledFilter(vsm.opened(vsm.default(), "/Pod/tern-test-apps/pending"), "STATUS", "Running")
 		local node = render(c, vs)
-		expect(nodes.find(node, nodes.role("kube-lens.inspector"))).toBeNil()
+		expect(nodes.find(node, nodes.role("tern-kube.inspector"))).toBeNil()
 	end)
 
 	it("the inspector shows the clicked row's cells and target-aware actions", function()
 		local c = build("ns-apps/get_pods")
 		local node = render(c, vsm.opened(vsm.default(), "/Pod/tern-test-apps/crashloop"))
-		local insp = nodes.find(node, nodes.role("kube-lens.inspector")) :: any
+		local insp = nodes.find(node, nodes.role("tern-kube.inspector")) :: any
 		local text = nodes.text(insp)
 		expect(text).toContain("crashloop")
 		expect(text).toContain("RESTARTS")
@@ -119,7 +119,7 @@ describe("table view", function()
 	it("non-pod rows offer no logs copy", function()
 		local c = build("ns-apps/get_deployments")
 		local node = render(c, vsm.opened(vsm.default(), "apps/Deployment/tern-test-apps/web"))
-		local insp = nodes.find(node, nodes.role("kube-lens.inspector")) :: any
+		local insp = nodes.find(node, nodes.role("tern-kube.inspector")) :: any
 		expect(table.find(nodes.actions(insp), "copy=logs|apps/Deployment/tern-test-apps/web")).toBeNil()
 	end)
 
@@ -129,7 +129,7 @@ describe("table view", function()
 		base = vsm.opened(base, "/Pod/tern-test-apps/db-0")
 		local node = render(c, base)
 		local checked = 0
-		for _, region in nodes.findAll(node, nodes.class("kl-grid")) do
+		for _, region in nodes.findAll(node, nodes.class("tk-grid")) do
 			for _, a in nodes.actions(region) do
 				local vs = decodeAction(a)
 				if vs then
@@ -140,7 +140,7 @@ describe("table view", function()
 			end
 		end
 		expect(checked > 10).toBe(true)
-		local rowVs = decodeAction(nodes.action(nodes.findAll(node, nodes.class("kl-r"))[1]) :: string) :: vsm.ViewState
+		local rowVs = decodeAction(nodes.action(nodes.findAll(node, nodes.class("tk-r"))[1]) :: string) :: vsm.ViewState
 		expect(rowVs.sort).toBe("AGE")
 		local closeVs = decodeAction(chipAction(node, "Close")) :: vsm.ViewState
 		expect(closeVs.open).toBeNil()
@@ -152,8 +152,8 @@ describe("table view", function()
 		local c = build("ns-apps/get_pods")
 		local vs = vsm.inspect(vsm.default(), "/Pod/tern-test-apps/db-0")
 		local node = render(c, vs)
-		expect(nodes.find(node, nodes.class("kl-grid"))).toBeNil()
-		local crumbs = nodes.text(nodes.find(node, nodes.role("kube-lens.breadcrumb")) :: any)
+		expect(nodes.find(node, nodes.class("tk-grid"))).toBeNil()
+		local crumbs = nodes.text(nodes.find(node, nodes.role("tern-kube.breadcrumb")) :: any)
 		expect(crumbs).toBe("Snapshot › Pod › db-0")
 		local code = nodes.find(node, nodes.kind("code")) :: any
 		expect(string.sub(code.p.text, 1, 4)).toBe("db-0")
@@ -172,7 +172,7 @@ describe("table view", function()
 		local c = build("synthetic/rows-1000/get_pods")
 		local node, counts = render(c, vsm.default())
 		expect(counts).toEqual({ shown = 500, matched = 1000, total = 1000 })
-		expect(#nodes.findAll(node, nodes.class("kl-r"))).toBe(500)
+		expect(#nodes.findAll(node, nodes.class("tk-r"))).toBe(500)
 		local second = decodeAction(chipAction(node, "501-1000")) :: vsm.ViewState
 		expect(second.page).toBe(1)
 		local node2, counts2 = render(c, second)
@@ -184,7 +184,7 @@ describe("table view", function()
 		for _, n in rowNames(node2) do
 			expect(page1[n]).toBeNil()
 		end
-		expect(nodes.text(nodes.find(node2, nodes.role("kube-lens.pages")) :: any)).toContain("Rows 501-1000 of 1000")
+		expect(nodes.text(nodes.find(node2, nodes.role("tern-kube.pages")) :: any)).toContain("Rows 501-1000 of 1000")
 	end)
 
 	it("a page past the end shows the last page", function()
@@ -203,12 +203,12 @@ describe("table view", function()
 		local node, counts = TableView.render(c, vsm.default(), { pageSize = 200 })
 		assert(node, "expected a table body")
 		expect(counts).toEqual({ shown = 200, matched = 1000, total = 1000 })
-		expect(nodes.text(nodes.find(node, nodes.role("kube-lens.pages")) :: any)).toContain("801-1000")
+		expect(nodes.text(nodes.find(node, nodes.role("tern-kube.pages")) :: any)).toContain("801-1000")
 	end)
 end)
 
 -- Quick actions are two clicks from any row: open the row, click a chip. The
--- chip's only payload is a kube-lens://act/ link the window validates again,
+-- chip's only payload is a tern-kube://act/ link the window validates again,
 -- so what it decodes to is what would run.
 describe("table view quick-action chips", function()
 	-- The fixture's output under a command line that pins the target, as a
@@ -222,9 +222,9 @@ describe("table view quick-action chips", function()
 
 	local function quick(c: Capture.Capture, key: string): { [string]: Quick.Request }
 		local node = render(c, vsm.opened(vsm.default(), key))
-		local insp = nodes.find(node, nodes.role("kube-lens.inspector")) :: any
+		local insp = nodes.find(node, nodes.role("tern-kube.inspector")) :: any
 		local out: { [string]: Quick.Request } = {}
-		for _, chip in nodes.findAll(insp, nodes.role("kube-lens.quick")) do
+		for _, chip in nodes.findAll(insp, nodes.role("tern-kube.quick")) do
 			local action = nodes.action(chip) :: string
 			expect(string.sub(action, 1, 4 + #Quick.SCHEME)).toBe("act=" .. Quick.SCHEME)
 			local req, err = Quick.decode(string.sub(action, 5))
@@ -256,9 +256,9 @@ describe("table view quick-action chips", function()
 	end)
 
 	it("pins the lensed command's --context and --kubeconfig in every chip", function()
-		local c = pinned("ns-apps/get_pods", { "--context", "kind-kube-lens-dev", "--kubeconfig", "/tmp/k c/config" })
+		local c = pinned("ns-apps/get_pods", { "--context", "kind-tern-kube-dev", "--kubeconfig", "/tmp/k c/config" })
 		for _, req in quick(c, "/Pod/tern-test-apps/db-0") do
-			expect(req.target.context).toBe("kind-kube-lens-dev")
+			expect(req.target.context).toBe("kind-tern-kube-dev")
 			expect(req.target.kubeconfig).toBe("/tmp/k c/config")
 		end
 	end)
@@ -289,7 +289,7 @@ describe("table view quick-action chips", function()
 		local vs = vsm.opened(vsm.sortedBy(vsm.default(), "AGE"), "/Pod/tern-test-apps/db-0")
 		local node = render(build("ns-apps/get_pods"), vs)
 		local seen = 0
-		for _, chip in nodes.findAll(node, nodes.role("kube-lens.quick")) do
+		for _, chip in nodes.findAll(node, nodes.role("tern-kube.quick")) do
 			seen += 1
 			expect(decodeAction(nodes.action(chip) :: string)).toBeNil()
 		end
@@ -311,12 +311,12 @@ end)
 describe("table view mutation chips", function()
 	local function inspector(c: Capture.Capture, key: string, mutations: boolean?): any
 		local node = TableView.render(c, vsm.opened(vsm.default(), key), { mutations = mutations })
-		return nodes.find(node :: any, nodes.role("kube-lens.inspector")) :: any
+		return nodes.find(node :: any, nodes.role("tern-kube.inspector")) :: any
 	end
 
 	local function mutateChips(insp: any): { [string]: Link.Request }
 		local out: { [string]: Link.Request } = {}
-		for _, chip in nodes.findAll(insp, nodes.role("kube-lens.mutate")) do
+		for _, chip in nodes.findAll(insp, nodes.role("tern-kube.mutate")) do
 			local action = nodes.action(chip) :: string
 			expect(string.sub(action, 1, 7 + #Link.SCHEME)).toBe("mutate=" .. Link.SCHEME)
 			local req, err = Link.decode(string.sub(action, 8))
@@ -328,7 +328,7 @@ describe("table view mutation chips", function()
 
 	local function quickLabels(insp: any): { string }
 		local out: { string } = {}
-		for _, chip in nodes.findAll(insp, nodes.role("kube-lens.quick")) do
+		for _, chip in nodes.findAll(insp, nodes.role("tern-kube.quick")) do
 			table.insert(out, nodes.ownText(chip))
 		end
 		table.sort(out)
@@ -364,18 +364,18 @@ describe("table view mutation chips", function()
 
 	it("pins the lensed command's --context as a flag-sourced target", function()
 		local f = runs.load("ns-apps/get_deployments")
-		local args = { "--context", "kind-kube-lens-dev" }
+		local args = { "--context", "kind-tern-kube-dev" }
 		table.move(f.run.args, 1, #f.run.args, #args + 1, args)
 		local c = Capture.build({ program = f.run.program, args = args }, f.lines, f.status, { decode = json.decode })
 		for _, req in mutateChips(inspector(c, "apps/Deployment/tern-test-apps/web", true)) do
-			expect(req.context).toBe("kind-kube-lens-dev")
+			expect(req.context).toBe("kind-tern-kube-dev")
 			expect(req.source).toBe("flag")
 		end
 	end)
 
 	it("offers no mutating chip when mutations are disabled", function()
 		local insp = inspector(build("ns-apps/get_pods"), "/Pod/tern-test-apps/db-0", false)
-		expect(#nodes.findAll(insp, nodes.role("kube-lens.mutate"))).toBe(0)
+		expect(#nodes.findAll(insp, nodes.role("tern-kube.mutate"))).toBe(0)
 		expect(quickLabels(insp)).toEqual({ "Logs", "Port-forward", "Shell" })
 	end)
 end)

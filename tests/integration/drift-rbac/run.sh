@@ -1,6 +1,6 @@
 #!/bin/sh
 # Verifies on the kind cluster that examples/ci/rbac-drift-readonly.yaml is
-# enough for bin/kube-lens-drift and that it cannot mutate anything:
+# enough for bin/tern-kube-drift and that it cannot mutate anything:
 #   - the shipped example, renamed into namespace tern-test-drift-rbac, lets
 #     a ServiceAccount token report modify + create drift and --unmanaged;
 #   - every real write from that token (apply, create, patch, scale,
@@ -20,11 +20,11 @@ set -u
 
 ROOT=$(CDPATH='' cd -- "$(dirname -- "$0")/../../.." && pwd -P)
 KC=$(sh "$ROOT/scripts/cluster.sh" kubeconfig-path) || exit 2
-CTX=kind-kube-lens-dev
+CTX=kind-tern-kube-dev
 NS=tern-test-drift-rbac
 SA_USER=system:serviceaccount:$NS:$NS
 OUT=$ROOT/.sandbox/drift-rbac
-CLI=$ROOT/bin/kube-lens-drift
+CLI=$ROOT/bin/tern-kube-drift
 keep=0
 [ "${1:-}" = --keep ] && keep=1
 
@@ -59,10 +59,10 @@ drift() {
 	rc=$?
 }
 
-work=$(mktemp -d "${TMPDIR:-/tmp}/kld-rbac.XXXXXX") || exit 2
+work=$(mktemp -d "${TMPDIR:-/tmp}/tkd-rbac.XXXXXX") || exit 2
 
 example() {
-	sed -e "s/kube-lens-drift/$NS/g" -e "s/my-app/$NS/g" "$ROOT/examples/ci/rbac-drift-readonly.yaml"
+	sed -e "s/tern-kube-drift/$NS/g" -e "s/my-app/$NS/g" "$ROOT/examples/ci/rbac-drift-readonly.yaml"
 }
 
 # Variants that each drop one verb, to show it is needed. They are not
@@ -105,11 +105,11 @@ EOF
 }
 
 variants() {
-	variant kl-no-get "list, create, patch"
-	variant kl-no-patch "get, list, create"
-	variant kl-no-create "get, list, patch"
-	variant kl-no-list "get, create, patch"
-	variant kl-rbac-objects "get, list, create, patch" rbac.authorization.k8s.io roles
+	variant tk-no-get "list, create, patch"
+	variant tk-no-patch "get, list, create"
+	variant tk-no-create "get, list, patch"
+	variant tk-no-list "get, create, patch"
+	variant tk-rbac-objects "get, list, create, patch" rbac.authorization.k8s.io roles
 }
 
 live_state() {
@@ -198,7 +198,7 @@ kubeconfig_for() { # SA
 apiVersion: v1
 kind: Config
 clusters:
-  - name: kind-kube-lens-dev
+  - name: kind-tern-kube-dev
     cluster:
       server: $server
       certificate-authority-data: $ca
@@ -207,12 +207,12 @@ users:
     user:
       token: $token
 contexts:
-  - name: $1@kind-kube-lens-dev
+  - name: $1@kind-tern-kube-dev
     context:
-      cluster: kind-kube-lens-dev
+      cluster: kind-tern-kube-dev
       user: $1
       namespace: $NS
-current-context: $1@kind-kube-lens-dev
+current-context: $1@kind-tern-kube-dev
 EOF
 	)
 }
@@ -250,7 +250,7 @@ admin create namespace "$NS" --dry-run=client -o yaml | admin apply -f - >/dev/n
 } | admin apply -f - >/dev/null || exit 2
 live_state | admin apply -f - >/dev/null || exit 2
 git_state
-for sa in "$NS" kl-no-get kl-no-patch kl-no-create kl-no-list kl-rbac-objects; do
+for sa in "$NS" tk-no-get tk-no-patch tk-no-create tk-no-list tk-rbac-objects; do
 	kubeconfig_for "$sa" || exit 2
 done
 # RBAC alone would allow these writes; only the admission policy stops them.
@@ -313,19 +313,19 @@ fi
 
 # --- Each verb is necessary -------------------------------------------------
 
-drift kl-no-get -R -f "$work/git"
+drift tk-no-get -R -f "$work/git"
 [ "$rc" = 2 ] && grep -q 'cannot get resource' "$work/out" && ok "without get: diff fails (exit 2)" || bad "without get: exit $rc, want 2"
-drift kl-no-patch -f "$work/git/existing"
+drift tk-no-patch -f "$work/git/existing"
 [ "$rc" = 2 ] && grep -q 'cannot patch resource' "$work/out" && ok "without patch: diff of existing objects fails (exit 2)" ||
 	bad "without patch: exit $rc, want 2"
-drift kl-no-create -f "$work/git/missing"
+drift tk-no-create -f "$work/git/missing"
 [ "$rc" = 2 ] && grep -q 'cannot create resource' "$work/out" && ok "without create: missing objects cannot be reported (exit 2)" ||
 	bad "without create (missing): exit $rc, want 2"
-drift kl-no-create -f "$work/git/existing"
+drift tk-no-create -f "$work/git/existing"
 [ "$rc" = 1 ] && ok "without create: existing objects still diff (exit 1)" || bad "without create (existing): exit $rc, want 1"
-drift kl-no-list -R -f "$work/git"
+drift tk-no-list -R -f "$work/git"
 [ "$rc" = 1 ] && ok "without list: plain drift works (exit 1)" || bad "without list: exit $rc, want 1"
-drift kl-no-list -R -f "$work/git" --unmanaged auto
+drift tk-no-list -R -f "$work/git" --unmanaged auto
 [ "$rc" = 2 ] && grep -q 'cannot list resource' "$work/out" && ok "without list: --unmanaged fails (exit 2)" ||
 	bad "without list --unmanaged: exit $rc, want 2"
 
@@ -342,7 +342,7 @@ rules:
     resources: [secrets]
     verbs: [get]
 EOF
-drift kl-rbac-objects -f "$work/role.yaml"
+drift tk-rbac-objects -f "$work/role.yaml"
 [ "$rc" = 2 ] && grep -q 'attempting to grant RBAC permissions not currently held' "$work/out" &&
 	ok "Roles: get/create/patch is not enough (escalation check, exit 2)" ||
 	bad "Roles without escalate: exit $rc, want 2"

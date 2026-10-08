@@ -1,19 +1,19 @@
 # Configuration
 
-kube-lens reads one optional JSON file. Without it every setting has its
+tern-kube reads one optional JSON file. Without it every setting has its
 default; the defaults are the safe choice (secret values hidden, Explore
 never polls, mutations go through preview and confirmation).
 
 ## Location
 
-1. `$XDG_CONFIG_HOME/kube-lens/config.json` when `XDG_CONFIG_HOME` is set to
+1. `$XDG_CONFIG_HOME/tern-kube/config.json` when `XDG_CONFIG_HOME` is set to
    an absolute path (relative values are ignored, as the XDG spec requires);
-2. otherwise `$HOME/.config/kube-lens/config.json`.
+2. otherwise `$HOME/.config/tern-kube/config.json`.
 
 The variables are read from the Tern daemon's environment, which is the
 environment the Tern window was launched with, not your shell's.
 
-**Kube Lens: Settings** in the palette opens a block that edits this file:
+**Tern Kube: Settings** in the palette opens a block that edits this file:
 every key with its effective value, a description and a reset to the
 default (`r`). Booleans and enums toggle with `enter`; numbers, strings and
 lists open an input. Each change is validated before it is written, unknown
@@ -24,30 +24,30 @@ installed manifest and the shell guard's spool.
 To edit by hand, start from the complete example:
 
 ```sh
-mkdir -p "${XDG_CONFIG_HOME:-$HOME/.config}/kube-lens"
-cp examples/config.json "${XDG_CONFIG_HOME:-$HOME/.config}/kube-lens/config.json"
+mkdir -p "${XDG_CONFIG_HOME:-$HOME/.config}/tern-kube"
+cp examples/config.json "${XDG_CONFIG_HOME:-$HOME/.config}/tern-kube/config.json"
 ```
 
 ## When the file is read
 
 - Once when the plugin loads (Tern start, `tern plugin reload`).
-- Again whenever a kube-lens block (such as Explore) opens, so opening a new
+- Again whenever a tern-kube block (such as Explore) opens, so opening a new
   Explore block picks up edits.
 - Never while a command lens renders: the lens callbacks (`open`, `line`,
   `finish`, `view`, `event`) must not do I/O, so the `kubectl` lens uses the
   config cached by the last read. To apply an edit to lenses, open any
-  kube-lens block or run `tern plugin reload`.
+  tern-kube block or run `tern plugin reload`.
 
 The file must be a regular file of at most 262144 bytes. A symlinked file
 (stow, chezmoi, home-manager) is supported: Tern's capped read refuses
-symlinks, so kube-lens resolves the link with `realpath` in the background
+symlinks, so tern-kube resolves the link with `realpath` in the background
 and reads the target with the same cap. Until that finishes (milliseconds
 after plugin load) the defaults apply. A link to anything other than a
 regular file is rejected.
 
 ## Errors and diagnostics
 
-A bad config never stops kube-lens. Each problem produces a diagnostic, and
+A bad config never stops tern-kube. Each problem produces a diagnostic, and
 the rest of the file still applies:
 
 | Problem | Result | Level |
@@ -59,7 +59,7 @@ the rest of the file still applies:
 | Section (e.g. `explore`) is not an object | that section keeps its defaults | error |
 | Invalid entry in `aliases.additional` | that entry is dropped, the others kept | error |
 | Unknown key, at any level | ignored | warning |
-| `schema_version` newer than this kube-lens | known keys apply, unknown keys are ignored | warning |
+| `schema_version` newer than this tern-kube | known keys apply, unknown keys are ignored | warning |
 | `explore.auto_refresh` set to `true` | kept `false` | warning |
 | Invalid entry in `gitops.helm` or `gitops.unmanaged_kinds` | that entry is dropped, the others kept | error |
 
@@ -87,7 +87,7 @@ without a fractional part, within the stated range.
 
 | Key | Type | Default | Effect |
 | --- | --- | --- | --- |
-| `schema_version` | integer >= 1 | `1` | Version of this file's format. kube-lens understands version 1. A newer value is accepted with a warning: keys this version knows apply, the rest are ignored. |
+| `schema_version` | integer >= 1 | `1` | Version of this file's format. tern-kube understands version 1. A newer value is accepted with a warning: keys this version knows apply, the rest are ignored. |
 | `kubectl` | string: program name on `PATH` or absolute path (`~/` allowed) | `"kubectl"` | The kubectl binary Explore and quick actions run. The daemon's `PATH` is not your shell's, so an absolute path is the reliable choice. Relative paths with a `/` are rejected because the daemon's working directory is not yours. |
 | `kubeconfig` | string: absolute path (`~/` allowed), or `null` | `null` | Kubeconfig passed as `--kubeconfig` when an Explore link does not name one. |
 | `gitops` | object | see [`gitops`](#gitops) | Manifest index, drift, export and the git flow in Explore ([gitops.md](gitops.md)). |
@@ -95,7 +95,7 @@ without a fractional part, within the stated range.
 Effective `kubectl` program, first match wins: the Tern kv key `kubectl`
 (set by tests and the settings flow), then `kubectl` from this file when it
 is anything other than the bare default `"kubectl"`, then the daemon
-environment variable `KUBE_LENS_KUBECTL`, then `kubectl` on the daemon's
+environment variable `TKUBE_KUBECTL`, then `kubectl` on the daemon's
 `PATH`.
 
 Effective kubeconfig for Explore, first match wins: the `kubeconfig` of the
@@ -116,7 +116,7 @@ pins `--context` (and `--kubeconfig` when known) on every command it runs.
 
 | Key | Type | Default | Effect |
 | --- | --- | --- | --- |
-| `additional` | list of command names (letters, digits, `_`, `.`, `-`; at most 64 characters) | `[]` | Informational: the alias names you intend kube-lens to claim. It claims nothing by itself. Lens claims for aliases are written into the plugin manifest by `scripts/kube-lens-aliases add NAME`, which first verifies that your shell resolves NAME to kubectl or kubecolor. |
+| `additional` | list of command names (letters, digits, `_`, `.`, `-`; at most 64 characters) | `[]` | Informational: the alias names you intend tern-kube to claim. It claims nothing by itself. Lens claims for aliases are written into the plugin manifest by `scripts/tern-kube-aliases add NAME`, which first verifies that your shell resolves NAME to kubectl or kubecolor. |
 
 ### `explore`
 

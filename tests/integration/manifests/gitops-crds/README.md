@@ -1,7 +1,7 @@
 # Vendored GitOps CRDs
 
 Upstream CustomResourceDefinitions installed into the disposable kind cluster
-by `scripts/fixtures/capture-drift.sh` so kube-lens can read Argo CD and Flux
+by `scripts/fixtures/capture-drift.sh` so tern-kube can read Argo CD and Flux
 objects. Only the CRDs are installed: no controller runs, so the sample
 objects in `tests/integration/manifests/gitops/` never reconcile and their
 status is patched in by the capture script.

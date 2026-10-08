@@ -16,9 +16,9 @@ versions may break).
   clean manifests following the target layout, with an optional branch
   and commit (push and pull request opt-in, never forced).
 - Argo CD and Flux awareness: owning application, sync and health status.
-- `bin/kube-lens-drift`: Tern-free drift report (text, Markdown, JSON) and
+- `bin/tern-kube-drift`: Tern-free drift report (text, Markdown, JSON) and
   an example GitHub Actions workflow with dry-run-only RBAC.
-- Settings block (**Kube Lens: Settings**): every config key with
+- Settings block (**Tern Kube: Settings**): every config key with
   validation, reset to default and status of config, kubectl, alias
   claims and the shell guard.
 - Lens for `kubectl` and `kubecolor` `get`, `describe`, `top`, `apply`,
@@ -37,8 +37,8 @@ versions may break).
 - Raw fallback for output the lens cannot render faithfully: watches,
   `-o jsonpath`, empty output, captures over 20000 lines or 16 MiB.
 - Narrow-window layout: low-priority columns hide by window width.
-- Opt-in alias claims for bash and fish (`scripts/kube-lens-aliases`).
-- Versioned JSON config (`$XDG_CONFIG_HOME/kube-lens/config.json`) with
+- Opt-in alias claims for bash and fish (`scripts/tern-kube-aliases`).
+- Versioned JSON config (`$XDG_CONFIG_HOME/tern-kube/config.json`) with
   validated defaults and diagnostics.
 - Secret values masked in native views by default
   (`security.show_secret_values`), optional strict masking of
@@ -63,4 +63,4 @@ versions may break).
 - Docs: SDK capability matrix, configuration, performance, architecture,
   security model, testing, releasing.
 
-[Unreleased]: https://github.com/contrafy/tern-kube-lens/commits/master
+[Unreleased]: https://github.com/contrafy/tern-kube/commits/master

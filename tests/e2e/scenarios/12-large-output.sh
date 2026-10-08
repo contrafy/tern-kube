@@ -5,17 +5,17 @@ lens 'kubectl get pods -A -o wide'
 native
 ctl scroll -100000 >/dev/null
 sleep 0.3
-eq "page chips" "$(texts '[data-role="kube-lens.pages"] .sf-act')" '["1-500","501-1000"]'
-xy=$(ctl tree '[data-role="kube-lens.pages"] .sf-act' | jq -r '[.nodes[]? | select(.text == "501-1000")][0].rect | "\(.[0] + .[2] / 2) \(.[1] + .[3] / 2)"')
+eq "page chips" "$(texts '[data-role="tern-kube.pages"] .sf-act')" '["1-500","501-1000"]'
+xy=$(ctl tree '[data-role="tern-kube.pages"] .sf-act' | jq -r '[.nodes[]? | select(.text == "501-1000")][0].rect | "\(.[0] + .[2] / 2) \(.[1] + .[3] / 2)"')
 # shellcheck disable=SC2086
 ctl click $xy >/dev/null
 sleep 0.6
 ctl scroll -100000 >/dev/null
 sleep 0.3
-contains "second page" "$(alltext '[data-role="kube-lens.pages"] .sf-text')" "Rows 501-1000 of 1000"
+contains "second page" "$(alltext '[data-role="tern-kube.pages"] .sf-text')" "Rows 501-1000 of 1000"
 
 fake ""
-sh_line 'export KUBE_LENS_FAKE_ROWS=200000'
+sh_line 'export TKUBE_FAKE_ROWS=200000'
 mark=$(log_lines)
 start=$(date +%s)
 E2E_WAIT=30 lens 'kubectl get pods'

@@ -1,9 +1,9 @@
 # Architecture
 
-Kube Lens is one Tern plugin package (`plugin/`) plus tools that live outside
+Tern Kube is one Tern plugin package (`plugin/`) plus tools that live outside
 it: the opt-in shell guard (`shell/`), the standalone drift CLI
-(`bin/kube-lens-drift`) and the alias claim generator
-(`scripts/kube-lens-aliases`). SDK facts this design relies on are recorded
+(`bin/tern-kube-drift`) and the alias claim generator
+(`scripts/tern-kube-aliases`). SDK facts this design relies on are recorded
 with evidence in [sdk-capability-matrix.md](sdk-capability-matrix.md).
 
 ## Rule: pure core, thin host glue
@@ -26,10 +26,10 @@ plugin/
   plugin.toml          manifest: lens "kubectl" (claim globs), blocks
                        "explore", "approve" and "settings", styles
   host.luau            daemon half: lens "kubectl", spawn hook
-                       (KUBE_LENS_SPOOL), registers the blocks below
-  window.luau          window half: route.link (every kube-lens:// URL),
+                       (TKUBE_SPOOL), registers the blocks below
+  window.luau          window half: route.link (every tern-kube:// URL),
                        route.open (guard requests), palette commands
-  config_host.luau     reads/caches $XDG_CONFIG_HOME/kube-lens/config.json
+  config_host.luau     reads/caches $XDG_CONFIG_HOME/tern-kube/config.json
   explore_host.luau    block "explore": runs lib/explore/state effects
   mutate_host.luau     block "approve": runs lib/mutation/session effects,
                        audit log, quick-action grants
@@ -57,9 +57,9 @@ plugin/
     gitops/            index, controllers, clean, emit, export, drift, view
     settings/          settings block core and view
     config.luau        config schema, validation, defaults
-shell/                 kube-lens-guard (POSIX sh core) + zsh/bash/fish
+shell/                 tern-kube-guard (POSIX sh core) + zsh/bash/fish
                        activation files; protocol in shell/PROTOCOL.md
-bin/kube-lens-drift    POSIX sh drift report for CI (no Tern)
+bin/tern-kube-drift    POSIX sh drift report for CI (no Tern)
 ```
 
 ## Data flow
@@ -72,9 +72,9 @@ bin/kube-lens-drift    POSIX sh drift report for CI (no Tern)
    open/line/finish: record argv, lines, exit status only
    view:  lib/lens/capture -> lib/parse/* -> lib/lens/view -> lib/render/*
    event: "v=<state>" re-render | copy | explore | act
-      |  cx:open("kube-lens://...")
+      |  cx:open("tern-kube://...")
       v
- window.luau route.link  (claims every kube-lens:// URL, pcall-wrapped)
+ window.luau route.link  (claims every tern-kube:// URL, pcall-wrapped)
    act/<shell|logs|port-forward>  -> lib/actions/quick -> layout:split,
                                      new pane runs a visible kubectl line
    act/<debug-*|cronjob-run>      -> needs a confirm grant, else approve block
@@ -87,8 +87,8 @@ bin/kube-lens-drift    POSIX sh drift report for CI (no Tern)
    results come back as messages; render is a pure function of state
 
  Guarded typed mutation (opt-in)
-   kubectl apply -f x.yaml   (shell function from shell/kube-lens.<sh>)
-      -> shell/kube-lens-guard writes <spool>/req-<nonce>.json
+   kubectl apply -f x.yaml   (shell function from shell/tern-kube.<sh>)
+      -> shell/tern-kube-guard writes <spool>/req-<nonce>.json
       -> tern open --wait <req>  -> window route.open -> block "approve"
       -> preview, confirm, block writes resp-<nonce>.env, exits 0
       -> guard verifies nonce, context, fingerprint -> exec kubectl "$@"
@@ -143,7 +143,7 @@ an explicit choice in Explore.
 ### Mutation pipeline
 
 `plugin/lib/mutation/session.luau` serves three entry points with one
-pipeline: native (`kube-lens://mutate?...` from Explore keys, lens chips,
+pipeline: native (`tern-kube://mutate?...` from Explore keys, lens chips,
 palette), quick (mutating quick actions) and guard (spool request).
 
 1. resolve the context, `config view --minify` (context exists, server URL
@@ -165,5 +165,5 @@ palette), quick (mutating quick actions) and guard (spool request).
 `plugin/lib/gitops/` maps live objects to manifest files (plain YAML,
 Kustomize, Helm renders), reads Argo CD/Flux tracking metadata (never writes
 controller objects), cleans and emits objects as YAML for export, and sorts
-drift into changed/missing/unmanaged. `bin/kube-lens-drift` applies the same
+drift into changed/missing/unmanaged. `bin/tern-kube-drift` applies the same
 diff segmentation as `diffseg.luau` outside Tern. See [gitops.md](gitops.md).

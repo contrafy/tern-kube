@@ -5,8 +5,8 @@
 -- host digests it with sha256 (an injected hasher); the shell guard builds
 -- the same bytes, so a guard request and the block agree byte for byte.
 --
--- Format "kube-lens/fp/v1", every line ending in "\n", lengths in bytes:
---   kube-lens/fp/v1
+-- Format "tern-kube/fp/v1", every line ending in "\n", lengths in bytes:
+--   tern-kube/fp/v1
 --   argv <n>            then n lines `<len>:<arg>`
 --   context <len>:<ctx>
 --   kubeconfig <len>:<raw KUBECONFIG env value>        or `kubeconfig -`
@@ -32,7 +32,7 @@ export type Input = {
 
 local M = {}
 
-M.VERSION = "kube-lens/fp/v1"
+M.VERSION = "tern-kube/fp/v1"
 
 local function lp(s: string): string
 	return #s .. ":" .. s

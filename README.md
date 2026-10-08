@@ -1,6 +1,6 @@
-# tern-kube-lens
+# tern-kube
 
-**Kube Lens** reads `kubectl` output in [Tern](https://stencil.so/tern) as
+**Tern Kube** reads `kubectl` output in [Tern](https://stencil.so/tern) as
 native views: sortable, filterable tables you can click into, with the
 original output one click away (**Raw**).
 
@@ -35,7 +35,7 @@ lensed.
 
 ## Explore
 
-**Explore live** on a row, or **Kube Lens: Explore** in the palette, opens a
+**Explore live** on a row, or **Tern Kube: Explore** in the palette, opens a
 live block beside the pane. It pins the context it queries, shows where that
 context came from, and only refreshes when you ask.
 
@@ -58,7 +58,7 @@ clicks from any row). They open beside the pane by default; see
 ## Changes
 
 Delete, restart, scale, debug, CronJob run-now (Explore keys or inspector
-chips) and **Kube Lens: Apply file or directory** open an approval block
+chips) and **Tern Kube: Apply file or directory** open an approval block
 first: server dry run, `kubectl diff` per resource, then a confirmation
 scaled to the risk. Deletes and other broad changes need the target typed.
 Nothing runs if the preview fails or the inputs or target change before
@@ -83,15 +83,15 @@ and commit. Push and pull requests are off unless you turn them on.
 
 ![Drift report](docs/screenshots/m3b-drift-dark-wide.png)
 
-Outside Tern, [`bin/kube-lens-drift`](bin/kube-lens-drift) produces the same
+Outside Tern, [`bin/tern-kube-drift`](bin/tern-kube-drift) produces the same
 report for CI ([example workflow](examples/ci/github-actions-drift.yml)).
 Details: [docs/gitops.md](docs/gitops.md).
 
 ## Install
 
 ```sh
-git clone https://github.com/contrafy/tern-kube-lens
-tern plugin link tern-kube-lens/plugin
+git clone https://github.com/contrafy/tern-kube
+tern plugin link tern-kube/plugin
 ```
 
 Requires Tern 0.6.2 or later with shell integration and native command
@@ -101,13 +101,13 @@ zsh expands aliases before Tern sees the command, so `alias k=kubectl`
 works as is. In bash and fish, opt in per alias:
 
 ```sh
-tern-kube-lens/scripts/kube-lens-aliases add k
+tern-kube/scripts/tern-kube-aliases add k
 ```
 
-Settings: **Kube Lens: Settings** in the palette, or edit
-`~/.config/kube-lens/config.json` ([configuration](docs/configuration.md)).
+Settings: **Tern Kube: Settings** in the palette, or edit
+`~/.config/tern-kube/config.json` ([configuration](docs/configuration.md)).
 
-To remove: `tern plugin unlink kube-lens`.
+To remove: `tern plugin unlink tern-kube`.
 
 ## Status
 

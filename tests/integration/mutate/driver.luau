@@ -5,8 +5,8 @@
 -- calls this driver after each event. The driver replays the transcript
 -- through the pure session (deterministic), then prints:
 --   * shell lines for effects not executed yet (index > the harness's count):
---     `kl_effect <index> <type> ...` with POSIX-quoted fields;
---   * `kl_state` assignments describing the session (phase, tier, token, ...);
+--     `tk_effect <index> <type> ...` with POSIX-quoted fields;
+--   * `tk_state` assignments describing the session (phase, tier, token, ...);
 -- and writes the rendered view as text to <work>/view.txt via stdout markers.
 --
 --   .tools/bin/luau tests/integration/mutate/driver.luau -a <scenario> <effects done>  (loads .transcripts/<scenario>.luau)
@@ -131,7 +131,7 @@ for i, e in all do
 	if t == "run" then
 		print(
 			string.format(
-				"kl_effect %d run %s %d %d %s %s -- env %s %s",
+				"tk_effect %d run %s %d %d %s %s -- env %s %s",
 				i,
 				q(e.tag :: string),
 				e.gen :: number,
@@ -145,7 +145,7 @@ for i, e in all do
 	elseif t == "write" then
 		print(
 			string.format(
-				"kl_effect %d write %s %d %s %s -- %s",
+				"tk_effect %d write %s %d %s %s -- %s",
 				i,
 				q(e.tag :: string),
 				e.gen :: number,
@@ -155,17 +155,17 @@ for i, e in all do
 			)
 		)
 	elseif t == "read" then
-		print(string.format("kl_effect %d read %s %d -- %s", i, q(e.tag :: string), e.gen :: number, words(e.paths)))
+		print(string.format("tk_effect %d read %s %d -- %s", i, q(e.tag :: string), e.gen :: number, words(e.paths)))
 	elseif t == "audit" or t == "copy" then
-		print(string.format("kl_effect %d %s %s", i, t, q(e.line or e.text or "")))
+		print(string.format("tk_effect %d %s %s", i, t, q(e.line or e.text or "")))
 	elseif t == "grant" then
-		print(string.format("kl_effect %d grant %s %s %d", i, q(e.token :: string), q(e.url :: string), e.expires or 0))
+		print(string.format("tk_effect %d grant %s %s %d", i, q(e.token :: string), q(e.url :: string), e.expires or 0))
 	elseif t == "open" then
-		print(string.format("kl_effect %d open %s", i, q(e.url :: string)))
+		print(string.format("tk_effect %d open %s", i, q(e.url :: string)))
 	elseif t == "remove" then
-		print(string.format("kl_effect %d remove %s", i, q(e.path :: string)))
+		print(string.format("tk_effect %d remove %s", i, q(e.path :: string)))
 	else
-		print(string.format("kl_effect %d %s %s", i, t, q(e.id or e.text or "")))
+		print(string.format("tk_effect %d %s %s", i, t, q(e.id or e.text or "")))
 	end
 end
 

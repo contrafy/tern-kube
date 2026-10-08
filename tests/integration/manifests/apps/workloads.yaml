@@ -50,7 +50,7 @@ spec:
       terminationGracePeriodSeconds: 1
       containers:
         - name: app
-          image: registry.invalid/kube-lens/missing:0.0.0
+          image: registry.invalid/tern-kube/missing:0.0.0
           imagePullPolicy: IfNotPresent
 ---
 apiVersion: v1

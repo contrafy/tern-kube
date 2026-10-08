@@ -42,7 +42,7 @@
             "kind": "Application",
             "metadata": {
                 "annotations": {
-                    "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"argoproj.io/v1alpha1\",\"kind\":\"Application\",\"metadata\":{\"annotations\":{},\"name\":\"guestbook\",\"namespace\":\"tern-test-gitops\"},\"spec\":{\"destination\":{\"namespace\":\"tern-test-gitops\",\"server\":\"https://kubernetes.default.svc\"},\"project\":\"default\",\"source\":{\"path\":\"tests/integration/manifests/gitops/workloads\",\"repoURL\":\"git@github.com:contrafy/tern-kube-lens.git\",\"targetRevision\":\"HEAD\"}}}\n"
+                    "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"argoproj.io/v1alpha1\",\"kind\":\"Application\",\"metadata\":{\"annotations\":{},\"name\":\"guestbook\",\"namespace\":\"tern-test-gitops\"},\"spec\":{\"destination\":{\"namespace\":\"tern-test-gitops\",\"server\":\"https://kubernetes.default.svc\"},\"project\":\"default\",\"source\":{\"path\":\"tests/integration/manifests/gitops/workloads\",\"repoURL\":\"git@github.com:contrafy/tern-kube.git\",\"targetRevision\":\"HEAD\"}}}\n"
                 },
                 "creationTimestamp": "2026-10-08T17:13:43Z",
                 "generation": 2,
@@ -59,7 +59,7 @@
                 "project": "default",
                 "source": {
                     "path": "tests/integration/manifests/gitops/workloads",
-                    "repoURL": "git@github.com:contrafy/tern-kube-lens.git",
+                    "repoURL": "git@github.com:contrafy/tern-kube.git",
                     "targetRevision": "HEAD"
                 }
             },
@@ -79,7 +79,7 @@
             "kind": "Application",
             "metadata": {
                 "annotations": {
-                    "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"argoproj.io/v1alpha1\",\"kind\":\"Application\",\"metadata\":{\"annotations\":{},\"name\":\"guestbook-drifted\",\"namespace\":\"tern-test-gitops\"},\"spec\":{\"destination\":{\"namespace\":\"tern-test-drift\",\"server\":\"https://kubernetes.default.svc\"},\"project\":\"default\",\"sources\":[{\"chart\":\"guestbook\",\"repoURL\":\"https://charts.example.com\",\"targetRevision\":\"1.2.3\"},{\"path\":\"tests/integration/manifests/drift/baseline\",\"repoURL\":\"https://github.com/contrafy/tern-kube-lens\",\"targetRevision\":\"master\"}]}}\n"
+                    "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"argoproj.io/v1alpha1\",\"kind\":\"Application\",\"metadata\":{\"annotations\":{},\"name\":\"guestbook-drifted\",\"namespace\":\"tern-test-gitops\"},\"spec\":{\"destination\":{\"namespace\":\"tern-test-drift\",\"server\":\"https://kubernetes.default.svc\"},\"project\":\"default\",\"sources\":[{\"chart\":\"guestbook\",\"repoURL\":\"https://charts.example.com\",\"targetRevision\":\"1.2.3\"},{\"path\":\"tests/integration/manifests/drift/baseline\",\"repoURL\":\"https://github.com/contrafy/tern-kube\",\"targetRevision\":\"master\"}]}}\n"
                 },
                 "creationTimestamp": "2026-10-08T17:13:43Z",
                 "generation": 2,
@@ -102,7 +102,7 @@
                     },
                     {
                         "path": "tests/integration/manifests/drift/baseline",
-                        "repoURL": "https://github.com/contrafy/tern-kube-lens",
+                        "repoURL": "https://github.com/contrafy/tern-kube",
                         "targetRevision": "master"
                     }
                 ]

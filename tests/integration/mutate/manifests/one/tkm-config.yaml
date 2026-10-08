@@ -1,9 +1,9 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: klm-config
+  name: tkm-config
   namespace: tern-test-mutate
   labels:
-    app.kubernetes.io/part-of: kube-lens-mutate-it
+    app.kubernetes.io/part-of: tern-kube-mutate-it
 data:
   LOG_LEVEL: info

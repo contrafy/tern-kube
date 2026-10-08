@@ -39,11 +39,11 @@ echo "PERF ($PERF_RUNS runs each; view_ms from the plugin log)"
 # FAKE: deterministic synthetic tables (a read-only cluster has no 1000 pods).
 fake synthetic/rows-100
 echo "  100 rows initial render (build + render): $(initial_views 'kubectl get pods -A -o wide' | stats)"
-echo "  100 rows sort click: $(click_views 'AGE*' '.kl-grid .kl-h' | stats)"
+echo "  100 rows sort click: $(click_views 'AGE*' '.tk-grid .tk-h' | stats)"
 fake synthetic/rows-1000
 echo "  1000 rows initial render (build + render): $(initial_views 'kubectl get pods -A -o wide' | stats)"
-echo "  1000 rows sort click (query + render 500): $(click_views 'AGE*' '.kl-grid .kl-h' | stats)"
-echo "  1000 rows filter chip toggle: $(click_views 'Problems*' '[data-role="kube-lens.chips"] .sf-act' | stats)"
+echo "  1000 rows sort click (query + render 500): $(click_views 'AGE*' '.tk-grid .tk-h' | stats)"
+echo "  1000 rows filter chip toggle: $(click_views 'Problems*' '[data-role="tern-kube.chips"] .sf-act' | stats)"
 echo "  Lua heap during the run: max $(tail -n +"$((log_start + 1))" "$(daemon_log)" | sed -n 's/.*lua_kb=\([0-9]*\).*/\1/p' | sort -n | tail -1) KB"
 
 # Wall time of one whole command in the window, lens included.

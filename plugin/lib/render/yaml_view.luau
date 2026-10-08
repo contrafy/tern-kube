@@ -76,7 +76,7 @@ local function diagnosticNodes(diagnostics: { Diagnostic }): { Node }
 				ui.card({ ui.span("kubectl error", "error strong") }, { ui.text({ d.text }) }, {
 					key = "diag" .. i,
 					tone = "error",
-					role = "kube-lens.error",
+					role = "tern-kube.error",
 				})
 			)
 		else
@@ -119,7 +119,7 @@ local function pager(vs: ViewState, vsm: typeof(Viewstate), page: number, pages:
 			})
 		)
 	end
-	return ui.row(chips, { role = "kube-lens.pager", wrap = true })
+	return ui.row(chips, { role = "tern-kube.pager", wrap = true })
 end
 
 local function docsGrid(docs: { Doc }, lines: { string }, vs: ViewState, vsm: typeof(Viewstate)): { Node }
@@ -177,7 +177,7 @@ function M.render(capture: Capture, vs: ViewState, vsm: typeof(Viewstate)): Node
 			ui.text({ ui.span(notice, "warning") }, {
 				key = if i == 1 then "sensitive" else "sensitive" .. i,
 				tone = "warning",
-				role = "kube-lens.sensitive",
+				role = "tern-kube.sensitive",
 			})
 		)
 	end
@@ -200,7 +200,7 @@ function M.render(capture: Capture, vs: ViewState, vsm: typeof(Viewstate)): Node
 			table.insert(children, ui.muted("kubectl printed no objects"))
 		end
 	end
-	return ui.col(children, { role = "kube-lens.yaml" })
+	return ui.col(children, { role = "tern-kube.yaml" })
 end
 
 return M

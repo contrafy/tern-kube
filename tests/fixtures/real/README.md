@@ -1,6 +1,6 @@
 # Real kubectl fixtures
 
-Captured from the disposable kind cluster `kube-lens-dev` by
+Captured from the disposable kind cluster `tern-kube-dev` by
 `sh scripts/fixtures/capture.sh`. Never hand-edit these files: change the world in
 `tests/integration/manifests/` or the capture list in the script and re-run it.
 
@@ -10,6 +10,7 @@ Captured from the disposable kind cluster `kube-lens-dev` by
 sh scripts/cluster.sh create          # kind cluster + .sandbox/kubeconfig (idempotent)
 sh scripts/fixtures/capture.sh        # delete + rebuild every tern-test-* namespace, capture
 sh scripts/fixtures/capture.sh --reuse  # keep the existing world, recapture only
+sh scripts/fixtures/capture.sh --world-only  # build the world for live tests and e2e, capture nothing
 ```
 
 The script only talks to the cluster through `.sandbox/kubeconfig` (verified by
@@ -59,7 +60,7 @@ joined by `_`, `/` mapped to `+`. Since `-n` is not part of the key, each namesp
 gets its own scenario directory. Use a scenario with the fake:
 
 ```sh
-KUBE_LENS_FAKE_FIXTURES=tests/fixtures/real/ns-apps tests/bin/kubectl get pods -n tern-test-apps
+TKUBE_FAKE_FIXTURES=tests/fixtures/real/ns-apps tests/bin/kubectl get pods -n tern-test-apps
 ```
 
 `MANIFEST.tsv` lists every fixture: `scenario`, `key`, the exact `argv` (including
@@ -85,7 +86,7 @@ error messages are relative to it.
 | `mutate-delete` | `tern-test-mutate` | `delete -f` of a multi-doc file |
 
 The only secret captured in YAML is `tern-test-apps/app-secret`, whose values are the
-obviously fake `kube-lens-test-not-a-secret` / `kube-lens-test-user` (base64 in `data`,
+obviously fake `tern-kube-test-not-a-secret` / `tern-kube-test-user` (base64 in `data`,
 plain text in the `last-applied-configuration` annotation, which is the realistic
 leak case the lens must handle).
 

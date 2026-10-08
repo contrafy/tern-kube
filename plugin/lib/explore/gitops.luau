@@ -338,7 +338,7 @@ local function tmpPath(ctx: Ctx, prefix: string): string?
 end
 
 local function writeTmp(tag: string, gen: number, path: string, text: string): Effect
-	return runEffect(tag, gen, { "/bin/sh", "-c", M.WRITE_SCRIPT, "kube-lens-tmp", path }, 10000, { stdin = text })
+	return runEffect(tag, gen, { "/bin/sh", "-c", M.WRITE_SCRIPT, "tern-kube-tmp", path }, 10000, { stdin = text })
 end
 
 local function removeTmp(tag: string, gen: number, path: string): Effect
@@ -357,7 +357,7 @@ end
 
 -- `kubectl diff` exits 0 in sync, 1 with differences, >1 on error. Exit 1
 -- without a single difference is an error too (same rule as
--- bin/kube-lens-drift): showing it as "in sync" would hide the failure.
+-- bin/tern-kube-drift): showing it as "in sync" would hide the failure.
 local function diffOutcome(ctx: Ctx, r: ProcessResult?, spawnError: string?): (Diffseg.Summary?, string?)
 	local res = r :: ProcessResult
 	if spawnError or res.timed_out or (res.status ~= 0 and res.status ~= 1) then
@@ -1462,7 +1462,7 @@ function M.driftSummary(load: DriftLoad, context: string?): string
 	local out: { string } = {}
 	table.insert(
 		out,
-		string.format("Drift of `%s` against context `%s` (kube-lens).", load.source.label, context or "?")
+		string.format("Drift of `%s` against context `%s` (tern-kube).", load.source.label, context or "?")
 	)
 	if report == nil then
 		return table.concat(out, "\n") .. "\n"
@@ -1789,7 +1789,7 @@ function M.startGit(g: G, ctx: Ctx, effects: { Effect }): boolean
 		gen = nextGen(g),
 		root = index.root,
 		files = table.clone(ex.written),
-		branch = "kube-lens/" .. M.slug(label) .. "-" .. stamp,
+		branch = "tern-kube/" .. M.slug(label) .. "-" .. stamp,
 		message = "chore(gitops): export " .. label,
 		push = false,
 		pr = false,
@@ -1819,7 +1819,7 @@ end
 
 function M.exportSummary(ex: ExportState, context: string?, root: string): string
 	local out: { string } = {
-		string.format("Exported %s from context `%s` with kube-lens.", ex.label, context or "?"),
+		string.format("Exported %s from context `%s` with tern-kube.", ex.label, context or "?"),
 		"",
 		"| File | Change |",
 		"| --- | --- |",

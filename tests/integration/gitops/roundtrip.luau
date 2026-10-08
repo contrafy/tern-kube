@@ -111,7 +111,7 @@ local function edge(): ({ any }, { [any]: true })
 		apiVersion = "v1",
 		kind = "ConfigMap",
 		metadata = {
-			name = "kube-lens-emit-edge",
+			name = "tern-kube-emit-edge",
 			namespace = "tern-test-gitops",
 			labels = { y = "n", ["8080"] = "true" },
 			annotations = { ["a: b"] = "x", nested = "l1\nl2\n" },

@@ -1,33 +1,33 @@
 LAST SEEN   TYPE      REASON              OBJECT                               MESSAGE
-5m16s       Normal    Scheduled           pod/broken-image-68986f4958-6qp2v    Successfully assigned tern-test-apps/broken-image-68986f4958-6qp2v to kube-lens-dev-control-plane
-2m24s       Normal    Pulling             pod/broken-image-68986f4958-6qp2v    Pulling image "registry.invalid/kube-lens/missing:0.0.0"
-2m24s       Warning   Failed              pod/broken-image-68986f4958-6qp2v    Failed to pull image "registry.invalid/kube-lens/missing:0.0.0": failed to pull and unpack image "registry.invalid/kube-lens/missing:0.0.0": failed to resolve reference "registry.invalid/kube-lens/missing:0.0.0": failed to do request: Head "https://registry.invalid/v2/kube-lens/missing/manifests/0.0.0": dial tcp: lookup registry.invalid on 192.168.65.254:53: no such host
+5m16s       Normal    Scheduled           pod/broken-image-68986f4958-6qp2v    Successfully assigned tern-test-apps/broken-image-68986f4958-6qp2v to tern-kube-dev-control-plane
+2m24s       Normal    Pulling             pod/broken-image-68986f4958-6qp2v    Pulling image "registry.invalid/tern-kube/missing:0.0.0"
+2m24s       Warning   Failed              pod/broken-image-68986f4958-6qp2v    Failed to pull image "registry.invalid/tern-kube/missing:0.0.0": failed to pull and unpack image "registry.invalid/tern-kube/missing:0.0.0": failed to resolve reference "registry.invalid/tern-kube/missing:0.0.0": failed to do request: Head "https://registry.invalid/v2/tern-kube/missing/manifests/0.0.0": dial tcp: lookup registry.invalid on 192.168.65.254:53: no such host
 2m24s       Warning   Failed              pod/broken-image-68986f4958-6qp2v    Error: ErrImagePull
-1s          Normal    BackOff             pod/broken-image-68986f4958-6qp2v    Back-off pulling image "registry.invalid/kube-lens/missing:0.0.0"
+1s          Normal    BackOff             pod/broken-image-68986f4958-6qp2v    Back-off pulling image "registry.invalid/tern-kube/missing:0.0.0"
 12s         Warning   Failed              pod/broken-image-68986f4958-6qp2v    Error: ImagePullBackOff
 5m16s       Normal    SuccessfulCreate    replicaset/broken-image-68986f4958   Created pod: broken-image-68986f4958-6qp2v
 5m16s       Normal    ScalingReplicaSet   deployment/broken-image              Scaled up replica set broken-image-68986f4958 from 0 to 1
-5m16s       Normal    Scheduled           pod/crashloop                        Successfully assigned tern-test-apps/crashloop to kube-lens-dev-control-plane
+5m16s       Normal    Scheduled           pod/crashloop                        Successfully assigned tern-test-apps/crashloop to tern-kube-dev-control-plane
 2m16s       Normal    Pulled              pod/crashloop                        Container image "busybox:1.37" already present on machine and can be accessed by the pod
 2m16s       Normal    Created             pod/crashloop                        Container created
 2m16s       Normal    Started             pod/crashloop                        Container started
 56s         Warning   BackOff             pod/crashloop                        Back-off restarting failed container app in pod crashloop_tern-test-apps(1451ed21-57ff-42c8-a382-a57698d4bd26)
-5m16s       Normal    Scheduled           pod/db-0                             Successfully assigned tern-test-apps/db-0 to kube-lens-dev-control-plane
+5m16s       Normal    Scheduled           pod/db-0                             Successfully assigned tern-test-apps/db-0 to tern-kube-dev-control-plane
 5m16s       Normal    Pulled              pod/db-0                             Container image "registry.k8s.io/pause:3.10" already present on machine and can be accessed by the pod
 5m16s       Normal    Created             pod/db-0                             Container created
 5m16s       Normal    Started             pod/db-0                             Container started
 5m16s       Normal    SuccessfulCreate    statefulset/db                       Create Pod db-0 in StatefulSet db successful
-5m16s       Normal    Scheduled           pod/node-agent-bb754                 Successfully assigned tern-test-apps/node-agent-bb754 to kube-lens-dev-control-plane
+5m16s       Normal    Scheduled           pod/node-agent-bb754                 Successfully assigned tern-test-apps/node-agent-bb754 to tern-kube-dev-control-plane
 5m16s       Normal    Pulled              pod/node-agent-bb754                 Container image "registry.k8s.io/pause:3.10" already present on machine and can be accessed by the pod
 5m16s       Normal    Created             pod/node-agent-bb754                 Container created
 5m16s       Normal    Started             pod/node-agent-bb754                 Container started
 5m16s       Normal    SuccessfulCreate    daemonset/node-agent                 Created pod: node-agent-bb754
 0s          Warning   FailedScheduling    pod/pending                          0/1 nodes are available: 1 node(s) didn't match Pod's node affinity/selector. preemption: 0/1 nodes are available: 1 Preemption is not helpful for scheduling.
-5m16s       Normal    Scheduled           pod/web-65d7d99975-bmgbn             Successfully assigned tern-test-apps/web-65d7d99975-bmgbn to kube-lens-dev-control-plane
+5m16s       Normal    Scheduled           pod/web-65d7d99975-bmgbn             Successfully assigned tern-test-apps/web-65d7d99975-bmgbn to tern-kube-dev-control-plane
 5m16s       Normal    Pulled              pod/web-65d7d99975-bmgbn             Container image "registry.k8s.io/pause:3.10" already present on machine and can be accessed by the pod
 5m16s       Normal    Created             pod/web-65d7d99975-bmgbn             Container created
 5m16s       Normal    Started             pod/web-65d7d99975-bmgbn             Container started
-5m16s       Normal    Scheduled           pod/web-65d7d99975-zsb95             Successfully assigned tern-test-apps/web-65d7d99975-zsb95 to kube-lens-dev-control-plane
+5m16s       Normal    Scheduled           pod/web-65d7d99975-zsb95             Successfully assigned tern-test-apps/web-65d7d99975-zsb95 to tern-kube-dev-control-plane
 5m16s       Normal    Pulled              pod/web-65d7d99975-zsb95             Container image "registry.k8s.io/pause:3.10" already present on machine and can be accessed by the pod
 5m16s       Normal    Created             pod/web-65d7d99975-zsb95             Container created
 5m16s       Normal    Started             pod/web-65d7d99975-zsb95             Container started

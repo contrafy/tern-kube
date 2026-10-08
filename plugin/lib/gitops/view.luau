@@ -140,7 +140,7 @@ local function badgeCell(tones: { [string]: string }): Cell
 		local tone = tones[value]
 		local muted = col == "GIT" and value == ("clean" :: string)
 		local style = if tone and tone ~= "neutral" then tone .. " strong" elseif muted or tone then "muted" else nil
-		return ui.text({ ui.span(value, style) }, { class = "kl-c" })
+		return ui.text({ ui.span(value, style) }, { class = "tk-c" })
 	end
 end
 
@@ -149,7 +149,7 @@ local function chips(v: Ctx, list: { { string } }, key: string): Node
 	for i, c in list do
 		table.insert(out, v.chip(c[1], c[2], { key = key .. i, tone = c[3] or "neutral", title = c[4] }))
 	end
-	return ui.row(out, { key = key, wrap = true, role = "kube-lens.chips" })
+	return ui.row(out, { key = key, wrap = true, role = "tern-kube.chips" })
 end
 
 -- Index status ---------------------------------------------------------------
@@ -176,11 +176,11 @@ function M.scanLine(g: Gitops.G): Node
 				text ..= string.format(" (%d files)", p.done)
 			end
 		end
-		return ui.text({ ui.span(text, "accent") }, { key = "scan", role = "kube-lens.gitops-scan" })
+		return ui.text({ ui.span(text, "accent") }, { key = "scan", role = "tern-kube.gitops-scan" })
 	elseif scan.status == "error" then
 		return ui.text(
 			{ ui.span("Manifest index failed: " .. (scan.error or "?"), "error") },
-			{ key = "scan", role = "kube-lens.error" }
+			{ key = "scan", role = "tern-kube.error" }
 		)
 	end
 	local index = g.index :: Index.Index
@@ -211,7 +211,7 @@ function M.scanLine(g: Gitops.G): Node
 	if errors > 0 then
 		table.insert(spans, ui.span(string.format("  %d render/parse errors", errors), "warning"))
 	end
-	return ui.text(spans, { key = "scan", role = "kube-lens.gitops-scan" })
+	return ui.text(spans, { key = "scan", role = "tern-kube.gitops-scan" })
 end
 
 -- Controller line ------------------------------------------------------------
@@ -264,7 +264,7 @@ function M.controllerLine(v: Ctx, obj: any): Node?
 	elseif owner.path then
 		table.insert(children, ui.muted("path " .. owner.path .. " (repository not checked out here)"))
 	end
-	return ui.row(children, { key = "ctl", wrap = true, role = "kube-lens.gitops-controller" })
+	return ui.row(children, { key = "ctl", wrap = true, role = "tern-kube.gitops-controller" })
 end
 
 -- Manifest -------------------------------------------------------------------
@@ -287,7 +287,7 @@ local function manifestBody(v: Ctx): { Node }
 			ui.text({
 				ui.span("No manifest declares " .. refText(ref) .. ".", "warning"),
 				ui.span("  E exports it to the repository.", "muted"),
-			}, { key = "none", role = "kube-lens.gitops-none" })
+			}, { key = "none", role = "tern-kube.gitops-none" })
 		)
 		table.insert(out, chips(v, { { "Export (E)", "gitops=export", "accent" } }, "mc"))
 		return out
@@ -415,7 +415,7 @@ function M.segmentCard(seg: Diffseg.Segment, key: string, collapsed: boolean): N
 			collapsed = collapsed,
 			inset = true,
 			tone = ACTION_TONE[seg.action],
-			role = "kube-lens.gitops-diff",
+			role = "tern-kube.gitops-diff",
 		}
 	)
 end
@@ -472,7 +472,7 @@ local function diffBody(v: Ctx): { Node }
 				})
 			)
 		end
-		table.insert(out, ui.row(docChips, { key = "docs", wrap = true, role = "kube-lens.chips" }))
+		table.insert(out, ui.row(docChips, { key = "docs", wrap = true, role = "tern-kube.chips" }))
 	end
 	local status = load.status
 	if STEP_TEXT[status] then
@@ -494,7 +494,7 @@ local function diffBody(v: Ctx): { Node }
 			out,
 			ui.text(
 				{ ui.span(load.error or "kubectl diff failed", "error") },
-				{ key = "status", role = "kube-lens.error" }
+				{ key = "status", role = "tern-kube.error" }
 			)
 		)
 	elseif status == "ok" then
@@ -504,7 +504,7 @@ local function diffBody(v: Ctx): { Node }
 				ui.text({
 					ui.span("In sync: ", "success strong"),
 					ui.span("the live object matches the manifest.", "muted"),
-				}, { key = "status", role = "kube-lens.gitops-insync" })
+				}, { key = "status", role = "tern-kube.gitops-insync" })
 			)
 		else
 			local cards: { Node } = {}
@@ -640,7 +640,7 @@ local function countsRow(v: Ctx, load: Gitops.DriftLoad): Node
 			})
 		)
 	end
-	return ui.row(out, { key = "counts", wrap = true, role = "kube-lens.chips" })
+	return ui.row(out, { key = "counts", wrap = true, role = "tern-kube.chips" })
 end
 
 local function reportBody(v: Ctx, load: Gitops.DriftLoad): { Node }
@@ -674,7 +674,7 @@ local function reportBody(v: Ctx, load: Gitops.DriftLoad): { Node }
 	elseif load.status == "error" then
 		table.insert(
 			out,
-			ui.text({ ui.span(load.error or "drift failed", "error") }, { key = "status", role = "kube-lens.error" })
+			ui.text({ ui.span(load.error or "drift failed", "error") }, { key = "status", role = "tern-kube.error" })
 		)
 		return out
 	end
@@ -689,7 +689,7 @@ local function reportBody(v: Ctx, load: Gitops.DriftLoad): { Node }
 					if load.filter == "all" then "the cluster matches the manifests." else "f shows more.",
 					"muted"
 				),
-			}, { key = "insync-all", role = "kube-lens.gitops-insync" })
+			}, { key = "insync-all", role = "tern-kube.gitops-insync" })
 		)
 	else
 		local rows: { GridRow } = {}
@@ -908,7 +908,7 @@ local function exportBody(v: Ctx): { Node }
 	elseif ex.status == "error" then
 		table.insert(
 			out,
-			ui.text({ ui.span(ex.error or "export failed", "error") }, { key = "status", role = "kube-lens.error" })
+			ui.text({ ui.span(ex.error or "export failed", "error") }, { key = "status", role = "tern-kube.error" })
 		)
 		table.insert(
 			out,
@@ -1010,7 +1010,7 @@ local function exportBody(v: Ctx): { Node }
 					collapsible = true,
 					inset = true,
 					tone = STATUS_TONE[f.status],
-					role = "kube-lens.gitops-diff",
+					role = "tern-kube.gitops-diff",
 				})
 			)
 		end
@@ -1035,7 +1035,7 @@ local function exportBody(v: Ctx): { Node }
 				}, { key = "q" }),
 				v.chip("Write", "gitops-key=y", { key = "yes", tone = "warning" }),
 				v.chip("Cancel", "gitops-key=escape", { key = "no" }),
-			}, { key = "confirm", wrap = true, role = "kube-lens.gitops-confirm" })
+			}, { key = "confirm", wrap = true, role = "tern-kube.gitops-confirm" })
 		)
 	elseif ex.status == "writing" then
 		table.insert(out, ui.muted("Writing …", { key = "status" }))
@@ -1045,7 +1045,7 @@ local function exportBody(v: Ctx): { Node }
 			ui.text({
 				ui.span("Wrote " .. count(#ex.written, "file") .. ".", "success strong"),
 				ui.span(if g.repo.git then "  b creates a branch and commit." else "", "muted"),
-			}, { key = "status", role = "kube-lens.gitops-written" })
+			}, { key = "status", role = "tern-kube.gitops-written" })
 		)
 		if g.repo.git then
 			table.insert(out, chips(v, { { "Branch & commit (b)", "gitops-key=b", "accent" } }, "xc"))
@@ -1116,7 +1116,7 @@ local function gitBody(v: Ctx): { Node }
 			ui.text({ ui.span(if checks.origin then "remote origin" else "no remote origin", "muted") }, {
 				key = "origin",
 			}),
-		}, { key = "toggles", wrap = true, role = "kube-lens.chips" })
+		}, { key = "toggles", wrap = true, role = "tern-kube.chips" })
 	)
 	if #checks.unrelated > 0 then
 		table.insert(
@@ -1156,7 +1156,7 @@ local function gitBody(v: Ctx): { Node }
 					key = "s" .. i,
 					inset = true,
 					tone = STEP_TONE[step.status],
-					role = "kube-lens.gitops-step",
+					role = "tern-kube.gitops-step",
 				}
 			)
 		)
@@ -1167,7 +1167,7 @@ local function gitBody(v: Ctx): { Node }
 		if why then
 			table.insert(
 				out,
-				ui.text({ ui.span(why, "error") }, { key = "blocked", role = "kube-lens.gitops-blocked" })
+				ui.text({ ui.span(why, "error") }, { key = "blocked", role = "tern-kube.gitops-blocked" })
 			)
 		end
 		table.insert(
@@ -1190,13 +1190,13 @@ local function gitBody(v: Ctx): { Node }
 			out,
 			ui.text({ ui.span("Done: committed on " .. git.branch, "success strong") }, {
 				key = "status",
-				role = "kube-lens.gitops-done",
+				role = "tern-kube.gitops-done",
 			})
 		)
 	elseif git.status == "error" then
 		table.insert(
 			out,
-			ui.text({ ui.span(git.error or "failed", "error") }, { key = "status", role = "kube-lens.error" })
+			ui.text({ ui.span(git.error or "failed", "error") }, { key = "status", role = "tern-kube.error" })
 		)
 	end
 	return out
@@ -1241,7 +1241,7 @@ function M.inputs(g: Gitops.G, route: Route, editing: string?): { Node }
 				cursor = #text,
 				placeholder = f[3],
 				prompt = f[2],
-				class = if editing == f[1] then "kl-editing" else nil,
+				class = if editing == f[1] then "tk-editing" else nil,
 			},
 		})
 	end

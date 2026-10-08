@@ -1,16 +1,16 @@
 # Security model
 
-What Kube Lens protects against, what it does not, and why. Reporting a
+What Tern Kube protects against, what it does not, and why. Reporting a
 vulnerability: [SECURITY.md](../SECURITY.md).
 
 ## Trust boundary: the local user
 
-Kube Lens runs as the user, inside the user's Tern, with the user's
+Tern Kube runs as the user, inside the user's Tern, with the user's
 `kubectl` credentials. Anything running as the same user is trusted: it can
 already run `kubectl` directly. Concretely:
 
 - The spool directory (`<plugin data>/spool`, exported to panes as
-  `KUBE_LENS_SPOOL`) is mode 0700; request and response files are 0600. A
+  `TKUBE_SPOOL`) is mode 0700; request and response files are 0600. A
   same-user process can still read requests, write responses or delete them.
   The guard therefore checks ownership, regular-file type, nonce, timestamps,
   context and fingerprint (`shell/PROTOCOL.md`, "Response"), which detects
@@ -29,7 +29,7 @@ already run `kubectl` directly. Concretely:
 
 ## The guard is advisory, not admission control
 
-The shell guard (`shell/kube-lens-guard`) only sees commands typed through
+The shell guard (`shell/tern-kube-guard`) only sees commands typed through
 the `kubectl` shell function. It does not see scripts, `command kubectl`,
 absolute paths, `kubecolor`, other tools, CI, or other machines. It is a
 seatbelt against mistakes at the prompt. Enforce policy on the cluster
@@ -45,9 +45,9 @@ entry (`shell/README.md`).
 
 Every uncertain case refuses; nothing runs:
 
-- guard outside a Tern pane, without `KUBE_LENS_SPOOL`, plugin not loaded
+- guard outside a Tern pane, without `TKUBE_SPOOL`, plugin not loaded
   (the request opens in an editor and no response appears), timeout
-  (`KUBE_LENS_GUARD_TIMEOUT`, default 600 s), Ctrl-C, any response check
+  (`TKUBE_GUARD_TIMEOUT`, default 600 s), Ctrl-C, any response check
   failing (`shell/PROTOCOL.md`);
 - inputs that cannot be fingerprinted: stdin (`-f -`, `/dev/stdin`), URLs,
   paths with newlines; unknown or ambiguous flags around a mutating verb;
@@ -61,7 +61,7 @@ Every uncertain case refuses; nothing runs:
 - at confirm time the block re-reads file digests, fingerprint, the
   context's API server and (when inferred) the current context; any change
   refuses (`session.luau`);
-- `kube-lens://` links never carry a command line: the window and the block
+- `tern-kube://` links never carry a command line: the window and the block
   rebuild argv from validated fields (`plugin/lib/actions/quick.luau`,
   `plugin/lib/mutation/link.luau`), so a crafted link can at most request a
   preview or a read-only split. Invalid links are refused with a toast.
@@ -93,7 +93,7 @@ the size and sha256 of every input file. Limits:
   effort.
 - `kubectl diff` masks Secret data but not the last-applied annotation; the
   approve block (`Diffseg.redactSecrets`, `plugin/lib/mutation/diffseg.luau`)
-  and `bin/kube-lens-drift` replace those lines.
+  and `bin/tern-kube-drift` replace those lines.
 - Raw output is kubectl's own and is never masked. Tern keeps it (the Raw
   toggle, lens rehydration after reload) under Tern's own retention; Kube
   Lens cannot redact or purge it. Run `kubectl get secret -o yaml` only where
@@ -121,7 +121,7 @@ opens the approve block instead of running.
 
 ## No credentials stored
 
-Kube Lens stores no credentials. It records context names, the kubeconfig
+Tern Kube stores no credentials. It records context names, the kubeconfig
 path (from `KUBECONFIG` or `--kubeconfig`) and, with the opt-in shell
 snippets, each pane's `KUBECONFIG` value in `<spool>/pane-<pane>.env`
 (nothing else from the environment). Commands run with the user's own
@@ -137,5 +137,5 @@ executed, failed), `mode` (native, guard), `op`, `family`, `context`,
 `fingerprint`, `exit_code`, `previewed_at`, `started_at`, `finished_at`.
 Values of `--token` and `--password` in argv are replaced by `<redacted>`.
 Command output, environment values and file contents are never logged. The
-log is local, unsigned and user-writable: a record of what Kube Lens did,
-not tamper evidence. Commands that bypass Kube Lens are not in it.
+log is local, unsigned and user-writable: a record of what Tern Kube did,
+not tamper evidence. Commands that bypass Tern Kube are not in it.

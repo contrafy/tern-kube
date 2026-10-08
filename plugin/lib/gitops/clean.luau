@@ -14,7 +14,7 @@ export type Options = {
 }
 
 local PLACEHOLDER = "REPLACE_ME"
-local SECRET_COMMENT = "kube-lens: secret values redacted; populate via SOPS/SealedSecrets/ExternalSecrets"
+local SECRET_COMMENT = "tern-kube: secret values redacted; populate via SOPS/SealedSecrets/ExternalSecrets"
 
 local METADATA_DROP: { string } = {
 	"uid",

@@ -1,15 +1,15 @@
 # Settings block: opens from the palette, toggles a boolean into the
 # sandbox's own config file (never the user's), shows the saved state, and
 # resets the key so the file returns to defaults.
-ST="[data-surface='plugin.kube-lens.settings']"
-CFG=$E2E_SB/xdg/kube-lens/config.json
+ST="[data-surface='plugin.tern-kube.settings']"
+CFG=$E2E_SB/xdg/tern-kube/config.json
 settings_cleanup() {
 	rm -f "$CFG"
 }
 trap settings_cleanup EXIT
 rm -f "$CFG"
 
-ctl plugins run plugin.kube-lens.settings >/dev/null
+ctl plugins run plugin.tern-kube.settings >/dev/null
 E2E_WAIT=15 wait_for "the settings block" has "$ST" || return
 contains "shows the config path" "$(alltext "$ST *" | tr '\n' ' ')" "$CFG"
 contains "starts from defaults" "$(alltext "$ST *" | tr '\n' ' ')" "no file: defaults"

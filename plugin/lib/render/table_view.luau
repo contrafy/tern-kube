@@ -40,7 +40,7 @@ local function chip(label: string, action: string, active: boolean, title: strin
 		key = key,
 		title = title,
 		actions = { click = action },
-		role = if active then "kube-lens.chip-on" else "kube-lens.chip",
+		role = if active then "tern-kube.chip-on" else "tern-kube.chip",
 	})
 end
 
@@ -182,7 +182,7 @@ local function chipsNode(tables: { SnapshotTable }, vs: ViewState): Node?
 	if #groups == 0 then
 		return nil
 	end
-	return ui.row(groups, { key = "chips", wrap = true, role = "kube-lens.chips" })
+	return ui.row(groups, { key = "chips", wrap = true, role = "tern-kube.chips" })
 end
 
 local function containersOf(tbl: SnapshotTable, row: ResourceRow): number?
@@ -237,14 +237,14 @@ local function quickChips(
 			ui.badge(
 				c.label,
 				"info",
-				{ title = c.title, actions = { click = "act=" .. c.url }, role = "kube-lens.quick" }
+				{ title = c.title, actions = { click = "act=" .. c.url }, role = "tern-kube.quick" }
 			)
 		)
 	end
 	return out
 end
 
--- Delete / Restart / Scale chips: kube-lens://mutate links the window routes
+-- Delete / Restart / Scale chips: tern-kube://mutate links the window routes
 -- to the approve block, which previews before anything runs.
 local function mutationChips(capture: Capture, ref: Types.ResourceRef): { Node }
 	local inv = capture.invocation
@@ -260,7 +260,7 @@ local function mutationChips(capture: Capture, ref: Types.ResourceRef): { Node }
 			ui.badge(
 				m.label,
 				"warning",
-				{ title = m.title, actions = { click = "mutate=" .. m.url }, role = "kube-lens.mutate" }
+				{ title = m.title, actions = { click = "mutate=" .. m.url }, role = "tern-kube.mutate" }
 			)
 		)
 	end
@@ -358,7 +358,7 @@ local function inspector(
 	return ui.col({
 		ui.kv(cellItems(tbl, row)),
 		ui.row(actionChips(capture, tbl, row, vs, mutations), { wrap = true }),
-	}, { role = "kube-lens.inspector" })
+	}, { role = "tern-kube.inspector" })
 end
 
 local function sourceLines(capture: Capture, row: ResourceRow): string?
@@ -384,7 +384,7 @@ function M.inspectView(capture: Capture, tbl: SnapshotTable, row: ResourceRow, v
 		ui.text({ ui.span(tbl.kind or "rows", "muted") }),
 		ui.text({ ui.span("›", "muted") }),
 		ui.text({ ui.span(name, "strong") }),
-	}, { key = "crumbs", role = "kube-lens.breadcrumb" })
+	}, { key = "crumbs", role = "tern-kube.breadcrumb" })
 	local children: { Node } = {
 		crumbs,
 		ui.row(actionChips(capture, tbl, row, vs, mutations == true), { key = "actions", wrap = true }),
@@ -405,7 +405,7 @@ function M.inspectView(capture: Capture, tbl: SnapshotTable, row: ResourceRow, v
 			)
 		)
 	end
-	return ui.col(children, { key = "inspect", role = "kube-lens.inspect" })
+	return ui.col(children, { key = "inspect", role = "tern-kube.inspect" })
 end
 
 type Slice = { tbl: SnapshotTable, index: number, rows: { ResourceRow }, matched: number }
@@ -425,7 +425,7 @@ local function pageChips(matched: number, vs: ViewState, size: number): Node
 			chip(from .. "-" .. to, Viewstate.action(Viewstate.paged(vs, p)), p == vs.page, nil, "page" .. p)
 		)
 	end
-	return ui.row(items, { key = "pages", wrap = true, role = "kube-lens.pages" })
+	return ui.row(items, { key = "pages", wrap = true, role = "tern-kube.pages" })
 end
 
 function M.render(capture: Capture, vs: ViewState, opts: Options?): (Node?, Counts)
@@ -494,11 +494,11 @@ function M.render(capture: Capture, vs: ViewState, opts: Options?): (Node?, Coun
 			for _, b in Summary.summarize(tbl) do
 				table.insert(head, b)
 			end
-			table.insert(children, ui.row(head, { key = "kind" .. slice.index, role = "kube-lens.kind" }))
+			table.insert(children, ui.row(head, { key = "kind" .. slice.index, role = "tern-kube.kind" }))
 		else
 			local badges = Summary.summarize(tbl)
 			if #badges > 0 then
-				table.insert(children, ui.row(badges, { key = "summary", role = "kube-lens.summary" }))
+				table.insert(children, ui.row(badges, { key = "summary", role = "tern-kube.summary" }))
 			end
 		end
 		if count == 0 then
@@ -538,7 +538,7 @@ function M.render(capture: Capture, vs: ViewState, opts: Options?): (Node?, Coun
 	if matched > size then
 		table.insert(children, pageChips(matched, Viewstate.paged(vs, page), size))
 	end
-	return ui.col(children, { key = "table", role = "kube-lens.table" }),
+	return ui.col(children, { key = "table", role = "tern-kube.table" }),
 		{
 			shown = shown,
 			matched = matched,

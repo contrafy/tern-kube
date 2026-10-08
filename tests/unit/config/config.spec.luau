@@ -431,12 +431,12 @@ end)
 
 describe("config path", function()
 	it("prefers an absolute XDG_CONFIG_HOME", function()
-		expect(Config.path({ XDG_CONFIG_HOME = "/x/cfg", HOME = "/Users/me" })).toBe("/x/cfg/kube-lens/config.json")
+		expect(Config.path({ XDG_CONFIG_HOME = "/x/cfg", HOME = "/Users/me" })).toBe("/x/cfg/tern-kube/config.json")
 	end)
 
 	-- The XDG spec says relative values are invalid and must be ignored.
 	it("falls back to HOME/.config when XDG_CONFIG_HOME is unset, empty or relative", function()
-		local want = "/Users/me/.config/kube-lens/config.json"
+		local want = "/Users/me/.config/tern-kube/config.json"
 		expect(Config.path({ HOME = "/Users/me" })).toBe(want)
 		expect(Config.path({ XDG_CONFIG_HOME = "", HOME = "/Users/me" })).toBe(want)
 		expect(Config.path({ XDG_CONFIG_HOME = "cfg", HOME = "/Users/me/" })).toBe(want)
@@ -451,7 +451,7 @@ end)
 describe("config kubectl program", function()
 	-- The kv override exists for tests and the settings flow; an explicit
 	-- config path beats the environment; a bare default defers to it.
-	it("resolves kv override, then config, then KUBE_LENS_KUBECTL, then kubectl", function()
+	it("resolves kv override, then config, then TKUBE_KUBECTL, then kubectl", function()
 		local custom = parse([[{"kubectl": "/opt/k"}]])
 		local plain = parse(nil)
 		expect(Config.kubectlProgram(custom, "/kv/k", "/env/k")).toBe("/kv/k")

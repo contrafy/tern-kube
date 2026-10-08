@@ -3,7 +3,7 @@
 # a generated Luau module that specs can require. Regenerate after adding or
 # changing fixtures: `make fixtures` (or `sh scripts/fixtures/embed.sh`).
 # examples/ is embedded too (key "examples/<file>") so specs can check it, and
-# so are the kube-lens-drift golden diffs (key "tests/shell/drift/cases/<file>")
+# so are the tern-kube-drift golden diffs (key "tests/shell/drift/cases/<file>")
 # that the plugin's diff redaction must agree with.
 set -eu
 

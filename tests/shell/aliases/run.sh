@@ -1,5 +1,5 @@
 #!/bin/sh
-# Tests for scripts/kube-lens-aliases. Every case runs with a temporary HOME
+# Tests for scripts/tern-kube-aliases. Every case runs with a temporary HOME
 # (its own rc files) and a temporary plugin dir; nothing reads the real rc
 # files, the real plugin dir or a real tern.
 #
@@ -8,17 +8,17 @@
 set -u
 
 repo=$(CDPATH= cd -- "$(dirname -- "$0")/../../.." && pwd)
-tool=$repo/scripts/kube-lens-aliases
+tool=$repo/scripts/tern-kube-aliases
 src_manifest=$repo/plugin/plugin.toml
 
-root=$(mktemp -d "${TMPDIR:-/tmp}/kla-test.XXXXXX") || exit 2
+root=$(mktemp -d "${TMPDIR:-/tmp}/tka-test.XXXXXX") || exit 2
 trap 'rm -rf "$root"' EXIT
 
 # Never let the tool see the real environment's rc dirs or tern.
 HOME=$root/home
 mkdir -p "$HOME"
 export HOME
-unset ZDOTDIR XDG_CONFIG_HOME KUBE_LENS_ALIASES_TIMEOUT
+unset ZDOTDIR XDG_CONFIG_HOME TKUBE_ALIASES_TIMEOUT
 TERN_BIN=$root/no-such-tern
 export TERN_BIN
 # A minimal PATH (plus wherever the probed shells live) so commands installed
@@ -121,13 +121,13 @@ fresh_plugin() {
 }
 
 block() {
-	awk '/# END kube-lens aliases/ { b = 0 } b { print } /# BEGIN kube-lens aliases/ { b = 1 }' "$1"
+	awk '/# END tern-kube aliases/ { b = 0 } b { print } /# BEGIN tern-kube aliases/ { b = 1 }' "$1"
 }
 
 # The source manifest must carry the empty marker block the tool edits.
 case_name=manifest
-if [ "$(grep -c '^	# BEGIN kube-lens aliases$' "$src_manifest")" = 1 ] &&
-	[ "$(grep -c '^	# END kube-lens aliases$' "$src_manifest")" = 1 ]; then ok; else bad "plugin/plugin.toml lacks the marker block"; fi
+if [ "$(grep -c '^	# BEGIN tern-kube aliases$' "$src_manifest")" = 1 ] &&
+	[ "$(grep -c '^	# END tern-kube aliases$' "$src_manifest")" = 1 ]; then ok; else bad "plugin/plugin.toml lacks the marker block"; fi
 if [ -z "$(block "$src_manifest")" ]; then ok; else bad "plugin/plugin.toml alias block is not empty"; fi
 kubectl_forms=$(grep -c '^	"kubectl[ "]' "$src_manifest")
 
@@ -222,7 +222,7 @@ shell_cases() {
 	*) printf 'sleep 30\n' >>"$HOME/.${sh}rc" ;;
 	esac
 	t0=$(date +%s)
-	env KUBE_LENS_ALIASES_TIMEOUT=1 "$tool" --shell "$sh" detect >"$root/out" 2>&1
+	env TKUBE_ALIASES_TIMEOUT=1 "$tool" --shell "$sh" detect >"$root/out" 2>&1
 	st=$?
 	t1=$(date +%s)
 	expect_status 2 "hung rc"
@@ -244,7 +244,7 @@ write_rc bash
 fresh_plugin
 
 case_name="no markers"
-grep -v 'kube-lens aliases$' "$M" >"$M.new" && mv "$M.new" "$M"
+grep -v 'tern-kube aliases$' "$M" >"$M.new" && mv "$M.new" "$M"
 cp "$M" "$root/nomark.toml"
 run --shell bash --plugin-dir "$P" add k
 expect_status 2 "marker-less add"
@@ -255,11 +255,11 @@ expect_same "$M" "$root/nomark.toml" "marker-less manifest modified"
 
 case_name="bad markers"
 fresh_plugin
-printf '\t# END kube-lens aliases\n' >>"$M"
+printf '\t# END tern-kube aliases\n' >>"$M"
 run --shell bash --plugin-dir "$P" add k
 expect_status 2 "duplicate END"
 fresh_plugin
-awk '/# BEGIN kube-lens aliases/ { next } { print } /^\[\[blocks\]\]/ && !d { print "# BEGIN kube-lens aliases"; d = 1 }' "$src_manifest" >"$M"
+awk '/# BEGIN tern-kube aliases/ { next } { print } /^\[\[blocks\]\]/ && !d { print "# BEGIN tern-kube aliases"; d = 1 }' "$src_manifest" >"$M"
 run --shell bash --plugin-dir "$P" add k
 expect_status 2 "BEGIN outside lens kubectl"
 
@@ -303,13 +303,13 @@ echo "$root/plugins"
 EOF
 chmod +x "$root/tern"
 TERN_BIN=$root/tern
-mkdir -p "$root/plugins/kube-lens"
-cp "$src_manifest" "$root/plugins/kube-lens/plugin.toml"
+mkdir -p "$root/plugins/tern-kube"
+cp "$src_manifest" "$root/plugins/tern-kube/plugin.toml"
 run --shell bash add k
 expect_status 0 "installed plugin"
-block "$root/plugins/kube-lens/plugin.toml" | grep -q '"k get"' && ok || bad "installed manifest not edited"
+block "$root/plugins/tern-kube/plugin.toml" | grep -q '"k get"' && ok || bad "installed manifest not edited"
 fresh_plugin
-printf '%s\n' "$P" >"$root/plugins/kube-lens.path"
+printf '%s\n' "$P" >"$root/plugins/tern-kube.path"
 run --shell bash add k
 expect_status 0 "linked plugin"
 expect_out 'linked' "linked note"

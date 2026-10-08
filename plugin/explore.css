@@ -1,41 +1,41 @@
-/* Kube Explore block. Grid/table styles come from kube-lens.css; this sheet
+/* Tern Kube Explore block. Grid/table styles come from tern-kube.css; this sheet
    adds the live header, keyboard selection, chips and the help layer. */
 
-[data-role="kube-lens.explore-header"] {
+[data-role="tern-kube.explore-header"] {
 	padding-bottom: 4px;
 	border-bottom: 2px solid var(--accent);
 }
 
-[data-role="kube-lens.explore-header"] [data-role="kube-lens.bar"] {
+[data-role="tern-kube.explore-header"] [data-role="tern-kube.bar"] {
 	align-items: center;
 }
 
-[data-role="kube-lens.live"] {
+[data-role="tern-kube.live"] {
 	font-weight: 600;
 	letter-spacing: 0.04em;
 }
 
-[data-role="kube-lens.explore-header"] [data-role="kube-lens.chip"],
-[data-role="kube-lens.explore"] [data-role="kube-lens.chips"] [data-role="kube-lens.chip"],
-[data-role="kube-lens.explore"] [data-role="kube-lens.breadcrumb"] [data-role="kube-lens.chip"] {
+[data-role="tern-kube.explore-header"] [data-role="tern-kube.chip"],
+[data-role="tern-kube.explore"] [data-role="tern-kube.chips"] [data-role="tern-kube.chip"],
+[data-role="tern-kube.explore"] [data-role="tern-kube.breadcrumb"] [data-role="tern-kube.chip"] {
 	cursor: pointer;
 }
 
 /* Keyboard selection: stronger than hover/open so it is visible while the
    pointer rests elsewhere. */
-[data-role="kube-lens.explore"] .kl-grid .kl-sel .kl-c {
+[data-role="tern-kube.explore"] .tk-grid .tk-sel .tk-c {
 	background: var(--accent-fill);
 }
 
-[data-role="kube-lens.explore"] .kl-grid .kl-sel .kl-c:first-child {
+[data-role="tern-kube.explore"] .tk-grid .tk-sel .tk-c:first-child {
 	box-shadow: inset 3px 0 0 var(--accent);
 }
 
-[data-role="kube-lens.error"] {
+[data-role="tern-kube.error"] {
 	white-space: pre-wrap;
 }
 
-[data-role="kube-lens.explore-layer"] {
+[data-role="tern-kube.explore-layer"] {
 	max-width: 760px;
 	padding: 12px 16px;
 	background: var(--card);

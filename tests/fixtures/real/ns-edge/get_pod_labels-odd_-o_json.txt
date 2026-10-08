@@ -3,7 +3,7 @@
     "kind": "Pod",
     "metadata": {
         "annotations": {
-            "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"v1\",\"kind\":\"Pod\",\"metadata\":{\"annotations\":{\"lens.example.com/description\":\"Ünïcødé — 日本語のテキスト — Ελληνικά — Кириллица — ✓ ✗ → ←\",\"lens.example.com/multiline\":\"first line\\nsecond line with\\ttab\\n\"},\"labels\":{\"UPPER_case.Key\":\"Mixed_Case.Value\",\"app.kubernetes.io/name\":\"odd-labels\",\"app.kubernetes.io/part-of\":\"kube-lens.fixtures\",\"example.com/team\":\"platform.core\",\"k8s.io/dotted\":\"v1.2.3-rc.4\",\"lens.example.com/empty\":\"\",\"lens.example.com/long-value\":\"this-value-is-deliberately-long-to-reach-the-63-character-limit\"},\"name\":\"labels-odd\",\"namespace\":\"tern-test-edge\"},\"spec\":{\"containers\":[{\"image\":\"registry.k8s.io/pause:3.10\",\"imagePullPolicy\":\"IfNotPresent\",\"name\":\"app\"}],\"terminationGracePeriodSeconds\":1}}\n",
+            "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"v1\",\"kind\":\"Pod\",\"metadata\":{\"annotations\":{\"lens.example.com/description\":\"Ünïcødé — 日本語のテキスト — Ελληνικά — Кириллица — ✓ ✗ → ←\",\"lens.example.com/multiline\":\"first line\\nsecond line with\\ttab\\n\"},\"labels\":{\"UPPER_case.Key\":\"Mixed_Case.Value\",\"app.kubernetes.io/name\":\"odd-labels\",\"app.kubernetes.io/part-of\":\"tern-kube.fixtures\",\"example.com/team\":\"platform.core\",\"k8s.io/dotted\":\"v1.2.3-rc.4\",\"lens.example.com/empty\":\"\",\"lens.example.com/long-value\":\"this-value-is-deliberately-long-to-reach-the-63-character-limit\"},\"name\":\"labels-odd\",\"namespace\":\"tern-test-edge\"},\"spec\":{\"containers\":[{\"image\":\"registry.k8s.io/pause:3.10\",\"imagePullPolicy\":\"IfNotPresent\",\"name\":\"app\"}],\"terminationGracePeriodSeconds\":1}}\n",
             "lens.example.com/description": "Ünïcødé — 日本語のテキスト — Ελληνικά — Кириллица — ✓ ✗ → ←",
             "lens.example.com/multiline": "first line\nsecond line with\ttab\n"
         },
@@ -12,7 +12,7 @@
         "labels": {
             "UPPER_case.Key": "Mixed_Case.Value",
             "app.kubernetes.io/name": "odd-labels",
-            "app.kubernetes.io/part-of": "kube-lens.fixtures",
+            "app.kubernetes.io/part-of": "tern-kube.fixtures",
             "example.com/team": "platform.core",
             "k8s.io/dotted": "v1.2.3-rc.4",
             "lens.example.com/empty": "",
@@ -43,7 +43,7 @@
         ],
         "dnsPolicy": "ClusterFirst",
         "enableServiceLinks": true,
-        "nodeName": "kube-lens-dev-control-plane",
+        "nodeName": "tern-kube-dev-control-plane",
         "preemptionPolicy": "PreemptLowerPriority",
         "priority": 0,
         "restartPolicy": "Always",

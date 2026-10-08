@@ -6,8 +6,8 @@
 -- a 500-row grid is thousands of nodes.
 --
 -- Narrow panes hide low-priority columns through container queries in
--- kube-lens.css. Hidden cells leave the grid flow, so the grid also carries
--- the visible column count for each width tier (kl-a-N, kl-b-N, kl-c-N).
+-- tern-kube.css. Hidden cells leave the grid flow, so the grid also carries
+-- the visible column count for each width tier (tk-a-N, tk-b-N, tk-c-N).
 
 local Cells = require("./cells")
 local Types = require("../model/types")
@@ -89,7 +89,7 @@ local function columnClasses(headers: { string }): ({ string }, string)
 	local classes: { string } = table.create(n)
 	for i = 1, n do
 		local p = M.priority(headers[i], i)
-		classes[i] = "kl-p" .. p
+		classes[i] = "tk-p" .. p
 		if p >= 1 then
 			hide[3] += 1
 		end
@@ -101,7 +101,7 @@ local function columnClasses(headers: { string }): ({ string }, string)
 		end
 	end
 	local gridClass = string.format(
-		"kl-grid kl-cols-%d kl-a-%d kl-b-%d kl-c-%d",
+		"tk-grid tk-cols-%d tk-a-%d tk-b-%d tk-c-%d",
 		n,
 		math.max(1, n - hide[1]),
 		math.max(1, n - hide[2]),
@@ -119,7 +119,7 @@ function M.grid(spec: Spec): Node
 	local numeric = Cells.NUMERIC
 	local cellClass: { string } = table.create(ncol)
 	for i = 1, ncol do
-		cellClass[i] = if numeric[types[i] or "text"] then "kl-c kl-num " .. classes[i] else "kl-c " .. classes[i]
+		cellClass[i] = if numeric[types[i] or "text"] then "tk-c tk-num " .. classes[i] else "tk-c " .. classes[i]
 	end
 
 	local children: { Node } = table.create(ncol + #spec.rows + 1)
@@ -132,7 +132,7 @@ function M.grid(spec: Spec): Node
 			p = {
 				tag = "div",
 				key = "h" .. i,
-				class = if sorted then "kl-h kl-sorted " .. classes[i] else "kl-h " .. classes[i],
+				class = if sorted then "tk-h tk-sorted " .. classes[i] else "tk-h " .. classes[i],
 				text = label,
 				title = "Sort by " .. h,
 				actions = { click = spec.sortAction(h) },
@@ -157,7 +157,7 @@ function M.grid(spec: Spec): Node
 			p = {
 				tag = "div",
 				key = row.key,
-				class = if row.open then "kl-r kl-open" else "kl-r",
+				class = if row.open then "tk-r tk-open" else "tk-r",
 				actions = { click = row.action },
 			},
 			c = cells,
@@ -167,15 +167,15 @@ function M.grid(spec: Spec): Node
 			if body then
 				table.insert(children, {
 					k = "el",
-					p = { tag = "div", key = row.key .. "/insp", class = "kl-insp" },
+					p = { tag = "div", key = row.key .. "/insp", class = "tk-insp" },
 					c = { body },
 				})
 			end
 		end
 	end
 
-	return ui.el("div", { key = spec.key, class = "kl-wrap" }, {
-		ui.el("div", { class = gridClass, role = "kube-lens.grid" }, children),
+	return ui.el("div", { key = spec.key, class = "tk-wrap" }, {
+		ui.el("div", { class = gridClass, role = "tern-kube.grid" }, children),
 	})
 end
 

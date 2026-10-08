@@ -1,7 +1,7 @@
 #!/bin/sh
-# Disposable kind cluster for kube-lens development and fixture capture.
+# Disposable kind cluster for tern-kube development and fixture capture.
 #
-#   scripts/cluster.sh create           create (or adopt) kind cluster kube-lens-dev and
+#   scripts/cluster.sh create           create (or adopt) kind cluster tern-kube-dev and
 #                                       apply the quick-action toolbox (tern-test-mutate)
 #   scripts/cluster.sh delete           delete it
 #   scripts/cluster.sh kubeconfig-path  print the sandbox kubeconfig after verifying it
@@ -9,7 +9,7 @@
 #
 # The only kubeconfig this script ever reads or writes is .sandbox/kubeconfig.
 # Every subcommand except create/delete refuses to proceed unless that file
-# holds exactly one context, kind-kube-lens-dev, whose API server matches the
+# holds exactly one context, kind-tern-kube-dev, whose API server matches the
 # one kind reports for the cluster it manages. An ambient KUBECONFIG pointing
 # anywhere else is rejected rather than silently overridden.
 set -eu
@@ -17,7 +17,7 @@ set -eu
 ROOT=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 KIND=${KIND:-$ROOT/.tools/bin/kind}
 KUBECTL=${KUBECTL:-kubectl}
-CLUSTER=kube-lens-dev
+CLUSTER=tern-kube-dev
 CONTEXT=kind-$CLUSTER
 SANDBOX=$ROOT/.sandbox
 KUBECONFIG_PATH=$SANDBOX/kubeconfig
@@ -76,11 +76,11 @@ verify() {
 }
 
 # Shell/logs/port-forward target for the quick-action e2e scenarios
-# (Deployment + Service kl-qa-shell). Idempotent.
+# (Deployment + Service tk-qa-shell). Idempotent.
 apply_toolbox() {
 	kc apply -f "$ROOT/tests/integration/manifests/mutate/namespace.yaml" >/dev/null
 	kc apply -f "$ROOT/tests/integration/manifests/qa/toolbox.yaml" >/dev/null
-	kc rollout status deployment/kl-qa-shell -n tern-test-mutate --timeout=180s >/dev/null
+	kc rollout status deployment/tk-qa-shell -n tern-test-mutate --timeout=180s >/dev/null
 }
 
 cmd_create() {

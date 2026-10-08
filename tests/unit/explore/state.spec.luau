@@ -84,7 +84,7 @@ describe("explore state: target resolution", function()
 			return nil, "No such file or directory (os error 2)"
 		end)
 		expect(s.targetError :: string).toContain("Cannot run kubectl (kubectl)")
-		expect(s.targetError :: string).toContain("KUBE_LENS_KUBECTL")
+		expect(s.targetError :: string).toContain("TKUBE_KUBECTL")
 	end)
 
 	it("disabled live queries run nothing", function()
@@ -196,7 +196,7 @@ describe("explore state: keys", function()
 		local _, effects = State.update(s, W.key("Y"))
 		expect(effects[1].t).toBe("copy")
 		expect(effects[1].text :: string).toContain(
-			"kubectl --kubeconfig /home/u/.kube/config --context kind-kube-lens-dev logs"
+			"kubectl --kubeconfig /home/u/.kube/config --context kind-tern-kube-dev logs"
 		)
 	end)
 
@@ -216,7 +216,7 @@ describe("explore state: quick actions", function()
 		local _, effects = State.update(s, W.key("s"))
 		expect(effects[1].t).toBe("open")
 		local url = effects[1].url :: string
-		expect(string.sub(url, 1, 22)).toBe("kube-lens://act/shell?")
+		expect(string.sub(url, 1, 22)).toBe("tern-kube://act/shell?")
 		expect(url).toContain("context=" .. W.CTX)
 	end)
 
@@ -247,7 +247,7 @@ describe("explore state: quick actions", function()
 	end)
 
 	-- Explore never mutates by itself: the keys only open the approve block
-	-- through a kube-lens://mutate link naming the focused object and the
+	-- through a tern-kube://mutate link naming the focused object and the
 	-- pinned context, which the block previews before anything runs.
 	it("ctrl+d, ctrl+r and shift+s open mutate links for the focused object", function()
 		local s = W.open({ context = W.CTX, namespace = W.NS, kind = "Deployment" })
@@ -255,7 +255,7 @@ describe("explore state: quick actions", function()
 		local _, del = State.update(s, W.key("d", { ctrl = true }))
 		expect(del[1].t).toBe("open")
 		local url = del[1].url :: string
-		expect(string.sub(url, 1, 28)).toBe("kube-lens://mutate?op=delete")
+		expect(string.sub(url, 1, 28)).toBe("tern-kube://mutate?op=delete")
 		expect(url).toContain("kind=deployment.apps&name=web&namespace=" .. W.NS)
 		expect(url).toContain("context=" .. W.CTX .. "&source=flag")
 		local _, restart = State.update(s, W.key("r", { ctrl = true }))

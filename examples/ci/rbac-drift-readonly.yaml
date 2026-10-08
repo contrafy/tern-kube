@@ -1,4 +1,4 @@
-# Least-privilege identity for kube-lens-drift (`kubectl diff`) in CI.
+# Least-privilege identity for tern-kube-drift (`kubectl diff`) in CI.
 #
 # `kubectl diff` reads each live object (get) and asks the API server what
 # applying the manifest would produce with a server-side dry run: a PATCH for
@@ -13,11 +13,11 @@
 #   patch   dry-run the change to an existing object (always needed)
 #   create  dry-run objects missing from the cluster (needed to report them;
 #           without it `kubectl diff` fails with Forbidden on the first one)
-#   list    only for `kube-lens-drift --unmanaged`
+#   list    only for `tern-kube-drift --unmanaged`
 # Not needed: update, delete, watch, escalate, bind.
 #
 # Adjust before applying:
-#   - kube-lens-drift: namespace and name of the CI ServiceAccount
+#   - tern-kube-drift: namespace and name of the CI ServiceAccount
 #   - my-app: each namespace the manifests target (one RoleBinding each)
 #   - the resource list: exactly the kinds in your manifests
 # Secrets: diffing them needs `get` on secrets, which lets the token read
@@ -30,18 +30,18 @@
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: kube-lens-drift
+  name: tern-kube-drift
 ---
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: kube-lens-drift
-  namespace: kube-lens-drift
+  name: tern-kube-drift
+  namespace: tern-kube-drift
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: kube-lens-drift
+  name: tern-kube-drift
 rules:
   - apiGroups: [""]
     resources: [configmaps, services, serviceaccounts, persistentvolumeclaims]
@@ -61,21 +61,21 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: kube-lens-drift
+  name: tern-kube-drift
   namespace: my-app
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: kube-lens-drift
+  name: tern-kube-drift
 subjects:
   - kind: ServiceAccount
-    name: kube-lens-drift
-    namespace: kube-lens-drift
+    name: tern-kube-drift
+    namespace: tern-kube-drift
 ---
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicy
 metadata:
-  name: kube-lens-drift-dry-run-only
+  name: tern-kube-drift-dry-run-only
 spec:
   failurePolicy: Fail
   matchConstraints:
@@ -86,16 +86,16 @@ spec:
         resources: ["*/*"]
   matchConditions:
     - name: drift-service-account
-      expression: request.userInfo.username == "system:serviceaccount:kube-lens-drift:kube-lens-drift"
+      expression: request.userInfo.username == "system:serviceaccount:tern-kube-drift:tern-kube-drift"
   validations:
     - expression: has(request.dryRun) && request.dryRun == true
-      message: kube-lens-drift may only send dry-run requests
+      message: tern-kube-drift may only send dry-run requests
       reason: Forbidden
 ---
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicyBinding
 metadata:
-  name: kube-lens-drift-dry-run-only
+  name: tern-kube-drift-dry-run-only
 spec:
-  policyName: kube-lens-drift-dry-run-only
+  policyName: tern-kube-drift-dry-run-only
   validationActions: [Deny]

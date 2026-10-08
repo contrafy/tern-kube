@@ -18,7 +18,7 @@ export type Responder = (argv: { string }) -> (Result?, string?)
 
 local M = {}
 
-M.CTX = "kind-kube-lens-dev"
+M.CTX = "kind-tern-kube-dev"
 M.NS = "tern-test-apps"
 M.AT = 1000
 
@@ -239,7 +239,7 @@ function M.link(params: { [string]: string }?): string
 	for _, k in keys do
 		table.insert(parts, k .. "=" .. p[k])
 	end
-	return "kube-lens://explore?" .. table.concat(parts, "&")
+	return "tern-kube://explore?" .. table.concat(parts, "&")
 end
 
 -- A settled block opened from a lens row (`--context` given).
