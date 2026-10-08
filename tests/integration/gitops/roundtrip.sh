@@ -3,7 +3,10 @@
 # json-world), cleaned and emitted as YAML, must parse back through kubectl
 # into exactly the cleaned object; a synthetic ConfigMap covers every quoting
 # and block-scalar edge. Client-side dry-run only (nothing reaches the API
-# server's storage), pinned to the sandbox kubeconfig and kind context.
+# server's storage), pinned to the sandbox kubeconfig and kind context. The
+# fixture world's Widget CRD is applied first: client-side parsing of the CRD
+# fixture still needs the server to know the kind (a fresh CI cluster does
+# not).
 #
 #   tests/integration/gitops/roundtrip.sh
 set -u
@@ -18,6 +21,9 @@ KUBECONFIG=$KC
 export KUBECONFIG
 
 cd "$REPO" || exit 2
+kubectl --context "$CTX" apply -f tests/integration/manifests/crd/crd.yaml >/dev/null || exit 2
+kubectl --context "$CTX" wait --for condition=Established --timeout=60s \
+	-f tests/integration/manifests/crd/crd.yaml >/dev/null || exit 2
 make -s fixtures >/dev/null || exit 2
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/kube-lens-roundtrip.XXXXXX") || exit 2
 trap 'rm -rf "$WORK"' EXIT INT TERM
