@@ -1,0 +1,4 @@
+configmap/app-config configured (server dry run)
+deployment.apps/web configured (server dry run)
+service/web unchanged (server dry run)
+configmap/preview-extra created (server dry run)

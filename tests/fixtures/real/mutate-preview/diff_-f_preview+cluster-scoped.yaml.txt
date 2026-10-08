@@ -1,0 +1,34 @@
+diff -u -N /tmp/LIVE-2325603231/rbac.authorization.k8s.io.v1.ClusterRole..tern-test-preview-wildcard /tmp/MERGED-2925318872/rbac.authorization.k8s.io.v1.ClusterRole..tern-test-preview-wildcard
+--- /tmp/LIVE-2325603231/rbac.authorization.k8s.io.v1.ClusterRole..tern-test-preview-wildcard	2026-10-08 11:18:54
++++ /tmp/MERGED-2925318872/rbac.authorization.k8s.io.v1.ClusterRole..tern-test-preview-wildcard	2026-10-08 11:18:54
+@@ -0,0 +1,13 @@
++apiVersion: rbac.authorization.k8s.io/v1
++kind: ClusterRole
++metadata:
++  creationTimestamp: "2026-10-08T16:18:54Z"
++  name: tern-test-preview-wildcard
++  uid: a080e866-d8a4-41fe-af69-24d6adecccee
++rules:
++- apiGroups:
++  - '*'
++  resources:
++  - '*'
++  verbs:
++  - '*'
+diff -u -N /tmp/LIVE-2325603231/v1.Namespace..tern-test-preview /tmp/MERGED-2925318872/v1.Namespace..tern-test-preview
+--- /tmp/LIVE-2325603231/v1.Namespace..tern-test-preview	2026-10-08 11:18:54
++++ /tmp/MERGED-2925318872/v1.Namespace..tern-test-preview	2026-10-08 11:18:54
+@@ -0,0 +1,13 @@
++apiVersion: v1
++kind: Namespace
++metadata:
++  creationTimestamp: "2026-10-08T16:18:54Z"
++  labels:
++    kubernetes.io/metadata.name: tern-test-preview
++  name: tern-test-preview
++  uid: f13cd68f-7b45-49dc-af79-8681d7bc2288
++spec:
++  finalizers:
++  - kubernetes
++status:
++  phase: Active

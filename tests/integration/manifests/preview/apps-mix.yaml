@@ -1,0 +1,74 @@
+# Preview-only input (scripts/fixtures/capture-mutate-preview.sh): never applied.
+# Against the fixture world in tern-test-apps: modifies app-config and web,
+# leaves the web Service unchanged and creates a new ConfigMap.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-config
+  namespace: tern-test-apps
+  labels:
+    app: web
+data:
+  LOG_LEVEL: debug
+  FEATURE_FLAGS: "search,sort,filter"
+  app.properties: |
+    server.port=8080
+    cache.ttl=30s
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web
+  namespace: tern-test-apps
+  labels:
+    app: web
+    tier: frontend
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: web
+  template:
+    metadata:
+      labels:
+        app: web
+        tier: frontend
+    spec:
+      terminationGracePeriodSeconds: 1
+      containers:
+        - name: web
+          image: registry.k8s.io/pause:3.10
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+              name: http
+          resources:
+            requests:
+              cpu: 5m
+              memory: 8Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: web
+  namespace: tern-test-apps
+  labels:
+    app: web
+spec:
+  type: ClusterIP
+  selector:
+    app: web
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: preview-extra
+  namespace: tern-test-apps
+  labels:
+    app: web
+data:
+  MODE: preview

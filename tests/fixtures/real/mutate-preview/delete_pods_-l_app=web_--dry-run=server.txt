@@ -1,0 +1,2 @@
+pod "web-65d7d99975-bmgbn" deleted from tern-test-apps namespace (server dry run)
+pod "web-65d7d99975-zsb95" deleted from tern-test-apps namespace (server dry run)

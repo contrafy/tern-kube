@@ -1,0 +1,40 @@
+# Preview-only input (scripts/fixtures/capture-mutate-preview.sh): never applied.
+# Against the fixture world in tern-test-crd: modifies gizmo, keeps sprocket,
+# creates gadget; with --prune -l app=widgets long-description would be deleted.
+apiVersion: lens.example.com/v1alpha1
+kind: Widget
+metadata:
+  name: gizmo
+  namespace: tern-test-crd
+  labels:
+    app: widgets
+spec:
+  color: red
+  size: 3
+  description: A small blue gizmo
+  owner: team-platform
+  enabled: true
+---
+apiVersion: lens.example.com/v1alpha1
+kind: Widget
+metadata:
+  name: sprocket
+  namespace: tern-test-crd
+  labels:
+    app: widgets
+spec:
+  color: green
+  size: 120
+  owner: team-data
+  enabled: false
+---
+apiVersion: lens.example.com/v1alpha1
+kind: Widget
+metadata:
+  name: gadget.v2
+  namespace: tern-test-crd
+  labels:
+    app: widgets
+spec:
+  color: yellow
+  size: 1

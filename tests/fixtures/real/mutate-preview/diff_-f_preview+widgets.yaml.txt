@@ -1,0 +1,38 @@
+diff -u -N /tmp/LIVE-249564954/lens.example.com.v1alpha1.Widget.tern-test-crd.gadget.v2 /tmp/MERGED-4230558950/lens.example.com.v1alpha1.Widget.tern-test-crd.gadget.v2
+--- /tmp/LIVE-249564954/lens.example.com.v1alpha1.Widget.tern-test-crd.gadget.v2	2026-10-08 11:18:54
++++ /tmp/MERGED-4230558950/lens.example.com.v1alpha1.Widget.tern-test-crd.gadget.v2	2026-10-08 11:18:54
+@@ -0,0 +1,13 @@
++apiVersion: lens.example.com/v1alpha1
++kind: Widget
++metadata:
++  creationTimestamp: "2026-10-08T16:18:54Z"
++  generation: 1
++  labels:
++    app: widgets
++  name: gadget.v2
++  namespace: tern-test-crd
++  uid: b834c817-b459-4c82-9a15-73090b30d5e1
++spec:
++  color: yellow
++  size: 1
+diff -u -N /tmp/LIVE-249564954/lens.example.com.v1alpha1.Widget.tern-test-crd.gizmo /tmp/MERGED-4230558950/lens.example.com.v1alpha1.Widget.tern-test-crd.gizmo
+--- /tmp/LIVE-249564954/lens.example.com.v1alpha1.Widget.tern-test-crd.gizmo	2026-10-08 11:18:54
++++ /tmp/MERGED-4230558950/lens.example.com.v1alpha1.Widget.tern-test-crd.gizmo	2026-10-08 11:18:54
+@@ -5,7 +5,7 @@
+     kubectl.kubernetes.io/last-applied-configuration: |
+       {"apiVersion":"lens.example.com/v1alpha1","kind":"Widget","metadata":{"annotations":{},"labels":{"app":"widgets"},"name":"gizmo","namespace":"tern-test-crd"},"spec":{"color":"blue","description":"A small blue gizmo","enabled":true,"owner":"team-platform","size":3}}
+   creationTimestamp: "2026-10-08T08:10:26Z"
+-  generation: 1
++  generation: 2
+   labels:
+     app: widgets
+   name: gizmo
+@@ -13,7 +13,7 @@
+   resourceVersion: "3977"
+   uid: b2c859a9-5ccd-447b-a554-66f507b64c79
+ spec:
+-  color: blue
++  color: red
+   description: A small blue gizmo
+   enabled: true
+   owner: team-platform
