@@ -50,7 +50,7 @@ fmt: tools
 fmt-check: tools
 	$(STYLUA) --check $(LUAU_DIRS)
 
-typecheck: tools
+typecheck: tools fixtures
 	$(LUAU_LSP) analyze --platform=standard --definitions=@tern=$(TERN_DEFS) $(LUAU_DIRS)
 
 check: fmt-check lint typecheck test-runner-selfcheck test bench
