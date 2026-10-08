@@ -104,6 +104,9 @@ works as is. In bash and fish, opt in per alias:
 tern-kube-lens/scripts/kube-lens-aliases add k
 ```
 
+Settings: **Kube Lens: Settings** in the palette, or edit
+`~/.config/kube-lens/config.json` ([configuration](docs/configuration.md)).
+
 To remove: `tern plugin unlink kube-lens`.
 
 ## Status
@@ -115,8 +118,9 @@ To remove: `tern plugin unlink kube-lens`.
       confirmation; opt-in zsh/bash/fish guard for typed commands
 - [x] GitOps: open and diff a resource's manifest, drift reports
       (YAML, Kustomize, Helm, Argo CD/Flux aware), export, CI drift check
-- [x] Settings file ([configuration](docs/configuration.md))
-- [ ] Settings UI, CI, releases
+- [x] Settings file and settings block
+- [x] CI on macOS arm64 and Linux x86_64
+- [ ] First tagged release
 
 ## Development
 
@@ -129,8 +133,9 @@ make e2e         # drives an isolated Tern window; needs Docker
 `make e2e` runs against a disposable [kind](https://kind.sigs.k8s.io)
 cluster (`scripts/cluster.sh create`) and refuses any other context.
 
-More: [SDK capability matrix](docs/sdk-capability-matrix.md),
-[performance](docs/performance.md).
+More: [architecture](docs/architecture.md), [security model](docs/security-model.md),
+[testing](docs/testing.md), [SDK capability matrix](docs/sdk-capability-matrix.md),
+[performance](docs/performance.md), [contributing](CONTRIBUTING.md).
 
 ## License
 

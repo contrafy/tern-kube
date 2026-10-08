@@ -6,7 +6,7 @@ description = "Native views for kubectl output, with an explicit Explore block a
 icon = "box"
 host = "host.luau"
 window = "window.luau"
-styles = ["kube-lens.css", "explore.css", "mutate.css"]
+styles = ["kube-lens.css", "explore.css", "mutate.css", "settings.css"]
 
 # Globs over-claim (`kubectl -* get *` also matches `kubectl -n x logs pod get`);
 # the lens re-derives the verb from argv and returns raw for anything else.
@@ -59,3 +59,8 @@ id = "approve"
 title = "Kube Approve"
 icon = "shield"
 palette = false
+
+[[blocks]]
+id = "settings"
+title = "Kube Lens Settings"
+icon = "sliders"
