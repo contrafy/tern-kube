@@ -250,6 +250,7 @@ tern.lens.define("kubectl", {
 
 require("./explore_host").register()
 require("./mutate_host").register()
+require("./settings_host").register()
 
 -- Hooks ----------------------------------------------------------------------
 

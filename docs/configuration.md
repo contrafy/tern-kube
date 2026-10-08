@@ -13,7 +13,15 @@ never polls, mutations go through preview and confirmation).
 The variables are read from the Tern daemon's environment, which is the
 environment the Tern window was launched with, not your shell's.
 
-To start, copy the complete example:
+**Kube Lens: Settings** in the palette opens a block that edits this file:
+every key with its effective value, a description and a reset to the
+default (`r`). Booleans and enums toggle with `enter`; numbers, strings and
+lists open an input. Each change is validated before it is written, unknown
+keys are kept, and the file is replaced atomically. The Status page (`tab`)
+shows the file's diagnostics, the resolved `kubectl`, alias claims in the
+installed manifest and the shell guard's spool.
+
+To edit by hand, start from the complete example:
 
 ```sh
 mkdir -p "${XDG_CONFIG_HOME:-$HOME/.config}/kube-lens"

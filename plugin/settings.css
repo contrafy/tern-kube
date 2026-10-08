@@ -1,0 +1,87 @@
+/* Kube Lens Settings block. Chips and the header bar come from
+   kube-lens.css; this sheet adds the settings grid, keyboard selection and
+   the help layer. */
+
+[data-role="kube-lens.settings-header"] {
+	padding-bottom: 4px;
+	border-bottom: 2px solid var(--accent);
+}
+
+[data-role="kube-lens.settings-header"] [data-role="kube-lens.bar"] {
+	align-items: center;
+}
+
+[data-role="kube-lens.settings"] [data-role="kube-lens.chip"] {
+	cursor: pointer;
+}
+
+[data-role="kube-lens.settings-message"] .sf-text,
+[data-role="kube-lens.settings"] [data-role="kube-lens.error"] {
+	white-space: pre-wrap;
+}
+
+.kl-set-grid {
+	display: grid;
+	grid-template-columns: max-content minmax(0, 1fr) max-content max-content;
+	column-gap: 14px;
+	width: 100%;
+}
+
+.kl-set-r {
+	display: contents;
+	cursor: pointer;
+}
+
+.kl-set-c {
+	display: flex;
+	align-items: center;
+	min-width: 0;
+	padding: 2px 0;
+}
+
+.kl-set-val {
+	overflow: hidden;
+	white-space: nowrap;
+	text-overflow: ellipsis;
+}
+
+.kl-set-r:hover .kl-set-c {
+	background: var(--l1);
+}
+
+.kl-set-sel .kl-set-key,
+.kl-set-sel .kl-set-val {
+	background: var(--accent-fill);
+}
+
+.kl-set-sel .kl-set-key {
+	box-shadow: inset 3px 0 0 var(--accent);
+	padding-left: 6px;
+}
+
+.kl-set-sec {
+	grid-column: 1 / -1;
+	margin-top: 6px;
+	padding-bottom: 2px;
+	border-bottom: 1px solid var(--l2);
+	color: var(--t2);
+	font-weight: 600;
+	letter-spacing: 0.04em;
+}
+
+.kl-set-more {
+	grid-column: 1 / -1;
+	color: var(--t2);
+}
+
+[data-role="kube-lens.settings"] .kl-editing {
+	box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+[data-role="kube-lens.settings-layer"] {
+	max-width: 760px;
+	padding: 12px 16px;
+	background: var(--card);
+	border: 1px solid var(--l2);
+	border-radius: 8px;
+}

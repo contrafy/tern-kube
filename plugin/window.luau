@@ -170,3 +170,14 @@ tern.command({
 		end
 	end,
 })
+
+tern.command({
+	id = "settings",
+	title = "Kube Lens: Settings",
+	icon = "sliders",
+	run = function(cx: WindowCx)
+		if cx:new_block("kube-lens.settings", {}, "beside") == nil then
+			cx:toast("error", "Kube Lens is not loaded on this host")
+		end
+	end,
+})
