@@ -1,0 +1,31 @@
+schema = 1
+id = "kube-lens"
+name = "Kube Lens"
+version = "0.0.1"
+description = "Native views for kubectl output, with an explicit Explore block and an opt-in mutation guard."
+icon = "box"
+host = "host.luau"
+window = "window.luau"
+styles = ["kube-lens.css"]
+
+[[lenses]]
+id = "get"
+match = [
+	"kubectl get",
+	"kubectl get *",
+	"kubecolor get",
+	"kubecolor get *",
+	"kubectl -* get",
+	"kubectl -* get *",
+]
+
+[[blocks]]
+id = "explore"
+title = "Kube Explore"
+icon = "box"
+
+[[blocks]]
+id = "approve"
+title = "Kube Approve"
+icon = "shield"
+palette = false

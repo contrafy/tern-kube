@@ -1,0 +1,5 @@
+.tools/
+.sandbox/
+/target/
+*.log
+.DS_Store

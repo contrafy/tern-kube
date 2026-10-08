@@ -1,0 +1,3 @@
+#!/bin/sh
+# Fake kubecolor: same fixtures as the fake kubectl next to it.
+exec "$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)/kubectl" "$@"

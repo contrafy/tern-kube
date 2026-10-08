@@ -1,0 +1,66 @@
+#!/bin/sh
+# Fake kubectl for Tern-in-the-loop tests. Never talks to a cluster.
+#
+# The fixture key is the argv with connection flags (--context, --kubeconfig,
+# -n/--namespace, --cluster, --user) removed, joined by "_" with "/" mapped
+# to "+". For key K in the fixture dir:
+#   K.txt     stdout (required unless K.stderr exists)
+#   K.stderr  stderr
+#   K.exit    exit status (default 0)
+#   K.sleep   seconds to sleep after printing (watch-like commands)
+# KUBE_LENS_FAKE_ROWS=N with `get pods` prints N generated pod rows instead.
+# KUBE_LENS_FAKE_FIXTURES overrides the fixture dir.
+
+set -u
+
+here=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+dir=${KUBE_LENS_FAKE_FIXTURES:-$here/../fixtures/kubectl}
+
+key=""
+skip=0
+for arg in "$@"; do
+	if [ "$skip" = 1 ]; then
+		skip=0
+		continue
+	fi
+	case $arg in
+	--context | --kubeconfig | -n | --namespace | --cluster | --user)
+		skip=1
+		continue
+		;;
+	--context=* | --kubeconfig=* | --namespace=* | --cluster=* | --user=* | -n?*)
+		continue
+		;;
+	esac
+	part=$(printf '%s' "$arg" | tr '/' '+')
+	if [ -z "$key" ]; then
+		key=$part
+	else
+		key=${key}_$part
+	fi
+done
+
+if [ "$key" = "get_pods" ] && [ -n "${KUBE_LENS_FAKE_ROWS:-}" ]; then
+	awk -v n="$KUBE_LENS_FAKE_ROWS" 'BEGIN {
+		printf "%-40s %-7s %-18s %-10s %s\n", "NAME", "READY", "STATUS", "RESTARTS", "AGE"
+		split("Running Pending CrashLoopBackOff Completed Error", st, " ")
+		for (i = 1; i <= n; i++) {
+			s = st[(i % 5) + 1]
+			printf "%-40s %-7s %-18s %-10d %dm\n", sprintf("app-%05d-7d9f8b6c5-x%03d", i, i % 997), ((s == "Running") ? "1/1" : "0/1"), s, i % 7, (i % 59) + 1
+		}
+	}'
+	exit 0
+fi
+
+base=$dir/$key
+if [ ! -f "$base.txt" ] && [ ! -f "$base.stderr" ]; then
+	printf 'error: fake kubectl has no fixture %s (args: %s)\n' "$key" "$*" >&2
+	exit 1
+fi
+
+[ -f "$base.txt" ] && cat "$base.txt"
+[ -f "$base.stderr" ] && cat "$base.stderr" >&2
+[ -f "$base.sleep" ] && sleep "$(cat "$base.sleep")"
+status=0
+[ -f "$base.exit" ] && status=$(cat "$base.exit")
+exit "$status"

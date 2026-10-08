@@ -1,0 +1,4 @@
+NAME                     READY   STATUS             RESTARTS      AGE
+api-7d9f8b6c5-2xkqp      1/1     Running            0             3d4h
+api-7d9f8b6c5-9zrtm      1/1     Running            2 (5h ago)    3d4h
+worker-5c8d7f9b4-lq7vn   0/1     CrashLoopBackOff   14 (2m ago)   47m
