@@ -264,4 +264,49 @@ function M.text(seg: Segment): string
 	return table.concat(seg.lines, "\n")
 end
 
+M.REDACTED = "*** (last-applied-configuration redacted by kube-lens)"
+
+local function isSecret(seg: Segment): boolean
+	return seg.kind == "Secret" and seg.group == nil and seg.name ~= nil and not seg.binary
+end
+
+local function leaksSecret(line: string): boolean
+	local c = string.sub(line, 1, 1)
+	if c ~= " " and c ~= "+" and c ~= "-" then
+		return false
+	end
+	local head = string.sub(line, 1, 4)
+	if head == "--- " or head == "+++ " then
+		return false
+	end
+	return string.find(line, '"kind":"Secret"', 1, true) ~= nil
+		or string.find(line, '\\"kind\\":\\"Secret\\"', 1, true) ~= nil
+end
+
+-- kubectl diff masks Secret data but not the last-applied-configuration
+-- annotation, which holds the applied data as one JSON line. The same rule
+-- as bin/kube-lens-drift: in core Secret segments every content line that
+-- embeds a Secret object as JSON is replaced, keeping its marker and
+-- indentation so the +/- counts and hunk shape stay intact. Returns a copy.
+function M.redactSecrets(summary: Summary): Summary
+	local out = table.clone(summary)
+	out.segments = {}
+	for _, seg in summary.segments do
+		if isSecret(seg) then
+			local copy = table.clone(seg)
+			copy.lines = {}
+			for _, line in seg.lines do
+				if leaksSecret(line) then
+					local ws = string.match(line, "^.([ ]*)") or ""
+					line = string.sub(line, 1, 1) .. ws .. M.REDACTED
+				end
+				table.insert(copy.lines, line)
+			end
+			seg = copy
+		end
+		table.insert(out.segments, seg)
+	end
+	return out
+end
+
 return M

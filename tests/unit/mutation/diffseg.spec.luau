@@ -206,4 +206,55 @@ describe("diffseg robustness", function()
 	end)
 end)
 
+-- kubectl diff masks Secret data but not the last-applied-configuration
+-- annotation, which embeds the applied values; bin/kube-lens-drift applies
+-- the same rule to the same golden capture, so the two never disagree.
+describe("diffseg secret redaction", function()
+	local golden = fixtures.read("tests/shell/drift/cases/secret-last-applied.diff")
+
+	it("replaces the last-applied line of a Secret and keeps counts and the masked data", function()
+		local plain = Diffseg.parse(golden)
+		local red = Diffseg.redactSecrets(plain)
+		local text = Diffseg.text(red.segments[1])
+		expect((string.find(text, "kube-lens-test-not-a-secret", 1, true))).toBeNil()
+		expect((string.find(text, "kube-lens-test-user", 1, true))).toBeNil()
+		expect(text).toContain("\n       " .. Diffseg.REDACTED .. "\n")
+		expect(text).toContain("+  password: '*** (after)'")
+		expect(brief(red)).toEqual(brief(plain))
+		expect(#red.segments[1].lines).toBe(#plain.segments[1].lines)
+	end)
+
+	it("leaves the parsed summary untouched", function()
+		local plain = Diffseg.parse(golden)
+		Diffseg.redactSecrets(plain)
+		expect(Diffseg.text(plain.segments[1])).toContain("kube-lens-test-not-a-secret")
+	end)
+
+	it("redacts added, removed and escaped JSON forms but never other kinds or headers", function()
+		local diff = table.concat({
+			"diff -u -N /tmp/LIVE-1/v1.Secret.ns.s /tmp/MERGED-1/v1.Secret.ns.s",
+			"--- /tmp/LIVE-1/v1.Secret.ns.s\t2026-10-08 12:00:00",
+			"+++ /tmp/MERGED-1/v1.Secret.ns.s\t2026-10-08 12:00:00",
+			"@@ -1,3 +1,3 @@",
+			'-    {"kind":"Secret","data":{"a":"b2xk"}}',
+			'+    {"kind":"Secret","data":{"a":"bmV3"}}',
+			'   x: "{\\"kind\\":\\"Secret\\",\\"stringData\\":{\\"t\\":\\"v\\"}}"',
+			" kind: Secret",
+			"diff -u -N /tmp/LIVE-1/v1.ConfigMap.ns.c /tmp/MERGED-1/v1.ConfigMap.ns.c",
+			"--- /tmp/LIVE-1/v1.ConfigMap.ns.c\t2026-10-08 12:00:00",
+			"+++ /tmp/MERGED-1/v1.ConfigMap.ns.c\t2026-10-08 12:00:00",
+			"@@ -1 +1 @@",
+			'-  doc: {"kind":"Secret","data":{"a":"x"}}',
+			'+  doc: {"kind":"Secret","data":{"a":"y"}}',
+			"",
+		}, "\n")
+		local red = Diffseg.redactSecrets(Diffseg.parse(diff))
+		expect(red.segments[1].lines[5]).toBe("-    " .. Diffseg.REDACTED)
+		expect(red.segments[1].lines[6]).toBe("+    " .. Diffseg.REDACTED)
+		expect(red.segments[1].lines[7]).toBe("   " .. Diffseg.REDACTED)
+		expect(red.segments[1].lines[8]).toBe(" kind: Secret")
+		expect(red.segments[2].lines[5]).toBe('-  doc: {"kind":"Secret","data":{"a":"x"}}')
+	end)
+end)
+
 return nil
