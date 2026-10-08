@@ -1,8 +1,8 @@
 # GitOps
 
-Kube Lens compares the manifests in your repository with what is running
+Tern Kube compares the manifests in your repository with what is running
 in the cluster. Inside Tern this is part of Explore; outside Tern (CI,
-cron, a plain terminal) the standalone `kube-lens-drift` CLI produces the
+cron, a plain terminal) the standalone `tern-kube-drift` CLI produces the
 same per-resource report.
 
 ## In Tern
@@ -26,7 +26,7 @@ Helm release namespaces are applied first.
 When an object carries Argo CD or Flux tracking metadata, its detail view
 shows the owning application with its sync and health status, and links
 to the source path when the application's repository URL matches one of
-your local remotes. Kube Lens never writes Argo CD or Flux objects.
+your local remotes. Tern Kube never writes Argo CD or Flux objects.
 
 ### Open manifest and diff vs manifest
 
@@ -77,15 +77,15 @@ turn them on; nothing is ever force-pushed. If changes unrelated to the
 export are staged, the flow refuses unless `o` commits only the exported
 files.
 
-## kube-lens-drift CLI
+## tern-kube-drift CLI
 
-`bin/kube-lens-drift` is a single POSIX `sh` script with no Tern
+`bin/tern-kube-drift` is a single POSIX `sh` script with no Tern
 dependency. It needs `awk`, `sed`, `sort`, `mktemp`, `kubectl` and, for
 Helm charts, `helm`. Copy it anywhere on your `PATH`, or vendor it into a
 repository for CI.
 
 ```sh
-kube-lens-drift (-f PATH [-R] | -k DIR | --helm CHART --release R [-f VALUES]...)
+tern-kube-drift (-f PATH [-R] | -k DIR | --helm CHART --release R [-f VALUES]...)
                 [--context C] [--kubeconfig K] [-n NS]
                 [--format text|markdown|json] [--max-diff-lines N] [--max-bytes N]
                 [--unmanaged KINDS|auto]
@@ -169,16 +169,16 @@ a weekday schedule and on demand:
 
 - every run writes the report to the job summary;
 - pull requests get one sticky comment, found by its
-  `<!-- kube-lens-drift -->` marker and edited on every push;
+  `<!-- tern-kube-drift -->` marker and edited on every push;
 - scheduled and manual runs fail when the cluster has drifted, pull
   request runs only when the CLI errors;
-- the kubeconfig comes from the secret `KUBE_LENS_DRIFT_KUBECONFIG`, is
+- the kubeconfig comes from the secret `TKUBE_DRIFT_KUBECONFIG`, is
   written to a 0600 file under `$RUNNER_TEMP`, never printed, and deleted
   at the end; fork pull requests receive no secrets and skip the check.
 
 Set `DRIFT_SOURCES` (one CLI source per line, for example
 `-k deploy/overlays/production` or `-R -f k8s -n web`) and copy
-`bin/kube-lens-drift` to `.github/kube-lens-drift`. The workflow pins
+`bin/tern-kube-drift` to `.github/tern-kube-drift`. The workflow pins
 `kubectl` by version and SHA-256 and `actions/checkout` by commit.
 
 A pull request run diffs the pull request's merge commit, so the comment
@@ -210,7 +210,7 @@ alone would let the token change the cluster.
 that is not a dry run. It contains a ServiceAccount, a ClusterRole with
 `get`, `list`, `create`, `patch` on common workload kinds, one RoleBinding
 per target namespace, and the policy with its binding. Edit the
-ServiceAccount namespace (`kube-lens-drift`), the target namespaces
+ServiceAccount namespace (`tern-kube-drift`), the target namespaces
 (`my-app`) and the resource list before applying it.
 
 `tests/integration/drift-rbac/run.sh` applies the example unchanged
@@ -231,7 +231,7 @@ With an admin context for the target cluster:
 kubectl apply -f rbac-drift-readonly.yaml
 server=$(kubectl config view --minify -o jsonpath='{.clusters[0].cluster.server}')
 ca=$(kubectl config view --raw --minify -o jsonpath='{.clusters[0].cluster.certificate-authority-data}')
-token=$(kubectl -n kube-lens-drift create token kube-lens-drift --duration=720h)
+token=$(kubectl -n tern-kube-drift create token tern-kube-drift --duration=720h)
 umask 077
 cat >drift.kubeconfig <<EOF
 apiVersion: v1
@@ -242,15 +242,15 @@ clusters:
       server: $server
       certificate-authority-data: $ca
 users:
-  - name: kube-lens-drift
+  - name: tern-kube-drift
     user:
       token: $token
 contexts:
   - name: drift
-    context: {cluster: target, user: kube-lens-drift}
+    context: {cluster: target, user: tern-kube-drift}
 current-context: drift
 EOF
-gh secret set KUBE_LENS_DRIFT_KUBECONFIG <drift.kubeconfig
+gh secret set TKUBE_DRIFT_KUBECONFIG <drift.kubeconfig
 rm drift.kubeconfig
 ```
 

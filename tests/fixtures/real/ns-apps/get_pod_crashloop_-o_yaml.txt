@@ -31,7 +31,7 @@ spec:
       readOnly: true
   dnsPolicy: ClusterFirst
   enableServiceLinks: true
-  nodeName: kube-lens-dev-control-plane
+  nodeName: tern-kube-dev-control-plane
   preemptionPolicy: PreemptLowerPriority
   priority: 0
   restartPolicy: Always

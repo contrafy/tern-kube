@@ -3,7 +3,7 @@
 ## Reporting a vulnerability
 
 Report privately through GitHub's private vulnerability reporting:
-[Report a vulnerability](https://github.com/contrafy/tern-kube-lens/security/advisories/new)
+[Report a vulnerability](https://github.com/contrafy/tern-kube/security/advisories/new)
 (Security tab, "Report a vulnerability"). Do not open a public issue.
 
 Include the version (`version` in `plugin/plugin.toml` or `tern plugin
@@ -15,7 +15,7 @@ you prefer otherwise.
 
 ## Supported versions
 
-Kube Lens is pre-1.0. Only the latest release and `master` receive security
+Tern Kube is pre-1.0. Only the latest release and `master` receive security
 fixes.
 
 | Version | Supported |
@@ -26,7 +26,7 @@ fixes.
 
 ## Scope
 
-What Kube Lens does and does not protect against, including the same-user
+What Tern Kube does and does not protect against, including the same-user
 trust boundary and why the shell guard is advisory rather than admission
 control, is in [docs/security-model.md](docs/security-model.md). Reports
 that a same-user process can bypass the guard or `command kubectl` skips it

@@ -13,7 +13,7 @@ local describe, it, expect = t.describe, t.it, t.expect
 type State = State.State
 type Effect = State.Effect
 
-local PATH = "/home/u/.config/kube-lens/config.json"
+local PATH = "/home/u/.config/tern-kube/config.json"
 
 -- tern.json tags decoded arrays; the test decoder records them instead.
 local arrays: { [any]: boolean } = {}
@@ -493,10 +493,10 @@ describe("settings state: writes", function()
 	end)
 
 	it("asks for a write of the read text's replacement, to the resolved target", function()
-		local s = select(open(FILE, "/dotfiles/kube-lens.json"), "general.native_default")
+		local s = select(open(FILE, "/dotfiles/tern-kube.json"), "general.native_default")
 		local _, effects = key(s, "enter")
 		local e = writeOf(effects) :: Effect
-		expect(e.path).toBe("/dotfiles/kube-lens.json")
+		expect(e.path).toBe("/dotfiles/tern-kube.json")
 		expect(e.base).toBe(FILE)
 		expect(e.existed).toBe(true)
 	end)
@@ -598,7 +598,7 @@ end)
 
 describe("settings status facts", function()
 	local TOML = table.concat({
-		'schema = 1\nid = "kube-lens"\nversion = "0.0.1"\n[[lenses]]\nmatch = [\n\t"kubectl get",',
+		'schema = 1\nid = "tern-kube"\nversion = "0.0.1"\n[[lenses]]\nmatch = [\n\t"kubectl get",',
 		"\t" .. State.ALIAS_BEGIN,
 		'\t"k get *",\n\t"k -* get *",\n\t"kc describe *",',
 		"\t" .. State.ALIAS_END,
@@ -623,7 +623,7 @@ describe("settings status facts", function()
 		local custom = Config.parse('{"kubectl": "/opt/kubectl"}', decode)
 		expect(State.kubectlSource(d, "/kv/kubectl", "/env/kubectl")).toBe("Tern kv key kubectl")
 		expect(State.kubectlSource(custom, nil, "/env/kubectl")).toBe("config kubectl")
-		expect(State.kubectlSource(d, nil, "/env/kubectl")).toBe("KUBE_LENS_KUBECTL")
+		expect(State.kubectlSource(d, nil, "/env/kubectl")).toBe("TKUBE_KUBECTL")
 		expect(State.kubectlSource(d, nil, nil)).toBe("the daemon's PATH")
 	end)
 

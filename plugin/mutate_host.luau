@@ -1,5 +1,5 @@
 --!strict
--- Host glue for the approve block (`kube-lens.approve`): executes the effects
+-- Host glue for the approve block (`tern-kube.approve`): executes the effects
 -- of lib/mutation/session.luau and feeds results, ticks, keys and view events
 -- back as messages. All decisions live in the session.
 --
@@ -28,7 +28,7 @@ M.AUDIT_LOG = tern.plugin.data .. "/audit.log"
 local function warnOnce(h: Host, what: string, err: any)
 	if not h.warned then
 		h.warned = true
-		log.warn("kube-lens approve " .. what .. " failed", tostring(err))
+		log.warn("tern-kube approve " .. what .. " failed", tostring(err))
 	end
 end
 
@@ -92,7 +92,7 @@ local function run(h: Host, e: Effect)
 	local ok, err = pcall(function()
 		tern.process.run(e.argv :: { string }, opts, function(res: ProcessResult)
 			log.debug(
-				"kube-lens approve.run",
+				"tern-kube approve.run",
 				e.tag,
 				"status=" .. res.status,
 				"timed_out=" .. tostring(res.timed_out),
@@ -143,17 +143,17 @@ end
 local function appendAudit(line: string)
 	local ok, err = pcall(function()
 		tern.process.run(
-			{ "/bin/sh", "-c", 'umask 077; cat >>"$1"', "kube-lens-audit", M.AUDIT_LOG },
+			{ "/bin/sh", "-c", 'umask 077; cat >>"$1"', "tern-kube-audit", M.AUDIT_LOG },
 			{ stdin = line, timeout_ms = 5000 },
 			function(res: ProcessResult)
 				if res.status ~= 0 then
-					log.warn("kube-lens audit append failed", res.stderr)
+					log.warn("tern-kube audit append failed", res.stderr)
 				end
 			end
 		)
 	end)
 	if not ok then
-		log.warn("kube-lens audit append failed", tostring(err))
+		log.warn("tern-kube audit append failed", tostring(err))
 	end
 end
 
@@ -162,7 +162,7 @@ local function grant(e: Effect)
 	local ttl = math.max(1, (e.expires or now + Link.GRANT_TTL) - now)
 	local grants, err = Link.addGrant(tern.kv.get(Link.GRANTS_KEY), e.token :: string, e.url :: string, now, ttl)
 	if grants == nil then
-		log.warn("kube-lens grant refused", tostring(err))
+		log.warn("tern-kube grant refused", tostring(err))
 		return
 	end
 	tern.kv.set(Link.GRANTS_KEY, grants)
@@ -187,7 +187,7 @@ function exec(h: Host, effects: { Effect })
 		elseif t == "grant" then
 			grant(e)
 		elseif t == "open" then
-			-- window.luau's route.link claims every kube-lens:// URL.
+			-- window.luau's route.link claims every tern-kube:// URL.
 			h.cx:open(e.url :: string)
 		elseif t == "focus" then
 			-- The input appears in the view this effect comes with: render
@@ -228,7 +228,7 @@ local function watch(h: Host)
 		end
 		if not alive then
 			h.stopped = true
-			log.debug("kube-lens approve pane gone", h.cx.pane)
+			log.debug("tern-kube approve pane gone", h.cx.pane)
 			return
 		end
 		local w = Session.watch(h.s)
@@ -259,7 +259,7 @@ local function errorView(err: any): BlockView
 			c = {
 				{
 					k = "text",
-					p = { spans = { { t = "Kube Approve could not render: " .. tostring(err), s = "error" } } },
+					p = { spans = { { t = "Tern Kube Approve could not render: " .. tostring(err), s = "error" } } },
 				},
 			},
 		} :: any,
@@ -267,7 +267,7 @@ local function errorView(err: any): BlockView
 end
 
 local function requestFile(arg: string?): { text: string?, error: string? }?
-	if arg == nil or string.sub(arg, 1, #"kube-lens://") == "kube-lens://" then
+	if arg == nil or string.sub(arg, 1, #"tern-kube://") == "tern-kube://" then
 		return nil
 	end
 	local ok, text = pcall(tern.fs.read, arg, Session.MAX_REQUEST_BYTES)
@@ -297,7 +297,7 @@ function M.register()
 				decode = tern.json.decode,
 			})
 			local h: Host = { s = s, cx = cx, stopped = false, warned = false }
-			log.info("kube-lens approve.init", s.mode, s.phase, args[1] or "")
+			log.info("tern-kube approve.init", s.mode, s.phase, args[1] or "")
 			exec(h, effects)
 			watch(h)
 			return h
@@ -312,7 +312,7 @@ function M.register()
 		end,
 		title = function(h: Host): string?
 			local ok, title = pcall(Render.title, h.s)
-			return if ok then title else "Kube Approve"
+			return if ok then title else "Tern Kube Approve"
 		end,
 		key = function(h: Host, key: Key, cx: BlockCx): boolean?
 			h.cx = cx

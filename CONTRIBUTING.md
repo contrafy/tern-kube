@@ -43,7 +43,7 @@ and `jq`. See [docs/testing.md](docs/testing.md) and
   `kubectl` only with `KUBECONFIG=.sandbox/kubeconfig`. Mutations only in
   `tern-test-*` namespaces.
 - Tern only through `scripts/dev-tern.sh` with a sandbox under `/tmp`
-  (`KL_TERN_SANDBOX=/tmp/kl-tern-<name>`). Never run `tern` subcommands
+  (`TK_TERN_SANDBOX=/tmp/tk-tern-<name>`). Never run `tern` subcommands
   against your own Tern config or daemon, and never edit your shell rc files
   or kube contexts for tests.
 

@@ -23,7 +23,7 @@ describe("explore render: header", function()
 	it("shows a Live badge and the fetch age, never a Snapshot badge", function()
 		local s = W.open()
 		local m = main(s)
-		local live = nodes.find(m, nodes.role("kube-lens.live")) :: nodes.Node
+		local live = nodes.find(m, nodes.role("tern-kube.live")) :: nodes.Node
 		expect((live.p :: any).text).toBe("Live")
 		expect((live.p :: any).tone).toBe("accent")
 		expect(nodes.text(m)).toContain("fetched just now via " .. W.CTX)
@@ -36,14 +36,14 @@ describe("explore render: header", function()
 		local m = main((W.open()))
 		expect(nodes.text(m)).toContain("context " .. W.CTX)
 		expect(nodes.text(m)).toContain("(command flag)")
-		expect(nodes.find(m, nodes.role("kube-lens.inferred"))).toBeNil()
+		expect(nodes.find(m, nodes.role("tern-kube.inferred"))).toBeNil()
 		expect(nodes.actions(m)).toContain("nav=contexts")
 	end)
 
 	it("an inferred context carries a warning and a Confirm target action", function()
 		local s = W.open({ namespace = W.NS })
 		local m = main(s)
-		local warning = nodes.find(m, nodes.role("kube-lens.inferred")) :: nodes.Node
+		local warning = nodes.find(m, nodes.role("tern-kube.inferred")) :: nodes.Node
 		expect((warning.p :: any).tone).toBe("warning")
 		expect(nodes.text(m)).toContain("inferred: current-context at 00:16:40 UTC")
 		expect(nodes.actions(m)).toContain("confirm")
@@ -54,7 +54,7 @@ describe("explore render: header", function()
 	it("breadcrumbs lead back to every earlier view", function()
 		local s = W.keys(W.open(), { "enter", "R" })
 		local m = main(s)
-		local crumbs = nodes.find(m, nodes.role("kube-lens.breadcrumb")) :: nodes.Node
+		local crumbs = nodes.find(m, nodes.role("tern-kube.breadcrumb")) :: nodes.Node
 		expect(nodes.actions(crumbs)).toEqual({ "crumb=1", "crumb=2" })
 		expect(nodes.text(crumbs)).toContain("Relations pod/")
 	end)
@@ -64,7 +64,7 @@ describe("explore render: list", function()
 	it("renders the pods grid with the keyboard selection marked", function()
 		local s = W.keys(W.open(), { "j" })
 		local m = main(s)
-		local selected = nodes.findAll(m, nodes.class("kl-sel"))
+		local selected = nodes.findAll(m, nodes.class("tk-sel"))
 		expect(#selected).toBe(1)
 		local key = (selected[1].p :: any).key
 		expect(nodes.action(selected[1])).toBe("open=" .. key)
@@ -76,12 +76,12 @@ describe("explore render: list", function()
 	it("caps rendered rows and offers clickable rows above and below", function()
 		local s = W.open(nil, W.config('{"general":{"max_rendered_rows":3}}'))
 		local m = main(s)
-		expect(#nodes.findAll(m, nodes.class("kl-r"))).toBe(3)
+		expect(#nodes.findAll(m, nodes.class("tk-r"))).toBe(3)
 		expect(nodes.text(m)).toContain("↓ 4 below")
 		expect(nodes.actions(m)).toContain("page=down")
 		s = W.keys(s, { "G" })
 		m = main(s)
-		expect(#nodes.findAll(m, nodes.class("kl-sel"))).toBe(1)
+		expect(#nodes.findAll(m, nodes.class("tk-sel"))).toBe(1)
 		expect(nodes.text(m)).toContain("↑ 4 above")
 		expect(nodes.actions(m)).toContain("page=up")
 	end)
@@ -142,7 +142,7 @@ describe("explore render: other views", function()
 
 	it("describe reuses the native describe view", function()
 		local s = W.keys(W.open(), { "d" })
-		expect(nodes.find(main(s), nodes.role("kube-lens.describe")) ~= nil).toBe(true)
+		expect(nodes.find(main(s), nodes.role("tern-kube.describe")) ~= nil).toBe(true)
 	end)
 
 	it("logs show the fetched lines", function()
@@ -193,7 +193,7 @@ describe("explore render: object view redaction", function()
 	end
 
 	local function notice(m: nodes.Node): string?
-		local n = nodes.find(m, nodes.role("kube-lens.sensitive"))
+		local n = nodes.find(m, nodes.role("tern-kube.sensitive"))
 		return if n then nodes.text(n) else nil
 	end
 

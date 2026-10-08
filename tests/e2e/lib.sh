@@ -1,11 +1,11 @@
 # Helpers for the Tern-in-the-loop scenarios (sourced by scripts/e2e.sh).
 # Everything goes through scripts/dev-tern.sh against the sandbox in
-# KL_TERN_SANDBOX; nothing here touches the default Tern or a real cluster.
+# TK_TERN_SANDBOX; nothing here touches the default Tern or a real cluster.
 
 E2E_REPO=${E2E_REPO:?}
 E2E_FIX="$E2E_REPO/tests/fixtures"
 E2E_DEV="$E2E_REPO/scripts/dev-tern.sh"
-E2E_SB=${KL_TERN_SANDBOX:?}
+E2E_SB=${TK_TERN_SANDBOX:?}
 E2E_FAILED=0
 
 dev() {
@@ -55,7 +55,7 @@ log_lines() {
 
 # view_ms values logged after line $1 of the daemon log, for finished views.
 view_ms_since() {
-	tail -n +"$(($1 + 1))" "$(daemon_log)" | grep 'kube-lens lens.view' | grep 'finished=true' |
+	tail -n +"$(($1 + 1))" "$(daemon_log)" | grep 'tern-kube lens.view' | grep 'finished=true' |
 		sed -n 's/.*view_ms=\([0-9.]*\).*/\1/p'
 }
 
@@ -106,11 +106,11 @@ sh_line() {
 # it to the fake kubectl serving tests/fixtures/DIR (only for what a
 # read-only live cluster cannot produce); real switches back.
 fake() {
-	sh_line "kl_fake '$E2E_FIX/$1'"
+	sh_line "tk_fake '$E2E_FIX/$1'"
 }
 
 real() {
-	sh_line kl_real
+	sh_line tk_real
 }
 
 # Back to one shell pane: splits a failed scenario left open (Explore, quick
@@ -188,15 +188,15 @@ excludes() {
 }
 
 claimed() {
-	has '.sf-block[data-role="lens.plugin.kube-lens.kubectl"]' || fail "block not claimed by kube-lens"
+	has '.sf-block[data-role="lens.plugin.tern-kube.kubectl"]' || fail "block not claimed by tern-kube"
 }
 
 native() {
-	claimed && { has '[data-role="kube-lens.header"]' || fail "no native view (raw shown)"; }
+	claimed && { has '[data-role="tern-kube.header"]' || fail "no native view (raw shown)"; }
 }
 
 raw() {
-	claimed && { lacks '[data-role="kube-lens.header"]' || fail "native view shown, raw expected"; }
+	claimed && { lacks '[data-role="tern-kube.header"]' || fail "native view shown, raw expected"; }
 }
 
 # --- Clipboard (the sandbox window copies to the real pasteboard) -----------
@@ -219,7 +219,7 @@ clip() {
 
 # --- Explore block and quick actions ------------------------------------------
 
-EX="[data-surface='plugin.kube-lens.explore']"
+EX="[data-surface='plugin.tern-kube.explore']"
 
 # xtext [SEL]: text inside the Explore block (SEL relative to it).
 xtext() {
@@ -228,7 +228,7 @@ xtext() {
 
 # The first cell of the selected Explore row.
 xsel() {
-	texts "$EX .kl-sel .kl-c" | jq -r '.[0] // empty'
+	texts "$EX .tk-sel .tk-c" | jq -r '.[0] // empty'
 }
 
 # xkey KEY...: send keys to the focused pane (the Explore block once open).
@@ -240,7 +240,7 @@ xkey() {
 }
 
 x_loaded() {
-	! printf '%s' "$(xtext '[data-role="kube-lens.explore-header"] *')" | grep -q 'fetching via'
+	! printf '%s' "$(xtext '[data-role="tern-kube.explore-header"] *')" | grep -q 'fetching via'
 }
 
 # xwait TEXT [SEL]: wait until the Explore block shows TEXT (and no fetch runs).
@@ -290,14 +290,14 @@ expect_grid() {
 
 # --- Mutations (M3) -------------------------------------------------------------
 # Mutating scenarios touch only tern-test-mutate (and Jobs they create in
-# tern-test-batch), create their own kl-e2e-* objects and delete them again.
+# tern-test-batch), create their own tk-e2e-* objects and delete them again.
 
-AP="[data-surface='plugin.kube-lens.approve']"
+AP="[data-surface='plugin.tern-kube.approve']"
 MNS=tern-test-mutate
 
 # kc ARGS...: the real kubectl, pinned to the sandbox kubeconfig and kind.
 kc() {
-	KUBECONFIG=$E2E_REPO/.sandbox/kubeconfig "${E2E_REAL_KUBECTL:-kubectl}" --context kind-kube-lens-dev "$@"
+	KUBECONFIG=$E2E_REPO/.sandbox/kubeconfig "${E2E_REAL_KUBECTL:-kubectl}" --context kind-tern-kube-dev "$@"
 }
 
 # jp NS KIND/NAME JSONPATH: one field of a live object ("" when absent).
@@ -343,14 +343,14 @@ e2e_manifest() {
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: kl-e2e-web
+  name: tk-e2e-web
   namespace: $MNS
-  labels: {app: kl-e2e-web}
+  labels: {app: tk-e2e-web}
 spec:
   replicas: $1
-  selector: {matchLabels: {app: kl-e2e-web}}
+  selector: {matchLabels: {app: tk-e2e-web}}
   template:
-    metadata: {labels: {app: kl-e2e-web}}
+    metadata: {labels: {app: tk-e2e-web}}
     spec:
       terminationGracePeriodSeconds: 1
       containers:
@@ -362,7 +362,7 @@ spec:
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: kl-e2e-cm
+  name: tk-e2e-cm
   namespace: $MNS
 data: {LEVEL: $2}
 EOF
@@ -370,10 +370,10 @@ EOF
 
 e2e_objects() {
 	e2e_manifest 1 info | kc apply -f - >/dev/null
-	kc -n "$MNS" rollout status deploy/kl-e2e-web --timeout=60s >/dev/null || fail "kl-e2e-web not ready"
+	kc -n "$MNS" rollout status deploy/tk-e2e-web --timeout=60s >/dev/null || fail "tk-e2e-web not ready"
 }
 
 e2e_objects_delete() {
-	kc -n "$MNS" delete deploy/kl-e2e-web configmap/kl-e2e-cm configmap/kl-e2e-applied \
+	kc -n "$MNS" delete deploy/tk-e2e-web configmap/tk-e2e-cm configmap/tk-e2e-applied \
 		--ignore-not-found --wait=true >/dev/null 2>&1
 }

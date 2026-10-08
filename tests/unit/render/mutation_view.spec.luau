@@ -35,7 +35,7 @@ local function toneOf(n: Node?): string?
 end
 
 local function gridRows(root: Node): { Node }
-	return nodes.findAll(root, nodes.class("kl-r"))
+	return nodes.findAll(root, nodes.class("tk-r"))
 end
 
 local function cellTexts(row: Node): { string }
@@ -54,7 +54,7 @@ describe("mutation view: successful runs", function()
 	it("says the change already happened and summarises created objects", function()
 		local view =
 			render("real/mutate-create/apply_-f_mutate+app.yaml", "kubectl apply " .. NS .. " -f mutate/app.yaml")
-		local bannerNode = nodes.find(view, nodes.role("kube-lens.mutation-banner")) :: Node
+		local bannerNode = nodes.find(view, nodes.role("tern-kube.mutation-banner")) :: Node
 		expect(nodes.text(bannerNode)).toContain("Result of an executed command (not a preview)")
 		expect(toneOf(badge(view, "exit 0"))).toBe("success")
 		expect(toneOf(badge(view, "3 created"))).toBe("success")
@@ -126,7 +126,7 @@ describe("mutation view: failures", function()
 		local view =
 			render("real/errors/apply_-f_mutate+invalid.yaml", "kubectl apply " .. NS .. " -f mutate/invalid.yaml")
 		expect(toneOf(badge(view, "exit 1"))).toBe("error")
-		local err = nodes.find(view, nodes.role("kube-lens.error")) :: Node
+		local err = nodes.find(view, nodes.role("tern-kube.error")) :: Node
 		expect(nodes.text(err)).toContain('unknown field "spec.replcas"')
 		expect(nodes.text(err)).toContain("Fix its spelling or remove it")
 		expect(#gridRows(view)).toBe(0)
@@ -146,7 +146,7 @@ describe("mutation view: failures", function()
 	it("lists every NotFound when deleting objects that are gone", function()
 		local path = "real/errors/delete_-f_mutate+app-v2.yaml"
 		local view = render(path, "kubectl delete " .. NS .. " -f mutate/app-v2.yaml")
-		local errs = nodes.findAll(view, nodes.role("kube-lens.error"))
+		local errs = nodes.findAll(view, nodes.role("tern-kube.error"))
 		expect(#errs).toBe(lineCount(path .. ".stderr"))
 		for _, e in errs do
 			expect(nodes.text(e)).toContain("Check the name, -n/--namespace and --context")
@@ -161,7 +161,7 @@ describe("mutation view: failures", function()
 			}
 		do
 			local view = render(case[1], case[2])
-			expect(nodes.find(view, nodes.role("kube-lens.error")) ~= nil).toBe(true)
+			expect(nodes.find(view, nodes.role("tern-kube.error")) ~= nil).toBe(true)
 			expect(badge(view, "exit 1") ~= nil).toBe(true)
 		end
 	end)
@@ -201,9 +201,9 @@ describe("mutation view: interaction", function()
 	it("opens the clicked result with the output line it came from", function()
 		local capture = captures.build(path, command)
 		local view = MutationView.render(capture, Viewstate.opened(Viewstate.default(), "m2"), Viewstate)
-		local insp = nodes.find(view, nodes.class("kl-insp")) :: Node
+		local insp = nodes.find(view, nodes.class("tk-insp")) :: Node
 		expect(nodes.text(insp)).toContain(capture.lines[2])
-		local open = nodes.find(view, nodes.class("kl-open")) :: Node
+		local open = nodes.find(view, nodes.class("tk-open")) :: Node
 		-- Clicking the open row closes it.
 		expect(Viewstate.decode(string.sub(nodes.action(open) :: string, 3)).open).toBeNil()
 	end)
@@ -214,15 +214,15 @@ end)
 -- executed would contradict the guard's own message.
 describe("mutation view: stopped by the shell guard", function()
 	local command = "kubectl scale deploy/web --replicas=3 " .. NS
-	local waiting = "kube-lens guard: waiting for approval in Tern (context kind-dev; Ctrl-C cancels) ..."
+	local waiting = "tern-kube guard: waiting for approval in Tern (context kind-dev; Ctrl-C cancels) ..."
 
 	local cases: { { name: string, line: string, status: number } } = {
-		{ name = "denied", line = "kube-lens guard: denied in Tern; nothing was executed.", status = 1 },
-		{ name = "denied with a reason", line = "kube-lens guard: denied in Tern: Mutations are disabled", status = 1 },
-		{ name = "cancelled", line = "kube-lens guard: cancelled; nothing was executed.", status = 130 },
+		{ name = "denied", line = "tern-kube guard: denied in Tern; nothing was executed.", status = 1 },
+		{ name = "denied with a reason", line = "tern-kube guard: denied in Tern: Mutations are disabled", status = 1 },
+		{ name = "cancelled", line = "tern-kube guard: cancelled; nothing was executed.", status = 130 },
 		{
 			name = "refused",
-			line = "kube-lens guard: nothing was executed. To run it anyway, without preview or confirmation, use: command kubectl ...",
+			line = "tern-kube guard: nothing was executed. To run it anyway, without preview or confirmation, use: command kubectl ...",
 			status = 1,
 		},
 	}
@@ -233,7 +233,7 @@ describe("mutation view: stopped by the shell guard", function()
 				Viewstate.default(),
 				Viewstate
 			)
-			local text = nodes.text(nodes.find(view, nodes.role("kube-lens.mutation-banner")) :: Node)
+			local text = nodes.text(nodes.find(view, nodes.role("tern-kube.mutation-banner")) :: Node)
 			expect(text).toContain(MutationView.GUARD_BANNER)
 			expect(string.find(text, MutationView.BANNER, 1, true) == nil).toBe(true)
 			expect(toneOf(badge(view, "Not executed"))).toBe("warning")

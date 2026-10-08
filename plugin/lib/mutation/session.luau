@@ -4,9 +4,9 @@
 -- results, ticks, keys and clicks come back as messages. No `tern` here.
 --
 -- Three entry points share one pipeline:
---   native  kube-lens://mutate?... (Explore keys, lens chips, palette): the
+--   native  tern-kube://mutate?... (Explore keys, lens chips, palette): the
 --           block executes the pinned argv after confirmation;
---   quick   kube-lens://act/<debug-pod|debug-node|cronjob-run>?...: after
+--   quick   tern-kube://act/<debug-pod|debug-node|cronjob-run>?...: after
 --           confirmation the block grants a single-use token and opens the
 --           action link with confirm=<token>; the window runs the split;
 --   guard   <spool>/req-<nonce>.json from `tern open --wait` (shell/PROTOCOL.md):
@@ -109,7 +109,7 @@ export type Init = {
 	args: { string },
 	now: number,
 	config: Config,
-	-- Program for native and quick commands (config > KUBE_LENS_KUBECTL > kubectl).
+	-- Program for native and quick commands (config > TKUBE_KUBECTL > kubectl).
 	kubectl: string,
 	-- Host-resolved kubeconfig for native/quick: config file, else daemon KUBECONFIG.
 	kubeconfig: string?,
@@ -227,7 +227,7 @@ M.MAX_REQUEST_BYTES = 65536
 M.MAX_MANIFEST_BYTES = 2097152
 -- A request from the future is forged or from a skewed clock.
 M.CLOCK_SKEW_S = 60
-M.DISABLED = "Mutations are disabled (mutations.enabled is false in the kube-lens config); nothing was run."
+M.DISABLED = "Mutations are disabled (mutations.enabled is false in the tern-kube config); nothing was run."
 
 M.DIGEST_SCRIPT = [[
 set -f
@@ -399,7 +399,7 @@ end
 function M.parseRequest(path: string, text: string, decode: (string) -> any): (GuardRequest?, string?)
 	local dir, nonce = string.match(path, "^(/.*)/req%-([0-9a-f]+)%.json$")
 	if dir == nil or nonce == nil or #nonce ~= 32 then
-		return nil, "not a kube-lens request path (<spool>/req-<32 hex>.json): " .. path
+		return nil, "not a tern-kube request path (<spool>/req-<32 hex>.json): " .. path
 	end
 	local ok, doc = pcall(decode, text)
 	if not ok or type(doc) ~= "table" then
@@ -499,7 +499,7 @@ local function provisional(s: State): boolean
 	local env = table.clone(s.env :: T.Env)
 	local placeholder = env.context == nil
 	if placeholder then
-		env.context = "kube-lens-unresolved"
+		env.context = "tern-kube-unresolved"
 	end
 	local plan, diags = Plan.fromArgv(s.argv :: { string }, env)
 	if plan == nil then
@@ -589,7 +589,7 @@ local function parseTarget(s: State, r: ProcessResult, context: string): (Target
 end
 
 local function digestArgv(s: State, plan: T.Plan): { string }?
-	local argv: { string } = { "/bin/sh", "-c", M.DIGEST_SCRIPT, "kube-lens-digest" }
+	local argv: { string } = { "/bin/sh", "-c", M.DIGEST_SCRIPT, "tern-kube-digest" }
 	local items: { string } = {}
 	if s.request then
 		table.insert(argv, "exact")
@@ -846,7 +846,7 @@ local function respond(s: State, effects: { Effect }, decision: "approve" | "den
 		gen = s.gen,
 		path = tmp,
 		text = responseText(s, decision),
-		argv = { "/bin/sh", "-c", M.RESPOND_SCRIPT, "kube-lens-respond", tmp, final },
+		argv = { "/bin/sh", "-c", M.RESPOND_SCRIPT, "tern-kube-respond", tmp, final },
 	})
 	audit(s, effects, if decision == "approve" then "approved" else "denied")
 end
@@ -1213,7 +1213,7 @@ local function initGuard(s: State, path: string, env: Init, effects: { Effect })
 		timeoutMs = s.config.previewTimeoutMs,
 	}
 	s.phase = "loading"
-	emitRun(s, effects, "spool", { "/bin/sh", "-c", M.SPOOL_SCRIPT, "kube-lens-spool", s.spool })
+	emitRun(s, effects, "spool", { "/bin/sh", "-c", M.SPOOL_SCRIPT, "tern-kube-spool", s.spool })
 end
 
 function M.init(env: Init): (State, { Effect })
@@ -1259,9 +1259,9 @@ local function onResult(s: State, tag: string, r: ProcessResult, effects: { Effe
 		local canonical = string.match(r.stdout, "^(/[^\n]*)")
 		local req = s.request :: GuardRequest
 		if r.status ~= 0 or canonical == nil then
-			fail(s, "Cannot resolve the kube-lens spool directory " .. s.spool)
+			fail(s, "Cannot resolve the tern-kube spool directory " .. s.spool)
 		elseif canonical ~= req.dir then
-			fail(s, "Refusing a request outside the kube-lens spool (" .. canonical .. "): " .. req.path)
+			fail(s, "Refusing a request outside the tern-kube spool (" .. canonical .. "): " .. req.path)
 		elseif not s.config.mutations.enabled then
 			s.canRespond = true
 			s.denyReason = M.DISABLED

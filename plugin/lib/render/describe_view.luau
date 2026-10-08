@@ -315,7 +315,7 @@ local function diagnosticNodes(diagnostics: { Diagnostic }): { Node }
 				ui.card({ ui.span("kubectl error", "error strong") }, { ui.text({ d.text }) }, {
 					key = "diag" .. i,
 					tone = "error",
-					role = "kube-lens.error",
+					role = "tern-kube.error",
 				})
 			)
 		elseif d.severity == "warning" then
@@ -342,7 +342,7 @@ function M.render(capture: Capture, _vs: ViewState, _vsm: typeof(Viewstate)): No
 	if #children == 0 then
 		table.insert(children, ui.muted("kubectl printed no objects"))
 	end
-	return ui.col(children, { role = "kube-lens.describe" })
+	return ui.col(children, { role = "tern-kube.describe" })
 end
 
 return M

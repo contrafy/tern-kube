@@ -147,13 +147,13 @@ jobs:
       - name: Collect logs
         if: failure()
         run: |
-          logs=$RUNNER_TEMP/kl-logs
+          logs=$RUNNER_TEMP/tk-logs
           mkdir -p "$logs"
           if [ -d .sandbox/mutate-it ]; then
             cp -R .sandbox/mutate-it "$logs/mutate-it"
             rm -rf "$logs/mutate-it/home"
           fi
-          .tools/bin/kind export logs --name kube-lens-dev "$logs/kind" || true
+          .tools/bin/kind export logs --name tern-kube-dev "$logs/kind" || true
           kubectl --kubeconfig .sandbox/kubeconfig get events -A --sort-by=.lastTimestamp \
             >"$logs/events.txt" 2>&1 || true
 
@@ -164,7 +164,7 @@ jobs:
           name: integration-logs
           retention-days: 7
           if-no-files-found: ignore
-          path: ${{ runner.temp }}/kl-logs
+          path: ${{ runner.temp }}/tk-logs
 
   package:
     name: package

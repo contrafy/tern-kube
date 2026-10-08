@@ -264,7 +264,7 @@ function M.text(seg: Segment): string
 	return table.concat(seg.lines, "\n")
 end
 
-M.REDACTED = "*** (last-applied-configuration redacted by kube-lens)"
+M.REDACTED = "*** (last-applied-configuration redacted by tern-kube)"
 
 local function isSecret(seg: Segment): boolean
 	return seg.kind == "Secret" and seg.group == nil and seg.name ~= nil and not seg.binary
@@ -285,7 +285,7 @@ end
 
 -- kubectl diff masks Secret data but not the last-applied-configuration
 -- annotation, which holds the applied data as one JSON line. The same rule
--- as bin/kube-lens-drift: in core Secret segments every content line that
+-- as bin/tern-kube-drift: in core Secret segments every content line that
 -- embeds a Secret object as JSON is replaced, keeping its marker and
 -- indentation so the +/- counts and hunk shape stay intact. Returns a copy.
 function M.redactSecrets(summary: Summary): Summary

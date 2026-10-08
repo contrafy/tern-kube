@@ -63,7 +63,7 @@ end
 local function decodeOpen(w: World): Link.Request
 	local url = w.opened[#w.opened]
 	local req = Link.decode(url)
-	assert(req, "not a kube-lens link: " .. tostring(url))
+	assert(req, "not a tern-kube link: " .. tostring(url))
 	return req
 end
 
@@ -239,9 +239,9 @@ describe("explore gitops: diff vs manifest", function()
 		end)
 		local tmp = "/data/tmp/diff-1000-n1.yaml"
 		local lines = G.lines(w)
-		expect(lines[1]).toBe("/bin/sh -c " .. Gitops.WRITE_SCRIPT .. " kube-lens-tmp " .. tmp)
+		expect(lines[1]).toBe("/bin/sh -c " .. Gitops.WRITE_SCRIPT .. " tern-kube-tmp " .. tmp)
 		expect(Gitops.WRITE_SCRIPT).toContain("umask 077")
-		expect(lines[2]).toBe("kubectl --context kind-kube-lens-dev diff -f " .. tmp)
+		expect(lines[2]).toBe("kubectl --context kind-tern-kube-dev diff -f " .. tmp)
 		expect(lines[3]).toBe("rm -f -- " .. tmp)
 		expect(#lines).toBe(3)
 		expect(w.stdin[1]).toBe(Gitops.slice(w.files["/repo/drift/baseline/app.yaml"], 1, 27))
@@ -472,7 +472,7 @@ describe("explore gitops: apply bundles", function()
 			Gitops.applyDocs(g, ctx, Gitops.matches(g, ctx, SERVICE), "service/web", effects)
 		end)
 		local tmp = "/data/tmp/apply-1000-n1.yaml"
-		expect(G.lines(w)).toEqual({ "/bin/sh -c " .. Gitops.WRITE_SCRIPT .. " kube-lens-tmp " .. tmp })
+		expect(G.lines(w)).toEqual({ "/bin/sh -c " .. Gitops.WRITE_SCRIPT .. " tern-kube-tmp " .. tmp })
 		expect(w.tmp[tmp]).toContain("kind: Service")
 		expect((string.find(w.tmp[tmp], "ServiceAccount", 1, true))).toBeNil()
 		expect(decodeOpen(w).file).toBe(tmp)
@@ -556,7 +556,7 @@ describe("explore gitops: drift", function()
 				"dir:/repo/drift/baseline 5 2",
 				"dir:/repo/drift/pending 3 2",
 			})
-			expect(G.lines(w)[1]).toBe("kubectl --context kind-kube-lens-dev api-resources -o name")
+			expect(G.lines(w)[1]).toBe("kubectl --context kind-tern-kube-dev api-resources -o name")
 			expect(g.ctl.status).toBe("ok")
 			local items = Gitops.items(g, ctx, { kind = "drift" })
 			local _, nav = G.press(w, g, ctx, { kind = "drift" }, items[2], "enter")
@@ -567,10 +567,10 @@ describe("explore gitops: drift", function()
 	it("a directory source diffs exactly its files and lists its kinds in its namespaces, pinned", function()
 		local w = report()
 		expect(G.lines(w)).toEqual({
-			"kubectl --context kind-kube-lens-dev get configmap,deployment.apps,service,serviceaccount,widget.lens.example.com -n "
+			"kubectl --context kind-tern-kube-dev get configmap,deployment.apps,service,serviceaccount,widget.lens.example.com -n "
 				.. NS
 				.. " -o json",
-			"kubectl --context kind-kube-lens-dev diff -f /repo/drift/baseline/app.yaml -f /repo/drift/baseline/service.yaml -f /repo/drift/baseline/widgets.yaml -f /repo/drift/namespace.yaml -f /repo/drift/pending/extra.yaml",
+			"kubectl --context kind-tern-kube-dev diff -f /repo/drift/baseline/app.yaml -f /repo/drift/baseline/service.yaml -f /repo/drift/baseline/widgets.yaml -f /repo/drift/namespace.yaml -f /repo/drift/pending/extra.yaml",
 		})
 		local diffRun = w.effects[#w.effects]
 		expect(diffRun.env).toEqual({ KUBECTL_EXTERNAL_DIFF = "" })
@@ -731,8 +731,8 @@ describe("explore gitops: drift", function()
 		end)
 		local tmp = "/data/tmp/drift-1000-n1.yaml"
 		local lines = G.lines(w)
-		expect(find(lines, "/bin/sh -c")).toBe("/bin/sh -c " .. Gitops.WRITE_SCRIPT .. " kube-lens-tmp " .. tmp)
-		expect(find(lines, " diff ")).toBe("kubectl --context kind-kube-lens-dev diff -f " .. tmp)
+		expect(find(lines, "/bin/sh -c")).toBe("/bin/sh -c " .. Gitops.WRITE_SCRIPT .. " tern-kube-tmp " .. tmp)
+		expect(find(lines, " diff ")).toBe("kubectl --context kind-tern-kube-dev diff -f " .. tmp)
 		expect(w.removed).toEqual({ tmp })
 		expect(g.drifts[id :: string].status).toBe("ok")
 		local _, nav = G.press(w, g, ctx, { kind = "drift", source = id }, nil, "X")
@@ -760,7 +760,7 @@ describe("explore gitops: drift", function()
 			Gitops.startDriftReport(g, ctx, id, false, effects)
 		end)
 		expect(find(G.lines(w), " diff ")).toBe(
-			"kubectl --context kind-kube-lens-dev diff -k /repo/kustomize/overlays/staging"
+			"kubectl --context kind-tern-kube-dev diff -k /repo/kustomize/overlays/staging"
 		)
 		G.press(w, g, ctx, { kind = "drift", source = id }, nil, "A")
 		local req = decodeOpen(w)
@@ -771,7 +771,7 @@ describe("explore gitops: drift", function()
 	it("the drift summary is a markdown table per entry", function()
 		local _, _, _, load = report()
 		local md = Gitops.driftSummary(load, G.CTX)
-		expect(md).toContain("Drift of `drift/` against context `kind-kube-lens-dev` (kube-lens).")
+		expect(md).toContain("Drift of `drift/` against context `kind-tern-kube-dev` (tern-kube).")
 		expect(md).toContain("4 changed, 3 missing in cluster, 1 unmanaged, 2 in sync.")
 		expect(md).toContain("| Deployment tern-test-drift/web | changed | +2 -2 |")
 	end)
@@ -968,7 +968,7 @@ describe("explore gitops: git flow", function()
 		expect(git.status).toBe("ready")
 		expect(git.push).toBe(false)
 		expect(git.pr).toBe(false)
-		expect(git.branch).toBe("kube-lens/1-object-from-drift-19700101-001640")
+		expect(git.branch).toBe("tern-kube/1-object-from-drift-19700101-001640")
 		expect(git.message).toBe("chore(gitops): export 1 object from drift/")
 		expect(Gitops.gitBlocker(git)).toBeNil()
 		local argv = gitArgv(git)
@@ -1076,7 +1076,7 @@ describe("explore gitops: git flow", function()
 		for _, bad in { "", "-x", "a..b", "a b", "a~1", "x.lock", "a/.b", "a//b", "@", "ref@{u}", "trail/" } do
 			expect(Gitops.validBranch(bad)).toBe(false)
 		end
-		expect(Gitops.validBranch("kube-lens/export-1")).toBe(true)
+		expect(Gitops.validBranch("tern-kube/export-1")).toBe(true)
 		Gitops.setField(g, "branch", "bad name")
 		step(w, g, ctx, function(effects)
 			Gitops.commitField(g, ctx, "branch", effects)

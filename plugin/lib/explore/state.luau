@@ -337,7 +337,7 @@ end
 function M.failure(s: State, result: ProcessResult, spawnError: string?): (string, string)
 	if spawnError then
 		return string.format(
-			'Cannot run kubectl (%s): %s. Set "kubectl" in ~/.config/kube-lens/config.json or KUBE_LENS_KUBECTL.',
+			'Cannot run kubectl (%s): %s. Set "kubectl" in ~/.config/tern-kube/config.json or TKUBE_KUBECTL.',
 			s.program,
 			spawnError
 		),
@@ -844,7 +844,7 @@ end
 
 function M.init(args: { string }, saved: any, config: Config, env: Env): (State, { Effect })
 	local url = args[1]
-	local params = if url and string.sub(url, 1, 12) == "kube-lens://" then Command.parseQuery(url) else {}
+	local params = if url and string.sub(url, 1, 12) == "tern-kube://" then Command.parseQuery(url) else {}
 	local linkContext = param(params, "context")
 	local target: Target = {
 		kubeconfig = kubeconfigPath(param(params, "kubeconfig"), config, env),

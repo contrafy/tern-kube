@@ -22,7 +22,7 @@ items:
     uid: ca415380-8ab0-440a-96db-5b36315a16d0
   spec:
     containers:
-    - image: registry.invalid/kube-lens/missing:0.0.0
+    - image: registry.invalid/tern-kube/missing:0.0.0
       imagePullPolicy: IfNotPresent
       name: app
       resources: {}
@@ -34,7 +34,7 @@ items:
         readOnly: true
     dnsPolicy: ClusterFirst
     enableServiceLinks: true
-    nodeName: kube-lens-dev-control-plane
+    nodeName: tern-kube-dev-control-plane
     preemptionPolicy: PreemptLowerPriority
     priority: 0
     restartPolicy: Always
@@ -103,7 +103,7 @@ items:
       status: "True"
       type: PodScheduled
     containerStatuses:
-    - image: registry.invalid/kube-lens/missing:0.0.0
+    - image: registry.invalid/tern-kube/missing:0.0.0
       imageID: ""
       lastState: {}
       name: app
@@ -112,10 +112,10 @@ items:
       started: false
       state:
         waiting:
-          message: 'Back-off pulling image "registry.invalid/kube-lens/missing:0.0.0":
-            ErrImagePull: failed to pull and unpack image "registry.invalid/kube-lens/missing:0.0.0":
-            failed to resolve reference "registry.invalid/kube-lens/missing:0.0.0":
-            failed to do request: Head "https://registry.invalid/v2/kube-lens/missing/manifests/0.0.0":
+          message: 'Back-off pulling image "registry.invalid/tern-kube/missing:0.0.0":
+            ErrImagePull: failed to pull and unpack image "registry.invalid/tern-kube/missing:0.0.0":
+            failed to resolve reference "registry.invalid/tern-kube/missing:0.0.0":
+            failed to do request: Head "https://registry.invalid/v2/tern-kube/missing/manifests/0.0.0":
             dial tcp: lookup registry.invalid on 192.168.65.254:53: no such host'
           reason: ImagePullBackOff
       volumeMounts:
@@ -167,7 +167,7 @@ items:
         readOnly: true
     dnsPolicy: ClusterFirst
     enableServiceLinks: true
-    nodeName: kube-lens-dev-control-plane
+    nodeName: tern-kube-dev-control-plane
     preemptionPolicy: PreemptLowerPriority
     priority: 0
     restartPolicy: Always
@@ -319,7 +319,7 @@ items:
     dnsPolicy: ClusterFirst
     enableServiceLinks: true
     hostname: db-0
-    nodeName: kube-lens-dev-control-plane
+    nodeName: tern-kube-dev-control-plane
     preemptionPolicy: PreemptLowerPriority
     priority: 0
     restartPolicy: Always
@@ -449,7 +449,7 @@ items:
             - key: metadata.name
               operator: In
               values:
-              - kube-lens-dev-control-plane
+              - tern-kube-dev-control-plane
     containers:
     - image: registry.k8s.io/pause:3.10
       imagePullPolicy: IfNotPresent
@@ -463,7 +463,7 @@ items:
         readOnly: true
     dnsPolicy: ClusterFirst
     enableServiceLinks: true
-    nodeName: kube-lens-dev-control-plane
+    nodeName: tern-kube-dev-control-plane
     preemptionPolicy: PreemptLowerPriority
     priority: 0
     restartPolicy: Always
@@ -692,7 +692,7 @@ items:
         readOnly: true
     dnsPolicy: ClusterFirst
     enableServiceLinks: true
-    nodeName: kube-lens-dev-control-plane
+    nodeName: tern-kube-dev-control-plane
     preemptionPolicy: PreemptLowerPriority
     priority: 0
     restartPolicy: Always
@@ -844,7 +844,7 @@ items:
         readOnly: true
     dnsPolicy: ClusterFirst
     enableServiceLinks: true
-    nodeName: kube-lens-dev-control-plane
+    nodeName: tern-kube-dev-control-plane
     preemptionPolicy: PreemptLowerPriority
     priority: 0
     restartPolicy: Always

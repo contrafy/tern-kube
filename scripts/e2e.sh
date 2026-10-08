@@ -1,7 +1,7 @@
 #!/bin/sh
 # End-to-end tests in a real, isolated Tern window (`make e2e`). Local only:
 # needs Tern, jq, a desktop session and the disposable kind cluster
-# kube-lens-dev (scripts/cluster.sh create); skipped with a message when
+# tern-kube-dev (scripts/cluster.sh create); skipped with a message when
 # `tern` is not installed.
 #
 #   scripts/e2e.sh [--only GLOB] [--shots] [--perf] [--keep]
@@ -14,8 +14,8 @@
 # docs/screenshots/m1-*.png, --perf prints in-window timings for
 # docs/performance.md, --keep leaves the window running.
 #
-# The window runs in its own sandbox (KL_E2E_SANDBOX, default
-# /tmp/kl-tern-e2e) with a snapshot copy of plugin/, so edits made while it
+# The window runs in its own sandbox (TK_E2E_SANDBOX, default
+# /tmp/tk-tern-e2e) with a snapshot copy of plugin/, so edits made while it
 # runs do not reload the plugin under test.
 
 set -u
@@ -53,7 +53,7 @@ while [ $# -gt 0 ]; do
 	shift
 done
 
-export KL_TERN_SANDBOX="${KL_E2E_SANDBOX:-/tmp/kl-tern-e2e}"
+export TK_TERN_SANDBOX="${TK_E2E_SANDBOX:-/tmp/tk-tern-e2e}"
 export E2E_REPO="$repo"
 # shellcheck source=../tests/e2e/lib.sh
 . "$repo/tests/e2e/lib.sh"
@@ -67,12 +67,12 @@ need() {
 }
 [ -n "$real_kubectl" ] || need "kubectl not found on PATH"
 [ -f "$kubeconfig" ] || need "$kubeconfig missing: run scripts/cluster.sh create"
-[ "$(KUBECONFIG=$kubeconfig "$real_kubectl" config current-context 2>/dev/null)" = kind-kube-lens-dev ] ||
-	need "$kubeconfig is not context kind-kube-lens-dev"
+[ "$(KUBECONFIG=$kubeconfig "$real_kubectl" config current-context 2>/dev/null)" = kind-tern-kube-dev ] ||
+	need "$kubeconfig is not context kind-tern-kube-dev"
 KUBECONFIG=$kubeconfig "$real_kubectl" --request-timeout=5s get --raw /readyz >/dev/null 2>&1 ||
-	need "kind-kube-lens-dev is not reachable (start Docker; scripts/cluster.sh status)"
+	need "kind-tern-kube-dev is not reachable (start Docker; scripts/cluster.sh status)"
 KUBECONFIG=$kubeconfig "$real_kubectl" --request-timeout=5s get pod crashloop -n tern-test-apps >/dev/null 2>&1 ||
-	need "the tern-test-* world is missing: sh scripts/fixtures/capture.sh --reuse"
+	need "the tern-test-* world is missing: sh scripts/fixtures/capture.sh --world-only"
 export E2E_REAL_KUBECTL="$real_kubectl" E2E_KUBECONFIG="$kubeconfig"
 
 cleanup() {
@@ -88,7 +88,7 @@ cleanup() {
 		sleep 0.5
 		rm -rf "$E2E_SB" 2>/dev/null || { sleep 1 && rm -rf "$E2E_SB"; }
 	else
-		echo "e2e: window kept running (KL_TERN_SANDBOX=$E2E_SB sh scripts/dev-tern.sh stop)"
+		echo "e2e: window kept running (TK_TERN_SANDBOX=$E2E_SB sh scripts/dev-tern.sh stop)"
 	fi
 }
 
@@ -113,9 +113,9 @@ sleep 1
 
 # Same check inside the pane the scenarios type into.
 sh_line clear
-sh_line 'print -r -- KL_CHECK $(command -v kubectl) $(kubectl config current-context)'
-ctl expect "\"KL_CHECK $real_kubectl kind-kube-lens-dev\"" | grep -q '"ok":true' ||
-	need "the sandbox pane does not run $real_kubectl against kind-kube-lens-dev"
+sh_line 'print -r -- TK_CHECK $(command -v kubectl) $(kubectl config current-context)'
+ctl expect "\"TK_CHECK $real_kubectl kind-tern-kube-dev\"" | grep -q '"ok":true' ||
+	need "the sandbox pane does not run $real_kubectl against kind-tern-kube-dev"
 log_start=$(log_lines)
 
 failed=""
@@ -145,11 +145,11 @@ for f in "$repo"/tests/e2e/scenarios/*.sh; do
 done
 
 # Whole-run checks: the sheet parsed and no view or event fell back to raw.
-if grep -q 'plugin style sheet has errors sheet="plugin:local:kube-lens' "$(window_log)"; then
+if grep -q 'plugin style sheet has errors sheet="plugin:local:tern-kube' "$(window_log)"; then
 	failed="$failed stylesheet"
 	echo "FAIL stylesheet: $(grep -o 'message: "[^"]*"' "$(window_log)" | head -3)"
 fi
-if tail -n +"$((log_start + 1))" "$(daemon_log)" | grep -q 'kube-lens .* failed; showing raw'; then
+if tail -n +"$((log_start + 1))" "$(daemon_log)" | grep -q 'tern-kube .* failed; showing raw'; then
 	failed="$failed lens-errors"
 	echo "FAIL lens errors:"
 	tail -n +"$((log_start + 1))" "$(daemon_log)" | grep 'failed; showing raw' | head -5

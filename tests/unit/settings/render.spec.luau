@@ -2,7 +2,7 @@
 -- What the settings block shows: every setting with its effective value and
 -- whether it comes from the file, the edit input where the block can focus
 -- it, the keyboard selection kept in view, and a status page that tells the
--- user what kube-lens cannot detect itself (the shell guard).
+-- user what tern-kube cannot detect itself (the shell guard).
 local Render = require("../../../plugin/lib/settings/render")
 local State = require("../../../plugin/lib/settings/state")
 local json = require("../../lib/json")
@@ -20,7 +20,7 @@ local ENV: State.Env = {
 	home = "/home/u",
 }
 
-local PATH = "/home/u/.config/kube-lens/config.json"
+local PATH = "/home/u/.config/tern-kube/config.json"
 
 local function open(text: string?): State
 	local s = State.init(ENV, nil)
@@ -38,7 +38,7 @@ end
 describe("settings render: editor", function()
 	it("lists every setting with its effective value when the block is tall enough", function()
 		local m = main(open('{"general": {"max_rows": 42}}'))
-		local rows = nodes.findAll(m, nodes.class("kl-set-r"))
+		local rows = nodes.findAll(m, nodes.class("tk-set-r"))
 		expect(#rows).toBe(#State.FIELDS)
 		local text = nodes.text(m)
 		expect(text).toContain("max_rows")
@@ -82,15 +82,15 @@ describe("settings render: editor", function()
 		s = State.update(s, { t = "key", key = { name = "x", text = "x" } })
 		local input = nodes.find(main(s), nodes.kind("input")) :: nodes.Node
 		expect((input.p :: any).text).toBe("ghx")
-		expect((input.p :: any).class).toBe("kl-editing")
+		expect((input.p :: any).class).toBe("tk-editing")
 	end)
 
 	it("highlights the selected row and keeps it inside a short block", function()
 		local s = select(open(nil), "gitops.gh")
 		local m = main(s, 20)
-		local sel = nodes.find(m, nodes.class("kl-set-sel")) :: nodes.Node
+		local sel = nodes.find(m, nodes.class("tk-set-sel")) :: nodes.Node
 		expect((sel.p :: any).key).toBe("gitops.gh")
-		expect(#nodes.findAll(m, nodes.class("kl-set-r"))).toBe(State.viewport(20))
+		expect(#nodes.findAll(m, nodes.class("tk-set-r"))).toBe(State.viewport(20))
 		expect(nodes.text(m)).toContain("above")
 	end)
 
@@ -143,7 +143,7 @@ describe("settings render: status page", function()
 	it("names the config file, versions and the resolved kubectl", function()
 		local text = status(open(nil))
 		expect(text).toContain(PATH)
-		expect(text).toContain("kube-lens 0.0.1")
+		expect(text).toContain("tern-kube 0.0.1")
 		expect(text).toContain("0.6.2 (4b3ed42)")
 		expect(text).toContain("/usr/bin/kubectl")
 		expect(text).toContain("v1.31.0")
@@ -157,10 +157,10 @@ describe("settings render: status page", function()
 
 	it("reports the spool injection and pane records, and how to check the guard", function()
 		local text = status(open(nil))
-		expect(text).toContain("KUBE_LENS_SPOOL=/data/spool")
+		expect(text).toContain("TKUBE_SPOOL=/data/spool")
 		expect(text).toContain("2 recorded, 1 live")
 		expect(text).toContain("pane 4: /k/a")
-		expect(text).toContain("kube-lens-guard-status")
+		expect(text).toContain("tern-kube-guard-status")
 	end)
 
 	it("summarizes the confirmation tiers and supported operations", function()

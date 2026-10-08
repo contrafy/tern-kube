@@ -1,7 +1,7 @@
 # Performance (M1)
 
 Measured 2026-10-08 on an Apple M5 (24 GB RAM), macOS 27.0.1, Tern 0.6.2
-(4b3ed42), kubectl v1.34.1 client, kind cluster `kube-lens-dev` (node
+(4b3ed42), kubectl v1.34.1 client, kind cluster `tern-kube-dev` (node
 v1.37.0) on Docker Desktop.
 
 ## PRD targets

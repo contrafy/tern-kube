@@ -1,6 +1,6 @@
 --!strict
 -- The fingerprint ties an approval to exactly what was previewed. The shell
--- guard builds the same bytes independently (kube-lens/fp/v1), so the format
+-- guard builds the same bytes independently (tern-kube/fp/v1), so the format
 -- is pinned here byte for byte; any drift would make every guarded command
 -- fail closed, and any field left out would let that input change unnoticed.
 local Fingerprint = require("../../../plugin/lib/mutation/fingerprint")
@@ -33,9 +33,9 @@ local function canonical(i: Fingerprint.Input): string
 end
 
 describe("fingerprint canonical form", function()
-	it("matches the shared kube-lens/fp/v1 layout exactly", function()
+	it("matches the shared tern-kube/fp/v1 layout exactly", function()
 		expect(canonical(input())).toBe(table.concat({
-			"kube-lens/fp/v1",
+			"tern-kube/fp/v1",
 			"argv 4",
 			"7:kubectl",
 			"5:apply",

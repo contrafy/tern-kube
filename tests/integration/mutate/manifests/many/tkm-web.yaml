@@ -1,20 +1,20 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: klm-web
+  name: tkm-web
   namespace: tern-test-mutate
   labels:
-    app: klm-web
-    app.kubernetes.io/part-of: kube-lens-mutate-it
+    app: tkm-web
+    app.kubernetes.io/part-of: tern-kube-mutate-it
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: klm-web
+      app: tkm-web
   template:
     metadata:
       labels:
-        app: klm-web
+        app: tkm-web
     spec:
       terminationGracePeriodSeconds: 1
       containers:
@@ -32,13 +32,13 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: klm-web
+  name: tkm-web
   namespace: tern-test-mutate
   labels:
-    app.kubernetes.io/part-of: kube-lens-mutate-it
+    app.kubernetes.io/part-of: tern-kube-mutate-it
 spec:
   selector:
-    app: klm-web
+    app: tkm-web
   ports:
     - name: http
       port: 80

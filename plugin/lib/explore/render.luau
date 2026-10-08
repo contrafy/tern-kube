@@ -91,7 +91,7 @@ local ROUTE_TITLE: { [string]: string } = {
 }
 
 local function chip(text: string, action: string, props: { [string]: any }?): Node
-	local p: { [string]: any } = { actions = { click = action }, role = "kube-lens.chip" }
+	local p: { [string]: any } = { actions = { click = action }, role = "tern-kube.chip" }
 	if props then
 		for k, v in props do
 			p[k] = v
@@ -158,7 +158,7 @@ local function targetNodes(s: State): { Node }
 			out,
 			ui.badge("inferred target: check before acting", "warning", {
 				key = "inferred",
-				role = "kube-lens.inferred",
+				role = "tern-kube.inferred",
 				title = "Taken from the kubeconfig's current-context when Explore opened; "
 					.. "a later `kubectl config use-context` does not change it",
 			})
@@ -206,7 +206,7 @@ local function header(s: State): Node
 	local live: { Node } = {
 		ui.badge("Live", "accent", {
 			key = "live",
-			role = "kube-lens.live",
+			role = "tern-kube.live",
 			title = "Fetched from the cluster on request; never refreshed automatically",
 		}),
 	}
@@ -218,7 +218,7 @@ local function header(s: State): Node
 			live,
 			ui.text(
 				{ ui.span("fetched " .. age .. " via " .. (s.target.context or "kubeconfig"), "muted") },
-				{ key = "age", role = "kube-lens.fetched" }
+				{ key = "age", role = "tern-kube.fetched" }
 			)
 		)
 	end
@@ -240,15 +240,15 @@ local function header(s: State): Node
 		end
 	end
 	return ui.col({
-		ui.row(live, { key = "bar", wrap = true, role = "kube-lens.bar" }),
-		ui.row(crumbs, { key = "crumbs", wrap = true, role = "kube-lens.breadcrumb" }),
-	}, { key = "header", role = "kube-lens.explore-header" })
+		ui.row(live, { key = "bar", wrap = true, role = "tern-kube.bar" }),
+		ui.row(crumbs, { key = "crumbs", wrap = true, role = "tern-kube.breadcrumb" }),
+	}, { key = "header", role = "tern-kube.explore-header" })
 end
 
 -- Bodies ---------------------------------------------------------------------
 
 local function errorNode(text: string): Node
-	return ui.text({ ui.span(text, "error") }, { key = "error", role = "kube-lens.error" })
+	return ui.text({ ui.span(text, "error") }, { key = "error", role = "tern-kube.error" })
 end
 
 local function loadingNode(load: Load): Node
@@ -283,7 +283,7 @@ local function markSelected(grid: Node, key: string?)
 	for _, child in children do
 		local p = child.p
 		if p and p.key == key then
-			p.class = "kl-r kl-open kl-sel"
+			p.class = "tk-r tk-open tk-sel"
 			return
 		end
 	end
@@ -335,7 +335,7 @@ local function pagedGrid(
 			out,
 			ui.muted(string.format("↑ %d above (k, pageup, gg)", first - 1), {
 				key = "above",
-				role = "kube-lens.overflow",
+				role = "tern-kube.overflow",
 				actions = { click = "page=up" },
 			})
 		)
@@ -346,7 +346,7 @@ local function pagedGrid(
 			out,
 			ui.muted(string.format("↓ %d below (j, pagedown, G; / filters)", #rows - last), {
 				key = "overflow",
-				role = "kube-lens.overflow",
+				role = "tern-kube.overflow",
 				actions = { click = "page=down" },
 			})
 		)
@@ -513,7 +513,7 @@ local function actionChips(s: State, ref: Ref): Node
 	if ref.kind == "Pod" then
 		table.insert(chips, chip("Copy exec command", "copy=exec", { key = "a-exec", tone = "warning" }))
 	end
-	local children: { Node } = { ui.row(chips, { key = "chips", wrap = true, role = "kube-lens.chips" }) }
+	local children: { Node } = { ui.row(chips, { key = "chips", wrap = true, role = "tern-kube.chips" }) }
 	if ref.kind == "Pod" then
 		table.insert(
 			children,
@@ -590,7 +590,7 @@ local function noticeNodes(s: State, sensitive: boolean, masked: boolean): { Nod
 			out,
 			ui.text(
 				{ ui.span(notice, "warning") },
-				{ key = if i == 1 then "sensitive" else "sensitive" .. i, role = "kube-lens.sensitive" }
+				{ key = if i == 1 then "sensitive" else "sensitive" .. i, role = "tern-kube.sensitive" }
 			)
 		)
 	end
@@ -613,7 +613,7 @@ local function detailBody(s: State, route: Route, load: Load?): { Node }
 	(meta.p :: any).key = "meta"
 	table.insert(out, meta)
 	if #owners > 0 then
-		table.insert(out, ui.row(owners, { key = "owners", wrap = true, role = "kube-lens.chips" }))
+		table.insert(out, ui.row(owners, { key = "owners", wrap = true, role = "tern-kube.chips" }))
 	end
 	table.insert(out, actionChips(s, ref))
 	local controller = GitopsView.controllerLine(gitopsView(s, route, obj), obj)
@@ -754,7 +754,7 @@ local function logsBody(s: State, route: Route, load: Load?): { Node }
 		})
 	)
 	table.insert(chips, chip("Follow in split (l)", "quick=logs-follow", { key = "follow", tone = "accent" }))
-	table.insert(out, ui.row(chips, { key = "chips", wrap = true, role = "kube-lens.chips" }))
+	table.insert(out, ui.row(chips, { key = "chips", wrap = true, role = "tern-kube.chips" }))
 	local pending = pendingNode(s, load)
 	if pending or load == nil then
 		table.insert(out, pending :: Node)
@@ -828,7 +828,7 @@ local function body(s: State): Node
 	else
 		children = namesBody(s, route, load)
 	end
-	return ui.col(children, { key = "body", role = "kube-lens.explore-" .. route.kind })
+	return ui.col(children, { key = "body", role = "tern-kube.explore-" .. route.kind })
 end
 
 -- Dock and help --------------------------------------------------------------
@@ -864,8 +864,8 @@ local function dock(s: State): Node
 		spans = { ui.span(hint or "? help", "muted") }
 	end
 	return ui.col(
-		{ ui.text(spans, { key = "status", role = "kube-lens.status" }) },
-		{ role = "kube-lens.explore-dock" }
+		{ ui.text(spans, { key = "status", role = "tern-kube.status" }) },
+		{ role = "tern-kube.explore-dock" }
 	)
 end
 
@@ -909,10 +909,13 @@ local function help(): Node
 	end
 	local kv = ui.kv(items)
 	return ui.col({
-		ui.text({ ui.span("Kube Explore keys", "strong"), ui.span("   esc or ? closes", "muted") }, { key = "title" }),
+		ui.text(
+			{ ui.span("Tern Kube Explore keys", "strong"), ui.span("   esc or ? closes", "muted") },
+			{ key = "title" }
+		),
 		kv,
 		ui.muted("Context changes only through the chooser; every query pins --context."),
-	}, { key = "help", role = "kube-lens.explore-help" })
+	}, { key = "help", role = "tern-kube.explore-help" })
 end
 
 -- View -----------------------------------------------------------------------
@@ -944,16 +947,16 @@ function M.view(s: State, _cols: number, _rows: number): View
 	end
 	table.insert(children, body(s))
 	return {
-		main = ui.col(children, { role = "kube-lens.explore" }),
+		main = ui.col(children, { role = "tern-kube.explore" }),
 		dock = dock(s),
-		layer = if s.help then ui.col({ help() }, { role = "kube-lens.explore-layer" }) else nil,
+		layer = if s.help then ui.col({ help() }, { role = "tern-kube.explore-layer" }) else nil,
 	}
 end
 
 function M.title(s: State): string
 	local route = s.stack[#s.stack]
 	local ctx = s.target.context or "?"
-	return "Kube Explore · " .. crumbLabel(s, route) .. " · " .. ctx
+	return "Tern Kube Explore · " .. crumbLabel(s, route) .. " · " .. ctx
 end
 
 return M

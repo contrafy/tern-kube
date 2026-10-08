@@ -1,12 +1,12 @@
-# Cluster drift report for GitHub Actions, using kube-lens-drift
-# (github.com/contrafy/tern-kube-lens, bin/kube-lens-drift).
+# Cluster drift report for GitHub Actions, using tern-kube-drift
+# (github.com/contrafy/tern-kube, bin/tern-kube-drift).
 #
 # Setup (details: docs/gitops.md, "CI"):
-#   1. Copy bin/kube-lens-drift to .github/kube-lens-drift in your repository.
+#   1. Copy bin/tern-kube-drift to .github/tern-kube-drift in your repository.
 #   2. Apply examples/ci/rbac-drift-readonly.yaml (adjusted) to the cluster and
 #      store a kubeconfig for its ServiceAccount in the repository (or
-#      environment) secret KUBE_LENS_DRIFT_KUBECONFIG.
-#   3. Copy this file to .github/workflows/kube-lens-drift.yml and set
+#      environment) secret TKUBE_DRIFT_KUBECONFIG.
+#   3. Copy this file to .github/workflows/tern-kube-drift.yml and set
 #      DRIFT_SOURCES below.
 #
 # Pull requests get one sticky comment (updated on every push); every run
@@ -14,7 +14,7 @@
 # the cluster has drifted; pull request runs fail only on errors.
 # The kubeconfig is written to a 0600 file under $RUNNER_TEMP and never
 # printed. Fork pull requests get no secrets and skip the check.
-name: kube-lens drift
+name: tern-kube drift
 
 on:
   pull_request:
@@ -27,11 +27,11 @@ permissions:
   pull-requests: write
 
 concurrency:
-  group: kube-lens-drift-${{ github.event.pull_request.number || github.ref }}
+  group: tern-kube-drift-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 env:
-  # One kube-lens-drift source per line (-f PATH [-R] | -k DIR |
+  # One tern-kube-drift source per line (-f PATH [-R] | -k DIR |
   # --helm CHART --release R [-f VALUES]...), plus optional -n NS.
   # Words are split on spaces: no quoting, no spaces in paths.
   DRIFT_SOURCES: |
@@ -41,7 +41,7 @@ env:
   MAX_DIFF_LINES: "200"
   # GitHub rejects comments over 65536 characters.
   MAX_COMMENT_BYTES: "60000"
-  KUBE_LENS_DRIFT: .github/kube-lens-drift
+  TKUBE_DRIFT: .github/tern-kube-drift
   KUBECTL_VERSION: v1.34.1
   KUBECTL_SHA256: 7721f265e18709862655affba5343e85e1980639395d5754473dafaadcaa69e3
 
@@ -66,11 +66,11 @@ jobs:
       - name: Write kubeconfig
         id: kubeconfig
         env:
-          KUBECONFIG_DATA: ${{ secrets.KUBE_LENS_DRIFT_KUBECONFIG }}
+          KUBECONFIG_DATA: ${{ secrets.TKUBE_DRIFT_KUBECONFIG }}
         run: |
           set -eu
           if [ -z "$KUBECONFIG_DATA" ]; then
-            echo "::notice::KUBE_LENS_DRIFT_KUBECONFIG is not available (fork pull request or unset secret); skipping drift check"
+            echo "::notice::TKUBE_DRIFT_KUBECONFIG is not available (fork pull request or unset secret); skipping drift check"
             echo "available=false" >>"$GITHUB_OUTPUT"
             exit 0
           fi
@@ -88,19 +88,19 @@ jobs:
           report=$RUNNER_TEMP/drift.md
           count=$(printf '%s\n' "$DRIFT_SOURCES" | grep -c '[^[:space:]]')
           budget=$(( (MAX_COMMENT_BYTES - 200) / (count > 0 ? count : 1) ))
-          printf '<!-- kube-lens-drift -->\n## Cluster drift\n\n' >"$report"
+          printf '<!-- tern-kube-drift -->\n## Cluster drift\n\n' >"$report"
           worst=0
           while IFS= read -r line; do
             case $line in *[![:space:]]*) ;; *) continue ;; esac
             set -f
             set -- $line
             set +f
-            sh "$KUBE_LENS_DRIFT" "$@" ${DRIFT_CONTEXT:+--context "$DRIFT_CONTEXT"} --kubeconfig "$KUBECONFIG" \
+            sh "$TKUBE_DRIFT" "$@" ${DRIFT_CONTEXT:+--context "$DRIFT_CONTEXT"} --kubeconfig "$KUBECONFIG" \
               --format markdown --max-diff-lines "$MAX_DIFF_LINES" --max-bytes "$budget" >"$RUNNER_TEMP/one.md"
             rc=$?
             if [ "$rc" -gt 1 ]; then
-              echo "::error::kube-lens-drift failed for: $line"
-              printf '### Drift: %s\n\nkube-lens-drift failed (exit %s); see the workflow log.\n' "$line" "$rc" >"$RUNNER_TEMP/one.md"
+              echo "::error::tern-kube-drift failed for: $line"
+              printf '### Drift: %s\n\ntern-kube-drift failed (exit %s); see the workflow log.\n' "$line" "$rc" >"$RUNNER_TEMP/one.md"
             fi
             cat "$RUNNER_TEMP/one.md" >>"$report"
             printf '\n' >>"$report"
@@ -120,7 +120,7 @@ jobs:
         run: |
           set -eu
           id=$(gh api --paginate "repos/$GITHUB_REPOSITORY/issues/$PR/comments" \
-            --jq '.[] | select(.user.login == "github-actions[bot]" and (.body | startswith("<!-- kube-lens-drift -->"))) | .id' | tail -n 1)
+            --jq '.[] | select(.user.login == "github-actions[bot]" and (.body | startswith("<!-- tern-kube-drift -->"))) | .id' | tail -n 1)
           if [ -n "$id" ]; then
             gh api -X PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$id" -F "body=@$RUNNER_TEMP/drift.md" >/dev/null
           else
@@ -139,7 +139,7 @@ jobs:
             echo "Drift detected; see the job summary."
             if [ "$EVENT" != pull_request ]; then exit 1; fi
             ;;
-          *) echo "kube-lens-drift failed; see the Report drift step."; exit 1 ;;
+          *) echo "tern-kube-drift failed; see the Report drift step."; exit 1 ;;
           esac
 
       - name: Remove kubeconfig

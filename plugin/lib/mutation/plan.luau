@@ -150,7 +150,7 @@ local function flagErrors(inv: Invocation): { Diagnostic }
 			err(
 				"unknown-flag",
 				string.format(
-					"unknown flag%s %s: kube-lens cannot tell what the command would do",
+					"unknown flag%s %s: tern-kube cannot tell what the command would do",
 					if #inv.unknownFlags > 1 then "s" else "",
 					table.concat(inv.unknownFlags, ", ")
 				)

@@ -113,7 +113,7 @@ local function logChanges(previous: { Diagnostic }?, diags: { Diagnostic }, path
 		return
 	end
 	for _, d in diags do
-		local line = string.format("kube-lens config %s: %s", path or "(no path)", d.message)
+		local line = string.format("tern-kube config %s: %s", path or "(no path)", d.message)
 		if d.level == "error" or d.level == "warning" then
 			tern.log.warn(line)
 		else
@@ -152,10 +152,10 @@ function M.snapshot(): Snapshot
 	return snapshot
 end
 
--- The kubectl program: kv "kubectl" > config `kubectl` > KUBE_LENS_KUBECTL > "kubectl".
+-- The kubectl program: kv "kubectl" > config `kubectl` > TKUBE_KUBECTL > "kubectl".
 -- Reads tern.kv, so not for lens callbacks.
 function M.kubectl(): string
-	return Config.kubectlProgram(snapshot.config, tern.kv.get("kubectl"), env("KUBE_LENS_KUBECTL"))
+	return Config.kubectlProgram(snapshot.config, tern.kv.get("kubectl"), env("TKUBE_KUBECTL"))
 end
 
 -- Daemon environment Explore needs to resolve the kubeconfig path.

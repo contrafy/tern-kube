@@ -13,7 +13,7 @@ local function ref(kind: string, name: string, namespace: string?, group: string
 	return { kind = kind, name = name, namespace = namespace, group = group, source = "snapshot" }
 end
 
-local PINNED = { context = "kind-kube-lens-dev", kubeconfig = "/tmp/kube config" }
+local PINNED = { context = "kind-tern-kube-dev", kubeconfig = "/tmp/kube config" }
 local UNPINNED = {}
 
 local function ids(actions: { Quick.Action }): { string }
@@ -85,7 +85,7 @@ describe("quick actions", function()
 				container = "app",
 			})
 			expect(type(url)).toBe("string")
-			expect(string.sub(url :: string, 1, 22)).toBe("kube-lens://act/shell?")
+			expect(string.sub(url :: string, 1, 22)).toBe("tern-kube://act/shell?")
 			local req = Quick.decode(url :: string)
 			assert(req, "decodes")
 			expect(req.action).toBe("shell")
@@ -121,33 +121,33 @@ describe("quick actions", function()
 		end)
 
 		it("rejects unknown actions and non-act links", function()
-			local _, err = Quick.decode("kube-lens://act/rm?kind=Pod&name=p")
+			local _, err = Quick.decode("tern-kube://act/rm?kind=Pod&name=p")
 			expect(err).toContain("unknown action")
-			expect((Quick.decode("kube-lens://explore?kind=Pod&name=p"))).toBeNil()
-			expect((Quick.decode("kube-lens://act/shell"))).toBeNil()
-			expect((Quick.decode("kube-lens://act/shell/x?kind=Pod&name=p"))).toBeNil()
+			expect((Quick.decode("tern-kube://explore?kind=Pod&name=p"))).toBeNil()
+			expect((Quick.decode("tern-kube://act/shell"))).toBeNil()
+			expect((Quick.decode("tern-kube://act/shell/x?kind=Pod&name=p"))).toBeNil()
 			expect((Quick.encode("rm", PINNED, ref("Pod", "p", "ns"), {}))).toBeNil()
 		end)
 
 		it("rejects parameters the action does not take", function()
-			local _, err = Quick.decode("kube-lens://act/shell?kind=Pod&name=p&cmd=rm")
+			local _, err = Quick.decode("tern-kube://act/shell?kind=Pod&name=p&cmd=rm")
 			expect(err).toContain("does not take cmd")
-			_, err = Quick.decode("kube-lens://act/shell?kind=Pod&name=p&line=ls")
+			_, err = Quick.decode("tern-kube://act/shell?kind=Pod&name=p&line=ls")
 			expect(err).toContain("does not take line")
-			_, err = Quick.decode("kube-lens://act/logs-follow?kind=Pod&name=p&port=80")
+			_, err = Quick.decode("tern-kube://act/logs-follow?kind=Pod&name=p&port=80")
 			expect(err).toContain("does not take port")
-			_, err = Quick.decode("kube-lens://act/shell?kind=Pod&name=p&image=busybox")
+			_, err = Quick.decode("tern-kube://act/shell?kind=Pod&name=p&image=busybox")
 			expect(err).toContain("does not take image")
 		end)
 
 		it("rejects duplicates, empty values, fragments and raw characters", function()
-			expect((Quick.decode("kube-lens://act/shell?kind=Pod&name=p&name=q"))).toBeNil()
-			expect((Quick.decode("kube-lens://act/shell?kind=Pod&name="))).toBeNil()
-			expect((Quick.decode("kube-lens://act/shell?kind=Pod&name=p#x"))).toBeNil()
-			expect((Quick.decode("kube-lens://act/shell?kind=Pod&name=p q"))).toBeNil()
-			expect((Quick.decode("kube-lens://act/shell?kind=Pod&name=p%2"))).toBeNil()
-			expect((Quick.decode("kube-lens://act/shell?kind=Pod&name=p&x"))).toBeNil()
-			expect((Quick.decode("kube-lens://act/shell?kind=Pod&name=p+q"))).toBeNil()
+			expect((Quick.decode("tern-kube://act/shell?kind=Pod&name=p&name=q"))).toBeNil()
+			expect((Quick.decode("tern-kube://act/shell?kind=Pod&name="))).toBeNil()
+			expect((Quick.decode("tern-kube://act/shell?kind=Pod&name=p#x"))).toBeNil()
+			expect((Quick.decode("tern-kube://act/shell?kind=Pod&name=p q"))).toBeNil()
+			expect((Quick.decode("tern-kube://act/shell?kind=Pod&name=p%2"))).toBeNil()
+			expect((Quick.decode("tern-kube://act/shell?kind=Pod&name=p&x"))).toBeNil()
+			expect((Quick.decode("tern-kube://act/shell?kind=Pod&name=p+q"))).toBeNil()
 		end)
 
 		it("rejects shell metacharacters in names, namespaces, containers and pods", function()
@@ -155,41 +155,41 @@ describe("quick actions", function()
 				local enc = string.gsub(bad, "[^%w]", function(c: string): string
 					return string.format("%%%02X", string.byte(c))
 				end)
-				expect((Quick.decode("kube-lens://act/shell?kind=Pod&name=" .. enc))).toBeNil()
-				expect((Quick.decode("kube-lens://act/shell?kind=Pod&name=p&namespace=" .. enc))).toBeNil()
-				expect((Quick.decode("kube-lens://act/shell?kind=Pod&name=p&container=" .. enc))).toBeNil()
-				expect((Quick.decode("kube-lens://act/shell?kind=Deployment&name=d&pod=" .. enc))).toBeNil()
+				expect((Quick.decode("tern-kube://act/shell?kind=Pod&name=" .. enc))).toBeNil()
+				expect((Quick.decode("tern-kube://act/shell?kind=Pod&name=p&namespace=" .. enc))).toBeNil()
+				expect((Quick.decode("tern-kube://act/shell?kind=Pod&name=p&container=" .. enc))).toBeNil()
+				expect((Quick.decode("tern-kube://act/shell?kind=Deployment&name=d&pod=" .. enc))).toBeNil()
 				expect((Quick.encode("shell", PINNED, ref("Pod", bad, "ns"), {}))).toBeNil()
 			end
 		end)
 
 		it("rejects control characters and flag-like values in context and kubeconfig", function()
-			expect((Quick.decode("kube-lens://act/shell?kind=Pod&name=p&context=a%0Ab"))).toBeNil()
-			expect((Quick.decode("kube-lens://act/shell?kind=Pod&name=p&context=-x"))).toBeNil()
-			expect((Quick.decode("kube-lens://act/shell?kind=Pod&name=p&kubeconfig=--exec"))).toBeNil()
-			expect((Quick.decode("kube-lens://act/shell?kind=Pod&name=p&kubeconfig=~%2Fkube"))).toBeNil()
-			expect((Quick.decode("kube-lens://act/shell?kind=Pod&name=p&context=%1B%5D0%3Bx"))).toBeNil()
+			expect((Quick.decode("tern-kube://act/shell?kind=Pod&name=p&context=a%0Ab"))).toBeNil()
+			expect((Quick.decode("tern-kube://act/shell?kind=Pod&name=p&context=-x"))).toBeNil()
+			expect((Quick.decode("tern-kube://act/shell?kind=Pod&name=p&kubeconfig=--exec"))).toBeNil()
+			expect((Quick.decode("tern-kube://act/shell?kind=Pod&name=p&kubeconfig=~%2Fkube"))).toBeNil()
+			expect((Quick.decode("tern-kube://act/shell?kind=Pod&name=p&context=%1B%5D0%3Bx"))).toBeNil()
 		end)
 
 		it("enforces per-action kinds and required fields", function()
-			expect((Quick.decode("kube-lens://act/shell?kind=Service&name=web"))).toBeNil()
-			expect((Quick.decode("kube-lens://act/shell?kind=Deployment&name=web"))).toBeNil()
-			expect((Quick.decode("kube-lens://act/shell?kind=Pod&name=p&pod=q"))).toBeNil()
-			expect((Quick.decode("kube-lens://act/shell?name=p"))).toBeNil()
-			expect((Quick.decode("kube-lens://act/shell?kind=pod&name=p"))).toBeNil()
-			expect((Quick.decode("kube-lens://act/logs-follow?kind=Pod&name=p&selector=app%3Dx"))).toBeNil()
-			expect((Quick.decode("kube-lens://act/port-forward?kind=Job&name=j&port=80"))).toBeNil()
-			expect((Quick.decode("kube-lens://act/port-forward?kind=Pod&name=p&local=80"))).toBeNil()
-			expect((Quick.decode("kube-lens://act/debug-node?kind=Node&name=n&namespace=x"))).toBeNil()
+			expect((Quick.decode("tern-kube://act/shell?kind=Service&name=web"))).toBeNil()
+			expect((Quick.decode("tern-kube://act/shell?kind=Deployment&name=web"))).toBeNil()
+			expect((Quick.decode("tern-kube://act/shell?kind=Pod&name=p&pod=q"))).toBeNil()
+			expect((Quick.decode("tern-kube://act/shell?name=p"))).toBeNil()
+			expect((Quick.decode("tern-kube://act/shell?kind=pod&name=p"))).toBeNil()
+			expect((Quick.decode("tern-kube://act/logs-follow?kind=Pod&name=p&selector=app%3Dx"))).toBeNil()
+			expect((Quick.decode("tern-kube://act/port-forward?kind=Job&name=j&port=80"))).toBeNil()
+			expect((Quick.decode("tern-kube://act/port-forward?kind=Pod&name=p&local=80"))).toBeNil()
+			expect((Quick.decode("tern-kube://act/debug-node?kind=Node&name=n&namespace=x"))).toBeNil()
 			-- A chip carries no suffix (the approve block names the job), but
 			-- no command line can be built without one.
-			expect(Quick.decode("kube-lens://act/cronjob-run?kind=CronJob&name=c&namespace=b") ~= nil).toBe(true)
+			expect(Quick.decode("tern-kube://act/cronjob-run?kind=CronJob&name=c&namespace=b") ~= nil).toBe(true)
 			expect((Quick.command("cronjob-run", {}, ref("CronJob", "c", "b", "batch"), {}))).toBeNil()
-			expect(Quick.decode("kube-lens://act/cronjob-run?kind=CronJob&name=c&namespace=b&suffix=x1") ~= nil).toBe(
+			expect(Quick.decode("tern-kube://act/cronjob-run?kind=CronJob&name=c&namespace=b&suffix=x1") ~= nil).toBe(
 				true
 			)
 			local long = string.rep("a", 50)
-			expect((Quick.decode("kube-lens://act/cronjob-run?kind=CronJob&name=" .. long .. "&suffix=abcdef"))).toBeNil()
+			expect((Quick.decode("tern-kube://act/cronjob-run?kind=CronJob&name=" .. long .. "&suffix=abcdef"))).toBeNil()
 		end)
 	end)
 
@@ -204,7 +204,7 @@ describe("quick actions", function()
 				"--kubeconfig",
 				"/tmp/kube config",
 				"--context",
-				"kind-kube-lens-dev",
+				"kind-tern-kube-dev",
 				"-n",
 				"apps",
 				"web-0",
@@ -215,10 +215,10 @@ describe("quick actions", function()
 				"-c",
 				"command -v bash >/dev/null 2>&1 && exec bash || exec sh",
 			})
-			expect(l.title).toBe("kube-lens shell apps/web-0:app @ kind-kube-lens-dev")
+			expect(l.title).toBe("tern-kube shell apps/web-0:app @ kind-tern-kube-dev")
 			expect(unquoteLine(l.line)).toBe(
-				"printf '\\033]0;%s\\007' 'kube-lens shell apps/web-0:app @ kind-kube-lens-dev'; "
-					.. "exec kubectl exec -it --kubeconfig '/tmp/kube config' --context kind-kube-lens-dev -n apps web-0 -c app"
+				"printf '\\033]0;%s\\007' 'tern-kube shell apps/web-0:app @ kind-tern-kube-dev'; "
+					.. "exec kubectl exec -it --kubeconfig '/tmp/kube config' --context kind-tern-kube-dev -n apps web-0 -c app"
 					.. " -- sh -c 'command -v bash >/dev/null 2>&1 && exec bash || exec sh'"
 			)
 		end)
@@ -234,7 +234,7 @@ describe("quick actions", function()
 			assert(l, "builds")
 			local script = unquoteLine(l.line)
 			expect(script).toContain(
-				"; printf 'kube-lens: context %s\\n' \"$(kubectl --kubeconfig /k/c config current-context)\"; exec kubectl"
+				"; printf 'tern-kube: context %s\\n' \"$(kubectl --kubeconfig /k/c config current-context)\"; exec kubectl"
 			)
 			expect(l.title).toContain("@ current context")
 			local pinned = Quick.command("logs-follow", PINNED, ref("Pod", "p", "ns"), {})
@@ -250,7 +250,7 @@ describe("quick actions", function()
 			local script = unquoteLine(l.line)
 			expect(script).toContain("'/opt/k bin/kubectl' exec -it --kubeconfig '/tmp/a b/c'\\''d'")
 			expect(script).toContain("--context 'it'\\''s $(id) `x`; y'")
-			expect(script).toContain("'kube-lens shell ns/p @ it'\\''s $(id) `x`; y'")
+			expect(script).toContain("'tern-kube shell ns/p @ it'\\''s $(id) `x`; y'")
 			-- The whole script is one single-quoted word: every quote inside is an
 			-- escaped `'\''`, so nothing expands in the user's login shell.
 			local body = string.match(l.line, "^sh %-c '(.*)'$")
@@ -262,7 +262,7 @@ describe("quick actions", function()
 			local all = Quick.command("logs-follow", PINNED, ref("Pod", "p", "ns"), {})
 			assert(all, "builds")
 			expect(table.concat(all.argv, " ")).toBe(
-				"kubectl logs -f --tail=200 --kubeconfig /tmp/kube config --context kind-kube-lens-dev -n ns p --all-containers --prefix"
+				"kubectl logs -f --tail=200 --kubeconfig /tmp/kube config --context kind-tern-kube-dev -n ns p --all-containers --prefix"
 			)
 			local one = Quick.command("logs-follow", PINNED, ref("Pod", "p", "ns"), { container = "app" })
 			assert(one, "builds")
@@ -301,11 +301,11 @@ describe("quick actions", function()
 			assert(l, "builds")
 			local script = unquoteLine(l.line)
 			expect(script).toContain(
-				"set -- $(kubectl get --kubeconfig '/tmp/kube config' --context kind-kube-lens-dev -n apps deployment/web -o "
+				"set -- $(kubectl get --kubeconfig '/tmp/kube config' --context kind-tern-kube-dev -n apps deployment/web -o "
 					.. "'jsonpath={.spec.template.spec.containers[*].ports[*].containerPort}')"
 			)
 			expect(script).toContain(
-				"p=${1:-}; case $p in ''|*[!0-9]*) printf 'kube-lens: %s declares no port\\n' deployment/web >&2; exit 1;; esac"
+				"p=${1:-}; case $p in ''|*[!0-9]*) printf 'tern-kube: %s declares no port\\n' deployment/web >&2; exit 1;; esac"
 			)
 			expect(script).toContain('if [ "$p" -gt 1024 ]; then l=$p; else l=$((8000 + p)); fi')
 			expect(script).toContain('deployment/web "$l:$p"')
@@ -321,7 +321,7 @@ describe("quick actions", function()
 			local dn = Quick.command("debug-node", PINNED, ref("Node", "kind-control-plane"), { image = "alpine:3.20" })
 			assert(dn, "builds")
 			expect(table.concat(dn.argv, " ", 2)).toBe(
-				"debug -it --kubeconfig /tmp/kube config --context kind-kube-lens-dev node/kind-control-plane --image=alpine:3.20"
+				"debug -it --kubeconfig /tmp/kube config --context kind-tern-kube-dev node/kind-control-plane --image=alpine:3.20"
 			)
 			local cj =
 				Quick.command("cronjob-run", UNPINNED, ref("CronJob", "nightly", "b", "batch"), { suffix = "k3x9" })
@@ -364,14 +364,14 @@ describe("quick actions", function()
 
 	describe("chipsFor", function()
 		it("gives lens pods three chips whose links decode", function()
-			local chips = Quick.chipsFor("Pod", ref("Pod", "web-0", "apps"), { context = "kind-kube-lens-dev" })
+			local chips = Quick.chipsFor("Pod", ref("Pod", "web-0", "apps"), { context = "kind-tern-kube-dev" })
 			local labels: { string } = {}
 			for i, c in chips do
 				labels[i] = c.label
 				expect(Quick.decode(c.url) ~= nil).toBe(true)
 			end
 			expect(labels).toEqual({ "Shell", "Logs", "Port-forward" })
-			expect(chips[1].title).toContain("kubectl exec -it --context kind-kube-lens-dev -n apps web-0")
+			expect(chips[1].title).toContain("kubectl exec -it --context kind-tern-kube-dev -n apps web-0")
 		end)
 
 		it("forwards a service's first declared port", function()

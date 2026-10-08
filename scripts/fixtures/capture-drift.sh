@@ -1,6 +1,6 @@
 #!/bin/sh
 # Captures real drift and GitOps-controller fixtures for plugin/lib/gitops
-# specs and the kube-lens-drift CLI into tests/fixtures/drift/:
+# specs and the tern-kube-drift CLI into tests/fixtures/drift/:
 #
 #   <scenario>/<key>.txt|.stderr|.exit  raw `kubectl diff` (exit always kept)
 #   live/<key>.json                     live objects for unmanaged detection
@@ -27,7 +27,7 @@ CRDS=$MANIFESTS/gitops-crds
 OUT=$ROOT/tests/fixtures/drift
 MANIFEST=$OUT/MANIFEST.tsv
 KUBECTL=${KUBECTL:-kubectl}
-CONTEXT=kind-kube-lens-dev
+CONTEXT=kind-tern-kube-dev
 DRIFT_NS=tern-test-drift
 GITOPS_NS=tern-test-gitops
 
@@ -187,8 +187,8 @@ kn "$GITOPS_NS" apply -f gitops/controllers.yaml -f gitops/workloads/
 for app in guestbook guestbook-drifted charted; do
 	kn "$GITOPS_NS" patch applications.argoproj.io "$app" --type=merge --patch-file "gitops/status/application-$app.json"
 done
-kn "$GITOPS_NS" patch gitrepositories.source.toolkit.fluxcd.io kube-lens --subresource=status --type=merge \
-	--patch-file gitops/status/gitrepository-kube-lens.json
+kn "$GITOPS_NS" patch gitrepositories.source.toolkit.fluxcd.io tern-kube --subresource=status --type=merge \
+	--patch-file gitops/status/gitrepository-tern-kube.json
 for ks in apps drift; do
 	kn "$GITOPS_NS" patch kustomizations.kustomize.toolkit.fluxcd.io "$ks" --subresource=status --type=merge \
 		--patch-file "gitops/status/kustomization-$ks.json"

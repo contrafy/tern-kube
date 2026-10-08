@@ -1,5 +1,5 @@
 --!strict
--- Plain-table equivalents of the `tern.ui` builders used by kube-lens. Tern
+-- Plain-table equivalents of the `tern.ui` builders used by tern-kube. Tern
 -- 0.6.2 accepts `{k, p, c}` tables as nodes (`tern.ui.node(k, p, c)` encodes
 -- to the same JSON), and building them in Luau is ~50x cheaper than calling
 -- the builders, which matters for 1000-row views.

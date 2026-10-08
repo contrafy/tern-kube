@@ -1,0 +1,675 @@
+#!/bin/sh
+# tern-kube-guard: approval gate for mutating kubectl commands in Tern.
+#
+#   tern-kube-guard kubectl [ARGS...]   run kubectl, asking Tern for approval
+#                                       first when the verb mutates
+#   tern-kube-guard status              print what the guard would do here
+#
+# Normally reached through the `kubectl` function that shell/tern-kube.zsh,
+# shell/tern-kube.bash or shell/tern-kube.fish define. The request/response
+# protocol is specified in shell/PROTOCOL.md; keep both in sync.
+
+# BEGIN generated flags (scripts/guard/gen-flags from plugin/lib/kubectl/flags.luau, kubectl v1.34.1; do not edit)
+tkg_g_lb='|disable-compression|help|insecure-skip-tls-verify|match-server-version|warnings-as-errors|'
+tkg_g_lv='|as|as-group|as-uid|cache-dir|certificate-authority|client-certificate|client-key|cluster|context|kubeconfig|kuberc|log-flush-frequency|namespace|password|profile|profile-output|request-timeout|server|tls-server-name|token|user|username|v|vmodule|'
+tkg_g_sb='|h|'
+tkg_g_sv='|n|s|v|'
+tkg_opt='|cascade|dry-run|validate|'
+tkg_apply_lb='|all|allow-missing-template-keys|force|force-conflicts|openapi-patch|overwrite|prune|recursive|server-side|show-managed-fields|wait|'
+tkg_apply_lv='|cascade|dry-run|field-manager|filename|grace-period|kustomize|output|prune-allowlist|selector|subresource|template|timeout|validate|'
+tkg_apply_sb='|R|'
+tkg_apply_sv='|f|k|l|o|'
+tkg_delete_lb='|all|all-namespaces|force|ignore-not-found|interactive|now|recursive|wait|'
+tkg_delete_lv='|cascade|dry-run|field-selector|filename|grace-period|kustomize|output|raw|selector|timeout|'
+tkg_delete_sb='|A|R|i|'
+tkg_delete_sv='|f|k|l|o|'
+tkg_scale_lb='|all|allow-missing-template-keys|recursive|show-managed-fields|'
+tkg_scale_lv='|current-replicas|dry-run|filename|kustomize|output|replicas|resource-version|selector|template|timeout|'
+tkg_scale_sb='|R|'
+tkg_scale_sv='|f|k|l|o|'
+tkg_restart_lb='|allow-missing-template-keys|recursive|show-managed-fields|'
+tkg_restart_lv='|field-manager|filename|kustomize|output|selector|template|'
+tkg_restart_sb='|R|'
+tkg_restart_sv='|f|k|l|o|'
+# END generated flags
+
+tkg_err() {
+	printf 'tern-kube guard: %s\n' "$*" >&2
+}
+
+tkg_cleanup() {
+	[ -n "${tkg_work-}" ] && rm -rf "$tkg_work"
+	[ -n "${tkg_req-}" ] && rm -f "$tkg_req"
+	[ -n "${tkg_resp-}" ] && rm -f "$tkg_resp"
+	return 0
+}
+
+# Every refusal ends here: nothing has been executed, nothing will be.
+tkg_refuse() {
+	tkg_err "$@"
+	tkg_err "nothing was executed. To run it anyway, without preview or confirmation, use: command kubectl ..."
+	tkg_cleanup
+	exit 1
+}
+
+tkg_in() {
+	case $1 in *"|$2|"*) return 0 ;; esac
+	return 1
+}
+
+tkg_long_arity() {
+	if tkg_in "$tkg_g_lb" "$1" || tkg_in "$tkg_v_lb" "$1"; then
+		tkg_a=bool
+	elif tkg_in "$tkg_g_lv" "$1"; then
+		tkg_a=value
+	elif tkg_in "$tkg_v_lv" "$1"; then
+		if tkg_in "$tkg_opt" "$1"; then tkg_a=optional; else tkg_a=value; fi
+	else
+		tkg_a=unknown
+	fi
+}
+
+tkg_short_arity() {
+	if tkg_in "$tkg_g_sb" "$1" || tkg_in "$tkg_v_sb" "$1"; then
+		tkg_a=bool
+	elif tkg_in "$tkg_g_sv" "$1" || tkg_in "$tkg_v_sv" "$1"; then
+		tkg_a=value
+	else
+		tkg_a=unknown
+	fi
+	case $1 in
+	f) tkg_n=filename ;;
+	k) tkg_n=kustomize ;;
+	R) tkg_n=recursive ;;
+	n) tkg_n=namespace ;;
+	*) tkg_n=$1 ;;
+	esac
+}
+
+# Tokenises args the way pflag does (flags anywhere, shorthand clusters, `--`
+# ends flags) against the global set plus the current verb set, calling
+# tkg_on_flag NAME VALUE, tkg_on_unknown RAW and tkg_on_pos WORD. A handler
+# stops the walk by setting tkg_stop=1.
+tkg_walk() {
+	tkg_stop=0
+	while [ $# -gt 0 ] && [ "$tkg_stop" = 0 ]; do
+		tkg_t=$1
+		shift
+		case $tkg_t in
+		--)
+			while [ $# -gt 0 ] && [ "$tkg_stop" = 0 ]; do
+				tkg_on_pos "$1"
+				shift
+			done
+			;;
+		--*=*)
+			tkg_b=${tkg_t#--}
+			tkg_long_arity "${tkg_b%%=*}"
+			if [ "$tkg_a" = unknown ]; then
+				tkg_on_unknown "$tkg_t"
+			else
+				tkg_on_flag "${tkg_b%%=*}" "${tkg_b#*=}"
+			fi
+			;;
+		--?*)
+			tkg_b=${tkg_t#--}
+			tkg_long_arity "$tkg_b"
+			case $tkg_a in
+			bool) tkg_on_flag "$tkg_b" true ;;
+			optional) tkg_on_flag "$tkg_b" "" ;;
+			value)
+				if [ $# -gt 0 ]; then
+					tkg_on_flag "$tkg_b" "$1"
+					shift
+				else
+					tkg_on_unknown "$tkg_t"
+				fi
+				;;
+			*) tkg_on_unknown "$tkg_t" ;;
+			esac
+			;;
+		-?*)
+			tkg_r=${tkg_t#-}
+			while [ -n "$tkg_r" ]; do
+				tkg_c=${tkg_r%"${tkg_r#?}"}
+				tkg_r=${tkg_r#?}
+				tkg_short_arity "$tkg_c"
+				if [ "$tkg_a" = unknown ]; then
+					tkg_on_unknown "-$tkg_c"
+					break
+				fi
+				case $tkg_r in
+				=*)
+					tkg_on_flag "$tkg_n" "${tkg_r#=}"
+					break
+					;;
+				esac
+				if [ "$tkg_a" = bool ]; then
+					tkg_on_flag "$tkg_n" true
+				elif [ -n "$tkg_r" ]; then
+					tkg_on_flag "$tkg_n" "$tkg_r"
+					break
+				elif [ $# -gt 0 ]; then
+					tkg_on_flag "$tkg_n" "$1"
+					shift
+				else
+					tkg_on_unknown "-$tkg_c"
+				fi
+			done
+			;;
+		*) tkg_on_pos "$tkg_t" ;;
+		esac
+	done
+}
+
+# Phase 1: find the verb with the global flag set only (as cobra does while
+# it searches for the subcommand).
+tkg_on_flag() { :; }
+tkg_on_unknown() {
+	[ -z "$tkg_sub" ] && [ -z "$tkg_unknown" ] && tkg_unknown=$1
+	return 0
+}
+tkg_on_pos() {
+	if [ -z "$tkg_verb" ]; then
+		tkg_verb=$1
+		[ "$1" = rollout ] || tkg_stop=1
+	else
+		tkg_sub=$1
+		tkg_stop=1
+	fi
+}
+
+tkg_find_verb() {
+	tkg_verb=
+	tkg_sub=
+	tkg_unknown=
+	tkg_v_lb='|'
+	tkg_v_lv='|'
+	tkg_v_sb='|'
+	tkg_v_sv='|'
+	tkg_walk "$@"
+	case $tkg_verb in
+	apply | delete | scale) tkg_guarded=$tkg_verb ;;
+	rollout) [ "$tkg_sub" = restart ] && tkg_guarded=restart ;;
+	esac
+	[ -n "$tkg_guarded" ] || [ -z "$tkg_unknown" ] && return 0
+	# An unknown flag before the verb may have swallowed it: fail closed when
+	# a mutating verb could be the real one.
+	for tkg_t in "$@"; do
+		case $tkg_t in
+		apply | delete | scale | rollout)
+			tkg_err "cannot tell which kubectl command this is: unknown flag $tkg_unknown before the command name may take '$tkg_t' or another word as its value."
+			tkg_refuse "move the flag after the command name (kubectl $tkg_t ... $tkg_unknown) and retry."
+			;;
+		esac
+	done
+	return 0
+}
+
+# Phase 2: the guarded verb is known; collect what the request needs.
+tkg_add_raw() {
+	case $2 in
+	*'
+'*) tkg_refuse "a -$1 value contains a newline; the guard cannot fingerprint it." ;;
+	esac
+	tkg_raw="$tkg_raw$1 $2
+"
+}
+
+tkg_on_flag2() {
+	case $1 in
+	context) tkg_flag_ctx=$2 ;;
+	namespace) tkg_ns=$2 ;;
+	kubeconfig) tkg_flag_kc=$2 ;;
+	dry-run) tkg_dry=$2 ;;
+	recursive)
+		case $2 in
+		true | 1 | t | T | TRUE | True) tkg_rec=1 ;;
+		*) tkg_rec= ;;
+		esac
+		;;
+	filename)
+		case $2 in
+		*'"'*) tkg_refuse "-f values containing a double quote are not supported by the guard." ;;
+		esac
+		tkg_rest=$2,
+		while [ -n "$tkg_rest" ]; do
+			tkg_add_raw f "${tkg_rest%%,*}"
+			tkg_rest=${tkg_rest#*,}
+		done
+		;;
+	kustomize) tkg_add_raw k "$2" ;;
+	esac
+}
+
+tkg_scan_guarded() {
+	eval "tkg_v_lb=\$tkg_${tkg_guarded}_lb tkg_v_lv=\$tkg_${tkg_guarded}_lv tkg_v_sb=\$tkg_${tkg_guarded}_sb tkg_v_sv=\$tkg_${tkg_guarded}_sv"
+	tkg_flag_ctx=
+	tkg_flag_kc=
+	tkg_ns=
+	tkg_ns_set=
+	tkg_dry=none
+	tkg_rec=
+	tkg_raw=
+	tkg_unknown2=
+	tkg_on_flag() {
+		[ "$1" = namespace ] && tkg_ns_set=1
+		tkg_on_flag2 "$@"
+	}
+	tkg_on_unknown() { tkg_unknown2=$1; }
+	tkg_on_pos() { :; }
+	tkg_walk "$@"
+}
+
+tkg_sha_tool() {
+	if command -v sha256sum >/dev/null 2>&1; then
+		tkg_sha=sha256sum
+	elif command -v shasum >/dev/null 2>&1; then
+		tkg_sha='shasum -a 256'
+	else
+		tkg_refuse "neither sha256sum nor shasum is available to fingerprint the request."
+	fi
+}
+
+tkg_len() {
+	tkg_l=$(printf '%s' "$1" | wc -c)
+	tkg_l=$((tkg_l + 0))
+}
+
+tkg_canon_field() {
+	tkg_len "$2"
+	printf '%s %s:%s\n' "$1" "$tkg_l" "$2"
+}
+
+tkg_resolve_context() {
+	if [ -n "$tkg_flag_ctx" ]; then
+		tkg_ctx=$tkg_flag_ctx
+		tkg_ctx_src=flag
+		return 0
+	fi
+	if [ -n "$tkg_flag_kc" ]; then
+		tkg_ctx=$(command kubectl --kubeconfig "$tkg_flag_kc" config current-context </dev/null) || tkg_ctx=
+	else
+		tkg_ctx=$(command kubectl config current-context </dev/null) || tkg_ctx=
+	fi
+	[ -n "$tkg_ctx" ] || tkg_refuse "could not resolve the current kubectl context ('kubectl config current-context' failed); pass --context explicitly."
+	tkg_ctx_src=current-context
+}
+
+# Writes the sorted, de-duplicated absolute input paths to $tkg_work/paths.
+tkg_list_inputs() {
+	: >"$tkg_work/paths.raw"
+	tkg_ifs=$IFS
+	IFS='
+'
+	set -f
+	for tkg_line in $tkg_raw; do
+		IFS=$tkg_ifs
+		set +f
+		tkg_kind=${tkg_line%% *}
+		tkg_p=${tkg_line#* }
+		case $tkg_p in
+		-) tkg_refuse "reading manifests from stdin (-f -) cannot be previewed; save them to a file and pass -f FILE." ;;
+		'') tkg_refuse "empty -f/-k value." ;;
+		http://* | https://*) tkg_refuse "remote manifests ($tkg_p) cannot be fingerprinted; download them and pass -f FILE." ;;
+		/*) ;;
+		*) tkg_p=$tkg_cwd/$tkg_p ;;
+		esac
+		if [ -d "$tkg_p" ]; then
+			while :; do
+				case $tkg_p in
+				/) break ;;
+				*/) tkg_p=${tkg_p%/} ;;
+				*) break ;;
+				esac
+			done
+			if [ -n "$(cd -- "$tkg_p" && find . -name '*
+*' 2>/dev/null)" ]; then
+				tkg_refuse "a file name under $tkg_p contains a newline; the guard cannot fingerprint it."
+			fi
+			if [ "$tkg_kind" = k ]; then
+				(cd -- "$tkg_p" && find . ! -type d) >"$tkg_work/found" ||
+					tkg_refuse "cannot list $tkg_p."
+			elif [ -n "$tkg_rec" ]; then
+				(cd -- "$tkg_p" && find . ! -type d \( -name '*.json' -o -name '*.yaml' -o -name '*.yml' \)) >"$tkg_work/found" ||
+					tkg_refuse "cannot list $tkg_p."
+			else
+				(cd -- "$tkg_p" && find . -mindepth 1 -maxdepth 1 ! -type d \( -name '*.json' -o -name '*.yaml' -o -name '*.yml' \)) >"$tkg_work/found" ||
+					tkg_refuse "cannot list $tkg_p."
+			fi
+			[ "$tkg_p" = / ] && tkg_p=
+			while IFS= read -r tkg_f; do
+				printf '%s/%s\n' "$tkg_p" "${tkg_f#./}"
+			done <"$tkg_work/found" >>"$tkg_work/paths.raw"
+		elif [ "$tkg_kind" = k ]; then
+			tkg_refuse "-k needs a directory: $tkg_p"
+		elif [ -e "$tkg_p" ]; then
+			[ -f "$tkg_p" ] || tkg_refuse "$tkg_p is not a regular file (stdin, devices and pipes cannot be previewed)."
+			printf '%s\n' "$tkg_p" >>"$tkg_work/paths.raw"
+		else
+			tkg_refuse "no such file or directory: $tkg_p"
+		fi
+		IFS='
+'
+		set -f
+	done
+	IFS=$tkg_ifs
+	set +f
+	LC_ALL=C sort -u "$tkg_work/paths.raw" >"$tkg_work/paths"
+}
+
+# Fresh fingerprint of the invocation: sets tkg_ctx, tkg_ctx_src, tkg_fp and
+# writes "size sha256 path" lines to $tkg_work/files.
+tkg_compute() {
+	tkg_resolve_context
+	tkg_cwd=$(pwd -P) || tkg_refuse "cannot determine the working directory."
+	tkg_list_inputs
+	: >"$tkg_work/files"
+	while IFS= read -r tkg_f; do
+		[ -f "$tkg_f" ] || tkg_refuse "$tkg_f is not a regular file (stdin, devices and pipes cannot be previewed)."
+		tkg_size=$(wc -c <"$tkg_f") || tkg_refuse "cannot read $tkg_f."
+		tkg_h=$($tkg_sha <"$tkg_f") || tkg_refuse "cannot hash $tkg_f."
+		tkg_h=${tkg_h%%[!0-9a-f]*}
+		[ ${#tkg_h} = 64 ] || tkg_refuse "unexpected digest for $tkg_f."
+		printf '%s %s %s\n' "$((tkg_size + 0))" "$tkg_h" "$tkg_f" >>"$tkg_work/files"
+	done <"$tkg_work/paths"
+	{
+		printf 'tern-kube/fp/v1\n'
+		printf 'argv %s\n' "$#"
+		for tkg_t in "$@"; do
+			tkg_len "$tkg_t"
+			printf '%s:%s\n' "$tkg_l" "$tkg_t"
+		done
+		tkg_canon_field context "$tkg_ctx"
+		if [ -n "${KUBECONFIG-}" ]; then
+			tkg_canon_field kubeconfig "$KUBECONFIG"
+		else
+			printf 'kubeconfig -\n'
+		fi
+		tkg_canon_field namespace "$tkg_ns"
+		tkg_canon_field cwd "$tkg_cwd"
+		printf 'files %s\n' "$(wc -l <"$tkg_work/files" | tr -d ' ')"
+		while IFS= read -r tkg_line; do
+			tkg_file_line
+			tkg_len "$tkg_f"
+			printf '%s:%s %s %s\n' "$tkg_l" "$tkg_f" "$tkg_size" "$tkg_h"
+		done <"$tkg_work/files"
+	} >"$tkg_work/canon"
+	tkg_fp=$($tkg_sha <"$tkg_work/canon") || tkg_refuse "cannot hash the request."
+	tkg_fp=${tkg_fp%%[!0-9a-f]*}
+}
+
+# Splits a "size sha256 path" line of $tkg_work/files (paths may hold spaces).
+tkg_file_line() {
+	tkg_size=${tkg_line%% *}
+	tkg_f=${tkg_line#* }
+	tkg_h=${tkg_f%% *}
+	tkg_f=${tkg_f#* }
+}
+
+# JSON string literal of $1: escapes quote, backslash and control bytes;
+# other bytes (UTF-8 included) pass through unchanged.
+tkg_json() {
+	tkg_fmt=$(printf '%s' "$1" | od -An -v -tu1 | awk '
+		BEGIN { for (i = 0; i < 32; i++) esc[i] = sprintf("\\\\u%04x", i)
+			esc[8] = "\\\\b"; esc[9] = "\\\\t"; esc[10] = "\\\\n"; esc[12] = "\\\\f"; esc[13] = "\\\\r" }
+		{ for (i = 1; i <= NF; i++) {
+			d = $i + 0
+			if (d in esc) s = esc[d]
+			else if (d == 34) s = "\\\\\""
+			else if (d == 92) s = "\\\\\\\\"
+			else if (d == 37) s = "%%"
+			else s = sprintf("\\%03o", d)
+			printf "%s", s
+		} }')
+	printf '"'
+	# shellcheck disable=SC2059
+	printf "$tkg_fmt"
+	printf '"'
+}
+
+tkg_write_request() {
+	{
+		printf '{"version":1,"nonce":"%s","argv":[' "$tkg_nonce"
+		tkg_sep=
+		for tkg_t in "$@"; do
+			printf '%s' "$tkg_sep"
+			tkg_json "$tkg_t"
+			tkg_sep=,
+		done
+		printf '],"program":'
+		tkg_json "$tkg_program"
+		printf ',"cwd":'
+		tkg_json "$tkg_cwd"
+		printf ',"kubeconfig":'
+		if [ -n "${KUBECONFIG-}" ]; then tkg_json "$KUBECONFIG"; else printf null; fi
+		printf ',"context":'
+		tkg_json "$tkg_ctx"
+		printf ',"context_source":"%s","namespace":' "$tkg_ctx_src"
+		if [ -n "$tkg_ns_set" ]; then tkg_json "$tkg_ns"; else printf null; fi
+		printf ',"pane":'
+		tkg_json "$TERN_PANE"
+		printf ',"files":['
+		tkg_sep=
+		while IFS= read -r tkg_line; do
+			tkg_file_line
+			printf '%s{"path":' "$tkg_sep"
+			tkg_json "$tkg_f"
+			printf ',"size":%s,"sha256":"%s"}' "$tkg_size" "$tkg_h"
+			tkg_sep=,
+		done <"$tkg_work/files"
+		printf '],"fingerprint":"%s","created_at":%s,"timeout_s":%s}\n' "$tkg_fp" "$tkg_created" "$tkg_timeout"
+	} >"$tkg_req"
+}
+
+tkg_mark_cancel() {
+	(
+		set -C
+		printf 'cancelled_at=%s\n' "$(date +%s)" >"$tkg_spool/cancel-$tkg_nonce"
+	) 2>/dev/null
+	return 0
+}
+
+tkg_stop_waiting() {
+	[ -n "${tkg_wpid-}" ] && kill -TERM "$tkg_wpid" 2>/dev/null
+	[ -n "${tkg_tpid-}" ] && kill -TERM "$tkg_tpid" 2>/dev/null
+	tkg_wpid=
+	tkg_tpid=
+	return 0
+}
+
+tkg_on_signal() {
+	trap '' INT TERM HUP
+	tkg_stop_waiting
+	tkg_mark_cancel
+	tkg_cleanup
+	tkg_err "cancelled; nothing was executed."
+	exit 130
+}
+
+tkg_status() {
+	printf 'tern-kube guard core: %s\n' "$0"
+	printf 'flag table: %s\n' "$(sed -n 's/^# BEGIN generated flags.*\(kubectl v[^;]*\);.*/\1/p' "$0")"
+	printf 'kubectl: %s\n' "$(command -v kubectl 2>/dev/null || echo 'not found on PATH')"
+	printf 'tern: %s\n' "$(command -v "${TERN_BIN:-tern}" 2>/dev/null || echo 'not found on PATH')"
+	printf 'approval timeout: %ss\n' "${TKUBE_GUARD_TIMEOUT:-600}"
+	printf 'guarded verbs: apply, delete, rollout restart, scale\n'
+	if [ "${TERM_PROGRAM-}" != tern ] || [ -z "${TERN_PANE-}" ]; then
+		printf 'this shell: not a Tern pane; guarded verbs are refused\n'
+	elif [ -z "${TKUBE_SPOOL-}" ]; then
+		printf 'this shell: Tern pane without TKUBE_SPOOL (started before the plugin loaded?); guarded verbs are refused until you open a new pane\n'
+	else
+		printf 'this shell: Tern pane %s; guarded verbs ask for approval (spool %s)\n' "$TERN_PANE" "$TKUBE_SPOOL"
+	fi
+}
+
+tkg_guard() {
+	tkg_scan_guarded "$@"
+	case $tkg_dry in
+	client | server)
+		# Already a no-op on the cluster: nothing to approve.
+		[ -z "$tkg_unknown2" ] && exec kubectl "$@"
+		;;
+	esac
+	tkg_ifs=$IFS
+	IFS='
+'
+	set -f
+	for tkg_line in $tkg_raw; do
+		[ "${tkg_line#* }" = - ] && tkg_refuse "reading manifests from stdin (-f -) cannot be previewed; save them to a file and pass -f FILE."
+	done
+	set +f
+	IFS=$tkg_ifs
+
+	[ "${TERM_PROGRAM-}" = tern ] && [ -n "${TERN_PANE-}" ] ||
+		tkg_refuse "kubectl $tkg_verb needs approval in Tern, but this shell is not a Tern pane (TERM_PROGRAM=tern and TERN_PANE are required). Run it in a Tern pane."
+	[ -n "${TKUBE_SPOOL-}" ] ||
+		tkg_refuse "TKUBE_SPOOL is not set: this pane was started before the tern-kube plugin loaded. Open a new Tern pane and retry."
+	case $TKUBE_SPOOL in
+	/*) ;;
+	*) tkg_refuse "TKUBE_SPOOL must be an absolute path: $TKUBE_SPOOL" ;;
+	esac
+	tkg_timeout=${TKUBE_GUARD_TIMEOUT:-600}
+	case $tkg_timeout in
+	'' | *[!0-9]* | 0) tkg_refuse "TKUBE_GUARD_TIMEOUT must be a positive number of seconds: $tkg_timeout" ;;
+	esac
+	tkg_program=$(command -v kubectl) || tkg_refuse "kubectl is not on PATH."
+	case $tkg_program in
+	/*) ;;
+	*) tkg_program=$(pwd -P)/$tkg_program ;;
+	esac
+	tkg_sha_tool
+
+	tkg_umask=$(umask)
+	umask 077
+	tkg_spool=$TKUBE_SPOOL
+	[ -L "$tkg_spool" ] && tkg_refuse "the spool $tkg_spool is a symlink."
+	[ -d "$tkg_spool" ] || mkdir -p "$tkg_spool" || tkg_refuse "cannot create the spool $tkg_spool."
+	[ -O "$tkg_spool" ] || tkg_refuse "the spool $tkg_spool is not owned by you."
+	chmod 700 "$tkg_spool" || tkg_refuse "cannot restrict the spool $tkg_spool."
+	tkg_spool=$(cd -P -- "$tkg_spool" && pwd -P) || tkg_refuse "cannot enter the spool."
+	find "$tkg_spool" -mindepth 1 -maxdepth 1 -type f \( -name 'req-*.json' -o -name 'resp-*.env' -o -name 'cancel-*' \) \
+		-mmin +$((tkg_timeout / 60 + 1440)) -exec rm -f {} + 2>/dev/null
+
+	tkg_nonce=$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')
+	case $tkg_nonce in
+	*[!0-9a-f]*) tkg_refuse "cannot read /dev/urandom." ;;
+	esac
+	[ ${#tkg_nonce} = 32 ] || tkg_refuse "cannot read /dev/urandom."
+	tkg_work=$tkg_spool/work-$tkg_nonce
+	mkdir "$tkg_work" || tkg_refuse "cannot create $tkg_work."
+	trap tkg_on_signal INT TERM HUP
+
+	tkg_compute kubectl "$@"
+	tkg_req_fp=$tkg_fp
+	tkg_req_ctx=$tkg_ctx
+	tkg_created=$(date +%s)
+	tkg_req=$tkg_spool/req-$tkg_nonce.json
+	tkg_resp=$tkg_spool/resp-$tkg_nonce.env
+	(set -C && : >"$tkg_req") 2>/dev/null || tkg_refuse "cannot create $tkg_req."
+	tkg_write_request kubectl "$@" || tkg_refuse "cannot write $tkg_req."
+
+	tkg_err "waiting for approval in Tern (context $tkg_ctx; Ctrl-C cancels)..."
+	"${TERN_BIN:-tern}" open --wait "$tkg_req" </dev/null >/dev/null &
+	tkg_tpid=$!
+	(
+		trap 'kill "$tkg_s" 2>/dev/null; exit 0' TERM
+		sleep "$tkg_timeout" &
+		tkg_s=$!
+		wait "$tkg_s"
+		: >"$tkg_work/timeout"
+		kill -TERM "$tkg_tpid" 2>/dev/null
+	) &
+	tkg_wpid=$!
+	wait "$tkg_tpid"
+	tkg_st=$?
+	tkg_tpid=
+	tkg_stop_waiting
+
+	if [ -e "$tkg_work/timeout" ]; then
+		tkg_mark_cancel
+		tkg_refuse "no decision within ${tkg_timeout}s (TKUBE_GUARD_TIMEOUT); the request was withdrawn."
+	fi
+	if [ "$tkg_st" != 0 ]; then
+		tkg_mark_cancel
+		tkg_refuse "'tern open --wait' failed (exit $tkg_st); is Tern running?"
+	fi
+	[ -e "$tkg_resp" ] ||
+		tkg_refuse "Tern returned without an approval response; the tern-kube approve block did not handle the request (plugin not loaded or disabled? It may have opened in an editor instead)."
+	[ -f "$tkg_resp" ] && [ ! -L "$tkg_resp" ] && [ -O "$tkg_resp" ] ||
+		tkg_refuse "the approval response $tkg_resp is not a regular file owned by you."
+
+	tkg_r_nonce=
+	tkg_r_decision=
+	tkg_r_fp=
+	tkg_r_ctx=
+	tkg_r_at=
+	tkg_r_reason=
+	tkg_dup=
+	while IFS= read -r tkg_line || [ -n "$tkg_line" ]; do
+		tkg_k=${tkg_line%%=*}
+		tkg_v=${tkg_line#*=}
+		case $tkg_k in
+		nonce | decision | fingerprint | context | approved_at | reason)
+			eval "[ -n \"\${tkg_seen_$tkg_k-}\" ] && tkg_dup=$tkg_k; tkg_seen_$tkg_k=1"
+			;;
+		esac
+		case $tkg_k in
+		nonce) tkg_r_nonce=$tkg_v ;;
+		decision) tkg_r_decision=$tkg_v ;;
+		fingerprint) tkg_r_fp=$tkg_v ;;
+		context) tkg_r_ctx=$tkg_v ;;
+		approved_at) tkg_r_at=$tkg_v ;;
+		reason) tkg_r_reason=$(printf '%s' "$tkg_v" | LC_ALL=C tr -cd '[:print:]') ;;
+		esac
+	done <"$tkg_resp"
+	[ -z "$tkg_dup" ] || tkg_refuse "the approval response repeats '$tkg_dup'; refusing it."
+	[ "$tkg_r_nonce" = "$tkg_nonce" ] || tkg_refuse "the approval response belongs to another request (nonce mismatch)."
+	case $tkg_r_decision in
+	approve) ;;
+	deny)
+		if [ -n "$tkg_r_reason" ]; then
+			tkg_err "denied in Tern: $tkg_r_reason"
+		else
+			tkg_err "denied in Tern; nothing was executed."
+		fi
+		tkg_cleanup
+		exit 1
+		;;
+	*) tkg_refuse "the approval response has no valid decision." ;;
+	esac
+	case $tkg_r_at in
+	'' | *[!0-9]*) tkg_refuse "the approval response has no valid approved_at." ;;
+	esac
+	[ "$tkg_r_at" -ge "$tkg_created" ] && [ "$tkg_r_at" -le $((tkg_created + tkg_timeout)) ] &&
+		[ "$(date +%s)" -le $((tkg_created + tkg_timeout)) ] ||
+		tkg_refuse "the approval is outside the ${tkg_timeout}s window of the request."
+
+	tkg_compute kubectl "$@"
+	[ "$tkg_ctx" = "$tkg_req_ctx" ] && [ "$tkg_ctx" = "$tkg_r_ctx" ] ||
+		tkg_refuse "the target context changed since the request (requested '$tkg_req_ctx', approved '$tkg_r_ctx', now '$tkg_ctx')."
+	[ "$tkg_fp" = "$tkg_req_fp" ] && [ "$tkg_fp" = "$tkg_r_fp" ] ||
+		tkg_refuse "the command or its input files changed since approval (fingerprint mismatch); run it again to preview the current state."
+
+	trap - INT TERM HUP
+	tkg_cleanup
+	umask "$tkg_umask"
+	exec kubectl "$@"
+}
+
+case ${1-} in
+kubectl)
+	shift
+	tkg_guarded=
+	tkg_find_verb "$@"
+	[ -n "$tkg_guarded" ] || exec kubectl "$@"
+	tkg_guard "$@"
+	;;
+status)
+	tkg_status
+	;;
+*)
+	echo "usage: tern-kube-guard kubectl [ARGS...] | tern-kube-guard status" >&2
+	exit 2
+	;;
+esac

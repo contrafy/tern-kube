@@ -1,5 +1,5 @@
 --!strict
--- Prints the flag-arity block embedded in shell/kube-lens-guard. Run through
+-- Prints the flag-arity block embedded in shell/tern-kube-guard. Run through
 -- scripts/guard/gen-flags (which also writes or checks the embedded copy).
 local flags = require("../../plugin/lib/kubectl/flags")
 
@@ -50,14 +50,14 @@ print(
 		flags.kubectlVersion
 	)
 )
-emit("klg_g", global)
-print(string.format("klg_opt=%s", set(optional)))
+emit("tkg_g", global)
+print(string.format("tkg_opt=%s", set(optional)))
 for _, verb in
 	{
-		{ "klg_apply", "apply" },
-		{ "klg_delete", "delete" },
-		{ "klg_scale", "scale" },
-		{ "klg_restart", "rollout restart" },
+		{ "tkg_apply", "apply" },
+		{ "tkg_delete", "delete" },
+		{ "tkg_scale", "scale" },
+		{ "tkg_restart", "rollout restart" },
 	}
 do
 	local spec = flags.commands[verb[2]]

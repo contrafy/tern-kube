@@ -200,7 +200,7 @@ describe("describe view: several objects and errors", function()
 	it("puts kubectl's NotFound error up front instead of an empty view", function()
 		local view =
 			render("real/errors/describe_pod_does-not-exist", "kubectl describe pod does-not-exist -n tern-test-apps")
-		local err = nodes.find(view, nodes.role("kube-lens.error")) :: Node
+		local err = nodes.find(view, nodes.role("tern-kube.error")) :: Node
 		expect((err.p :: any).tone).toBe("error")
 		expect(nodes.text(err)).toContain('pods "does-not-exist" not found')
 		expect(#cards(view)).toBe(1)

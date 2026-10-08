@@ -13,7 +13,7 @@ three; e2e needs Tern, which is closed beta, and stays local.
 ## Safety rules
 
 - The real `kubectl` only ever runs with `KUBECONFIG=.sandbox/kubeconfig`,
-  context `kind-kube-lens-dev`. `scripts/cluster.sh` refuses any other
+  context `kind-tern-kube-dev`. `scripts/cluster.sh` refuses any other
   `KUBECONFIG` and verifies that the file holds exactly that context and
   that its API server is the local kind endpoint.
 - Mutations only in `tern-test-*` namespaces (plus cluster-scoped objects
@@ -45,21 +45,21 @@ mechanism.
 
 ## Shell suites
 
-- `tests/shell/aliases/run.sh`: `scripts/kube-lens-aliases` in zsh, bash
+- `tests/shell/aliases/run.sh`: `scripts/tern-kube-aliases` in zsh, bash
   and fish (missing shells are skipped and counted).
 - `tests/shell/guard/run.sh`: the guard core and activation files in zsh,
   bash, fish (core also under dash) with a fake `tern` playing the approve
   block and a fake `kubectl` recording argv. Also checks the embedded flag
   table matches `plugin/lib/kubectl/flags.luau` (`make guard-flags` to
   regenerate).
-- `tests/shell/drift/run.sh`: `bin/kube-lens-drift` against golden
+- `tests/shell/drift/run.sh`: `bin/tern-kube-drift` against golden
   `kubectl diff` output; `SHELLS="dash bash"` picks the shells.
 
 ## Integration (kind)
 
 ```sh
 make bootstrap                      # includes kind and helm
-sh scripts/cluster.sh create        # cluster kube-lens-dev, .sandbox/kubeconfig
+sh scripts/cluster.sh create        # cluster tern-kube-dev, .sandbox/kubeconfig
 sh tests/integration/mutate/rbac.sh create
 sh tests/integration/mutate/run.sh [SCENARIO...]
 sh tests/integration/drift-rbac/run.sh [--keep]
@@ -85,11 +85,11 @@ evidence (without kubeconfigs) and `kind export logs` are uploaded.
 ## End to end (local only)
 
 `make e2e` (`scripts/e2e.sh [--only GLOB] [--shots] [--perf] [--keep]`)
-starts an isolated Tern window (sandbox `KL_E2E_SANDBOX`, default
-`/tmp/kl-tern-e2e`) with a snapshot copy of `plugin/`, then runs
+starts an isolated Tern window (sandbox `TK_E2E_SANDBOX`, default
+`/tmp/tk-tern-e2e`) with a snapshot copy of `plugin/`, then runs
 `tests/e2e/scenarios/*.sh` against the kind cluster, asserting with
 `tern ctl` (`plugins expect`, `click`, `key`, `tree`). Scenarios 01-17 are
-read-only; 18-22 mutate only `kl-e2e-*` objects in `tern-test-mutate` (and
+read-only; 18-22 mutate only `tk-e2e-*` objects in `tern-test-mutate` (and
 Jobs they create in `tern-test-batch`), 23 works in its own
 `tern-test-gitops-ui` namespace and a throwaway git repository, and 30 edits
 only the sandbox's config file; all clean up on exit. Scenarios that need
@@ -99,7 +99,7 @@ output a read-only cluster cannot produce switch the pane to the fake
 prints timings for [performance.md](performance.md). It exits 0 with
 "SKIPPED" when `tern` is not installed.
 
-For manual work: `KL_TERN_SANDBOX=/tmp/kl-tern-<name> scripts/dev-tern.sh
+For manual work: `TK_TERN_SANDBOX=/tmp/tk-tern-<name> scripts/dev-tern.sh
 start` (in a long-lived terminal), then `link`, `reload`, `ctl ...`, `stop`.
 `start --fake` puts the fake kubectl first on `PATH`.
 
@@ -119,6 +119,10 @@ files).
 | `tests/fixtures/gitops/captured/` | `scripts/fixtures/capture-gitops.sh` | none (kustomize/helm render) |
 | `tests/fixtures/synthetic/` | `scripts/fixtures/synth.sh` | none (deterministic seed) |
 | `plugin/lib/kubectl/{flags,kinds_data}.luau` | `KUBECONFIG=.sandbox/kubeconfig python3 scripts/kubectl/gen_tables.py`, then StyLua | none |
+
+`scripts/fixtures/capture.sh --world-only` builds the same world (plus
+metrics-server and the quick-action toolbox) on a fresh cluster for the e2e
+and integration suites without touching any fixture.
 
 Details: `tests/fixtures/real/README.md`. `capture.sh` fails if kubeconfig
 certificate, key or token material appears in a fixture; `capture-json.sh`

@@ -1,5 +1,5 @@
 --!strict
--- Argo CD and Flux awareness from their own objects (read-only: kube-lens
+-- Argo CD and Flux awareness from their own objects (read-only: tern-kube
 -- never writes controller objects). Attribution follows the tracking
 -- metadata the controllers stamp on what they apply:
 --   Argo CD: annotation `argocd.argoproj.io/tracking-id`

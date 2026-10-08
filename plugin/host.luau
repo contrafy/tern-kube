@@ -61,7 +61,7 @@ local MAX_RUNNING_LINES = 2000
 local function warnOnce(state: LensState, what: string, err: any)
 	if not state.warned then
 		state.warned = true
-		log.warn("kube-lens " .. what .. " failed; showing raw", state.run.line, tostring(err))
+		log.warn("tern-kube " .. what .. " failed; showing raw", state.run.line, tostring(err))
 	end
 end
 
@@ -125,7 +125,7 @@ local function exploreAction(state: LensState, key: string, cx: EffectCx, route:
 	if row == nil or row.ref == nil then
 		return
 	end
-	-- window.luau's route.link claims every kube-lens:// URL; an unclaimed
+	-- window.luau's route.link claims every tern-kube:// URL; an unclaimed
 	-- one would fall through to the OS and show a system dialog.
 	local cwd = state.run.cwd
 	cx:open(Command.exploreUrl(capture.invocation, row.ref, {
@@ -134,25 +134,25 @@ local function exploreAction(state: LensState, key: string, cx: EffectCx, route:
 	}))
 end
 
--- Inspector quick-action chips carry a kube-lens://act/ link built by
+-- Inspector quick-action chips carry a tern-kube://act/ link built by
 -- Quick.encode; the window's route.link rebuilds the command from the
 -- validated fields. Anything else is dropped here so no stray URL reaches
 -- cx:open (an unclaimed scheme would raise an OS dialog).
 local function quickAction(url: string, cx: EffectCx)
 	local req, err = Quick.decode(url)
 	if req == nil then
-		log.warn("kube-lens lens quick action ignored", url, tostring(err))
+		log.warn("tern-kube lens quick action ignored", url, tostring(err))
 		return
 	end
 	cx:open(url)
 end
 
--- Delete / Restart / Scale chips carry a kube-lens://mutate link; the window
+-- Delete / Restart / Scale chips carry a tern-kube://mutate link; the window
 -- opens the approve block for it, which previews before anything runs.
 local function mutateAction(url: string, cx: EffectCx)
 	local req, err = Link.decode(url)
 	if req == nil then
-		log.warn("kube-lens lens mutation ignored", url, tostring(err))
+		log.warn("tern-kube lens mutation ignored", url, tostring(err))
 		return
 	end
 	cx:open(url)
@@ -210,7 +210,7 @@ tern.lens.define("kubectl", {
 			return nil
 		end
 		log.debug(
-			"kube-lens lens.view",
+			"tern-kube lens.view",
 			"lines=" .. #state.lines,
 			"overflow=" .. tostring(state.overflow),
 			"finished=" .. tostring(state.status ~= nil),
@@ -255,6 +255,6 @@ require("./settings_host").register()
 -- Hooks ----------------------------------------------------------------------
 
 tern.on("spawn", function(spec: SpawnSpec): SpawnSpec?
-	spec.env.KUBE_LENS_SPOOL = SPOOL
+	spec.env.TKUBE_SPOOL = SPOOL
 	return spec
 end)

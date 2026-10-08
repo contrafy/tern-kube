@@ -1,22 +1,22 @@
-/* Kube Approve block (mutation preview and confirmation). Grid, chips and
-   the header bar come from kube-lens.css; this sheet adds the warning
+/* Tern Kube Approve block (mutation preview and confirmation). Grid, chips and
+   the header bar come from tern-kube.css; this sheet adds the warning
    header rule, the confirm/cancel buttons and the help layer. */
 
-[data-role="kube-lens.approve-header"] {
+[data-role="tern-kube.approve-header"] {
 	padding-bottom: 6px;
 	border-bottom: 2px solid var(--warn);
 }
 
-[data-role="kube-lens.approve-header"] [data-role="kube-lens.bar"] {
+[data-role="tern-kube.approve-header"] [data-role="tern-kube.bar"] {
 	align-items: center;
 }
 
-[data-role="kube-lens.approve-buttons"] {
+[data-role="tern-kube.approve-buttons"] {
 	margin-top: 6px;
 	align-items: center;
 }
 
-.kl-mbtn {
+.tk-mbtn {
 	padding: 3px 14px;
 	border: 1px solid var(--l2);
 	border-radius: 6px;
@@ -25,31 +25,31 @@
 	cursor: pointer;
 }
 
-.kl-mbtn-primary {
+.tk-mbtn-primary {
 	background: var(--accent-fill);
 	border-color: var(--accent-fill);
 	color: #fff;
 	font-weight: 600;
 }
 
-.kl-mbtn-danger {
+.tk-mbtn-danger {
 	background: var(--bad-fill);
 	border-color: var(--bad-fill);
 	color: #fff;
 	font-weight: 600;
 }
 
-.kl-mbtn-off {
+.tk-mbtn-off {
 	opacity: 0.45;
 	cursor: not-allowed;
 }
 
-[data-role="kube-lens.approve-blocked"] .sf-text,
-[data-role="kube-lens.error"] .sf-text {
+[data-role="tern-kube.approve-blocked"] .sf-text,
+[data-role="tern-kube.error"] .sf-text {
 	white-space: pre-wrap;
 }
 
-[data-role="kube-lens.approve-layer"] {
+[data-role="tern-kube.approve-layer"] {
 	max-width: 760px;
 	padding: 12px 16px;
 	background: var(--card);

@@ -3,7 +3,7 @@
 -- that is hard to undo or wider than it looks (deletes, selectors, --all,
 -- namespaces, CRDs, cluster-scoped objects, prune, force) needs the target
 -- typed; an unfinished or failed preview blocks. Manifest scans are text
--- heuristics and must say so: kube-lens never claims policy conformance.
+-- heuristics and must say so: tern-kube never claims policy conformance.
 local Diffseg = require("../../../plugin/lib/mutation/diffseg")
 local Plan = require("../../../plugin/lib/mutation/plan")
 local Risk = require("../../../plugin/lib/mutation/risk")

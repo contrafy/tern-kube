@@ -8,13 +8,13 @@
 #   K.stderr  stderr
 #   K.exit    exit status (default 0)
 #   K.sleep   seconds to sleep after printing (watch-like commands)
-# KUBE_LENS_FAKE_ROWS=N with `get pods` prints N generated pod rows instead.
-# KUBE_LENS_FAKE_FIXTURES overrides the fixture dir.
+# TKUBE_FAKE_ROWS=N with `get pods` prints N generated pod rows instead.
+# TKUBE_FAKE_FIXTURES overrides the fixture dir.
 
 set -u
 
 here=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-dir=${KUBE_LENS_FAKE_FIXTURES:-$here/../fixtures/kubectl}
+dir=${TKUBE_FAKE_FIXTURES:-$here/../fixtures/kubectl}
 
 key=""
 skip=0
@@ -40,8 +40,8 @@ for arg in "$@"; do
 	fi
 done
 
-if [ "$key" = "get_pods" ] && [ -n "${KUBE_LENS_FAKE_ROWS:-}" ]; then
-	awk -v n="$KUBE_LENS_FAKE_ROWS" 'BEGIN {
+if [ "$key" = "get_pods" ] && [ -n "${TKUBE_FAKE_ROWS:-}" ]; then
+	awk -v n="$TKUBE_FAKE_ROWS" 'BEGIN {
 		printf "%-40s %-7s %-18s %-10s %s\n", "NAME", "READY", "STATUS", "RESTARTS", "AGE"
 		split("Running Pending CrashLoopBackOff Completed Error", st, " ")
 		for (i = 1; i <= n; i++) {

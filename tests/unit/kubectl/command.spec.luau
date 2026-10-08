@@ -74,7 +74,7 @@ describe("kubectl command", function()
 	it("explore URL round-trips names with spaces, quotes and separators", function()
 		local inv = Argv.parse("kubectl", { "--context", "a&b=c d", "--kubeconfig", "/k/it's", "get", "pods" })
 		local url = Command.exploreUrl(inv, ref("Pod", "db-0", "apps"))
-		expect(string.sub(url, 1, 20)).toBe("kube-lens://explore?")
+		expect(string.sub(url, 1, 20)).toBe("tern-kube://explore?")
 		local params: { [string]: string } = {}
 		for _, p in Command.parseQuery(url) do
 			params[p.key] = p.value

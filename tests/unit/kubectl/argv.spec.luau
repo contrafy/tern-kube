@@ -246,7 +246,7 @@ describe("argv.parse kubecolor", function()
 end)
 
 -- bash/fish report the typed line, so an alias such as `k` (claimed via
--- scripts/kube-lens-aliases) arrives as the program name.
+-- scripts/tern-kube-aliases) arrives as the program name.
 describe("argv.parse alias program", function()
 	it("parses an alias program exactly like kubectl", function()
 		local inv = parse("--context prod get pods -n web -o wide", "k")

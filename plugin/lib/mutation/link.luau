@@ -1,5 +1,5 @@
 --!strict
--- `kube-lens://mutate?...` links (Explore keys, lens chips, palette) and the
+-- `tern-kube://mutate?...` links (Explore keys, lens chips, palette) and the
 -- single-use grants that let a confirmed quick-action mutation through the
 -- window. A link names a target, never a command line: the approve block
 -- rebuilds the argv from validated fields, so a crafted URL can at most ask
@@ -38,7 +38,7 @@ export type Grants = { [string]: Grant }
 
 local M = {}
 
-M.SCHEME = "kube-lens://mutate?"
+M.SCHEME = "tern-kube://mutate?"
 M.GRANTS_KEY = "quick_confirm_grants"
 -- Seconds between the confirmation and the window opening the split.
 M.GRANT_TTL = 60
@@ -254,7 +254,7 @@ end
 
 function M.decode(url: string): (Request?, string?)
 	if string.sub(url, 1, #M.SCHEME) ~= M.SCHEME then
-		return nil, "not a kube-lens://mutate link"
+		return nil, "not a tern-kube://mutate link"
 	end
 	local query = string.sub(url, #M.SCHEME + 1)
 	if string.find(query, "[^%w%-_%.~%%=&]") then

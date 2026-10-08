@@ -1,7 +1,7 @@
 --!strict
 -- Confirmation tier for a plan plus what its preview found. Reasons from the
 -- argv and preview facts are certain; manifest scans are text heuristics and
--- are marked advisory: kube-lens never claims policy conformance.
+-- are marked advisory: tern-kube never claims policy conformance.
 local Diffseg = require("./diffseg")
 local Kinds = require("../kubectl/kinds")
 local T = require("./types")
@@ -81,7 +81,7 @@ local function label(ref: { kind: string?, namespace: string?, name: string? }):
 	return (ref.kind or "?") .. " " .. (if ref.namespace then ref.namespace .. "/" else "") .. (ref.name or "?")
 end
 
--- Cluster scope of a kind; nil when kube-lens does not know the kind.
+-- Cluster scope of a kind; nil when tern-kube does not know the kind.
 local function namespaced(kind: string, group: string?): boolean?
 	local info = Kinds.normalize(if group and group ~= "" then string.lower(kind) .. "." .. group else kind)
 	return if info.known then info.namespaced else nil

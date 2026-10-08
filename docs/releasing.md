@@ -7,7 +7,7 @@
   (`0.y.z`) only fix.
 - The plugin version is `version` in `plugin/plugin.toml` (Tern shows it in
   `tern plugin list`). Tags are `v<version>`.
-- `bin/kube-lens-drift` carries its own `VERSION` (it is also installed
+- `bin/tern-kube-drift` carries its own `VERSION` (it is also installed
   standalone); bump it when the CLI's behavior or output changes.
 - The guard protocol has its own version (`shell/PROTOCOL.md`, request
   field `version`); bump it on any incompatible change to the request,
@@ -22,7 +22,7 @@ Nothing is pushed, tagged or published without the maintainer's approval.
    green locally on macOS arm64 (CI cannot run Tern).
 2. On a release branch:
    - set `version` in `plugin/plugin.toml`;
-   - bump `VERSION` in `bin/kube-lens-drift` if it changed;
+   - bump `VERSION` in `bin/tern-kube-drift` if it changed;
    - in `CHANGELOG.md` rename `## [Unreleased]` to
      `## [X.Y.Z] - YYYY-MM-DD`, add a new empty `## [Unreleased]`, update the
      compare links at the bottom;
@@ -38,13 +38,13 @@ Nothing is pushed, tagged or published without the maintainer's approval.
    gh release create vX.Y.Z --title "vX.Y.Z" --notes-file /tmp/notes.md
    ```
 
-`tern plugin install github.com/contrafy/tern-kube-lens/plugin` clones the
+`tern plugin install github.com/contrafy/tern-kube/plugin` clones the
 default branch, so a release is what `master` holds at the tag. To install
 an exact tag, clone it and install the directory:
 
 ```sh
-git clone --branch vX.Y.Z https://github.com/contrafy/tern-kube-lens
-tern plugin install tern-kube-lens/plugin --force
+git clone --branch vX.Y.Z https://github.com/contrafy/tern-kube
+tern plugin install tern-kube/plugin --force
 ```
 
 ## Manual smoke test
@@ -59,8 +59,8 @@ that holds nothing of value (a fresh OS user, or `TERN_CONFIG_DIR` and
 
 Install
 
-- [ ] `tern plugin install github.com/contrafy/tern-kube-lens/plugin`
-- [ ] `tern plugin list`: `kube-lens` at the release version, loaded, no
+- [ ] `tern plugin install github.com/contrafy/tern-kube/plugin`
+- [ ] `tern plugin list`: `tern-kube` at the release version, loaded, no
       problems.
 
 Lens
@@ -76,7 +76,7 @@ Lens
 
 Explore and quick actions
 
-- [ ] Palette "Kube Lens: Explore" opens the block; `j`/`k`, `/`, `enter`,
+- [ ] Palette "Tern Kube: Explore" opens the block; `j`/`k`, `/`, `enter`,
       `esc`, `?` work.
 - [ ] Shell (`s`), logs (`l`), port-forward (`shift+f`) open a split whose
       title names the pod and context; exiting closes the pane.
@@ -91,22 +91,22 @@ Mutations (in a `tern-test-*` namespace)
 
 Shell guard (zsh, bash and fish)
 
-- [ ] Add the `source .../shell/kube-lens.<shell>` line, open a new pane,
-      `kube-lens-guard-status` reports the guard active.
+- [ ] Add the `source .../shell/tern-kube.<shell>` line, open a new pane,
+      `tern-kube-guard-status` reports the guard active.
 - [ ] `kubectl apply -f <file>`: approve block opens; Deny runs nothing;
       Approve runs the exact command.
 - [ ] `kubectl get pods` is unaffected; `command kubectl ...` bypasses.
-- [ ] `kube-lens-guard-uninstall` and removing the `source` line restore
+- [ ] `tern-kube-guard-uninstall` and removing the `source` line restore
       plain `kubectl`.
 
 Drift CLI
 
-- [ ] `bin/kube-lens-drift -f <dir>` against the cluster: exit 0 with no
+- [ ] `bin/tern-kube-drift -f <dir>` against the cluster: exit 0 with no
       drift, 1 after changing a manifest, 2 on a bad path.
 
 Uninstall
 
-- [ ] `tern plugin remove kube-lens`; `tern plugin list` no longer shows
+- [ ] `tern plugin remove tern-kube`; `tern plugin list` no longer shows
       it; `kubectl get pods` shows Tern's built-in view again.
 - [ ] Optional cleanup documented and complete: config
-      (`~/.config/kube-lens/`), plugin data (spool, audit log).
+      (`~/.config/tern-kube/`), plugin data (spool, audit log).

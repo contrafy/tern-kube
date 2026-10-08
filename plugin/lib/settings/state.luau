@@ -1,5 +1,5 @@
 --!strict
--- Pure core of the Kube Lens Settings block: the editable catalog of every
+-- Pure core of the Tern Kube Settings block: the editable catalog of every
 -- config key, the status facts the host collects, key/pointer handling and
 -- the config file round trip (decode, change one key, encode with unknown
 -- keys kept, validate with Config.parse). The host (settings_host.luau)
@@ -13,8 +13,8 @@ type Diagnostic = Config.Diagnostic
 local M = {}
 
 M.EDIT_INPUT = "main.edit"
-M.ALIAS_BEGIN = "# BEGIN kube-lens aliases"
-M.ALIAS_END = "# END kube-lens aliases"
+M.ALIAS_BEGIN = "# BEGIN tern-kube aliases"
+M.ALIAS_END = "# END tern-kube aliases"
 
 -- Catalog ----------------------------------------------------------------------
 
@@ -64,7 +64,7 @@ M.FIELDS = table.freeze({
 	field(
 		"aliases.additional",
 		"list",
-		"Alias names you intend to claim (informational; scripts/kube-lens-aliases writes the claims)"
+		"Alias names you intend to claim (informational; scripts/tern-kube-aliases writes the claims)"
 	),
 	field("explore.allow_live_queries", "bool", "Off: Explore opens but runs no kubectl command"),
 	field("explore.auto_refresh", "bool", "Only false is supported: Explore never polls"),
@@ -349,7 +349,7 @@ function M.rawValue(raw: { [string]: any }?, f: Field): any
 	return if type(section) == "table" then section[f.key] else nil
 end
 
--- The effective value kube-lens uses.
+-- The effective value tern-kube uses.
 function M.configValue(cfg: Config, f: Field): any
 	local c = cfg :: any
 	if f.section == nil then
@@ -987,7 +987,7 @@ function M.kubectlSource(cfg: Config, kvValue: any, envValue: string?): string
 		return "config kubectl"
 	end
 	if envValue and envValue ~= "" then
-		return "KUBE_LENS_KUBECTL"
+		return "TKUBE_KUBECTL"
 	end
 	return "the daemon's PATH"
 end

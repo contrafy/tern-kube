@@ -1,5 +1,5 @@
 --!strict
--- The user's config file ($XDG_CONFIG_HOME/kube-lens/config.json), parsed
+-- The user's config file ($XDG_CONFIG_HOME/tern-kube/config.json), parsed
 -- and validated. A bad value never fails the load: it falls back to its
 -- default and yields a diagnostic naming the key path, so a typo can never
 -- take the plugin down or silently weaken a safety default.
@@ -7,7 +7,7 @@
 local M = {}
 
 M.SCHEMA_VERSION = 1
-M.RELATIVE_PATH = "kube-lens/config.json"
+M.RELATIVE_PATH = "tern-kube/config.json"
 M.DEFAULT_SHELL_COMMAND = table.freeze({ "sh", "-c", "command -v bash >/dev/null 2>&1 && exec bash || exec sh" })
 
 export type Placement = "right" | "down" | "tab"
@@ -382,8 +382,8 @@ local function schemaVersion(): Check
 				"warning",
 				path,
 				string.format(
-					"file is schema_version %d but this kube-lens understands %d; known settings are applied, "
-						.. "unknown ones are ignored. Update kube-lens to use them.",
+					"file is schema_version %d but this tern-kube understands %d; known settings are applied, "
+						.. "unknown ones are ignored. Update tern-kube to use them.",
 					v,
 					M.SCHEMA_VERSION
 				)
@@ -576,7 +576,7 @@ local function warnUnknown(obj: { [string]: any }, known: { [string]: boolean },
 	end
 	table.sort(unknown)
 	local hint = if ctx.newer
-		then "unknown key, possibly from a newer kube-lens; it is ignored."
+		then "unknown key, possibly from a newer tern-kube; it is ignored."
 		else "unknown key; it is ignored. Check the spelling against docs/configuration.md."
 	for _, k in unknown do
 		add(ctx, "warning", prefix .. k, hint)
@@ -721,9 +721,9 @@ function M.parse(text: string?, decode: (string) -> any, opts: ParseOptions?): (
 	return freezeDeep(out) :: any, diags
 end
 
--- Where the file lives: $XDG_CONFIG_HOME/kube-lens/config.json when that is
+-- Where the file lives: $XDG_CONFIG_HOME/tern-kube/config.json when that is
 -- an absolute path (the XDG spec says to ignore relative values), else
--- $HOME/.config/kube-lens/config.json.
+-- $HOME/.config/tern-kube/config.json.
 function M.path(env: { XDG_CONFIG_HOME: string?, HOME: string? }): string?
 	local xdg = env.XDG_CONFIG_HOME
 	if xdg and string.sub(xdg, 1, 1) == "/" then
@@ -737,7 +737,7 @@ function M.path(env: { XDG_CONFIG_HOME: string?, HOME: string? }): string?
 end
 
 -- The kubectl program to run. The kv override serves tests and the settings
--- flow; an explicit config value beats KUBE_LENS_KUBECTL; the bare default
+-- flow; an explicit config value beats TKUBE_KUBECTL; the bare default
 -- "kubectl" defers to it.
 function M.kubectlProgram(cfg: Config, kvValue: any, envValue: string?): string
 	if type(kvValue) == "string" and kvValue ~= "" then

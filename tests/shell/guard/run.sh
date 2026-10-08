@@ -1,5 +1,5 @@
 #!/bin/sh
-# Tests for the kube-lens shell guard (shell/kube-lens-guard and the zsh, bash
+# Tests for the tern-kube shell guard (shell/tern-kube-guard and the zsh, bash
 # and fish activation snippets). No Tern and no cluster: a fake `tern` plays
 # the approve block and a fake `kubectl` records what would have run. Each
 # case asserts the property the guard exists for: a mutation runs only after
@@ -11,14 +11,14 @@ set -u
 
 repo=$(CDPATH= cd -- "$(dirname -- "$0")/../../.." && pwd -P)
 here=$repo/tests/shell/guard
-core=$repo/shell/kube-lens-guard
+core=$repo/shell/tern-kube-guard
 luau=${LUAU:-$repo/.tools/bin/luau}
 case $luau in
 /*) ;;
 *) luau=$PWD/$luau ;;
 esac
 
-root=$(mktemp -d "${TMPDIR:-/tmp}/klg-test.XXXXXX") || exit 2
+root=$(mktemp -d "${TMPDIR:-/tmp}/tkg-test.XXXXXX") || exit 2
 root=$(cd -P "$root" && pwd -P)
 trap 'rm -rf "$root"' EXIT
 
@@ -38,7 +38,7 @@ XDG_CONFIG_HOME=$root/home/.config
 XDG_DATA_HOME=$root/home/.local/share
 XDG_CACHE_HOME=$root/home/.cache
 export PATH HOME XDG_CONFIG_HOME XDG_DATA_HOME XDG_CACHE_HOME
-unset KUBECONFIG TERN_BIN KUBE_LENS_GUARD_TIMEOUT ZDOTDIR FAKE_READ_STDIN BASH_ENV ENV PROMPT_COMMAND
+unset KUBECONFIG TERN_BIN TKUBE_GUARD_TIMEOUT ZDOTDIR FAKE_READ_STDIN BASH_ENV ENV PROMPT_COMMAND
 FAKE_DIR=$root/fake
 export FAKE_DIR
 
@@ -79,9 +79,9 @@ fresh() {
 	printf 'kind: Service\n' >"$root/work/kust/x.yaml"
 	TERM_PROGRAM=tern
 	TERN_PANE=4294967309
-	KUBE_LENS_SPOOL=$root/spool
-	export TERM_PROGRAM TERN_PANE KUBE_LENS_SPOOL
-	unset KUBECONFIG KUBE_LENS_GUARD_TIMEOUT TERN_BIN FAKE_READ_STDIN
+	TKUBE_SPOOL=$root/spool
+	export TERM_PROGRAM TERN_PANE TKUBE_SPOOL
+	unset KUBECONFIG TKUBE_GUARD_TIMEOUT TERN_BIN FAKE_READ_STDIN
 	cd "$root/work" || exit 2
 	: >"$root/out"
 }
@@ -109,9 +109,9 @@ run_code() {
 # no snippet: it runs the core directly, as the zsh/bash/fish functions do).
 kcode() {
 	case $1 in
-	zsh | bash) printf '%s' 'source "$KLG_SNIP"; kubectl "$@"' ;;
-	fish) printf '%s' 'source $KLG_SNIP; kubectl $argv' ;;
-	dash) printf '%s' '"$KLG_CORE" kubectl "$@"' ;;
+	zsh | bash) printf '%s' 'source "$TKG_SNIP"; kubectl "$@"' ;;
+	fish) printf '%s' 'source $TKG_SNIP; kubectl $argv' ;;
+	dash) printf '%s' '"$TKG_CORE" kubectl "$@"' ;;
 	esac
 }
 
@@ -248,7 +248,7 @@ core_cases() {
 	fresh "$sh pass-through"
 	printf 'line one\n\tbinary\001 bytes\n' >"$root/stdin"
 	echo 7 >"$FAKE_DIR/exit"
-	unset TERM_PROGRAM TERN_PANE KUBE_LENS_SPOOL
+	unset TERM_PROGRAM TERN_PANE TKUBE_SPOOL
 	FAKE_READ_STDIN=1
 	export FAKE_READ_STDIN
 	STDIN_FILE=$root/stdin run_k "$sh" get pods -o 'jsonpath={.items[*]}' 'a b' '' --selector='x in (a,b)'
@@ -390,8 +390,8 @@ core_cases() {
 		fresh "$sh refusal: $name"
 		if [ "$name" = timeout ]; then
 			mode hang
-			KUBE_LENS_GUARD_TIMEOUT=1
-			export KUBE_LENS_GUARD_TIMEOUT
+			TKUBE_GUARD_TIMEOUT=1
+			export TKUBE_GUARD_TIMEOUT
 		else
 			mode "$name"
 		fi
@@ -422,13 +422,13 @@ core_cases() {
 	expect_out "failed \\(exit 127\\)" "tern missing message"
 	expect_not_run "tern missing"
 
-	for v in TERM_PROGRAM TERN_PANE KUBE_LENS_SPOOL; do
+	for v in TERM_PROGRAM TERN_PANE TKUBE_SPOOL; do
 		fresh "$sh outside Tern: no $v"
 		unset "$v"
 		run_k "$sh" delete pod x
 		expect_status 1 "no $v"
 		case $v in
-		KUBE_LENS_SPOOL) expect_out 'Open a new Tern pane' "no $v message" ;;
+		TKUBE_SPOOL) expect_out 'Open a new Tern pane' "no $v message" ;;
 		*) expect_out 'not a Tern pane' "no $v message" ;;
 		esac
 		expect_not_run "no $v"
@@ -460,8 +460,8 @@ core_cases() {
 
 	fresh "$sh Ctrl-C"
 	mode hang
-	KUBE_LENS_GUARD_TIMEOUT=30
-	export KUBE_LENS_GUARD_TIMEOUT
+	TKUBE_GUARD_TIMEOUT=30
+	export TKUBE_GUARD_TIMEOUT
 	# Ctrl-C reaches the whole foreground process group (see launch_group).
 	(launch_group "$sh" apply -f 'my dir/a b.yaml' >"$root/out" 2>&1 </dev/null) &
 	pid=$!
@@ -473,7 +473,7 @@ core_cases() {
 	kill -s INT -- "-$pid" 2>/dev/null || bad "Ctrl-C: no process group $pid to signal"
 	wait "$pid"
 	st=$?
-	unset KUBE_LENS_GUARD_TIMEOUT
+	unset TKUBE_GUARD_TIMEOUT
 	i=0
 	while [ $i -lt 50 ] && ls "$root/spool"/req-*.json >/dev/null 2>&1; do
 		sleep 0.1
@@ -495,8 +495,8 @@ core_cases() {
 snippet_cases() {
 	sh=$1
 	case $sh in
-	zsh | bash) src='source "$KLG_SNIP"' ;;
-	fish) src='source $KLG_SNIP' ;;
+	zsh | bash) src='source "$TKG_SNIP"' ;;
+	fish) src='source $TKG_SNIP' ;;
 	esac
 	case $sh in
 	zsh) hook='for f_ in $precmd_functions; do $f_; done' ;;
@@ -530,16 +530,16 @@ kubectl delete pod x"
 	esac
 	run_code "$sh" "$pre
 $src
-kube-lens-guard-status"
+tern-kube-guard-status"
 	expect_out 'not installed' "alias conflict message"
 	expect_no_out 'kubectl function:' "alias conflict installs nothing"
 
 	fresh "$sh re-sourcing is not a conflict"
 	run_code "$sh" "$src
 $src
-kube-lens-guard-status"
+tern-kube-guard-status"
 	expect_no_out 'not installed' "re-source"
-	expect_out "kubectl function: kube-lens guard \\($sh\\)" "status after re-source"
+	expect_out "kubectl function: tern-kube guard \\($sh\\)" "status after re-source"
 	expect_out 'guarded verbs ask for approval' "status in a Tern pane"
 
 	fresh "$sh k alias reaches the guard"
@@ -576,10 +576,10 @@ eval 'k delete pod x'"
 	fresh "$sh guard core missing"
 	rm -rf "$root/copy"
 	cp -R "$repo/shell" "$root/copy"
-	rm "$root/copy/kube-lens-guard"
+	rm "$root/copy/tern-kube-guard"
 	case $sh in
-	fish) run_code "$sh" "source $root/copy/kube-lens.fish; kubectl \$argv" get pods ;;
-	*) run_code "$sh" "source '$root/copy/kube-lens.$sh'; kubectl \"\$@\"" get pods ;;
+	fish) run_code "$sh" "source $root/copy/tern-kube.fish; kubectl \$argv" get pods ;;
+	*) run_code "$sh" "source '$root/copy/tern-kube.$sh'; kubectl \"\$@\"" get pods ;;
 	esac
 	expect_status 127 "core missing"
 	expect_out 'is missing, so kubectl was not run' "core missing message"
@@ -619,10 +619,10 @@ cp '$pane_file' '$root/snap4'"
 $hook"
 	[ -z "$(ls -A "$root/spool")" ] && ok || bad "pane record written outside a Tern pane"
 	fresh "$sh pane env record without spool"
-	unset KUBE_LENS_SPOOL
+	unset TKUBE_SPOOL
 	run_code "$sh" "$src
 $hook"
-	[ -z "$(ls -A "$root/spool")" ] && ok || bad "pane record written without KUBE_LENS_SPOOL"
+	[ -z "$(ls -A "$root/spool")" ] && ok || bad "pane record written without TKUBE_SPOOL"
 
 	fresh "$sh uninstall"
 	case $sh in
@@ -636,16 +636,16 @@ $hook"
 		;;
 	fish)
 		pre='true'
-		post='functions -q _kube_lens_pane_env; and echo hook-left; type -t kubectl'
+		post='functions -q _tern_kube_pane_env; and echo hook-left; type -t kubectl'
 		;;
 	esac
 	run_code "$sh" "$pre
 $src
-kube-lens-guard-uninstall
+tern-kube-guard-uninstall
 $post
 $hook
 ls '$root/spool' > '$root/snap1'"
-	expect_out 'kube-lens guard removed' "uninstall message"
+	expect_out 'tern-kube guard removed' "uninstall message"
 	case $sh in
 	zsh) expect_out '^hooks=user_hook$' "precmd hook removed, user hook kept" ;;
 	bash) expect_out '^hooks=history -a;$' "PROMPT_COMMAND restored exactly" ;;
@@ -661,14 +661,14 @@ $src
 $src
 printf 'pc=%s|\n' \"\$PROMPT_COMMAND\""
 		expect_out '^pc=echo user-pc$' "user PROMPT_COMMAND kept first"
-		expect_out '^_kube_lens_pane_env\|$' "hook appended once"
+		expect_out '^_tern_kube_pane_env\|$' "hook appended once"
 	fi
 }
 
 for sh in $shells; do
-	KLG_SNIP=$repo/shell/kube-lens.$sh
-	KLG_CORE=$core
-	export KLG_SNIP KLG_CORE
+	TKG_SNIP=$repo/shell/tern-kube.$sh
+	TKG_CORE=$core
+	export TKG_SNIP TKG_CORE
 	core_cases "$sh"
 	[ "$sh" = dash ] || snippet_cases "$sh"
 done

@@ -6,7 +6,7 @@
             "kind": "HelmRelease",
             "metadata": {
                 "annotations": {
-                    "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"helm.toolkit.fluxcd.io/v2\",\"kind\":\"HelmRelease\",\"metadata\":{\"annotations\":{},\"name\":\"podinfo\",\"namespace\":\"tern-test-gitops\"},\"spec\":{\"chart\":{\"spec\":{\"chart\":\"./charts/podinfo\",\"sourceRef\":{\"kind\":\"GitRepository\",\"name\":\"kube-lens\"}}},\"interval\":\"10m\"}}\n"
+                    "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"helm.toolkit.fluxcd.io/v2\",\"kind\":\"HelmRelease\",\"metadata\":{\"annotations\":{},\"name\":\"podinfo\",\"namespace\":\"tern-test-gitops\"},\"spec\":{\"chart\":{\"spec\":{\"chart\":\"./charts/podinfo\",\"sourceRef\":{\"kind\":\"GitRepository\",\"name\":\"tern-kube\"}}},\"interval\":\"10m\"}}\n"
                 },
                 "creationTimestamp": "2026-10-08T17:13:43Z",
                 "generation": 1,
@@ -22,7 +22,7 @@
                         "reconcileStrategy": "ChartVersion",
                         "sourceRef": {
                             "kind": "GitRepository",
-                            "name": "kube-lens"
+                            "name": "tern-kube"
                         },
                         "version": "*"
                     }

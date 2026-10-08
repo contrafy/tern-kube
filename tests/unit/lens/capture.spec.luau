@@ -155,7 +155,7 @@ describe("lens capture", function()
 		expect(c.mode).toBe("yaml")
 		expect(c.sensitive).toBe(true)
 		local joined = table.concat(c.yamlLines :: { string }, "\n")
-		expect((string.find(joined, "kube-lens-test-not-a-secret", 1, true))).toBeNil()
+		expect((string.find(joined, "tern-kube-test-not-a-secret", 1, true))).toBeNil()
 	end)
 
 	it("-o name: rows from kind/name lines", function()
@@ -176,7 +176,7 @@ describe("lens capture", function()
 		expect(tbl.kind).toBe("Node")
 		expect(tbl.types).toEqual({ "text", "quantity", "percent", "quantity", "percent" })
 		-- Nodes are cluster-scoped: no namespace in the key.
-		expect(tbl.rows[1].key).toBe("/Node//kube-lens-dev-control-plane")
+		expect(tbl.rows[1].key).toBe("/Node//tern-kube-dev-control-plane")
 	end)
 
 	it("error-only output: no tables, one error diagnostic, exit status kept", function()

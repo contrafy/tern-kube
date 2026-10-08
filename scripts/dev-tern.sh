@@ -1,19 +1,19 @@
 #!/bin/sh
-# Isolated Tern for developing kube-lens. Every command runs against a
-# sandbox (default /tmp/kl-tern, override with KL_TERN_SANDBOX) and never
+# Isolated Tern for developing tern-kube. Every command runs against a
+# sandbox (default /tmp/tk-tern, override with TK_TERN_SANDBOX) and never
 # touches the default Tern config, daemon socket or logs.
 #
 #   start [--fake] [--print]  run the sandbox window in the foreground (keep it
 #                     in a long-lived terminal/service). Shells and the daemon
 #                     always get KUBECONFIG=.sandbox/kubeconfig and a neutral
 #                     zsh (sandbox ZDOTDIR, no user rc files); the daemon reads
-#                     kube-lens config from <sandbox>/xdg, never the user's.
+#                     tern-kube config from <sandbox>/xdg, never the user's.
 #                     Default: the real kubectl, refused unless that
-#                     kubeconfig's context is kind-kube-lens-dev. --fake puts
+#                     kubeconfig's context is kind-tern-kube-dev. --fake puts
 #                     tests/bin (fake kubectl and kubecolor) first on PATH. In
-#                     a pane, `kl_fake [DIR]` and `kl_real` switch. --print
+#                     a pane, `tk_fake [DIR]` and `tk_real` switch. --print
 #                     shows the environment
-#   link [DIR]        point <sandbox>/cfg/plugins/kube-lens.path at plugin/
+#   link [DIR]        point <sandbox>/cfg/plugins/tern-kube.path at plugin/
 #                     (or DIR, e.g. a snapshot copy) and reload the daemon
 #   unlink            remove the link and reload
 #   reload            reload the sandbox daemon's plugins
@@ -32,7 +32,7 @@
 set -eu
 
 repo=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-sb=${KL_TERN_SANDBOX:-/tmp/kl-tern}
+sb=${TK_TERN_SANDBOX:-/tmp/tk-tern}
 tern_bin=${TERN_BIN:-tern}
 
 case $sb in
@@ -81,8 +81,8 @@ daemon_pids() {
 # aliases or switch kube contexts). Tern passes panes only part of the launch
 # environment and /etc/zprofile's path_helper rebuilds PATH for login shells,
 # so the values are written into the sandbox rc files instead. Two shell
-# functions switch a pane: `kl_fake [DIR]` puts the fake kubectl (serving
-# fixtures from DIR) first on PATH, `kl_real` removes it again.
+# functions switch a pane: `tk_fake [DIR]` puts the fake kubectl (serving
+# fixtures from DIR) first on PATH, `tk_real` removes it again.
 write_zdotdir() { # $1 = 1 to start in fake mode, $2 = kubectl for Explore
 	mkdir -p "$zdot"
 	cat >"$zdot/.zshenv" <<EOF
@@ -95,23 +95,23 @@ HISTFILE='$zdot/history'
 PROMPT='%1~ %# '
 RPROMPT=''
 export KUBECONFIG='$kubeconfig'
-export KUBE_LENS_KUBECTL='$2'
-kl_real() {
-	unset KUBE_LENS_FAKE_FIXTURES KUBE_LENS_FAKE_ROWS
+export TKUBE_KUBECTL='$2'
+tk_real() {
+	unset TKUBE_FAKE_FIXTURES TKUBE_FAKE_ROWS
 	path=(\${path:#$fake_bin})
 	rehash
 }
-kl_fake() {
-	kl_real
-	[ -n "\${1:-}" ] && export KUBE_LENS_FAKE_FIXTURES="\$1"
+tk_fake() {
+	tk_real
+	[ -n "\${1:-}" ] && export TKUBE_FAKE_FIXTURES="\$1"
 	path=('$fake_bin' \$path)
 	rehash
 }
 EOF
 	if [ "$1" = 1 ]; then
-		echo "kl_fake" >>"$zdot/.zshrc"
+		echo "tk_fake" >>"$zdot/.zshrc"
 	else
-		echo "kl_real" >>"$zdot/.zshrc"
+		echo "tk_real" >>"$zdot/.zshrc"
 	fi
 }
 
@@ -141,19 +141,19 @@ start)
 	export STENCIL_LOG="$window_log"
 	export KUBECONFIG="$kubeconfig"
 	export KUBERC=off
-	# kube-lens reads $XDG_CONFIG_HOME/kube-lens/config.json; scenarios write it.
+	# tern-kube reads $XDG_CONFIG_HOME/tern-kube/config.json; scenarios write it.
 	export XDG_CONFIG_HOME="$sb/xdg"
-	mkdir -p "$XDG_CONFIG_HOME/kube-lens"
-	unset KUBECTL_EXTERNAL_DIFF KUBE_LENS_FAKE_FIXTURES KUBE_LENS_FAKE_ROWS
+	mkdir -p "$XDG_CONFIG_HOME/tern-kube"
+	unset KUBECTL_EXTERNAL_DIFF TKUBE_FAKE_FIXTURES TKUBE_FAKE_ROWS
 	export ZDOTDIR="$zdot"
 	export SHELL=/bin/zsh
 	if [ $fake = 1 ]; then
 		# The window, its daemon and its shells see the fake kubectl first;
-		# the Explore block honors KUBE_LENS_KUBECTL, so nothing in the
+		# the Explore block honors TKUBE_KUBECTL, so nothing in the
 		# sandbox reaches a cluster.
-		export KUBE_LENS_KUBECTL="$fake_bin/kubectl"
+		export TKUBE_KUBECTL="$fake_bin/kubectl"
 		export PATH="$fake_bin:$PATH"
-		write_zdotdir 1 "$KUBE_LENS_KUBECTL"
+		write_zdotdir 1 "$TKUBE_KUBECTL"
 	else
 		# Real kubectl, but only against the disposable kind cluster.
 		real=$(real_kubectl)
@@ -162,11 +162,11 @@ start)
 			exit 1
 		}
 		ctx=$("$real" config current-context 2>/dev/null || true)
-		[ "$ctx" = kind-kube-lens-dev ] || {
-			echo "dev-tern: refusing: $kubeconfig has context '$ctx', not kind-kube-lens-dev (scripts/cluster.sh create, or use --fake)" >&2
+		[ "$ctx" = kind-tern-kube-dev ] || {
+			echo "dev-tern: refusing: $kubeconfig has context '$ctx', not kind-tern-kube-dev (scripts/cluster.sh create, or use --fake)" >&2
 			exit 1
 		}
-		export KUBE_LENS_KUBECTL="$real"
+		export TKUBE_KUBECTL="$real"
 		write_zdotdir 0 "$real"
 	fi
 	if [ $print = 1 ]; then
@@ -181,11 +181,11 @@ start)
 link)
 	mkdir -p "$TERN_CONFIG_DIR/plugins"
 	dir=$(CDPATH= cd -- "${1:-$repo/plugin}" && pwd)
-	printf '%s\n' "$dir" >"$TERN_CONFIG_DIR/plugins/kube-lens.path"
+	printf '%s\n' "$dir" >"$TERN_CONFIG_DIR/plugins/tern-kube.path"
 	"$tern_bin" plugin reload
 	;;
 unlink)
-	rm -f "$TERN_CONFIG_DIR/plugins/kube-lens.path"
+	rm -f "$TERN_CONFIG_DIR/plugins/tern-kube.path"
 	"$tern_bin" plugin reload
 	;;
 reload)

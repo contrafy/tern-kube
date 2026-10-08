@@ -1,3 +1,3 @@
 NAME                                                                      READY   STATUS    RESTARTS   AGE     IP            NODE                          NOMINATED NODE   READINESS GATES
-a-pod-with-a-deliberately-long-name-to-stress-column-widths-in-the-lens   2/2     Running   0          5m18s   10.244.0.42   kube-lens-dev-control-plane   <none>           <none>
-labels-odd                                                                1/1     Running   0          5m18s   10.244.0.43   kube-lens-dev-control-plane   <none>           <none>
+a-pod-with-a-deliberately-long-name-to-stress-column-widths-in-the-lens   2/2     Running   0          5m18s   10.244.0.42   tern-kube-dev-control-plane   <none>           <none>
+labels-odd                                                                1/1     Running   0          5m18s   10.244.0.43   tern-kube-dev-control-plane   <none>           <none>

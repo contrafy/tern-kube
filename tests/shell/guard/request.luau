@@ -140,7 +140,7 @@ local function field(name: string, v: string): string
 end
 
 local function canon(r: any): string
-	local out = { "kube-lens/fp/v1\n", string.format("argv %d\n", #r.argv) }
+	local out = { "tern-kube/fp/v1\n", string.format("argv %d\n", #r.argv) }
 	for _, a in r.argv do
 		table.insert(out, string.format("%d:%s\n", #a, a))
 	end

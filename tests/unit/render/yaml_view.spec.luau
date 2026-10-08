@@ -27,7 +27,7 @@ local function codeText(n: Node): string
 end
 
 local function gridRows(root: Node): { Node }
-	return nodes.findAll(root, nodes.class("kl-r"))
+	return nodes.findAll(root, nodes.class("tk-r"))
 end
 
 local MANIFEST = {
@@ -133,12 +133,12 @@ describe("yaml view: single objects and secrets", function()
 			"kubectl get secret app-secret -n tern-test-apps -o yaml"
 		)
 		local raw = table.concat(capture.lines, "\n")
-		expect(raw).toContain("kube-lens-test-not-a-secret")
+		expect(raw).toContain("tern-kube-test-not-a-secret")
 		local view = render(capture)
-		local warning = nodes.find(view, nodes.role("kube-lens.sensitive")) :: Node
+		local warning = nodes.find(view, nodes.role("tern-kube.sensitive")) :: Node
 		expect((warning.p :: any).tone).toBe("warning")
 		local text = codeText(codes(view)[1])
-		expect((string.find(text, "kube-lens-test-not-a-secret", 1, true))).toBeNil()
+		expect((string.find(text, "tern-kube-test-not-a-secret", 1, true))).toBeNil()
 		expect((string.find(text, "a3ViZS1sZW5zLXRlc3Qtbm90LWEtc2VjcmV0", 1, true))).toBeNil()
 		expect(text).toContain("<redacted:")
 	end)
@@ -152,22 +152,22 @@ describe("yaml view: single objects and secrets", function()
 			{ showSecrets = true, strict = false }
 		)
 		local view = render(capture)
-		local warning = nodes.find(view, nodes.role("kube-lens.sensitive")) :: Node
+		local warning = nodes.find(view, nodes.role("tern-kube.sensitive")) :: Node
 		expect((warning.p :: any).tone).toBe("warning")
 		expect(nodes.text(warning)).toContain("security.show_secret_values")
 		expect((string.find(nodes.text(view), YamlView.SENSITIVE, 1, true))).toBeNil()
-		expect(codeText(codes(view)[1])).toContain("kube-lens-test-not-a-secret")
+		expect(codeText(codes(view)[1])).toContain("tern-kube-test-not-a-secret")
 	end)
 
 	it("says when strict mode masked values outside Secrets", function()
 		local lines = { "apiVersion: v1", "data:", "  api_key: abc123", "kind: ConfigMap", "metadata:", "  name: c" }
 		local capture = captures.fromLines("kubectl get cm c -o yaml", lines, 0, { showSecrets = false, strict = true })
 		local view = render(capture)
-		local warning = nodes.find(view, nodes.role("kube-lens.sensitive")) :: Node
+		local warning = nodes.find(view, nodes.role("tern-kube.sensitive")) :: Node
 		expect(nodes.text(warning)).toContain("sensitive_output_strict_mode")
 		expect(codeText(codes(view)[1])).toContain("api_key: '<redacted: 6 bytes>'")
 		local plain = render(captures.fromLines("kubectl get cm c -o yaml", lines, 0))
-		expect(nodes.find(plain, nodes.role("kube-lens.sensitive"))).toBeNil()
+		expect(nodes.find(plain, nodes.role("tern-kube.sensitive"))).toBeNil()
 	end)
 
 	it("splits a multi-document manifest into its objects", function()
@@ -219,7 +219,7 @@ describe("yaml view: large lists", function()
 		expect(#gridRows(v)).toBe(YamlView.PAGE_SIZE)
 		expect(#codes(v)).toBe(1)
 		expect(codeText(codes(v)[1])).toContain("name: cm-0250")
-		local pager = nodes.find(v, nodes.role("kube-lens.pager")) :: Node
+		local pager = nodes.find(v, nodes.role("tern-kube.pager")) :: Node
 		local pageActions = nodes.actions(pager)
 		expect(#pageActions).toBe(2)
 		-- Paging keeps the open document.

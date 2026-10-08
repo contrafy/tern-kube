@@ -158,10 +158,10 @@ function M.exploreUrl(inv: Invocation, ref: Ref, extra: { route: string?, cwd: s
 			table.insert(parts, k .. "=" .. M.urlencode(v))
 		end
 	end
-	return "kube-lens://explore?" .. table.concat(parts, "&")
+	return "tern-kube://explore?" .. table.concat(parts, "&")
 end
 
--- Query parameters of a kube-lens:// URL, in order of appearance.
+-- Query parameters of a tern-kube:// URL, in order of appearance.
 function M.parseQuery(url: string): { { key: string, value: string } }
 	local out: { { key: string, value: string } } = {}
 	local query = string.match(url, "%?(.*)$")

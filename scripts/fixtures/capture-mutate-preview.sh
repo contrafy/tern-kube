@@ -19,7 +19,7 @@ MANIFESTS=$ROOT/tests/integration/manifests
 OUT=$ROOT/tests/fixtures/real/mutate-preview
 MANIFEST=$OUT/MANIFEST.tsv
 KUBECTL=${KUBECTL:-kubectl}
-CONTEXT=kind-kube-lens-dev
+CONTEXT=kind-tern-kube-dev
 
 die() {
 	printf 'capture-mutate-preview: %s\n' "$*" >&2

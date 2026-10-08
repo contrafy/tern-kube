@@ -72,7 +72,7 @@ else
 fi
 
 mkdir -p "$BIN" "$STAMPS" "$TYPES"
-WORK=$(mktemp -d "${TMPDIR:-/tmp}/kube-lens-bootstrap.XXXXXX")
+WORK=$(mktemp -d "${TMPDIR:-/tmp}/tern-kube-bootstrap.XXXXXX")
 trap 'rm -rf "$WORK"' EXIT
 trap 'exit 130' INT TERM
 

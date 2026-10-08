@@ -6,7 +6,7 @@ the driver must leave `git diff` empty.
 
 Layout: `rows-<N>/<key>.txt` for N = 100 and 1000, where `<key>` follows the fake
 `tests/bin/kubectl` scheme (argv minus connection flags, joined by `_`, `/` -> `+`).
-Point the fake at a scenario with `KUBE_LENS_FAKE_FIXTURES=tests/fixtures/synthetic/rows-1000`.
+Point the fake at a scenario with `TKUBE_FAKE_FIXTURES=tests/fixtures/synthetic/rows-1000`.
 `MANIFEST.tsv` lists every file with its argv, row count and seed.
 
 What the tables model:

@@ -15,7 +15,7 @@
                         "terminating": false
                     },
                     "hostname": "db-0",
-                    "nodeName": "kube-lens-dev-control-plane",
+                    "nodeName": "tern-kube-dev-control-plane",
                     "targetRef": {
                         "kind": "Pod",
                         "name": "db-0",
@@ -74,7 +74,7 @@
                         "serving": true,
                         "terminating": false
                     },
-                    "nodeName": "kube-lens-dev-control-plane",
+                    "nodeName": "tern-kube-dev-control-plane",
                     "targetRef": {
                         "kind": "Pod",
                         "name": "web-65d7d99975-bmgbn",
@@ -91,7 +91,7 @@
                         "serving": true,
                         "terminating": false
                     },
-                    "nodeName": "kube-lens-dev-control-plane",
+                    "nodeName": "tern-kube-dev-control-plane",
                     "targetRef": {
                         "kind": "Pod",
                         "name": "web-65d7d99975-zsb95",
@@ -151,7 +151,7 @@
                         "serving": true,
                         "terminating": false
                     },
-                    "nodeName": "kube-lens-dev-control-plane",
+                    "nodeName": "tern-kube-dev-control-plane",
                     "targetRef": {
                         "kind": "Pod",
                         "name": "web-65d7d99975-bmgbn",
@@ -168,7 +168,7 @@
                         "serving": true,
                         "terminating": false
                     },
-                    "nodeName": "kube-lens-dev-control-plane",
+                    "nodeName": "tern-kube-dev-control-plane",
                     "targetRef": {
                         "kind": "Pod",
                         "name": "web-65d7d99975-zsb95",
@@ -223,7 +223,7 @@
                         "serving": true,
                         "terminating": false
                     },
-                    "nodeName": "kube-lens-dev-control-plane",
+                    "nodeName": "tern-kube-dev-control-plane",
                     "targetRef": {
                         "kind": "Pod",
                         "name": "web-65d7d99975-bmgbn",
@@ -240,7 +240,7 @@
                         "serving": true,
                         "terminating": false
                     },
-                    "nodeName": "kube-lens-dev-control-plane",
+                    "nodeName": "tern-kube-dev-control-plane",
                     "targetRef": {
                         "kind": "Pod",
                         "name": "web-65d7d99975-zsb95",

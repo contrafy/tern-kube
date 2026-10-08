@@ -7,8 +7,8 @@ local Quick = require("./lib/actions/quick")
 
 local log = tern.log
 
-local SCHEME = "kube-lens://"
-local APPROVE = "kube-lens.approve"
+local SCHEME = "tern-kube://"
+local APPROVE = "tern-kube.approve"
 local SPOOL = tern.plugin.data .. "/spool"
 
 -- The KUBECONFIG the shell in `pane` had at its last prompt, when the opt-in
@@ -24,7 +24,7 @@ local function paneKubeconfig(pane: number?): string?
 	end
 	local value, why = PaneEnv.kubeconfig(text)
 	if value == nil then
-		log.debug("kube-lens pane env record ignored", path, why)
+		log.debug("tern-kube pane env record ignored", path, why)
 	end
 	return value
 end
@@ -38,7 +38,7 @@ local function launch(link: LinkRequest, req: Quick.Request, cx: WindowCx)
 		debugImage = cfg.quick_actions.debug_image,
 	})
 	if cmd == nil then
-		cx:toast("error", "Kube Lens: invalid quick action", cerr)
+		cx:toast("error", "Tern Kube: invalid quick action", cerr)
 		return
 	end
 	local place = Quick.placement(cfg.quick_actions.placement)
@@ -48,10 +48,10 @@ local function launch(link: LinkRequest, req: Quick.Request, cx: WindowCx)
 	else
 		pane = cx.layout:split(link.pane, place.dir, { command = cmd.line })
 	end
-	log.info("kube-lens quick action", req.action, cmd.title, "pane=" .. tostring(pane))
+	log.info("tern-kube quick action", req.action, cmd.title, "pane=" .. tostring(pane))
 	if pane == nil then
 		cx:copy(cmd.line)
-		cx:toast("error", "Kube Lens: could not open a pane", "Command copied to the clipboard")
+		cx:toast("error", "Tern Kube: could not open a pane", "Command copied to the clipboard")
 	end
 end
 
@@ -62,7 +62,7 @@ end
 local function quickAction(link: LinkRequest, cx: WindowCx): RouteDecision?
 	local req, err = Quick.decode(link.url)
 	if req == nil then
-		cx:toast("error", "Kube Lens: invalid quick action", err)
+		cx:toast("error", "Tern Kube: invalid quick action", err)
 		return nil
 	end
 	local confirm = req.opts.confirm
@@ -71,7 +71,7 @@ local function quickAction(link: LinkRequest, cx: WindowCx): RouteDecision?
 			Link.consumeGrant(tern.kv.get(Link.GRANTS_KEY), confirm, Link.quickBase(req) or "", os.time())
 		tern.kv.set(Link.GRANTS_KEY, rest)
 		if not ok then
-			cx:toast("error", "Kube Lens: not confirmed", why)
+			cx:toast("error", "Tern Kube: not confirmed", why)
 			return nil
 		end
 		launch(link, req, cx)
@@ -91,14 +91,14 @@ local function quickAction(link: LinkRequest, cx: WindowCx): RouteDecision?
 	return nil
 end
 
--- Every kube-lens:// URL must be claimed here: an unclaimed one, or a
+-- Every tern-kube:// URL must be claimed here: an unclaimed one, or a
 -- handler error, falls through to the OS, which shows a "no application"
 -- dialog on macOS.
 tern.route.link(function(link: LinkRequest, cx: WindowCx): RouteDecision?
 	if string.sub(link.url, 1, #SCHEME) ~= SCHEME then
 		return nil
 	end
-	log.debug("kube-lens route.link", link.url)
+	log.debug("tern-kube route.link", link.url)
 	if string.sub(link.url, 1, #Link.SCHEME) == Link.SCHEME then
 		return { block = APPROVE, args = { link.url } }
 	end
@@ -108,21 +108,21 @@ tern.route.link(function(link: LinkRequest, cx: WindowCx): RouteDecision?
 			decision = quickAction(link, cx)
 		end)
 		if not ok then
-			log.warn("kube-lens quick action failed", link.url, tostring(err))
+			log.warn("tern-kube quick action failed", link.url, tostring(err))
 			pcall(function()
-				cx:toast("error", "Kube Lens: quick action failed", tostring(err))
+				cx:toast("error", "Tern Kube: quick action failed", tostring(err))
 			end)
 		end
 		return decision or { handled = true }
 	end
-	return { block = "kube-lens.explore", args = { link.url } }
+	return { block = "tern-kube.explore", args = { link.url } }
 end)
 
 tern.route.open(function(req: OpenRequest, _cx: WindowCx): RouteDecision?
 	if req.origin ~= "cli" then
 		return nil
 	end
-	if string.match(req.path, "/kube%-lens/spool/req%-[%w%-]+%.json$") == nil then
+	if string.match(req.path, "/tern%-kube/spool/req%-[%w%-]+%.json$") == nil then
 		return nil
 	end
 	return { block = APPROVE, args = { req.path } }
@@ -132,15 +132,15 @@ end)
 -- repository that contains it.
 tern.command({
 	id = "explore",
-	title = "Kube Lens: Explore",
+	title = "Tern Kube: Explore",
 	icon = "box",
 	run = function(cx: WindowCx)
 		local focused = cx.session:focused()
 		local info = if focused then cx.session:pane(focused) else nil
 		local cwd = if info and info.cwd and string.sub(info.cwd, 1, 1) == "/" then info.cwd else nil
-		local arg = if cwd then "kube-lens://explore?cwd=" .. Command.urlencode(cwd) else "palette"
-		if cx:new_block("kube-lens.explore", { arg }, "beside") == nil then
-			cx:toast("error", "Kube Lens is not loaded on this host")
+		local arg = if cwd then "tern-kube://explore?cwd=" .. Command.urlencode(cwd) else "palette"
+		if cx:new_block("tern-kube.explore", { arg }, "beside") == nil then
+			cx:toast("error", "Tern Kube is not loaded on this host")
 		end
 	end,
 })
@@ -149,7 +149,7 @@ tern.command({
 -- focused pane's working directory, and its recorded KUBECONFIG is pinned.
 tern.command({
 	id = "apply",
-	title = "Kube Lens: Apply file or directory",
+	title = "Tern Kube: Apply file or directory",
 	icon = "box",
 	run = function(cx: WindowCx)
 		local focused = cx.session:focused()
@@ -162,22 +162,22 @@ tern.command({
 			kubeconfig = paneKubeconfig(focused),
 		})
 		if url == nil then
-			cx:toast("error", "Kube Lens: cannot apply from here", err)
+			cx:toast("error", "Tern Kube: cannot apply from here", err)
 			return
 		end
 		if cx:new_block(APPROVE, { url }, "beside") == nil then
-			cx:toast("error", "Kube Lens is not loaded on this host")
+			cx:toast("error", "Tern Kube is not loaded on this host")
 		end
 	end,
 })
 
 tern.command({
 	id = "settings",
-	title = "Kube Lens: Settings",
+	title = "Tern Kube: Settings",
 	icon = "sliders",
 	run = function(cx: WindowCx)
-		if cx:new_block("kube-lens.settings", {}, "beside") == nil then
-			cx:toast("error", "Kube Lens is not loaded on this host")
+		if cx:new_block("tern-kube.settings", {}, "beside") == nil then
+			cx:toast("error", "Tern Kube is not loaded on this host")
 		end
 	end,
 })

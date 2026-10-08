@@ -13,7 +13,7 @@ set -u
 
 REPO=$(CDPATH='' cd -- "$(dirname -- "$0")/../../.." && pwd)
 KC=$REPO/.sandbox/kubeconfig
-CTX=kind-kube-lens-dev
+CTX=kind-tern-kube-dev
 LUAU=$REPO/.tools/bin/luau
 DRIVER=tests/integration/gitops/roundtrip.luau
 [ -f "$KC" ] || { echo "missing $KC: run scripts/cluster.sh up" >&2; exit 2; }
@@ -25,7 +25,7 @@ kubectl --context "$CTX" apply -f tests/integration/manifests/crd/crd.yaml >/dev
 kubectl --context "$CTX" wait --for condition=Established --timeout=60s \
 	-f tests/integration/manifests/crd/crd.yaml >/dev/null || exit 2
 make -s fixtures >/dev/null || exit 2
-WORK=$(mktemp -d "${TMPDIR:-/tmp}/kube-lens-roundtrip.XXXXXX") || exit 2
+WORK=$(mktemp -d "${TMPDIR:-/tmp}/tern-kube-roundtrip.XXXXXX") || exit 2
 trap 'rm -rf "$WORK"' EXIT INT TERM
 
 fails=0
@@ -48,7 +48,7 @@ for fixture in $("$LUAU" "$DRIVER" -a list) @edge; do
 	fi
 	if ! "$LUAU" "$DRIVER" -a compare "$fixture" "$out"; then
 		echo "FAIL $fixture: emitted YAML: $yaml" >&2
-		cp "$yaml" "${TMPDIR:-/tmp}/kube-lens-roundtrip-failed-$n.yaml"
+		cp "$yaml" "${TMPDIR:-/tmp}/tern-kube-roundtrip-failed-$n.yaml"
 		fails=$((fails + 1))
 	fi
 done

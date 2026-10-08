@@ -1,5 +1,5 @@
 --!strict
--- Checks bin/kube-lens-drift's awk segmenter against the plugin's
+-- Checks bin/tern-kube-drift's awk segmenter against the plugin's
 -- diffseg.parse on the same `kubectl diff` output, so the CI report and the
 -- Tern views never disagree about which object a line belongs to or whether
 -- it is a create, modify or delete. Usage (args after -a):
@@ -13,7 +13,7 @@ local Diffseg = require("../../../plugin/lib/mutation/diffseg")
 local Json = require("../../lib/json")
 
 local args = { ... }
-local REDACTED = "*** (last-applied-configuration redacted by kube-lens-drift)"
+local REDACTED = "*** (last-applied-configuration redacted by tern-kube-drift)"
 
 local function expected(seg: Diffseg.Segment): string
 	if seg.kind ~= "Secret" or seg.group ~= nil then

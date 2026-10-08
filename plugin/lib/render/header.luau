@@ -97,7 +97,7 @@ local function diagnosticsNode(diagnostics: { Types.Diagnostic }): Node?
 				key = "diag",
 				collapsible = true,
 				collapsed = errors == 0,
-				role = "kube-lens.diagnostics",
+				role = "tern-kube.diagnostics",
 			})
 		)
 	end
@@ -127,7 +127,7 @@ local function helpNode(): Node
 	for i, pair in HELP do
 		items[i] = { { ui.span(pair[1], "strong") }, { pair[2] } }
 	end
-	return ui.card({ "Kube Lens" }, { ui.kv(items) }, { key = "help", role = "kube-lens.help" })
+	return ui.card({ "Tern Kube" }, { ui.kv(items) }, { key = "help", role = "tern-kube.help" })
 end
 
 function M.render(capture: Capture, vs: ViewState, counts: Counts?): Node
@@ -138,7 +138,7 @@ function M.render(capture: Capture, vs: ViewState, counts: Counts?): Node
 		ui.text(M.target(inv)),
 	}
 	if counts then
-		table.insert(top, ui.text({ ui.span(M.countsText(counts), "muted") }, { role = "kube-lens.counts" }))
+		table.insert(top, ui.text({ ui.span(M.countsText(counts), "muted") }, { role = "tern-kube.counts" }))
 	end
 	if vs.sort and capture.snapshot then
 		table.insert(top, ui.text({ ui.span("sorted by " .. vs.sort .. (if vs.desc then " (desc)" else ""), "muted") }))
@@ -146,14 +146,14 @@ function M.render(capture: Capture, vs: ViewState, counts: Counts?): Node
 	-- mutation_view shows the exit status and kubectl errors in its result.
 	local bodyReports = capture.mode == "mutation"
 	if capture.status ~= nil and capture.status ~= 0 and not bodyReports then
-		table.insert(top, ui.badge("exit " .. capture.status, "error", { role = "kube-lens.exit" }))
+		table.insert(top, ui.badge("exit " .. capture.status, "error", { role = "tern-kube.exit" }))
 	end
 	if capture.unparsed > 0 then
 		table.insert(
 			top,
 			ui.badge("partial: " .. plural(capture.unparsed, "unparsed line"), "warning", {
 				title = "Some output was not understood; Raw shows everything",
-				role = "kube-lens.partial",
+				role = "tern-kube.partial",
 			})
 		)
 	end
@@ -165,7 +165,7 @@ function M.render(capture: Capture, vs: ViewState, counts: Counts?): Node
 			actions = { click = Viewstate.action(Viewstate.toggledHelp(vs)) },
 		})
 	)
-	local children: { Node } = { ui.row(top, { key = "bar", wrap = true, role = "kube-lens.bar" }) }
+	local children: { Node } = { ui.row(top, { key = "bar", wrap = true, role = "tern-kube.bar" }) }
 	-- yaml_view shows its own banner next to the masked YAML.
 	if capture.mode ~= "yaml" then
 		for i, notice in Redact.notices(capture.policy, capture.sensitive, capture.masked, M.SENSITIVE) do
@@ -173,7 +173,7 @@ function M.render(capture: Capture, vs: ViewState, counts: Counts?): Node
 				children,
 				ui.text(
 					{ ui.span(notice, "warning") },
-					{ key = if i == 1 then "sensitive" else "sensitive" .. i, role = "kube-lens.sensitive" }
+					{ key = if i == 1 then "sensitive" else "sensitive" .. i, role = "tern-kube.sensitive" }
 				)
 			)
 		end
@@ -185,7 +185,7 @@ function M.render(capture: Capture, vs: ViewState, counts: Counts?): Node
 	if vs.help then
 		table.insert(children, helpNode())
 	end
-	return ui.col(children, { key = "header", role = "kube-lens.header" })
+	return ui.col(children, { key = "header", role = "tern-kube.header" })
 end
 
 return M

@@ -24,7 +24,7 @@ local DRIFT = "dir:/repo/drift"
 
 local function body(s: State): nodes.Node
 	local main = Render.view(s, 160, 60).main :: any
-	return nodes.find(main, nodes.role("kube-lens.explore-" .. X.top(s).kind)) :: nodes.Node
+	return nodes.find(main, nodes.role("tern-kube.explore-" .. X.top(s).kind)) :: nodes.Node
 end
 
 local function dockText(s: State): string
@@ -64,7 +64,7 @@ describe("gitops view: manifest", function()
 		local w = X.world()
 		local s = X.press(w, X.selectName(w, X.open(w), "broken-image"), "m")
 		local b = body(s)
-		expect(nodes.find(b, nodes.role("kube-lens.gitops-none")) ~= nil).toBe(true)
+		expect(nodes.find(b, nodes.role("tern-kube.gitops-none")) ~= nil).toBe(true)
 		expect(nodes.actions(b)).toContain("gitops=export")
 	end)
 
@@ -72,7 +72,7 @@ describe("gitops view: manifest", function()
 		local w = X.world()
 		w.scanError = "git ls-files exited 128: fatal: bad object"
 		local s = X.press(w, onWeb(w), "m")
-		local err = nodes.find(body(s), nodes.role("kube-lens.error")) :: nodes.Node
+		local err = nodes.find(body(s), nodes.role("tern-kube.error")) :: nodes.Node
 		expect(nodes.text(err)).toBe("Manifest index failed: git ls-files exited 128: fatal: bad object")
 	end)
 
@@ -96,9 +96,9 @@ describe("gitops view: diff", function()
 		local w = X.world()
 		local s = X.press(w, onWeb(w), "=")
 		local b = body(s)
-		expect(nodes.find(b, nodes.role("kube-lens.gitops-insync")) ~= nil).toBe(true)
+		expect(nodes.find(b, nodes.role("tern-kube.gitops-insync")) ~= nil).toBe(true)
 		expect(nodes.text(b)).toContain("Live deployment/web -n " .. X.APPS .. " vs apps/web.yaml")
-		expect(nodes.text(b)).toContain("--context kind-kube-lens-dev diff -f /data/tmp/diff-1000-")
+		expect(nodes.text(b)).toContain("--context kind-tern-kube-dev diff -f /data/tmp/diff-1000-")
 		expect(nodes.actions(b)).toContain("gitops-key=a")
 	end)
 
@@ -114,7 +114,7 @@ describe("gitops view: diff", function()
 		end)(w.answer)
 		local s = X.press(w, onWeb(w, '{"mutations":{"enabled":false}}'), "=")
 		local b = body(s)
-		local cards = nodes.findAll(b, nodes.role("kube-lens.gitops-diff"))
+		local cards = nodes.findAll(b, nodes.role("tern-kube.gitops-diff"))
 		expect(#cards).toBe(2)
 		expect(nodes.text(cards[1])).toContain("MODIFY")
 		expect(nodes.text(cards[1])).toContain("-  replicas: 2")
@@ -132,7 +132,7 @@ describe("gitops view: diff", function()
 			end
 		end)(w.answer)
 		local s = X.press(w, onWeb(w), "=")
-		local err = nodes.find(body(s), nodes.role("kube-lens.error")) :: nodes.Node
+		local err = nodes.find(body(s), nodes.role("tern-kube.error")) :: nodes.Node
 		expect(nodes.text(err)).toBe("kubectl diff exited 2: error: Unauthorized")
 	end)
 end)
@@ -199,7 +199,7 @@ describe("gitops view: drift", function()
 			end
 		end)(w.answer)
 		local s = driftReport(w)
-		local err = nodes.find(body(s), nodes.role("kube-lens.error")) :: nodes.Node
+		local err = nodes.find(body(s), nodes.role("tern-kube.error")) :: nodes.Node
 		expect(nodes.text(err)).toBe("kubectl diff exited 2: error: connection refused")
 	end)
 end)
@@ -221,20 +221,20 @@ describe("gitops view: export and git", function()
 		expect(text).toContain("1 new · 0 modified · 0 unchanged")
 		expect(text).toContain("configmap/hand-made")
 		expect(nodes.actions(b)).toContain("gitops-key=w")
-		expect(#nodes.findAll(b, nodes.role("kube-lens.gitops-diff"))).toBe(0)
+		expect(#nodes.findAll(b, nodes.role("tern-kube.gitops-diff"))).toBe(0)
 		local item = State.selectedItem(s) :: any
 		s = X.action(w, s, "open", item.key)
-		local diff = nodes.find(body(s), nodes.role("kube-lens.gitops-diff")) :: nodes.Node
+		local diff = nodes.find(body(s), nodes.role("tern-kube.gitops-diff")) :: nodes.Node
 		expect(nodes.text(diff)).toContain("name: hand-made")
 	end)
 
 	it("w shows the confirmation with the count and directory; y writes; then b offers the git flow", function()
 		local w = X.world()
 		local s = X.press(w, exported(w), "w")
-		local confirm = nodes.find(body(s), nodes.role("kube-lens.gitops-confirm")) :: nodes.Node
+		local confirm = nodes.find(body(s), nodes.role("tern-kube.gitops-confirm")) :: nodes.Node
 		expect(nodes.text(confirm)).toContain("Write 1 file under /repo/drift?")
 		s = X.press(w, s, "y")
-		local done = nodes.find(body(s), nodes.role("kube-lens.gitops-written")) :: nodes.Node
+		local done = nodes.find(body(s), nodes.role("tern-kube.gitops-written")) :: nodes.Node
 		expect(nodes.text(done)).toContain("Wrote 1 file.")
 		expect(nodes.actions(body(s))).toContain("gitops-key=b")
 	end)
@@ -250,16 +250,16 @@ describe("gitops view: export and git", function()
 		expect(text).toContain("Push: off (p)")
 		expect(text).toContain("Pull request: off (P)")
 		expect(text).toContain("gh not found")
-		expect(text).toContain("git -C /repo switch -c kube-lens/")
+		expect(text).toContain("git -C /repo switch -c tern-kube/")
 		expect(text).toContain("1 staged change(s) not from this export: src/app.go")
-		expect(#nodes.findAll(b, nodes.role("kube-lens.gitops-step"))).toBe(3)
-		local blocked = nodes.find(b, nodes.role("kube-lens.gitops-blocked")) :: nodes.Node
+		expect(#nodes.findAll(b, nodes.role("tern-kube.gitops-step"))).toBe(3)
+		local blocked = nodes.find(b, nodes.role("tern-kube.gitops-blocked")) :: nodes.Node
 		expect(nodes.text(blocked)).toContain("Press o to commit only the exported files")
 		s = X.press(w, s, "o")
-		expect(nodes.find(body(s), nodes.role("kube-lens.gitops-blocked"))).toBeNil()
+		expect(nodes.find(body(s), nodes.role("tern-kube.gitops-blocked"))).toBeNil()
 		s = X.press(w, s, "enter")
-		local finished = nodes.find(body(s), nodes.role("kube-lens.gitops-done")) :: nodes.Node
-		expect(nodes.text(finished)).toContain("Done: committed on kube-lens/")
+		local finished = nodes.find(body(s), nodes.role("tern-kube.gitops-done")) :: nodes.Node
+		expect(nodes.text(finished)).toContain("Done: committed on tern-kube/")
 		expect(dockText(s)).toContain("p push")
 	end)
 end)
@@ -298,8 +298,8 @@ describe("gitops view: controller line", function()
 		local text = nodes.text(line)
 		expect(text).toContain("Managed by Argo CD app ")
 		expect(
-			nodes.find(line, nodes.role("kube-lens.gitops-controller")) ~= nil
-				or line.p.role == "kube-lens.gitops-controller"
+			nodes.find(line, nodes.role("tern-kube.gitops-controller")) ~= nil
+				or line.p.role == "tern-kube.gitops-controller"
 		).toBe(true)
 		local untracked = GitopsView.controllerLine({
 			g = g,

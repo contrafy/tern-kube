@@ -48,25 +48,25 @@ end
 describe("render grid", function()
 	it("header cells sort by their column and mark the sorted one", function()
 		local g = Grid.grid(spec())
-		local heads = nodes.findAll(g, nodes.class("kl-h"))
+		local heads = nodes.findAll(g, nodes.class("tk-h"))
 		expect(#heads).toBe(#HEADERS)
 		expect(nodes.action(heads[1])).toBe("v=sort:NAME")
-		local sorted = nodes.find(g, nodes.class("kl-sorted")) :: any
+		local sorted = nodes.find(g, nodes.class("tk-sorted")) :: any
 		expect(nodes.text(sorted)).toBe("AGE ▼")
 	end)
 
 	it("each row is clickable with its own action and keyed by row key", function()
 		local g = Grid.grid(spec())
-		local rows = nodes.findAll(g, nodes.class("kl-r"))
+		local rows = nodes.findAll(g, nodes.class("tk-r"))
 		expect(#rows).toBe(2)
 		expect(nodes.action(rows[2])).toBe("v=open:b")
 		expect((rows[2].p :: any).key).toBe("/Pod/ns/b")
-		expect(#nodes.findAll(rows[2], nodes.class("kl-c"))).toBe(#HEADERS)
+		expect(#nodes.findAll(rows[2], nodes.class("tk-c"))).toBe(#HEADERS)
 	end)
 
 	it("draws the inspector right after the open row only", function()
 		local g = Grid.grid(spec("/Pod/ns/a"))
-		local gridNode = nodes.find(g, nodes.class("kl-grid")) :: any
+		local gridNode = nodes.find(g, nodes.class("tk-grid")) :: any
 		local kids = gridNode.c
 		local openIndex = 0
 		for i, k in kids do
@@ -75,34 +75,34 @@ describe("render grid", function()
 			end
 		end
 		expect(nodes.text(kids[openIndex + 1])).toBe("inspecting /Pod/ns/a")
-		expect(#nodes.findAll(g, nodes.class("kl-insp"))).toBe(1)
-		expect(string.find(classesOf(kids[openIndex]), "kl-open", 1, true) ~= nil).toBe(true)
+		expect(#nodes.findAll(g, nodes.class("tk-insp"))).toBe(1)
+		expect(string.find(classesOf(kids[openIndex]), "tk-open", 1, true) ~= nil).toBe(true)
 	end)
 
 	it("never hides NAME/READY/STATUS and hides wide extras first", function()
 		local g = Grid.grid(spec())
-		local heads = nodes.findAll(g, nodes.class("kl-h"))
-		expect(nodes.class("kl-p0")(heads[1])).toBe(true)
-		expect(nodes.class("kl-p0")(heads[2])).toBe(true)
-		expect(nodes.class("kl-p0")(heads[3])).toBe(true)
-		expect(nodes.class("kl-p1")(heads[5])).toBe(true)
-		expect(nodes.class("kl-p3")(heads[8])).toBe(true)
+		local heads = nodes.findAll(g, nodes.class("tk-h"))
+		expect(nodes.class("tk-p0")(heads[1])).toBe(true)
+		expect(nodes.class("tk-p0")(heads[2])).toBe(true)
+		expect(nodes.class("tk-p0")(heads[3])).toBe(true)
+		expect(nodes.class("tk-p1")(heads[5])).toBe(true)
+		expect(nodes.class("tk-p3")(heads[8])).toBe(true)
 		expect(Grid.priority("STATUS", 4)).toBe(0)
 	end)
 
 	it("carries the visible column count of each width tier", function()
 		local g = Grid.grid(spec())
-		local cls = classesOf(nodes.find(g, nodes.class("kl-grid")))
+		local cls = classesOf(nodes.find(g, nodes.class("tk-grid")))
 		-- 9 columns: p3 = NOMINATED NODE, READINESS GATES; p2 = IP, NODE; p1 = RESTARTS, AGE.
-		expect(cls).toBe("kl-grid kl-cols-9 kl-a-7 kl-b-5 kl-c-3")
+		expect(cls).toBe("tk-grid tk-cols-9 tk-a-7 tk-b-5 tk-c-3")
 	end)
 
 	it("cell priority classes match their header's", function()
 		local g = Grid.grid(spec())
-		local row = nodes.findAll(g, nodes.class("kl-r"))[1]
-		local cells = nodes.findAll(row, nodes.class("kl-c"))
-		expect(nodes.class("kl-p3")(cells[9])).toBe(true)
-		expect(nodes.class("kl-num")(cells[4])).toBe(true)
+		local row = nodes.findAll(g, nodes.class("tk-r"))[1]
+		local cells = nodes.findAll(row, nodes.class("tk-c"))
+		expect(nodes.class("tk-p3")(cells[9])).toBe(true)
+		expect(nodes.class("tk-num")(cells[4])).toBe(true)
 	end)
 end)
 

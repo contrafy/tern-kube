@@ -22,21 +22,21 @@ type ViewState = Viewstate.ViewState
 local M = {}
 
 M.BANNER = "Result of an executed command (not a preview)"
-M.GUARD_BANNER = "Stopped by the kube-lens shell guard; nothing was executed"
+M.GUARD_BANNER = "Stopped by the tern-kube shell guard; nothing was executed"
 
--- shell/kube-lens-guard's final line when it did not run kubectl: a denial
+-- shell/tern-kube-guard's final line when it did not run kubectl: a denial
 -- (with or without the block's reason), a Ctrl-C cancel, or any refusal.
 local GUARD_STOPS = {
-	"^kube%-lens guard: denied in Tern[;:]",
-	"^kube%-lens guard: cancelled; nothing was executed%.",
-	"^kube%-lens guard: nothing was executed%.",
+	"^tern%-kube guard: denied in Tern[;:]",
+	"^tern%-kube guard: cancelled; nothing was executed%.",
+	"^tern%-kube guard: nothing was executed%.",
 }
 
 local function guardStop(lines: { string }): string?
 	for _, line in lines do
 		for _, pattern in GUARD_STOPS do
 			if string.find(line, pattern) then
-				return string.sub(line, #"kube-lens guard: " + 1)
+				return string.sub(line, #"tern-kube guard: " + 1)
 			end
 		end
 	end
@@ -169,7 +169,7 @@ local function banner(capture: Capture, results: { MutationResult }): Node
 			ui.text({ ui.span(M.GUARD_BANNER, "strong") }),
 			statusBadge(capture.status),
 			ui.muted(stop),
-		}, { role = "kube-lens.mutation-banner", wrap = true })
+		}, { role = "tern-kube.mutation-banner", wrap = true })
 	end
 	local children: { Node } = {
 		ui.badge("Executed", "info"),
@@ -181,7 +181,7 @@ local function banner(capture: Capture, results: { MutationResult }): Node
 		table.insert(children, ui.badge("dry run (" .. dry .. ")", "warning"))
 		table.insert(children, ui.muted("nothing was persisted"))
 	end
-	return ui.row(children, { role = "kube-lens.mutation-banner", wrap = true })
+	return ui.row(children, { role = "tern-kube.mutation-banner", wrap = true })
 end
 
 local function summaryBadges(results: { MutationResult }): Node?
@@ -197,7 +197,7 @@ local function summaryBadges(results: { MutationResult }): Node?
 			table.insert(badges, ui.badge(string.format("%d %s", n, c), TONES[c]))
 		end
 	end
-	return if #badges > 0 then ui.row(badges, { role = "kube-lens.mutation-summary", wrap = true }) else nil
+	return if #badges > 0 then ui.row(badges, { role = "tern-kube.mutation-summary", wrap = true }) else nil
 end
 
 local function diagnosticNodes(diagnostics: { Diagnostic }): { Node }
@@ -215,7 +215,7 @@ local function diagnosticNodes(diagnostics: { Diagnostic }): { Node }
 				ui.card({ ui.span("kubectl error", "error strong") }, body, {
 					key = "diag" .. i,
 					tone = "error",
-					role = "kube-lens.error",
+					role = "tern-kube.error",
 				})
 			)
 		elseif d.severity == "warning" then
@@ -325,7 +325,7 @@ function M.render(capture: Capture, vs: ViewState, vsm: typeof(Viewstate)): Node
 	elseif #children == 1 then
 		table.insert(children, ui.muted("kubectl reported no objects"))
 	end
-	return ui.col(children, { role = "kube-lens.mutation" })
+	return ui.col(children, { role = "tern-kube.mutation" })
 end
 
 return M

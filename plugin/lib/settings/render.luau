@@ -1,5 +1,5 @@
 --!strict
--- View of the Kube Lens Settings block (pure). Two pages: the settings
+-- View of the Tern Kube Settings block (pure). Two pages: the settings
 -- editor (every config key, keyboard selection, inline edit input) and the
 -- status page (config file, versions, kubectl, alias claims, shell guard,
 -- safety tiers, supported operations).
@@ -24,7 +24,7 @@ local LOAD_TEXT: { [string]: { string } } = {
 }
 
 local function chip(text: string, action: string, props: { [string]: any }?): Node
-	local p: { [string]: any } = { actions = { click = action }, role = "kube-lens.chip" }
+	local p: { [string]: any } = { actions = { click = action }, role = "tern-kube.chip" }
 	if props then
 		for k, v in props do
 			p[k] = v
@@ -52,7 +52,7 @@ local function header(s: State): Node
 	end
 	local errors, warnings = problems(s)
 	local bar: { Node } = {
-		ui.text({ ui.span("Kube Lens Settings", "strong") }),
+		ui.text({ ui.span("Tern Kube Settings", "strong") }),
 		chip("Settings", "page=settings", {
 			key = "p-settings",
 			tone = if s.page == "settings" then "accent" else "neutral",
@@ -63,7 +63,7 @@ local function header(s: State): Node
 			tone = if s.page == "status" then "accent" else "neutral",
 			title = "Versions, kubectl, aliases, shell guard, safety (tab)",
 		}),
-		ui.badge(load[1], load[2], { key = "load", role = "kube-lens.settings-load" }),
+		ui.badge(load[1], load[2], { key = "load", role = "tern-kube.settings-load" }),
 	}
 	if errors > 0 then
 		table.insert(bar, ui.badge(errors .. (if errors == 1 then " error" else " errors"), "error", { key = "errs" }))
@@ -78,14 +78,14 @@ local function header(s: State): Node
 	table.insert(bar, chip("Reload", "reload", { key = "reload", title = "Re-read the file and status (R)" }))
 	table.insert(bar, chip("?", "help", { key = "help", title = "Keys and actions (?)" }))
 	local children: { Node } = {
-		ui.row(bar, { key = "bar", wrap = true, role = "kube-lens.bar" }),
+		ui.row(bar, { key = "bar", wrap = true, role = "tern-kube.bar" }),
 		ui.text({
 			ui.span("config ", "muted"),
 			ui.span(s.path or "(unknown: no XDG_CONFIG_HOME or HOME)", "mono"),
 			ui.span(if s.target and s.target ~= s.path then "  → " .. s.target else "", "muted mono"),
-		}, { key = "path", role = "kube-lens.settings-path" }),
+		}, { key = "path", role = "tern-kube.settings-path" }),
 	}
-	return ui.col(children, { key = "header", role = "kube-lens.settings-header" })
+	return ui.col(children, { key = "header", role = "tern-kube.settings-header" })
 end
 
 local MESSAGE_STYLE = { info = "muted", success = "success", error = "error" }
@@ -97,7 +97,7 @@ local function messageNode(s: State): Node?
 	end
 	return ui.text({ ui.span(m.text, MESSAGE_STYLE[m.level] or "muted") }, {
 		key = "message",
-		role = "kube-lens.settings-message",
+		role = "tern-kube.settings-message",
 	})
 end
 
@@ -130,7 +130,7 @@ local function editInput(s: State): Node
 			cursor = #text,
 			prompt = f.path .. " = ",
 			placeholder = if f.optional then "unset" else hintFor(f),
-			class = if editing then "kl-editing" else nil,
+			class = if editing then "tk-editing" else nil,
 		},
 	}
 end
@@ -169,22 +169,22 @@ local function fieldRow(s: State, i: number, f: Field): Node
 		table.insert(controls, chip("Reset", "reset=" .. f.path, { key = "r", title = "Reset to default (r)" }))
 	end
 	local cells: { Node } = {
-		ui.el("div", { class = "kl-set-c kl-set-key" }, { ui.text({ ui.span(f.key, "mono") }) }),
-		ui.el("div", { class = "kl-set-c kl-set-val", title = value }, {
+		ui.el("div", { class = "tk-set-c tk-set-key" }, { ui.text({ ui.span(f.key, "mono") }) }),
+		ui.el("div", { class = "tk-set-c tk-set-val", title = value }, {
 			ui.text({ ui.span(value, if origin == "invalid" then "error mono" else "mono") }),
 		}),
-		ui.el("div", { class = "kl-set-c" }, { ui.badge(o[1], o[2]) }),
-		ui.el("div", { class = "kl-set-c kl-set-ctl" }, { ui.row(controls, { key = "ctl" }) }),
+		ui.el("div", { class = "tk-set-c" }, { ui.badge(o[1], o[2]) }),
+		ui.el("div", { class = "tk-set-c tk-set-ctl" }, { ui.row(controls, { key = "ctl" }) }),
 	}
 	return ui.el("div", {
 		key = f.path,
-		class = if selected then "kl-set-r kl-set-sel" else "kl-set-r",
+		class = if selected then "tk-set-r tk-set-sel" else "tk-set-r",
 		actions = { click = "sel=" .. f.path },
 	}, cells)
 end
 
 local function sectionRow(name: string): Node
-	return ui.el("div", { key = "s-" .. name, class = "kl-set-sec", text = name })
+	return ui.el("div", { key = "s-" .. name, class = "tk-set-sec", text = name })
 end
 
 -- The visible slice of the field list: `size` fields around the selection.
@@ -201,7 +201,7 @@ local function settingsPage(s: State, rows: number): { Node }
 	table.insert(out, editInput(s))
 	local f = State.selected(s)
 	local docSpans: { ui.SpanLike } = { ui.span(f.doc, "muted"), ui.span("   " .. hintFor(f), "muted mono") }
-	table.insert(out, ui.text(docSpans, { key = "doc", role = "kube-lens.settings-doc" }))
+	table.insert(out, ui.text(docSpans, { key = "doc", role = "tern-kube.settings-doc" }))
 	for _, d in State.diagnosticsFor(s.diagnostics, f.path) do
 		table.insert(out, ui.text({ ui.span(d.message, "error") }, { key = "fdiag" }))
 	end
@@ -211,7 +211,7 @@ local function settingsPage(s: State, rows: number): { Node }
 	if first > 1 then
 		table.insert(
 			children,
-			ui.el("div", { key = "above", class = "kl-set-more", text = "… " .. (first - 1) .. " above" })
+			ui.el("div", { key = "above", class = "tk-set-more", text = "… " .. (first - 1) .. " above" })
 		)
 	end
 	local section: string? = nil
@@ -227,12 +227,12 @@ local function settingsPage(s: State, rows: number): { Node }
 	if last < total then
 		table.insert(
 			children,
-			ui.el("div", { key = "below", class = "kl-set-more", text = "… " .. (total - last) .. " below" })
+			ui.el("div", { key = "below", class = "tk-set-more", text = "… " .. (total - last) .. " below" })
 		)
 	end
 	table.insert(
 		out,
-		ui.el("div", { key = "fields", class = "kl-set-grid", role = "kube-lens.settings-fields" }, children)
+		ui.el("div", { key = "fields", class = "tk-set-grid", role = "tern-kube.settings-fields" }, children)
 	)
 	return out
 end
@@ -289,7 +289,7 @@ local function aliasText(s: State): { ui.SpanLike }
 			ui.span(
 				"  · configured but not claimed: "
 					.. table.concat(missing, ", ")
-					.. " (scripts/kube-lens-aliases add NAME)",
+					.. " (scripts/tern-kube-aliases add NAME)",
 				"warning"
 			)
 		)
@@ -300,7 +300,7 @@ end
 local function guardText(s: State): { ui.SpanLike }
 	local info = s.info
 	local out: { ui.SpanLike } = {
-		ui.span("new panes get KUBE_LENS_SPOOL=", "muted"),
+		ui.span("new panes get TKUBE_SPOOL=", "muted"),
 		ui.span(info.spool or "?", "mono"),
 	}
 	return out
@@ -343,7 +343,7 @@ local function statusPage(s: State): { Node }
 		{
 			{ "Plugin" },
 			{
-				ui.span("kube-lens " .. (info.pluginVersion or "?"), "mono"),
+				ui.span("tern-kube " .. (info.pluginVersion or "?"), "mono"),
 				ui.span("  " .. (info.pluginDir or ""), "muted mono"),
 			},
 		},
@@ -374,11 +374,11 @@ local function statusPage(s: State): { Node }
 		ui.section(
 			{ ui.span("Status", "strong") },
 			{ ui.kv(items) },
-			{ key = "status", role = "kube-lens.settings-status" }
+			{ key = "status", role = "tern-kube.settings-status" }
 		),
 		ui.text({
 			ui.span("Whether the guard is active in a shell cannot be seen from the plugin: run ", "muted"),
-			ui.span("kube-lens-guard-status", "mono"),
+			ui.span("tern-kube-guard-status", "mono"),
 			ui.span(" in that pane (setup: shell/README.md).", "muted"),
 		}, { key = "guard-note" }),
 	}
@@ -396,7 +396,7 @@ local function statusPage(s: State): { Node }
 			ui.section(
 				{ ui.span("Diagnostics", "strong") },
 				lines,
-				{ key = "diags", role = "kube-lens.settings-diags" }
+				{ key = "diags", role = "tern-kube.settings-diags" }
 			)
 		)
 	end
@@ -413,7 +413,7 @@ local function statusPage(s: State): { Node }
 					then "Every native mutation previews first: server dry run, then kubectl diff per resource."
 					else "mutations.enabled is false: every mutation is refused."
 			),
-		}, { key = "tiers", role = "kube-lens.settings-tiers" })
+		}, { key = "tiers", role = "tern-kube.settings-tiers" })
 	)
 	local ops: { { { ui.SpanLike } } } = {}
 	for _, o in State.OPERATIONS do
@@ -424,7 +424,7 @@ local function statusPage(s: State): { Node }
 		ui.section(
 			{ ui.span("Supported operations", "strong") },
 			{ ui.kv(ops) },
-			{ key = "ops", role = "kube-lens.settings-ops" }
+			{ key = "ops", role = "tern-kube.settings-ops" }
 		)
 	)
 	return out
@@ -450,8 +450,8 @@ local function dock(s: State): Node
 		}
 	end
 	return ui.col(
-		{ ui.text(spans, { key = "status", role = "kube-lens.status" }) },
-		{ role = "kube-lens.settings-dock" }
+		{ ui.text(spans, { key = "status", role = "tern-kube.status" }) },
+		{ role = "tern-kube.settings-dock" }
 	)
 end
 
@@ -476,12 +476,12 @@ local function help(): Node
 	end
 	return ui.col({
 		ui.text(
-			{ ui.span("Kube Lens Settings keys", "strong"), ui.span("   esc or ? closes", "muted") },
+			{ ui.span("Tern Kube Settings keys", "strong"), ui.span("   esc or ? closes", "muted") },
 			{ key = "title" }
 		),
 		ui.kv(items),
 		ui.muted("Every change is validated like the file is at load, then written atomically; unknown keys are kept."),
-	}, { key = "help", role = "kube-lens.settings-help" })
+	}, { key = "help", role = "tern-kube.settings-help" })
 end
 
 function M.view(s: State, _cols: number, rows: number): View
@@ -491,21 +491,21 @@ function M.view(s: State, _cols: number, rows: number): View
 		table.insert(children, msg)
 	end
 	if s.fileError and s.page == "settings" then
-		table.insert(children, ui.text({ ui.span(s.fileError, "error") }, { key = "ferr", role = "kube-lens.error" }))
+		table.insert(children, ui.text({ ui.span(s.fileError, "error") }, { key = "ferr", role = "tern-kube.error" }))
 	end
 	local body: { Node } = if s.page == "settings" then settingsPage(s, rows) else statusPage(s)
 	for _, n in body do
 		table.insert(children, n)
 	end
 	return {
-		main = ui.col(children, { role = "kube-lens.settings" }),
+		main = ui.col(children, { role = "tern-kube.settings" }),
 		dock = dock(s),
-		layer = if s.help then ui.col({ help() }, { role = "kube-lens.settings-layer" }) else nil,
+		layer = if s.help then ui.col({ help() }, { role = "tern-kube.settings-layer" }) else nil,
 	}
 end
 
 function M.title(s: State): string
-	return if s.page == "status" then "Kube Lens Settings · Status" else "Kube Lens Settings"
+	return if s.page == "status" then "Tern Kube Settings · Status" else "Tern Kube Settings"
 end
 
 return M

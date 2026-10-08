@@ -14,11 +14,11 @@
                     "beta.kubernetes.io/arch": "arm64",
                     "beta.kubernetes.io/os": "linux",
                     "kubernetes.io/arch": "arm64",
-                    "kubernetes.io/hostname": "kube-lens-dev-control-plane",
+                    "kubernetes.io/hostname": "tern-kube-dev-control-plane",
                     "kubernetes.io/os": "linux",
                     "node-role.kubernetes.io/control-plane": ""
                 },
-                "name": "kube-lens-dev-control-plane",
+                "name": "tern-kube-dev-control-plane",
                 "resourceVersion": "7923",
                 "uid": "e2732df3-0000-4ce7-9009-b99bb3a8e7a6"
             },
@@ -27,7 +27,7 @@
                 "podCIDRs": [
                     "10.244.0.0/24"
                 ],
-                "providerID": "kind://docker/kube-lens-dev/kube-lens-dev-control-plane"
+                "providerID": "kind://docker/tern-kube-dev/tern-kube-dev-control-plane"
             },
             "status": {
                 "addresses": [
@@ -36,7 +36,7 @@
                         "type": "InternalIP"
                     },
                     {
-                        "address": "kube-lens-dev-control-plane",
+                        "address": "tern-kube-dev-control-plane",
                         "type": "Hostname"
                     }
                 ],

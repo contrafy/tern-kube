@@ -22,7 +22,7 @@ local M = {}
 
 M.ROOT = "/repo"
 M.DATA = "/data"
-M.CTX = "kind-kube-lens-dev"
+M.CTX = "kind-tern-kube-dev"
 M.NS = "tern-test-drift"
 M.AT = 1000
 M.REMOTE = "/tmp/remote.git"

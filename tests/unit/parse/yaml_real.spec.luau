@@ -57,12 +57,12 @@ describe("yaml.redact against real kubectl output", function()
 		local lines = fixtures.lines("real/ns-apps/get_secret_app-secret_-o_yaml.txt")
 		local original = table.concat(lines, "\n")
 		-- Guard the fixture itself: the leak this test protects against must be present.
-		expect(original).toContain("kube-lens-test-not-a-secret")
+		expect(original).toContain("tern-kube-test-not-a-secret")
 		local shown = Yaml.redact(lines, Yaml.splitLines(lines).docs)
 		expect(#shown).toBe(#lines)
 		local text = table.concat(shown, "\n")
-		expect((string.find(text, "kube-lens-test-not-a-secret", 1, true))).toBeNil()
-		expect((string.find(text, "kube-lens-test-user", 1, true))).toBeNil()
+		expect((string.find(text, "tern-kube-test-not-a-secret", 1, true))).toBeNil()
+		expect((string.find(text, "tern-kube-test-user", 1, true))).toBeNil()
 		for _, line in lines do
 			local value = string.match(line, "^  %S+: (%S+)$")
 			if value and #value >= 16 and string.match(value, "^[%w+/]+=*$") then

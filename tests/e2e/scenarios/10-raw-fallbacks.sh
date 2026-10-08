@@ -10,7 +10,7 @@ raw
 # Raw block text is not in the element tree; the lens log shows it received
 # the watch rows and finished on the interrupt.
 watch_finished() {
-	tail -n +"$((mark + 1))" "$(daemon_log)" | grep 'kube-lens lens.view' | grep -q 'finished=true'
+	tail -n +"$((mark + 1))" "$(daemon_log)" | grep 'tern-kube lens.view' | grep -q 'finished=true'
 }
 wait_for "the lens to see the watch finish" watch_finished
 # `kubectl -* get *` over-claims a logs command: ours (not the built-in logs

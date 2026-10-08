@@ -1,4 +1,4 @@
-# kube-lens shell guard (opt-in)
+# tern-kube shell guard (opt-in)
 
 Makes mutating `kubectl` commands typed in a Tern pane wait for an approval
 block that previews them (server dry-run, `kubectl diff`, per-resource diffs,
@@ -7,9 +7,9 @@ command you typed. Guarded: `apply`, `delete`, `scale`, `rollout restart`.
 Everything else runs immediately, unchanged (one `sh` start plus an argv scan,
 a few milliseconds).
 
-The guard is a POSIX sh core, `shell/kube-lens-guard`, plus one small
+The guard is a POSIX sh core, `shell/tern-kube-guard`, plus one small
 activation file per shell that defines a `kubectl` function calling it. It
-fails closed: outside a Tern pane, without the kube-lens plugin, on timeout,
+fails closed: outside a Tern pane, without the tern-kube plugin, on timeout,
 on any mismatch, nothing runs. The wire protocol is in
 [PROTOCOL.md](PROTOCOL.md).
 
@@ -18,24 +18,24 @@ on any mismatch, nothing runs. The wire protocol is in
 Clone the repository somewhere stable (the activation files find the core
 next to themselves), then add one line to your shell's startup file and open
 a new Tern pane (panes started before the plugin loaded lack
-`KUBE_LENS_SPOOL`).
+`TKUBE_SPOOL`).
 
 zsh, `~/.zshrc`:
 
 ```sh
-source /path/to/tern-kube-lens/shell/kube-lens.zsh
+source /path/to/tern-kube/shell/tern-kube.zsh
 ```
 
 bash, `~/.bashrc`:
 
 ```sh
-source /path/to/tern-kube-lens/shell/kube-lens.bash
+source /path/to/tern-kube/shell/tern-kube.bash
 ```
 
 fish, `~/.config/fish/config.fish`:
 
 ```fish
-source /path/to/tern-kube-lens/shell/kube-lens.fish
+source /path/to/tern-kube/shell/tern-kube.fish
 ```
 
 Put the line after anything that sets up `PATH` for `kubectl`, and after
@@ -52,12 +52,12 @@ Aliases that expand to `kubectl` (`alias k=kubectl`, fish `alias k kubectl`)
 reach the guard automatically.
 
 A `kubectl` alias or function defined after the `source` line silently
-replaces the guard; `kube-lens-guard-status` shows which `kubectl` is active.
+replaces the guard; `tern-kube-guard-status` shows which `kubectl` is active.
 
 ## Status
 
 ```sh
-kube-lens-guard-status
+tern-kube-guard-status
 ```
 
 prints whether `kubectl` is the guard function, whether the pane env hook is
@@ -67,7 +67,7 @@ approval, or be refused and why).
 
 ## Settings
 
-- `KUBE_LENS_GUARD_TIMEOUT`: seconds to wait for a decision (default 600).
+- `TKUBE_GUARD_TIMEOUT`: seconds to wait for a decision (default 600).
   On timeout the request is withdrawn and nothing runs.
 - `TERN_BIN`: the `tern` executable to call (default `tern` on `PATH`).
 
@@ -83,17 +83,17 @@ it mutates the cluster immediately. Refusal messages repeat this hint.
 
 ## Uninstall
 
-1. In each open shell: `kube-lens-guard-uninstall` (removes the `kubectl`
+1. In each open shell: `tern-kube-guard-uninstall` (removes the `kubectl`
    function, the prompt hook and the helper functions; bash restores
    `PROMPT_COMMAND` without the hook).
-2. Delete the `source .../kube-lens.<shell>` line from your startup file.
+2. Delete the `source .../tern-kube.<shell>` line from your startup file.
 3. Optional: remove leftover `pane-*.env` files from the plugin's spool
-   directory (`$KUBE_LENS_SPOOL`).
+   directory (`$TKUBE_SPOOL`).
 
 ## Pane env record
 
 On each prompt in a Tern pane, the activation files record the pane's
-effective `KUBECONFIG` in `$KUBE_LENS_SPOOL/pane-$TERN_PANE.env` (one line,
+effective `KUBECONFIG` in `$TKUBE_SPOOL/pane-$TERN_PANE.env` (one line,
 `kubeconfig=<value>`, mode 0600), so quick actions launched from that pane
 pin the same kubeconfig. The file is rewritten only when the value changes;
 no other environment variable is recorded. Only a single absolute path is
@@ -125,7 +125,7 @@ record".
 - `--dry-run=client|server` runs without approval (it does not mutate).
 - bash and fish report the alias name (`k apply ...`) to Tern while zsh
   reports the expanded line; this affects lens claims, not the guard (see
-  `scripts/kube-lens-aliases`).
+  `scripts/tern-kube-aliases`).
 
 ## Tests
 

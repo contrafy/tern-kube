@@ -30,7 +30,7 @@
             "spec": {
                 "containers": [
                     {
-                        "image": "registry.invalid/kube-lens/missing:0.0.0",
+                        "image": "registry.invalid/tern-kube/missing:0.0.0",
                         "imagePullPolicy": "IfNotPresent",
                         "name": "app",
                         "resources": {},
@@ -47,7 +47,7 @@
                 ],
                 "dnsPolicy": "ClusterFirst",
                 "enableServiceLinks": true,
-                "nodeName": "kube-lens-dev-control-plane",
+                "nodeName": "tern-kube-dev-control-plane",
                 "preemptionPolicy": "PreemptLowerPriority",
                 "priority": 0,
                 "restartPolicy": "Always",
@@ -155,7 +155,7 @@
                 ],
                 "containerStatuses": [
                     {
-                        "image": "registry.invalid/kube-lens/missing:0.0.0",
+                        "image": "registry.invalid/tern-kube/missing:0.0.0",
                         "imageID": "",
                         "lastState": {},
                         "name": "app",
@@ -164,7 +164,7 @@
                         "started": false,
                         "state": {
                             "waiting": {
-                                "message": "Back-off pulling image \"registry.invalid/kube-lens/missing:0.0.0\": ErrImagePull: failed to pull and unpack image \"registry.invalid/kube-lens/missing:0.0.0\": failed to resolve reference \"registry.invalid/kube-lens/missing:0.0.0\": failed to do request: Head \"https://registry.invalid/v2/kube-lens/missing/manifests/0.0.0\": dial tcp: lookup registry.invalid on 192.168.65.254:53: no such host",
+                                "message": "Back-off pulling image \"registry.invalid/tern-kube/missing:0.0.0\": ErrImagePull: failed to pull and unpack image \"registry.invalid/tern-kube/missing:0.0.0\": failed to resolve reference \"registry.invalid/tern-kube/missing:0.0.0\": failed to do request: Head \"https://registry.invalid/v2/tern-kube/missing/manifests/0.0.0\": dial tcp: lookup registry.invalid on 192.168.65.254:53: no such host",
                                 "reason": "ImagePullBackOff"
                             }
                         },
@@ -239,7 +239,7 @@
                 ],
                 "dnsPolicy": "ClusterFirst",
                 "enableServiceLinks": true,
-                "nodeName": "kube-lens-dev-control-plane",
+                "nodeName": "tern-kube-dev-control-plane",
                 "preemptionPolicy": "PreemptLowerPriority",
                 "priority": 0,
                 "restartPolicy": "Always",
@@ -465,7 +465,7 @@
                 "dnsPolicy": "ClusterFirst",
                 "enableServiceLinks": true,
                 "hostname": "db-0",
-                "nodeName": "kube-lens-dev-control-plane",
+                "nodeName": "tern-kube-dev-control-plane",
                 "preemptionPolicy": "PreemptLowerPriority",
                 "priority": 0,
                 "restartPolicy": "Always",
@@ -660,7 +660,7 @@
                                             "key": "metadata.name",
                                             "operator": "In",
                                             "values": [
-                                                "kube-lens-dev-control-plane"
+                                                "tern-kube-dev-control-plane"
                                             ]
                                         }
                                     ]
@@ -688,7 +688,7 @@
                 ],
                 "dnsPolicy": "ClusterFirst",
                 "enableServiceLinks": true,
-                "nodeName": "kube-lens-dev-control-plane",
+                "nodeName": "tern-kube-dev-control-plane",
                 "preemptionPolicy": "PreemptLowerPriority",
                 "priority": 0,
                 "restartPolicy": "Always",
@@ -1040,7 +1040,7 @@
                 ],
                 "dnsPolicy": "ClusterFirst",
                 "enableServiceLinks": true,
-                "nodeName": "kube-lens-dev-control-plane",
+                "nodeName": "tern-kube-dev-control-plane",
                 "preemptionPolicy": "PreemptLowerPriority",
                 "priority": 0,
                 "restartPolicy": "Always",
@@ -1272,7 +1272,7 @@
                 ],
                 "dnsPolicy": "ClusterFirst",
                 "enableServiceLinks": true,
-                "nodeName": "kube-lens-dev-control-plane",
+                "nodeName": "tern-kube-dev-control-plane",
                 "preemptionPolicy": "PreemptLowerPriority",
                 "priority": 0,
                 "restartPolicy": "Always",

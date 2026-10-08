@@ -1,6 +1,6 @@
 # Upstream opportunities (Tern SDK)
 
-SDK gaps observed while building kube-lens against Tern 0.6.2 (4b3ed42).
+SDK gaps observed while building tern-kube against Tern 0.6.2 (4b3ed42).
 Evidence is in `docs/sdk-capability-matrix.md`; each item lists the impact,
 the current workaround and a minimal reproduction. Anything not directly
 observed is marked `[not observed]`.
@@ -29,7 +29,7 @@ observed is marked `[not observed]`.
 ## 3. Lens pane width / CSS container queries
 
 - Impact: lens tables cannot adapt to the pane width; a narrow split of a wide window keeps all columns.
-- Workaround: `@media (max-width: ...)` tiers in `plugin/kube-lens.css`, which compare to the window width.
+- Workaround: `@media (max-width: ...)` tiers in `plugin/tern-kube.css`, which compare to the window width.
 - Reproduction: add `@container (max-width: 500px) { .x { display: none } }` to a
   manifest `styles` sheet (rejected); log the arguments of a lens `view`
   callback (no cols; only blocks get `cx.cols`).
@@ -62,17 +62,17 @@ observed is marked `[not observed]`.
 
 ## 7. Unclaimed custom-scheme links fall through to the OS
 
-- Impact: an unclaimed `kube-lens://` link (or a `route.link` handler that raises) shows the macOS "There is no application set to open the URL" dialog.
-- Workaround: the window half claims every `kube-lens://` URL, wraps handlers in pcall and always returns `{handled = true}`.
+- Impact: an unclaimed `tern-kube://` link (or a `route.link` handler that raises) shows the macOS "There is no application set to open the URL" dialog.
+- Workaround: the window half claims every `tern-kube://` URL, wraps handlers in pcall and always returns `{handled = true}`.
 - Reproduction:
 
   ```luau
   tern.route.link(function(link) error("boom") end)
-  -- in a lens action: cx:open("kube-lens://explore?kind=pods")
+  -- in a lens action: cx:open("tern-kube://explore?kind=pods")
   ```
 
   Log: `plugin handler failed hook="route.link"`, then `open_url ... no
-  application could open kube-lens://...`. Returning nil gives the same dialog.
+  application could open tern-kube://...`. Returning nil gives the same dialog.
 
 ## 8. Table rows cannot carry actions
 

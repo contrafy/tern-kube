@@ -12,9 +12,9 @@ local t = require("../../lib/test")
 local describe, it, expect = t.describe, t.it, t.expect
 
 local SCALE =
-	"kube-lens://mutate?op=scale&kind=deployment&name=web&namespace=apps&replicas=1&context=kind-dev&source=chosen"
-local DELETE = "kube-lens://mutate?op=delete&kind=deployment&name=web&namespace=apps&context=kind-dev&source=chosen"
-local APPLY = "kube-lens://mutate?op=apply&file=%2Fw%2Fapps.yaml&context=kind-dev"
+	"tern-kube://mutate?op=scale&kind=deployment&name=web&namespace=apps&replicas=1&context=kind-dev&source=chosen"
+local DELETE = "tern-kube://mutate?op=delete&kind=deployment&name=web&namespace=apps&context=kind-dev&source=chosen"
+local APPLY = "tern-kube://mutate?op=apply&file=%2Fw%2Fapps.yaml&context=kind-dev"
 
 local function ready(url: string, world: A.World?): Session.State
 	local s, effects = A.init(url)
@@ -35,24 +35,24 @@ describe("approve view: header", function()
 		local v = Render.view(ready(SCALE))
 		local head = N.text(N.find(v.main, N.key("header")) :: N.Node)
 		expect(head).toContain("kind-dev")
-		expect(head).toContain("chosen in Kube Lens")
+		expect(head).toContain("chosen in Tern Kube")
 		expect(head).toContain(A.SERVER)
 		expect(head).toContain("kubectl --kubeconfig /k/config --context kind-dev scale deployment/web")
 	end)
 
 	it("warns when the context was inferred", function()
-		local v = Render.view(ready("kube-lens://mutate?op=restart&kind=deployment&name=web&namespace=apps"))
+		local v = Render.view(ready("tern-kube://mutate?op=restart&kind=deployment&name=web&namespace=apps"))
 		expect(N.text(v.main)).toContain("inferred from current-context")
 		present(N.find(v.main, N.all(N.kind("el"), N.key("tc"))))
 	end)
 
 	it("wraps the mode/op/tier bar so a narrow split never squeezes the op to one letter per line", function()
-		local bar = N.find(Render.view(ready(SCALE)).main, N.role("kube-lens.bar")) :: N.Node
+		local bar = N.find(Render.view(ready(SCALE)).main, N.role("tern-kube.bar")) :: N.Node
 		expect((bar.p :: any).wrap).toBe(true)
 	end)
 
 	it("shows no empty Command row while it still asks for the path", function()
-		local s = A.init("kube-lens://mutate?op=apply&cwd=%2Fw%2Frepo&context=kind-dev")
+		local s = A.init("tern-kube://mutate?op=apply&cwd=%2Fw%2Frepo&context=kind-dev")
 		expect(s.phase).toBe("input")
 		local head = N.text(N.find(Render.view(s).main, N.key("header")) :: N.Node)
 		expect(string.find(head, "Command", 1, true) == nil).toBe(true)
@@ -73,7 +73,7 @@ describe("approve view: confirm control per tier", function()
 	end)
 
 	it("names t in the hints while an inferred target still needs confirming", function()
-		local s = ready("kube-lens://mutate?op=restart&kind=deployment&name=web&namespace=apps")
+		local s = ready("tern-kube://mutate?op=restart&kind=deployment&name=web&namespace=apps")
 		expect(N.text(Render.view(s).dock :: N.Node)).toContain("t confirm target · enter confirm")
 		s.targetConfirmed = true
 		expect(string.find(N.text(Render.view(s).dock :: N.Node), "t confirm target", 1, true) == nil).toBe(true)
@@ -126,7 +126,7 @@ describe("approve view: diffs and risks", function()
 	it("one collapsible card per resource with only the hunks in a diff node", function()
 		local s = ready(APPLY, world)
 		local v = Render.view(s)
-		local cards = N.findAll(v.main, N.role("kube-lens.approve-diff"))
+		local cards = N.findAll(v.main, N.role("tern-kube.approve-diff"))
 		expect(#cards).toBe(#(s.diff :: any).segments)
 		local diff = N.find(cards[1], N.kind("diff")) :: N.Node
 		expect(string.sub((diff.p :: any).text, 1, 2)).toBe("@@")
@@ -137,11 +137,11 @@ describe("approve view: diffs and risks", function()
 	it("tab expands the next resource diff", function()
 		local s = ready(APPLY, world)
 		A.send(s, A.key("tab"), A.cluster(world))
-		local cards = N.findAll(Render.view(s).main, N.role("kube-lens.approve-diff"))
+		local cards = N.findAll(Render.view(s).main, N.role("tern-kube.approve-diff"))
 		expect((cards[1].p :: any).collapsed).toBe(false)
 		expect((cards[1].p :: any).selected).toBe(true)
 		A.send(s, A.key("tab"), A.cluster(world))
-		cards = N.findAll(Render.view(s).main, N.role("kube-lens.approve-diff"))
+		cards = N.findAll(Render.view(s).main, N.role("tern-kube.approve-diff"))
 		expect((cards[1].p :: any).collapsed).toBe(true)
 		expect((cards[2].p :: any).collapsed).toBe(false)
 	end)
@@ -165,11 +165,11 @@ describe("approve view: result and help", function()
 	it("shows the key help in the layer", function()
 		local s = ready(SCALE)
 		A.send(s, A.key("?", "?"), A.cluster())
-		expect(N.text(Render.view(s).layer :: N.Node)).toContain("Kube Approve keys")
+		expect(N.text(Render.view(s).layer :: N.Node)).toContain("Tern Kube Approve keys")
 	end)
 
 	it("titles the pane with the operation and context", function()
-		expect(Render.title(ready(SCALE))).toBe("Kube Approve · kubectl scale · kind-dev")
+		expect(Render.title(ready(SCALE))).toBe("Tern Kube Approve · kubectl scale · kind-dev")
 	end)
 end)
 
