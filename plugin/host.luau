@@ -37,6 +37,9 @@ end
 type LensState = {
 	run: LensRun,
 	lines: { string },
+	bytes: number,
+	-- Output beyond the native limits: the lens stops recording and shows raw.
+	overflow: boolean,
 	status: number?,
 	view: ViewState,
 	capture: Capture?,
@@ -45,6 +48,15 @@ type LensState = {
 
 -- Structured output is only valid as a whole; while it streams, raw is shown.
 local NEEDS_FINISH: { [string]: boolean } = { json = true, yaml = true, describe = true }
+
+-- Parsing cost is linear in lines (about 15 us per line in the plugin VM), and
+-- Tern waits for `view` before feeding more output: past these limits the
+-- native view would stall the pane, so the block stays raw (PRD: 16 MiB cap).
+local MAX_NATIVE_LINES = 20000
+local MAX_NATIVE_BYTES = 16 * 1024 * 1024
+-- While a command still runs, every `view` rebuilds the capture; above this
+-- many lines the live view stays raw until the command finishes.
+local MAX_RUNNING_LINES = 2000
 
 local function warnOnce(state: LensState, what: string, err: any)
 	if not state.warned then
@@ -61,9 +73,12 @@ local function captureOf(state: LensState): Capture?
 	if state.capture then
 		return state.capture
 	end
+	if state.overflow then
+		return nil
+	end
 	local run = { program = state.run.program, args = state.run.args }
 	if state.status == nil then
-		if NEEDS_FINISH[Capture.modeOf(run)] then
+		if #state.lines > MAX_RUNNING_LINES or NEEDS_FINISH[Capture.modeOf(run)] then
 			return nil
 		end
 		return Capture.build(run, state.lines, nil, { decode = decode })
@@ -120,6 +135,8 @@ tern.lens.define("kubectl", {
 		return {
 			run = run,
 			lines = {},
+			bytes = 0,
+			overflow = false,
 			status = nil,
 			view = Viewstate.default(),
 			capture = nil,
@@ -127,6 +144,15 @@ tern.lens.define("kubectl", {
 		}
 	end,
 	line = function(state: LensState, l: LensLine)
+		if state.overflow then
+			return
+		end
+		state.bytes += #l.text + 1
+		if #state.lines >= MAX_NATIVE_LINES or state.bytes > MAX_NATIVE_BYTES then
+			state.overflow = true
+			state.lines = {}
+			return
+		end
 		table.insert(state.lines, l.text)
 	end,
 	finish = function(state: LensState, status: number)
@@ -148,8 +174,10 @@ tern.lens.define("kubectl", {
 		log.debug(
 			"kube-lens lens.view",
 			"lines=" .. #state.lines,
+			"overflow=" .. tostring(state.overflow),
 			"finished=" .. tostring(state.status ~= nil),
-			"view_ms=" .. ms(t0)
+			"view_ms=" .. ms(t0),
+			"lua_kb=" .. gcinfo()
 		)
 		return node
 	end,
