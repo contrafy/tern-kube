@@ -140,7 +140,9 @@ function M.render(capture: Capture, vs: ViewState, counts: Counts?): Node
 	if vs.sort and capture.snapshot then
 		table.insert(top, ui.text({ ui.span("sorted by " .. vs.sort .. (if vs.desc then " (desc)" else ""), "muted") }))
 	end
-	if capture.status ~= nil and capture.status ~= 0 then
+	-- mutation_view shows the exit status and kubectl errors in its result.
+	local bodyReports = capture.mode == "mutation"
+	if capture.status ~= nil and capture.status ~= 0 and not bodyReports then
 		table.insert(top, ui.badge("exit " .. capture.status, "error", { role = "kube-lens.exit" }))
 	end
 	if capture.unparsed > 0 then
@@ -160,7 +162,7 @@ function M.render(capture: Capture, vs: ViewState, counts: Counts?): Node
 			actions = { click = Viewstate.action(Viewstate.toggledHelp(vs)) },
 		})
 	)
-	local children: { Node } = { ui.row(top, { key = "bar", wrap = true }) }
+	local children: { Node } = { ui.row(top, { key = "bar", wrap = true, role = "kube-lens.bar" }) }
 	-- yaml_view shows its own banner next to the masked YAML.
 	if capture.sensitive and capture.mode ~= "yaml" then
 		table.insert(
@@ -171,7 +173,7 @@ function M.render(capture: Capture, vs: ViewState, counts: Counts?): Node
 			)
 		)
 	end
-	local diags = diagnosticsNode(capture.diagnostics)
+	local diags = if bodyReports then nil else diagnosticsNode(capture.diagnostics)
 	if diags then
 		table.insert(children, diags)
 	end

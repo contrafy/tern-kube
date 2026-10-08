@@ -93,6 +93,17 @@ describe("lens view", function()
 		expect(nodes.text(node)).toContain("does-not-exist")
 	end)
 
+	-- Live: a failed `kubectl scale` showed the error twice (header
+	-- diagnostics and the mutation error card) and "exit 1" twice.
+	it("failed mutations show the error and exit status once, in the result view", function()
+		local node = View.render(build("errors/scale_deployment+api_--replicas=1"), vsm.default()) :: any
+		expect(nodes.find(node, nodes.role("kube-lens.error")) ~= nil).toBe(true)
+		expect(nodes.find(header(node), nodes.role("kube-lens.diagnostics"))).toBeNil()
+		expect(nodes.find(header(node), nodes.role("kube-lens.exit"))).toBeNil()
+		local _, count = string.gsub(nodes.text(node), "exit 1", "")
+		expect(count).toBe(1)
+	end)
+
 	it("No resources found reads as a note, not an error", function()
 		local node = View.render(build("ns-empty/get_pods"), vsm.default()) :: any
 		expect(nodes.text(node)).toContain("No resources found")
