@@ -1,0 +1,8 @@
+diff -u -N /tmp/LIVE-1/v1.Secret.ns.s /tmp/MERGED-2/v1.Secret.ns.s
+Binary files /tmp/LIVE-1/v1.Secret.ns.s and /tmp/MERGED-2/v1.Secret.ns.s differ
+diff -u -N /tmp/LIVE-1/odd /tmp/MERGED-2/odd
+--- /tmp/LIVE-1/odd	2026
++++ /tmp/MERGED-2/odd	2026
+@@ -1 +1 @@
+-a
++b

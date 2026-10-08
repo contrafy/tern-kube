@@ -69,3 +69,7 @@ guard-flags-check:
 
 test-shell-guard: guard-flags-check
 	@LUAU=$(LUAU) sh tests/shell/guard/run.sh
+
+.PHONY: test-shell-drift
+test-shell-drift:
+	@LUAU=$(LUAU) sh tests/shell/drift/run.sh

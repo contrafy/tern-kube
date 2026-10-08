@@ -1,0 +1,7 @@
+diff -u -N /tmp/LIVE-9/lens.example.com.v1alpha1.Widget.tern-test-crd.old /tmp/MERGED-9/lens.example.com.v1alpha1.Widget.tern-test-crd.old
+--- /tmp/LIVE-9/lens.example.com.v1alpha1.Widget.tern-test-crd.old	2026
++++ /tmp/MERGED-9/lens.example.com.v1alpha1.Widget.tern-test-crd.old	2026
+@@ -1,3 +0,0 @@
+-apiVersion: lens.example.com/v1alpha1
+-kind: Widget
+-metadata: {}

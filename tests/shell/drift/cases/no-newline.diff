@@ -1,0 +1,8 @@
+diff -u -N /tmp/L/v1.Pod.ns.a /tmp/M/v1.Pod.ns.a
+--- /tmp/L/v1.Pod.ns.a
++++ /tmp/M/v1.Pod.ns.a
+@@ -1 +1 @@
+-a
+\ No newline at end of file
++b
+\ No newline at end of file

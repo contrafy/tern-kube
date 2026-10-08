@@ -1,0 +1,37 @@
+diff -u -N /tmp/LIVE-1/lens.example.com.v1alpha1.Widget.ns.my.widget.v2 /tmp/MERGED-2/lens.example.com.v1alpha1.Widget.ns.my.widget.v2
+--- /tmp/LIVE-1/lens.example.com.v1alpha1.Widget.ns.my.widget.v2	2026
++++ /tmp/MERGED-2/lens.example.com.v1alpha1.Widget.ns.my.widget.v2	2026
+@@ -1 +1 @@
+-a
++b
+diff -u -N /tmp/LIVE-1/v1.Node..kind-control-plane /tmp/MERGED-2/v1.Node..kind-control-plane
+--- /tmp/LIVE-1/v1.Node..kind-control-plane	2026
++++ /tmp/MERGED-2/v1.Node..kind-control-plane	2026
+@@ -1,2 +0,0 @@
+-a
+-b
+diff -u -N /tmp/LIVE-1/.v1.Pod.ns.a /tmp/MERGED-2/.v1.Pod.ns.a
+--- /tmp/LIVE-1/.v1.Pod.ns.a	2026
++++ /tmp/MERGED-2/.v1.Pod.ns.a	2026
+@@ -1 +1 @@
+-a
++b
+diff -u -N /tmp/LIVE-1/apps.v1.Deployment.ns. /tmp/MERGED-2/apps.v1.Deployment.ns.
+--- /tmp/LIVE-1/apps.v1.Deployment.ns.	2026
++++ /tmp/MERGED-2/apps.v1.Deployment.ns.	2026
+@@ -1 +1 @@
+-a
++b
+diff -r /tmp/LIVE-1/x /tmp/MERGED-2/x 
+diff -ruN /tmp/LIVE-1/blob /tmp/MERGED-2/blob
+--- /tmp/LIVE-1/v1.ConfigMap.ns.rekeyed	2026
++++ /tmp/MERGED-2/v1.ConfigMap.ns.rekeyed	2026
+@@ -1 +1,2 @@
+ a
++b
+diff -u -N /tmp/LIVE-1/policy.v1beta1.PodDisruptionBudget.ns.a`b<script>|x /tmp/MERGED-2/policy.v1beta1.PodDisruptionBudget.ns.a`b<script>|x
+--- /tmp/LIVE-1/policy.v1beta1.PodDisruptionBudget.ns.a`b<script>|x	2026
++++ /tmp/MERGED-2/policy.v1beta1.PodDisruptionBudget.ns.a`b<script>|x	2026
+@@ -1 +1 @@
+-```
++````

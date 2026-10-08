@@ -1,0 +1,13 @@
+#!/bin/sh
+# Fake helm for tests/shell/drift: records argv in $FAKE_DIR/helm.argv and
+# prints $FAKE_DIR/rendered.yaml (exit $FAKE_DIR/helm.exit, default 0).
+d=${FAKE_DIR:?FAKE_DIR not set}
+{
+	printf 'helm'
+	for a in "$@"; do
+		printf ' [%s]' "$a"
+	done
+	printf '\n'
+} >>"$d/helm.argv"
+[ -f "$d/rendered.yaml" ] && cat "$d/rendered.yaml"
+exit "$(cat "$d/helm.exit" 2>/dev/null || echo 0)"

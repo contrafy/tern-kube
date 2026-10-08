@@ -1,0 +1,9 @@
+diff -u -N /tmp/L/v1.ConfigMap.ns.a /tmp/M/v1.ConfigMap.ns.a
+--- /tmp/L/v1.ConfigMap.ns.a
++++ /tmp/M/v1.ConfigMap.ns.a
+@@ -1,4 +1,4 @@
+ a
+-b
++c
+
+
