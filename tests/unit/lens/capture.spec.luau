@@ -261,4 +261,164 @@ describe("lens capture of an alias program", function()
 	end)
 end)
 
+describe("lens capture redaction policy", function()
+	local SHOW = { showSecrets = true, strict = false }
+	local STRICT = { showSecrets = false, strict = true }
+	local SECRET_JSON =
+		[[{"apiVersion":"v1","kind":"Secret","metadata":{"name":"s","namespace":"n"},"data":{"password":"aHVudGVyMg=="}}]]
+
+	local function withPolicy(command: string, lines: { string }, policy: any): Capture.Capture
+		return Capture.build(runs.run(command), lines, 0, { decode = json.decode, policy = policy })
+	end
+
+	local function fixture(id: string, policy: any): Capture.Capture
+		local f = runs.load(id)
+		return Capture.build(f.run, f.lines, f.status, { decode = json.decode, policy = policy })
+	end
+
+	it("defaults to masking and records the policy it used", function()
+		local c = fromLines("kubectl get secret s -n n -o json", { SECRET_JSON }, 0)
+		expect(c.policy).toEqual({ showSecrets = false, strict = false })
+		expect(c.masked).toBe(true)
+		expect(c.sensitive).toBe(true)
+	end)
+
+	it("a plain table capture hides nothing", function()
+		expect(build("ns-apps/get_pods").masked).toBe(false)
+	end)
+
+	-- sensitive keeps describing the raw output; masked describes the view.
+	it("shows Secret values in -o json when the policy allows it", function()
+		local c = withPolicy("kubectl get secret s -n n -o json", { SECRET_JSON }, SHOW)
+		expect(c.sensitive).toBe(true)
+		expect(c.masked).toBe(false)
+		expect((c.objects :: any)["/Secret/n/s"].data.password).toBe("aHVudGVyMg==")
+	end)
+
+	it("shows Secret values in -o yaml when the policy allows it", function()
+		local c = fixture("ns-apps/get_secret_app-secret_-o_yaml", SHOW)
+		expect(c.sensitive).toBe(true)
+		expect(c.masked).toBe(false)
+		expect(c.yamlLines).toEqual(c.lines)
+		expect(fixture("ns-apps/get_secret_app-secret_-o_yaml", nil).masked).toBe(true)
+	end)
+
+	it("strict mode masks sensitive env values in -o json", function()
+		local pod = [[{"apiVersion":"v1","kind":"Pod","metadata":{"name":"p","namespace":"n"},
+			"spec":{"containers":[{"name":"app","env":[{"name":"DB_PASSWORD","value":"hunter2"},
+			{"name":"tokenizer_mode","value":"fast"}]}]}}]]
+		local c = withPolicy("kubectl get pod p -n n -o json", { pod }, STRICT)
+		local env = (c.objects :: any)["/Pod/n/p"].spec.containers[1].env
+		expect(env[1].value).toBe("<redacted: 7 bytes>")
+		expect(env[2].value).toBe("fast")
+		expect(c.masked).toBe(true)
+		expect(c.sensitive).toBe(false)
+	end)
+
+	it("strict mode masks sensitive values in -o yaml", function()
+		local lines = {
+			"apiVersion: v1",
+			"data:",
+			"  LOG_LEVEL: info",
+			"  api_key: abc123",
+			"kind: ConfigMap",
+			"metadata:",
+			"  name: c",
+		}
+		local c = withPolicy("kubectl get cm c -o yaml", lines, STRICT)
+		expect((c.yamlLines :: { string })[3]).toBe("  LOG_LEVEL: info")
+		expect((c.yamlLines :: { string })[4]).toBe("  api_key: '<redacted: 6 bytes>'")
+		expect(c.masked).toBe(true)
+		expect(withPolicy("kubectl get cm c -o yaml", lines, nil).masked).toBe(false)
+	end)
+
+	local DESCRIBE_POD = {
+		"Name:             web-1",
+		"Namespace:        apps",
+		"Containers:",
+		"  app:",
+		"    Image:          busybox",
+		"    Environment:",
+		"      DB_PASSWORD:      hunter2",
+		"      API_TOKEN:        <set to the key 'token' in secret 'creds'>  Optional: false",
+		"      LOG_LEVEL:        info",
+		"      tokenizer_mode:   fast",
+		"    Mounts:         <none>",
+		"Volumes:",
+		"  creds:",
+		"    Type:        Secret (a volume populated by a Secret)",
+		"    SecretName:  creds",
+		"Events:  <none>",
+	}
+
+	local function envOf(c: Capture.Capture): { [string]: string }
+		local out: { [string]: string } = {}
+		local obj = (c.describe :: any).objects[1]
+		local function walk(fields: { any })
+			for _, f in fields do
+				out[f.key] = f.value
+				walk(f.children)
+			end
+		end
+		walk(obj.fields)
+		return out
+	end
+
+	it("strict mode masks describe env values but not references or unrelated names", function()
+		local c = withPolicy("kubectl describe pod web-1 -n apps", DESCRIBE_POD, STRICT)
+		local f = envOf(c)
+		expect(f.DB_PASSWORD).toBe("<redacted: 7 bytes>")
+		expect(f.API_TOKEN).toBe("<set to the key 'token' in secret 'creds'>  Optional: false")
+		expect(f.LOG_LEVEL).toBe("info")
+		expect(f.tokenizer_mode).toBe("fast")
+		expect(f.SecretName).toBe("creds")
+		expect(c.masked).toBe(true)
+		local plain = withPolicy("kubectl describe pod web-1 -n apps", DESCRIBE_POD, nil)
+		expect(envOf(plain).DB_PASSWORD).toBe("hunter2")
+		expect(plain.masked).toBe(false)
+	end)
+
+	-- describe prints ConfigMap data as `key:` / `----` / value lines.
+	it("strict mode masks describe ConfigMap data under sensitive keys", function()
+		local lines = {
+			"Name:         app-config",
+			"Namespace:    apps",
+			"Labels:       <none>",
+			"Annotations:  <none>",
+			"",
+			"Data",
+			"====",
+			"db_password:",
+			"----",
+			"s3cr3t",
+			"more",
+			"LOG_LEVEL:",
+			"----",
+			"info",
+			"",
+			"BinaryData",
+			"====",
+			"",
+			"Events:  <none>",
+		}
+		local c = withPolicy("kubectl describe cm app-config -n apps", lines, STRICT)
+		local values: { string } = {}
+		for _, f in (c.describe :: any).objects[1].fields do
+			if f.key == "" and f.table == nil then
+				table.insert(values, f.value)
+			end
+		end
+		expect(values).toEqual({ "Data", "====", "<redacted: 11 bytes>", "info", "BinaryData", "====" })
+		expect(c.masked).toBe(true)
+	end)
+
+	-- describe never prints Secret values, only sizes; masking those hides nothing.
+	it("strict mode leaves describe Secret byte counts alone", function()
+		local lines =
+			{ "Name:         s", "Namespace:    n", "", "Type:  Opaque", "", "Data", "====", "password:  12 bytes" }
+		local c = withPolicy("kubectl describe secret s -n n", lines, STRICT)
+		expect(c.masked).toBe(false)
+	end)
+end)
+
 return nil

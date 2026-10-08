@@ -4,6 +4,7 @@
 -- printers (pkg/printers/internalversion) so they read the same as the table
 -- the user would otherwise see. Ages are not computed: no clock is available
 -- during replay, so CREATED shows creationTimestamp verbatim.
+local Redact = require("../model/redact")
 local Resource = require("../model/resource")
 local Types = require("../model/types")
 
@@ -521,46 +522,107 @@ local function parse(text: string, decode: Decode): Result
 end
 
 local LAST_APPLIED = "kubectl.kubernetes.io/last-applied-configuration"
+local SECRET_VALUES: { [string]: boolean } = { data = true, stringData = true }
 
-local function maskValues(values: any, suffix: string): any
+local function maskValues(values: any, suffix: string): (any, boolean)
 	local source = obj(values)
 	if not source then
-		return values
+		return values, false
 	end
 	local masked = {}
+	local changed = false
 	for k, v in pairs(source) do
-		masked[k] = if type(v) == "string" then string.format("<redacted: %d bytes%s>", #v, suffix) else "<redacted>"
+		local m = Redact.maskValue(v, suffix)
+		masked[k] = m
+		changed = changed or m ~= v
 	end
-	return masked
+	return masked, changed
 end
 
--- For native display only: Secret values (and the last-applied annotation,
--- which embeds them verbatim) are masked on a copy; the original object, used
--- by Raw view, is never modified. Other kinds are returned as-is.
-local function redactObject(source: Object): Object
-	if source.kind ~= "Secret" then
-		return source
-	end
-	local copy = table.clone(source)
-	copy.data = maskValues(source.data, " base64")
-	copy.stringData = maskValues(source.stringData, "")
+-- The annotation is a verbatim copy of the applied manifest: it leaks
+-- whatever was masked elsewhere in the object.
+local function maskLastApplied(source: Object): (Object, boolean)
 	local metadata = obj(source.metadata)
 	local annotations = if metadata then obj(metadata.annotations) else nil
-	if metadata and annotations and annotations[LAST_APPLIED] ~= nil then
-		local maskedAnnotations = table.clone(annotations)
-		local value = annotations[LAST_APPLIED]
-		maskedAnnotations[LAST_APPLIED] = if type(value) == "string"
-			then string.format("<redacted: %d bytes>", #value)
-			else "<redacted>"
-		local maskedMetadata = table.clone(metadata)
-		maskedMetadata.annotations = maskedAnnotations
-		copy.metadata = maskedMetadata
+	if metadata == nil or annotations == nil then
+		return source, false
 	end
-	return copy
+	local value = annotations[LAST_APPLIED]
+	if value == nil or Redact.isMask(value) then
+		return source, false
+	end
+	local maskedAnnotations = table.clone(annotations)
+	maskedAnnotations[LAST_APPLIED] = Redact.maskValue(value)
+	local maskedMetadata = table.clone(metadata)
+	maskedMetadata.annotations = maskedAnnotations
+	local copy = table.clone(source)
+	copy.metadata = maskedMetadata
+	return copy, true
 end
 
-local function redactSecrets(resource: Resource): Object
-	return redactObject(resource.object)
+local function maskable(v: any): boolean
+	return (type(v) == "string" or type(v) == "number") and not Redact.isMask(v)
+end
+
+-- Strict mode: scalar values under sensitive keys, and the `value` of
+-- `{name, value}` entries (container env) with a sensitive name. Copies only
+-- the tables on the path to a change.
+local function strictWalk(value: any, skip: { [string]: boolean }?): (any, boolean)
+	if type(value) ~= "table" then
+		return value, false
+	end
+	local copy: Object? = nil
+	local name = value.name
+	if type(name) == "string" and maskable(value.value) and Redact.sensitiveKey(name) then
+		copy = table.clone(value);
+		(copy :: Object).value = Redact.maskValue(value.value)
+	end
+	for k, v in pairs(value) do
+		if skip and type(k) == "string" and skip[k] then
+			continue
+		end
+		local out = v
+		if type(v) == "table" then
+			out = strictWalk(v, nil)
+		elseif type(k) == "string" and maskable(v) and Redact.sensitiveKey(k) then
+			out = Redact.maskValue(v)
+		end
+		if out ~= v then
+			copy = copy or table.clone(value);
+			(copy :: Object)[k] = out
+		end
+	end
+	return copy or value, copy ~= nil
+end
+
+-- For native display only: masks on a copy what `policy` hides (Secret
+-- values and their last-applied copy unless showSecrets; strict-mode
+-- matches); the original object, used by Raw view, is never modified.
+-- Returns the object itself when nothing is hidden, and whether anything was.
+local function redactObject(source: Object, policy: Redact.Policy?): (Object, boolean)
+	local p = policy or Redact.DEFAULT
+	local out, masked = source, false
+	local secret = source.kind == "Secret"
+	if secret and not p.showSecrets then
+		local copy = table.clone(source)
+		local data, stringData, annotation
+		copy.data, data = maskValues(source.data, " base64")
+		copy.stringData, stringData = maskValues(source.stringData, "")
+		out, annotation = maskLastApplied(copy)
+		masked = data or stringData or annotation
+	end
+	if p.strict then
+		local walked, found = strictWalk(out, if secret then SECRET_VALUES else nil)
+		if found then
+			out = maskLastApplied(walked)
+			masked = true
+		end
+	end
+	return out, masked
+end
+
+local function redactSecrets(resource: Resource, policy: Redact.Policy?): (Object, boolean)
+	return redactObject(resource.object, policy)
 end
 
 return {

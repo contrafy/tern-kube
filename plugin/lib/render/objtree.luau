@@ -1,18 +1,26 @@
 --!strict
 -- Disclosure tree for a decoded Kubernetes object. Only the first levels
 -- start open; every map/array shows at most `maxChildren` entries followed by
--- an overflow line, so a huge object never becomes a huge view. Secret values
--- are masked before anything is rendered. Node ids are field paths, so Tern
--- keeps a node's open/closed state across re-renders of the same object.
+-- an overflow line, so a huge object never becomes a huge view. Values the
+-- redaction policy hides are masked before anything is rendered. Node ids
+-- are field paths, so Tern keeps a node's open/closed state across
+-- re-renders of the same object.
 
 local Json = require("../parse/json")
+local Redact = require("../model/redact")
 local ui = require("../ui")
 
 type Node = ui.Node
 type Span = ui.Span
 export type TreeNode = ui.TreeNode
 
-export type Options = { id: string?, openDepth: number?, maxChildren: number?, maxText: number? }
+export type Options = {
+	id: string?,
+	openDepth: number?,
+	maxChildren: number?,
+	maxText: number?,
+	policy: Redact.Policy?,
+}
 
 local M = {}
 
@@ -143,22 +151,21 @@ function build(value: any, id: string, label: { Span }, depth: number, cfg: Conf
 	}
 end
 
-local function redact(obj: any): any
+local function redact(obj: any, policy: Redact.Policy?): any
 	if type(obj) ~= "table" then
 		return obj
 	end
-	local masked = Json.redactObject(obj)
-	local items = masked.items
+	local source = obj
+	local items = obj.items
 	if type(items) == "table" and isArray(items) then
-		local copy = table.clone(masked)
 		local maskedItems = table.create(#items)
 		for i, item in items do
-			maskedItems[i] = if type(item) == "table" then Json.redactObject(item) else item
+			maskedItems[i] = if type(item) == "table" then (Json.redactObject(item, policy)) else item
 		end
-		copy.items = maskedItems
-		return copy
+		source = table.clone(obj)
+		source.items = maskedItems
 	end
-	return masked
+	return (Json.redactObject(source, policy))
 end
 
 -- Tree nodes for `obj`; its top-level fields are depth 1.
@@ -169,7 +176,7 @@ function M.nodes(obj: any, opts: Options?): { TreeNode }
 		maxText = opts and opts.maxText or DEFAULT_MAX_TEXT,
 	}
 	local id = opts and opts.id or "obj"
-	local value = redact(obj)
+	local value = redact(obj, opts and opts.policy)
 	if type(value) ~= "table" then
 		return { { id = id, label = scalarSpans(value, cfg) } }
 	end

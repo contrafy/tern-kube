@@ -143,6 +143,33 @@ describe("yaml view: single objects and secrets", function()
 		expect(text).toContain("<redacted:")
 	end)
 
+	-- With values shown, the masking banner would be a lie, but the user
+	-- must still be told the block holds Secret values.
+	it("warns instead of claiming to mask when Secret values are shown", function()
+		local capture = captures.build(
+			"real/ns-apps/get_secret_app-secret_-o_yaml",
+			"kubectl get secret app-secret -n tern-test-apps -o yaml",
+			{ showSecrets = true, strict = false }
+		)
+		local view = render(capture)
+		local warning = nodes.find(view, nodes.role("kube-lens.sensitive")) :: Node
+		expect((warning.p :: any).tone).toBe("warning")
+		expect(nodes.text(warning)).toContain("security.show_secret_values")
+		expect((string.find(nodes.text(view), YamlView.SENSITIVE, 1, true))).toBeNil()
+		expect(codeText(codes(view)[1])).toContain("kube-lens-test-not-a-secret")
+	end)
+
+	it("says when strict mode masked values outside Secrets", function()
+		local lines = { "apiVersion: v1", "data:", "  api_key: abc123", "kind: ConfigMap", "metadata:", "  name: c" }
+		local capture = captures.fromLines("kubectl get cm c -o yaml", lines, 0, { showSecrets = false, strict = true })
+		local view = render(capture)
+		local warning = nodes.find(view, nodes.role("kube-lens.sensitive")) :: Node
+		expect(nodes.text(warning)).toContain("sensitive_output_strict_mode")
+		expect(codeText(codes(view)[1])).toContain("api_key: '<redacted: 6 bytes>'")
+		local plain = render(captures.fromLines("kubectl get cm c -o yaml", lines, 0))
+		expect(nodes.find(plain, nodes.role("kube-lens.sensitive"))).toBeNil()
+	end)
+
 	it("splits a multi-document manifest into its objects", function()
 		local capture = captures.fromLines("kubectl get -f mutate/app.yaml -o yaml", MANIFEST, 0)
 		local view = render(capture, Viewstate.opened(Viewstate.default(), YamlView.docKey(2)))

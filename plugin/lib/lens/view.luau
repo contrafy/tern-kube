@@ -14,6 +14,7 @@ local ui = require("../ui")
 type Capture = Capture.Capture
 type Node = ui.Node
 type ViewState = Viewstate.ViewState
+export type Options = TableView.Options
 
 local M = {}
 
@@ -25,13 +26,13 @@ local function wrap(capture: Capture, header: Node, body: Node?): Node
 	return ui.col(children, { key = "lens", role = "kube-lens." .. capture.mode })
 end
 
-function M.render(capture: Capture, vs: ViewState): Node?
+function M.render(capture: Capture, vs: ViewState, opts: Options?): Node?
 	local mode = capture.mode
 	if mode == "raw" or capture.lineCount == 0 then
 		return nil
 	end
 	if mode == "table" or mode == "name" or mode == "json" then
-		local body, counts = TableView.render(capture, vs)
+		local body, counts = TableView.render(capture, vs, opts)
 		if body == nil and #capture.diagnostics == 0 then
 			return nil
 		end
