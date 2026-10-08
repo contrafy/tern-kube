@@ -507,7 +507,7 @@ main() {
 	build_world
 
 	log "capturing into $OUT"
-	find "$OUT" -mindepth 1 -maxdepth 1 ! -name README.md -exec rm -rf {} + 2>/dev/null || true
+	find "$OUT" -mindepth 1 -maxdepth 1 ! -name README.md ! -name json-world ! -name mutate-preview -exec rm -rf {} + 2>/dev/null || true
 	mkdir -p "$OUT"
 	printf 'scenario\tkey\targv\texit\tkubectl_version\tserver_version\n' >"$MANIFEST"
 
@@ -522,6 +522,11 @@ main() {
 	capture_mutations
 	capture_mutation_errors
 	scan_for_credentials
+	# capture_mutations recreated tern-test-mutate; restore the quick-action
+	# toolbox only now so no fixture lists it.
+	log "applying the quick-action toolbox"
+	k apply -f "$MANIFESTS/qa/toolbox.yaml" >/dev/null
+	k rollout status deployment/kl-qa-shell -n "$MUTATE" --timeout=180s >/dev/null
 
 	count=$(($(wc -l <"$MANIFEST") - 1))
 	log "captured $count fixtures (kubectl $CLIENT_VERSION, server $SERVER_VERSION)"

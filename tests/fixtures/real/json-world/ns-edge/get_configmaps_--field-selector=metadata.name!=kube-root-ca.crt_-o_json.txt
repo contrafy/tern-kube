@@ -1,0 +1,27 @@
+{
+    "apiVersion": "v1",
+    "items": [
+        {
+            "apiVersion": "v1",
+            "data": {
+                "greeting": "こんにちは, Grüße, Привет"
+            },
+            "kind": "ConfigMap",
+            "metadata": {
+                "annotations": {
+                    "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"v1\",\"data\":{\"greeting\":\"こんにちは, Grüße, Привет\"},\"kind\":\"ConfigMap\",\"metadata\":{\"annotations\":{\"lens.example.com/note\":\"Ünïcødé ✓ 日本語\"},\"name\":\"unicode-config\",\"namespace\":\"tern-test-edge\"}}\n",
+                    "lens.example.com/note": "Ünïcødé ✓ 日本語"
+                },
+                "creationTimestamp": "2026-10-08T08:10:24Z",
+                "name": "unicode-config",
+                "namespace": "tern-test-edge",
+                "resourceVersion": "3881",
+                "uid": "b51b60b4-c7ee-464f-9313-473d58c3ba23"
+            }
+        }
+    ],
+    "kind": "List",
+    "metadata": {
+        "resourceVersion": ""
+    }
+}

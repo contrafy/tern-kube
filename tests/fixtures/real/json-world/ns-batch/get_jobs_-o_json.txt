@@ -1,0 +1,190 @@
+{
+    "apiVersion": "v1",
+    "items": [
+        {
+            "apiVersion": "batch/v1",
+            "kind": "Job",
+            "metadata": {
+                "annotations": {
+                    "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"batch/v1\",\"kind\":\"Job\",\"metadata\":{\"annotations\":{},\"labels\":{\"app\":\"reports\"},\"name\":\"done-job\",\"namespace\":\"tern-test-batch\"},\"spec\":{\"backoffLimit\":0,\"template\":{\"metadata\":{\"labels\":{\"app\":\"reports\"}},\"spec\":{\"containers\":[{\"command\":[\"sh\",\"-c\",\"echo 'report generated: 42 rows'\"],\"image\":\"busybox:1.37\",\"imagePullPolicy\":\"IfNotPresent\",\"name\":\"report\"}],\"restartPolicy\":\"Never\",\"terminationGracePeriodSeconds\":1}}}}\n"
+                },
+                "creationTimestamp": "2026-10-08T08:10:24Z",
+                "generation": 1,
+                "labels": {
+                    "app": "reports"
+                },
+                "name": "done-job",
+                "namespace": "tern-test-batch",
+                "resourceVersion": "3987",
+                "uid": "62997c3e-6b77-455e-b90b-6d96da0b71b9"
+            },
+            "spec": {
+                "backoffLimit": 0,
+                "completionMode": "NonIndexed",
+                "completions": 1,
+                "manualSelector": false,
+                "parallelism": 1,
+                "podReplacementPolicy": "TerminatingOrFailed",
+                "selector": {
+                    "matchLabels": {
+                        "batch.kubernetes.io/controller-uid": "62997c3e-6b77-455e-b90b-6d96da0b71b9"
+                    }
+                },
+                "suspend": false,
+                "template": {
+                    "metadata": {
+                        "labels": {
+                            "app": "reports",
+                            "batch.kubernetes.io/controller-uid": "62997c3e-6b77-455e-b90b-6d96da0b71b9",
+                            "batch.kubernetes.io/job-name": "done-job",
+                            "controller-uid": "62997c3e-6b77-455e-b90b-6d96da0b71b9",
+                            "job-name": "done-job"
+                        }
+                    },
+                    "spec": {
+                        "containers": [
+                            {
+                                "command": [
+                                    "sh",
+                                    "-c",
+                                    "echo 'report generated: 42 rows'"
+                                ],
+                                "image": "busybox:1.37",
+                                "imagePullPolicy": "IfNotPresent",
+                                "name": "report",
+                                "resources": {},
+                                "terminationMessagePath": "/dev/termination-log",
+                                "terminationMessagePolicy": "File"
+                            }
+                        ],
+                        "dnsPolicy": "ClusterFirst",
+                        "restartPolicy": "Never",
+                        "schedulerName": "default-scheduler",
+                        "securityContext": {},
+                        "terminationGracePeriodSeconds": 1
+                    }
+                }
+            },
+            "status": {
+                "completionTime": "2026-10-08T08:10:27Z",
+                "conditions": [
+                    {
+                        "lastProbeTime": "2026-10-08T08:10:27Z",
+                        "lastTransitionTime": "2026-10-08T08:10:27Z",
+                        "message": "Reached expected number of succeeded pods",
+                        "reason": "CompletionsReached",
+                        "status": "True",
+                        "type": "SuccessCriteriaMet"
+                    },
+                    {
+                        "lastProbeTime": "2026-10-08T08:10:27Z",
+                        "lastTransitionTime": "2026-10-08T08:10:27Z",
+                        "message": "Reached expected number of succeeded pods",
+                        "reason": "CompletionsReached",
+                        "status": "True",
+                        "type": "Complete"
+                    }
+                ],
+                "ready": 0,
+                "startTime": "2026-10-08T08:10:24Z",
+                "succeeded": 1,
+                "terminating": 0,
+                "uncountedTerminatedPods": {}
+            }
+        },
+        {
+            "apiVersion": "batch/v1",
+            "kind": "Job",
+            "metadata": {
+                "annotations": {
+                    "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"batch/v1\",\"kind\":\"Job\",\"metadata\":{\"annotations\":{},\"labels\":{\"app\":\"migrate\"},\"name\":\"fail-job\",\"namespace\":\"tern-test-batch\"},\"spec\":{\"backoffLimit\":0,\"template\":{\"metadata\":{\"labels\":{\"app\":\"migrate\"}},\"spec\":{\"containers\":[{\"command\":[\"sh\",\"-c\",\"echo 'migration 0042 failed: relation exists' \\u003e\\u00262; exit 3\"],\"image\":\"busybox:1.37\",\"imagePullPolicy\":\"IfNotPresent\",\"name\":\"migrate\"}],\"restartPolicy\":\"Never\",\"terminationGracePeriodSeconds\":1}}}}\n"
+                },
+                "creationTimestamp": "2026-10-08T08:10:24Z",
+                "generation": 1,
+                "labels": {
+                    "app": "migrate"
+                },
+                "name": "fail-job",
+                "namespace": "tern-test-batch",
+                "resourceVersion": "3982",
+                "uid": "345932a4-cbdd-41b2-891e-bcddbd454c2b"
+            },
+            "spec": {
+                "backoffLimit": 0,
+                "completionMode": "NonIndexed",
+                "completions": 1,
+                "manualSelector": false,
+                "parallelism": 1,
+                "podReplacementPolicy": "TerminatingOrFailed",
+                "selector": {
+                    "matchLabels": {
+                        "batch.kubernetes.io/controller-uid": "345932a4-cbdd-41b2-891e-bcddbd454c2b"
+                    }
+                },
+                "suspend": false,
+                "template": {
+                    "metadata": {
+                        "labels": {
+                            "app": "migrate",
+                            "batch.kubernetes.io/controller-uid": "345932a4-cbdd-41b2-891e-bcddbd454c2b",
+                            "batch.kubernetes.io/job-name": "fail-job",
+                            "controller-uid": "345932a4-cbdd-41b2-891e-bcddbd454c2b",
+                            "job-name": "fail-job"
+                        }
+                    },
+                    "spec": {
+                        "containers": [
+                            {
+                                "command": [
+                                    "sh",
+                                    "-c",
+                                    "echo 'migration 0042 failed: relation exists' \u003e\u00262; exit 3"
+                                ],
+                                "image": "busybox:1.37",
+                                "imagePullPolicy": "IfNotPresent",
+                                "name": "migrate",
+                                "resources": {},
+                                "terminationMessagePath": "/dev/termination-log",
+                                "terminationMessagePolicy": "File"
+                            }
+                        ],
+                        "dnsPolicy": "ClusterFirst",
+                        "restartPolicy": "Never",
+                        "schedulerName": "default-scheduler",
+                        "securityContext": {},
+                        "terminationGracePeriodSeconds": 1
+                    }
+                }
+            },
+            "status": {
+                "conditions": [
+                    {
+                        "lastProbeTime": "2026-10-08T08:10:27Z",
+                        "lastTransitionTime": "2026-10-08T08:10:27Z",
+                        "message": "Job has reached the specified backoff limit",
+                        "reason": "BackoffLimitExceeded",
+                        "status": "True",
+                        "type": "FailureTarget"
+                    },
+                    {
+                        "lastProbeTime": "2026-10-08T08:10:27Z",
+                        "lastTransitionTime": "2026-10-08T08:10:27Z",
+                        "message": "Job has reached the specified backoff limit",
+                        "reason": "BackoffLimitExceeded",
+                        "status": "True",
+                        "type": "Failed"
+                    }
+                ],
+                "failed": 1,
+                "ready": 0,
+                "startTime": "2026-10-08T08:10:24Z",
+                "terminating": 0,
+                "uncountedTerminatedPods": {}
+            }
+        }
+    ],
+    "kind": "List",
+    "metadata": {
+        "resourceVersion": ""
+    }
+}

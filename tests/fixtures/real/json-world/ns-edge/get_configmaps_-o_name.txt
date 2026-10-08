@@ -1,0 +1,2 @@
+configmap/kube-root-ca.crt
+configmap/unicode-config

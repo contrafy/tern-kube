@@ -1,0 +1,55 @@
+scenario	key	argv	exit	kubectl_version	server_version
+cluster	get_nodes_-o_json	kubectl get nodes -o json	0	v1.34.1	v1.37.0
+ns-apps	get_deployments_-o_json	kubectl get deployments -n tern-test-apps -o json	0	v1.34.1	v1.37.0
+ns-apps	get_replicasets_-o_json	kubectl get replicasets -n tern-test-apps -o json	0	v1.34.1	v1.37.0
+ns-apps	get_pods_-o_json	kubectl get pods -n tern-test-apps -o json	0	v1.34.1	v1.37.0
+ns-apps	get_services_-o_json	kubectl get services -n tern-test-apps -o json	0	v1.34.1	v1.37.0
+ns-apps	get_endpointslices_-o_json	kubectl get endpointslices -n tern-test-apps -o json	0	v1.34.1	v1.37.0
+ns-apps	get_ingresses_-o_json	kubectl get ingresses -n tern-test-apps -o json	0	v1.34.1	v1.37.0
+ns-apps	get_jobs_-o_json	kubectl get jobs -n tern-test-apps -o json	0	v1.34.1	v1.37.0
+ns-apps	get_cronjobs_-o_json	kubectl get cronjobs -n tern-test-apps -o json	0	v1.34.1	v1.37.0
+ns-apps	get_statefulsets_-o_json	kubectl get statefulsets -n tern-test-apps -o json	0	v1.34.1	v1.37.0
+ns-apps	get_daemonsets_-o_json	kubectl get daemonsets -n tern-test-apps -o json	0	v1.34.1	v1.37.0
+ns-apps	get_configmaps_--field-selector=metadata.name!=kube-root-ca.crt_-o_json	kubectl get configmaps -n tern-test-apps '--field-selector=metadata.name!=kube-root-ca.crt' -o json	0	v1.34.1	v1.37.0
+ns-apps	get_configmaps_-o_name	kubectl get configmaps -n tern-test-apps -o name	0	v1.34.1	v1.37.0
+ns-apps	get_secrets_-o_name	kubectl get secrets -n tern-test-apps -o name	0	v1.34.1	v1.37.0
+ns-batch	get_deployments_-o_json	kubectl get deployments -n tern-test-batch -o json	0	v1.34.1	v1.37.0
+ns-batch	get_replicasets_-o_json	kubectl get replicasets -n tern-test-batch -o json	0	v1.34.1	v1.37.0
+ns-batch	get_pods_-o_json	kubectl get pods -n tern-test-batch -o json	0	v1.34.1	v1.37.0
+ns-batch	get_services_-o_json	kubectl get services -n tern-test-batch -o json	0	v1.34.1	v1.37.0
+ns-batch	get_endpointslices_-o_json	kubectl get endpointslices -n tern-test-batch -o json	0	v1.34.1	v1.37.0
+ns-batch	get_ingresses_-o_json	kubectl get ingresses -n tern-test-batch -o json	0	v1.34.1	v1.37.0
+ns-batch	get_jobs_-o_json	kubectl get jobs -n tern-test-batch -o json	0	v1.34.1	v1.37.0
+ns-batch	get_cronjobs_-o_json	kubectl get cronjobs -n tern-test-batch -o json	0	v1.34.1	v1.37.0
+ns-batch	get_statefulsets_-o_json	kubectl get statefulsets -n tern-test-batch -o json	0	v1.34.1	v1.37.0
+ns-batch	get_daemonsets_-o_json	kubectl get daemonsets -n tern-test-batch -o json	0	v1.34.1	v1.37.0
+ns-batch	get_configmaps_--field-selector=metadata.name!=kube-root-ca.crt_-o_json	kubectl get configmaps -n tern-test-batch '--field-selector=metadata.name!=kube-root-ca.crt' -o json	0	v1.34.1	v1.37.0
+ns-batch	get_configmaps_-o_name	kubectl get configmaps -n tern-test-batch -o name	0	v1.34.1	v1.37.0
+ns-batch	get_secrets_-o_name	kubectl get secrets -n tern-test-batch -o name	0	v1.34.1	v1.37.0
+ns-edge	get_deployments_-o_json	kubectl get deployments -n tern-test-edge -o json	0	v1.34.1	v1.37.0
+ns-edge	get_replicasets_-o_json	kubectl get replicasets -n tern-test-edge -o json	0	v1.34.1	v1.37.0
+ns-edge	get_pods_-o_json	kubectl get pods -n tern-test-edge -o json	0	v1.34.1	v1.37.0
+ns-edge	get_services_-o_json	kubectl get services -n tern-test-edge -o json	0	v1.34.1	v1.37.0
+ns-edge	get_endpointslices_-o_json	kubectl get endpointslices -n tern-test-edge -o json	0	v1.34.1	v1.37.0
+ns-edge	get_ingresses_-o_json	kubectl get ingresses -n tern-test-edge -o json	0	v1.34.1	v1.37.0
+ns-edge	get_jobs_-o_json	kubectl get jobs -n tern-test-edge -o json	0	v1.34.1	v1.37.0
+ns-edge	get_cronjobs_-o_json	kubectl get cronjobs -n tern-test-edge -o json	0	v1.34.1	v1.37.0
+ns-edge	get_statefulsets_-o_json	kubectl get statefulsets -n tern-test-edge -o json	0	v1.34.1	v1.37.0
+ns-edge	get_daemonsets_-o_json	kubectl get daemonsets -n tern-test-edge -o json	0	v1.34.1	v1.37.0
+ns-edge	get_configmaps_--field-selector=metadata.name!=kube-root-ca.crt_-o_json	kubectl get configmaps -n tern-test-edge '--field-selector=metadata.name!=kube-root-ca.crt' -o json	0	v1.34.1	v1.37.0
+ns-edge	get_configmaps_-o_name	kubectl get configmaps -n tern-test-edge -o name	0	v1.34.1	v1.37.0
+ns-edge	get_secrets_-o_name	kubectl get secrets -n tern-test-edge -o name	0	v1.34.1	v1.37.0
+ns-crd	get_deployments_-o_json	kubectl get deployments -n tern-test-crd -o json	0	v1.34.1	v1.37.0
+ns-crd	get_replicasets_-o_json	kubectl get replicasets -n tern-test-crd -o json	0	v1.34.1	v1.37.0
+ns-crd	get_pods_-o_json	kubectl get pods -n tern-test-crd -o json	0	v1.34.1	v1.37.0
+ns-crd	get_services_-o_json	kubectl get services -n tern-test-crd -o json	0	v1.34.1	v1.37.0
+ns-crd	get_endpointslices_-o_json	kubectl get endpointslices -n tern-test-crd -o json	0	v1.34.1	v1.37.0
+ns-crd	get_ingresses_-o_json	kubectl get ingresses -n tern-test-crd -o json	0	v1.34.1	v1.37.0
+ns-crd	get_jobs_-o_json	kubectl get jobs -n tern-test-crd -o json	0	v1.34.1	v1.37.0
+ns-crd	get_cronjobs_-o_json	kubectl get cronjobs -n tern-test-crd -o json	0	v1.34.1	v1.37.0
+ns-crd	get_statefulsets_-o_json	kubectl get statefulsets -n tern-test-crd -o json	0	v1.34.1	v1.37.0
+ns-crd	get_daemonsets_-o_json	kubectl get daemonsets -n tern-test-crd -o json	0	v1.34.1	v1.37.0
+ns-crd	get_widgets_-o_json	kubectl get widgets -n tern-test-crd -o json	0	v1.34.1	v1.37.0
+ns-crd	get_configmaps_--field-selector=metadata.name!=kube-root-ca.crt_-o_json	kubectl get configmaps -n tern-test-crd '--field-selector=metadata.name!=kube-root-ca.crt' -o json	0	v1.34.1	v1.37.0
+ns-crd	get_configmaps_-o_name	kubectl get configmaps -n tern-test-crd -o name	0	v1.34.1	v1.37.0
+ns-crd	get_secrets_-o_name	kubectl get secrets -n tern-test-crd -o name	0	v1.34.1	v1.37.0
