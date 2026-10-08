@@ -1,0 +1,30 @@
+#!/bin/sh
+# Fake kubectl for the guard tests. State lives in $FAKE_DIR:
+#   context        current context (`config current-context` prints it)
+#   ctx-fail       if present, `config current-context` fails
+#   exit           exit status of every other invocation (default 0)
+# Every other invocation n is recorded as call-n (argv, NUL-separated),
+# env-n (KUBECONFIG value) and stdin-n (stdin, when $FAKE_READ_STDIN is 1).
+d=${FAKE_DIR:?FAKE_DIR is required}
+
+is_ctx=
+[ $# = 2 ] && [ "$1" = config ] && [ "$2" = current-context ] && is_ctx=1
+[ $# = 4 ] && [ "$1" = --kubeconfig ] && [ "$3" = config ] && [ "$4" = current-context ] && is_ctx=1
+if [ -n "$is_ctx" ]; then
+	printf '%s\n' "${KUBECONFIG-<unset>} $*" >>"$d/ctx-calls"
+	[ -e "$d/ctx-fail" ] && {
+		echo "error: current-context is not set" >&2
+		exit 1
+	}
+	cat "$d/context"
+	exit 0
+fi
+
+n=$(($(cat "$d/calls" 2>/dev/null || echo 0) + 1))
+echo "$n" >"$d/calls"
+printf '%s\0' "$@" >"$d/call-$n"
+printf '%s' "${KUBECONFIG-<unset>}" >"$d/env-$n"
+if [ "${FAKE_READ_STDIN-}" = 1 ]; then
+	cat >"$d/stdin-$n"
+fi
+exit "$(cat "$d/exit" 2>/dev/null || echo 0)"
