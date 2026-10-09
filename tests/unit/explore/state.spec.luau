@@ -78,13 +78,55 @@ describe("explore state: target resolution", function()
 		expect(confirmed.target.confirmed).toBe(true)
 	end)
 
-	it("kubectl that cannot be spawned explains how to configure it", function()
+	-- Tern started from the Dock has PATH=/usr/bin:/bin:/usr/sbin:/sbin; the
+	-- user saw a Lua traceback and had no idea why kubectl was "missing".
+	it("kubectl that is not found names the launch PATH and the setting to fix it", function()
+		local env = W.env()
+		env.daemonPath = "/usr/bin:/bin:/usr/sbin:/sbin"
+		local s, effects = State.init({ W.link({}) }, nil, W.config(nil), env)
+		s = W.settle(s, effects, function()
+			return nil, "tern.process.run kubectl: No such file or directory (os error 2)"
+		end)
+		expect(s.targetErrorKind).toBe("spawn")
+		expect(s.targetError :: string).toContain(
+			"kubectl not found. Tern runs plugins with the PATH it was launched with (/usr/bin:/bin:/usr/sbin:/sbin)"
+		)
+		expect(s.targetError :: string).toContain('Set "kubectl" to its full path in Tern Kube: Settings')
+		expect(top(s).kind).toBe("list")
+	end)
+
+	it("kubectl that cannot run for another reason names the program and the reason", function()
 		local s, effects = State.init({ W.link({ context = W.CTX }) }, nil, W.config(nil), W.env())
 		s = W.settle(s, effects, function()
-			return nil, "No such file or directory (os error 2)"
+			return nil, "Permission denied (os error 13)"
 		end)
-		expect(s.targetError :: string).toContain("Cannot run kubectl (kubectl)")
-		expect(s.targetError :: string).toContain("TKUBE_KUBECTL")
+		expect(s.targetError :: string).toContain("Cannot run kubectl (kubectl): Permission denied (os error 13)")
+		expect(s.targetErrorKind).toBe("spawn")
+	end)
+
+	it(
+		"after a spawn failure, retry restarts with the current program and Settings opens the settings block",
+		function()
+			local s, effects = State.init({ W.link({}) }, nil, W.config(nil), W.env())
+			s = W.settle(s, effects, function()
+				return nil, "No such file or directory (os error 2)"
+			end)
+			local _, retry = State.update(s, W.key("r"))
+			expect(retry).toEqual({ { t = "restart" } })
+			local _, chip = State.update(s, { t = "action", act = "refresh", value = "" })
+			expect(chip).toEqual({ { t = "restart" } })
+			local _, settings = State.update(s, { t = "action", act = "settings", value = "" })
+			expect(settings).toEqual({ { t = "open", url = "tern-kube://settings?key=kubectl" } })
+		end
+	)
+
+	it("waits for the login shell's PATH instead of running kubectl without it", function()
+		local env = W.env()
+		env.pending = true
+		local s, effects = State.init({ W.link({ context = W.CTX }) }, nil, W.config(nil), env)
+		expect(#effects).toBe(0)
+		expect(s.envPending).toBe(true)
+		expect(s.targetError).toBeNil()
 	end)
 
 	it("disabled live queries run nothing", function()

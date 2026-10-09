@@ -251,6 +251,9 @@ tern.lens.define("kubectl", {
 require("./explore_host").register()
 require("./mutate_host").register()
 require("./settings_host").register()
+-- The login shell's PATH is read in the background from plugin load, so
+-- the first Explore rarely waits for it.
+require("./env_host").start()
 
 -- Hooks ----------------------------------------------------------------------
 

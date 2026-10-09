@@ -3,7 +3,8 @@
 -- user's config file. The file is read when this module is first required
 -- (plugin load) and again by `load()`, which Explore and other blocks call
 -- from their init. Lens callbacks (open/line/finish/view/event) must only
--- call `current()`: it never touches the disk.
+-- call `current()`: it never touches the disk. A missing file gets the stub
+-- Config.STUB_TEXT at plugin load, so editors find the JSON Schema.
 
 local Config = require("./lib/config")
 
@@ -152,17 +153,59 @@ function M.snapshot(): Snapshot
 	return snapshot
 end
 
--- The kubectl program: kv "kubectl" > config `kubectl` > TKUBE_KUBECTL > "kubectl".
--- Reads tern.kv, so not for lens callbacks.
-function M.kubectl(): string
-	return Config.kubectlProgram(snapshot.config, tern.kv.get("kubectl"), env("TKUBE_KUBECTL"))
-end
-
 -- Daemon environment Explore needs to resolve the kubeconfig path.
 function M.env(): { kubeconfig: string?, home: string? }
 	return { kubeconfig = env("KUBECONFIG"), home = env("HOME") }
 end
 
+-- `ln` creates the file only if nothing (not even a dangling symlink) is at
+-- `path`, atomically, so a file or link made meanwhile, or by another
+-- context loading the plugin at the same moment, is never overwritten.
+local function writeStub(path: string)
+	local okExists, present = pcall(tern.fs.exists, path)
+	if not okExists or present then
+		return
+	end
+	local dir = string.match(path, "^(.*)/[^/]+$") or "/"
+	local tmp = string.format(
+		"%s/.config.json.tern-kube-stub-%08x%04x.tmp",
+		dir,
+		math.random(0, 0x7fffffff),
+		math.floor(tern.now()) % 0x10000
+	)
+	local function skip(why: string)
+		pcall(tern.fs.remove, tmp)
+		tern.log.info(string.format("tern-kube config: no stub written at %s: %s", path, why))
+	end
+	local okWrite, err = pcall(function()
+		tern.fs.mkdir(dir)
+		tern.fs.write(tmp, Config.STUB_TEXT)
+	end)
+	if not okWrite then
+		skip(Config.errorText(err))
+		return
+	end
+	local spawned, serr = pcall(function()
+		tern.process.run({ "ln", tmp, path }, { timeout_ms = 5000 }, function(r: ProcessResult)
+			if r.status ~= 0 then
+				skip(string.match(r.stderr, "^[^\n]*") or "ln failed")
+				return
+			end
+			pcall(tern.fs.remove, tmp)
+			tern.log.info("tern-kube config: wrote the stub " .. path)
+			M.load()
+		end)
+	end)
+	if not spawned then
+		skip(Config.errorText(serr))
+	end
+end
+
 M.load()
+if snapshot.path == nil then
+	tern.log.info("tern-kube config: no stub written: neither XDG_CONFIG_HOME nor HOME is set")
+elseif snapshot.status == "missing" then
+	writeStub(snapshot.path)
+end
 
 return M

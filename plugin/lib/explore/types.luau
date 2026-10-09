@@ -66,7 +66,8 @@ export type FileWrite = { path: string, text: string }
 -- `read` answers with the file text as stdout; `readtree` answers with
 -- `files` (YAML and kustomization files under `path`); `write` writes
 -- `files` through tern.fs and answers with a `result`; `openfile` opens
--- `path` at `line` in a Tern file block.
+-- `path` at `line` in a Tern file block; `restart` re-runs init with the
+-- current config and program.
 export type Effect = {
 	t: "run"
 		| "copy"
@@ -80,7 +81,8 @@ export type Effect = {
 		| "read"
 		| "readtree"
 		| "write"
-		| "openfile",
+		| "openfile"
+		| "restart",
 	tag: string?,
 	argv: { string }?,
 	env: { [string]: string }?,

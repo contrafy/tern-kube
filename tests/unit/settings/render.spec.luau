@@ -112,31 +112,47 @@ describe("settings render: editor", function()
 end)
 
 describe("settings render: status page", function()
-	local function status(s: State): string
+	local function status(s: State, extra: { [string]: any }?): string
 		local st = State.update(s, { t = "key", key = { name = "tab" } })
-		st = State.update(st, {
-			t = "info",
-			info = {
-				loadStatus = "loaded",
-				pluginVersion = "0.0.1",
-				pluginDir = "/p/plugin",
-				ternVersion = "0.6.2 (4b3ed42)",
-				ternPending = false,
-				kubectl = {
-					program = "kubectl",
-					source = "the daemon's PATH",
-					resolved = "/usr/bin/kubectl",
-					version = "v1.31.0",
-					pending = false,
-				},
-				aliasClaims = { "k get *" },
-				spool = "/data/spool",
-				paneRecords = {
-					{ pane = 4, kubeconfig = "/k/a", live = true },
-					{ pane = 9, problem = "x", live = false } :: any,
-				},
+		local info: { [string]: any } = {
+			loadStatus = "loaded",
+			pluginVersion = "0.0.1",
+			pluginDir = "/p/plugin",
+			ternVersion = "0.6.2 (4b3ed42)",
+			ternPending = false,
+			kubectl = {
+				program = "/usr/local/bin/kubectl",
+				source = "from your shell's PATH",
+				found = true,
+				version = "v1.31.0",
+				pending = false,
 			},
-		})
+			helm = {
+				program = "/opt/homebrew/bin/helm",
+				source = "from a common install location",
+				found = true,
+				pending = false,
+			},
+			gh = { program = "gh", source = "not found", found = false, pending = false },
+			shellEnv = {
+				phase = "done",
+				shell = "/bin/zsh",
+				tookMs = 312,
+				entries = 14,
+				daemonPath = "/usr/bin:/bin:/usr/sbin:/sbin",
+			},
+			aliasClaims = { "k get *" },
+			spool = "/data/spool",
+			paneRecords = {
+				{ pane = 4, kubeconfig = "/k/a", live = true },
+				{ pane = 9, problem = "x", live = false } :: any,
+			},
+		}
+		local overrides: { [string]: any } = extra or {}
+		for k, v in overrides do
+			info[k] = v
+		end
+		st = State.update(st, { t = "info", info = info })
 		return nodes.text(main(st))
 	end
 
@@ -145,8 +161,37 @@ describe("settings render: status page", function()
 		expect(text).toContain(PATH)
 		expect(text).toContain("tern-kube 0.0.1")
 		expect(text).toContain("0.6.2 (4b3ed42)")
-		expect(text).toContain("/usr/bin/kubectl")
+		expect(text).toContain("/usr/local/bin/kubectl")
 		expect(text).toContain("v1.31.0")
+	end)
+
+	-- A Tern started from the Dock has a minimal PATH; the user must be able
+	-- to see which kubectl/helm/gh is used and why, and whether the shell read worked.
+	it("shows each program's absolute path and where it was found", function()
+		local text = status(open(nil))
+		expect(text).toContain("/usr/local/bin/kubectl  from your shell's PATH")
+		expect(text).toContain("/opt/homebrew/bin/helm  from a common install location")
+		expect(text).toContain("gh  not found")
+	end)
+
+	it("reports the login-shell read, its duration and Tern's own PATH", function()
+		local text = status(open(nil))
+		expect(text).toContain("read from /bin/zsh  in 312 ms · 14 entries")
+		expect(text).toContain("/usr/bin:/bin:/usr/sbin:/sbin")
+		local failed = status(open(nil), {
+			shellEnv = {
+				phase = "failed",
+				shell = "/bin/zsh",
+				tookMs = 5000,
+				error = "timed out after 5000 ms",
+				daemonPath = "/usr/bin",
+			},
+		})
+		expect(failed).toContain(
+			"/bin/zsh failed after 5000 ms: timed out after 5000 ms; using common install locations"
+		)
+		local off = status(open(nil), { shellEnv = { phase = "off", daemonPath = "/usr/bin" } })
+		expect(off).toContain("off (general.shell_env)")
 	end)
 
 	it("lists alias claims and configured aliases that are not claimed", function()

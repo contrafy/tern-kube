@@ -8,6 +8,8 @@ local M = {}
 
 M.SCHEMA_VERSION = 1
 M.RELATIVE_PATH = "tern-kube/config.json"
+-- The published JSON Schema (schema/config.schema.json, `make schema`).
+M.SCHEMA_URL = "https://raw.githubusercontent.com/contrafy/tern-kube/master/schema/config.schema.json"
 M.DEFAULT_SHELL_COMMAND = table.freeze({ "sh", "-c", "command -v bash >/dev/null 2>&1 && exec bash || exec sh" })
 
 export type Placement = "right" | "down" | "tab"
@@ -23,6 +25,7 @@ export type Config = {
 		max_rows: number,
 		max_rendered_rows: number,
 		max_capture_bytes: number,
+		shell_env: boolean,
 	},
 	aliases: { additional: { string } },
 	explore: {
@@ -80,7 +83,28 @@ export type ParseOptions = { home: string? }
 
 type Ctx = { diags: { Diagnostic }, home: string?, newer: boolean }
 type Check = (value: any, path: string, default: any, ctx: Ctx) -> any
-type Field = { key: string, check: Check }
+
+-- How the Settings block edits a key; "section" is an object of keys.
+export type Kind = "bool" | "int" | "enum" | "string" | "list" | "json" | "section"
+
+-- One key of the file: the single source for the loader, the Settings
+-- catalog and the published JSON Schema (scripts/gen-config-schema.luau).
+export type Spec = {
+	key: string,
+	kind: Kind,
+	doc: string,
+	check: Check,
+	-- JSON Schema keywords for the value besides description and default.
+	schema: { [string]: any },
+	min: number?,
+	max: number?,
+	values: { string }?,
+	-- Unset is meaningful (kubeconfig, unmanaged_kinds).
+	optional: boolean?,
+	-- Kept by tern-kube, not edited in Settings ($schema, schema_version).
+	managed: boolean?,
+	fields: { Spec }?,
+}
 
 local function freezeDeep<T>(t: T): T
 	for _, v in t :: any do
@@ -99,6 +123,7 @@ function M.defaults(): Config
 			max_rows = 20000,
 			max_rendered_rows = 500,
 			max_capture_bytes = 16777216,
+			shell_env = true,
 		},
 		aliases = { additional = {} },
 		explore = {
@@ -301,7 +326,7 @@ local function expandHome(v: string, ctx: Ctx): (string?, string?)
 	return (string.gsub(home, "/+$", "")) .. string.sub(v, 2), nil
 end
 
--- `program` allows a bare name looked up on the daemon's PATH.
+-- `program` allows a bare name, resolved by lib/env/shellenv.luau.
 local function filePath(program: boolean): Check
 	local expected = if program then "a program name or an absolute path" else "an absolute path or null"
 	return function(v, path, default, ctx)
@@ -490,81 +515,18 @@ local function kindList(): Check
 	end
 end
 
--- Schema ----------------------------------------------------------------------
-
-local SECTIONS: { { key: string, fields: { Field } } } = {
-	{
-		key = "general",
-		fields = {
-			{ key = "native_default", check = bool() },
-			{ key = "max_rows", check = int(1, 100000) },
-			{ key = "max_rendered_rows", check = int(1, 10000) },
-			{ key = "max_capture_bytes", check = int(65536, 268435456) },
-		},
-	},
-	{ key = "aliases", fields = { { key = "additional", check = aliasNames() } } },
-	{
-		key = "explore",
-		fields = {
-			{ key = "allow_live_queries", check = bool() },
-			{ key = "auto_refresh", check = autoRefresh() },
-			{ key = "query_timeout_ms", check = int(500, 600000) },
-			{ key = "relationship_max_nodes", check = int(1, 5000) },
-		},
-	},
-	{
-		key = "mutations",
-		fields = {
-			{ key = "enabled", check = bool() },
-			{ key = "interactive_guard", check = bool() },
-			{ key = "require_target_confirmation", check = bool() },
-			{ key = "allow_failed_preview_override", check = bool() },
-			{ key = "preview_timeout_ms", check = int(1000, 600000) },
-			{ key = "execute_timeout_ms", check = int(1000, 3600000) },
-		},
-	},
-	{
-		key = "security",
-		fields = {
-			{ key = "show_secret_values", check = bool() },
-			{ key = "sensitive_output_strict_mode", check = bool() },
-		},
-	},
-	{
-		key = "quick_actions",
-		fields = {
-			{ key = "placement", check = enum({ "right", "down", "tab" }) },
-			{ key = "shell_command", check = argv() },
-			{ key = "logs_tail", check = int(1, 100000) },
-			{ key = "debug_image", check = image() },
-		},
-	},
-	{
-		key = "gitops",
-		fields = {
-			{ key = "helm", check = helmReleases() },
-			{ key = "unmanaged_kinds", check = kindList() },
-			{ key = "max_files", check = int(1, 20000) },
-			{ key = "max_bytes", check = int(1048576, 268435456) },
-			{ key = "max_file_bytes", check = int(4096, 16777216) },
-			{ key = "render_kustomize", check = bool() },
-			{ key = "gh", check = filePath(true) },
-		},
-	},
-}
-
-local TOP_LEVEL: { Field } = {
-	{ key = "schema_version", check = schemaVersion() },
-	{ key = "kubectl", check = filePath(true) },
-	{ key = "kubeconfig", check = filePath(false) },
-}
-
-local KNOWN_TOP: { [string]: boolean } = {}
-for _, s in SECTIONS do
-	KNOWN_TOP[s.key] = true
-end
-for _, f in TOP_LEVEL do
-	KNOWN_TOP[f.key] = true
+local function schemaRef(): Check
+	return function(v, path, _default, ctx)
+		if type(v) ~= "string" then
+			add(
+				ctx,
+				"warning",
+				path,
+				string.format("expected the schema URL (a string), got %s; it is ignored.", describeGot(v))
+			)
+		end
+		return nil
+	end
 end
 
 local function warnUnknown(obj: { [string]: any }, known: { [string]: boolean }, prefix: string, ctx: Ctx)
@@ -583,30 +545,233 @@ local function warnUnknown(obj: { [string]: any }, known: { [string]: boolean },
 	end
 end
 
-local function applySection(raw: any, key: string, fields: { Field }, defaults: { [string]: any }, ctx: Ctx): any
-	local out = table.clone(defaults)
-	if raw == nil then
+local function section(fields: { Spec }): Check
+	return function(raw, key, defaults, ctx)
+		local out = table.clone(defaults)
+		if not isObject(raw) then
+			add(
+				ctx,
+				"error",
+				key,
+				string.format("expected an object, got %s; using the defaults for this section.", describeGot(raw))
+			)
+			return out
+		end
+		local known: { [string]: boolean } = {}
+		for _, f in fields do
+			known[f.key] = true
+			local v = raw[f.key]
+			if v ~= nil then
+				out[f.key] = f.check(v, key .. "." .. f.key, defaults[f.key], ctx)
+			end
+		end
+		warnUnknown(raw, known, key .. ".", ctx)
 		return out
 	end
-	if not isObject(raw) then
-		add(
-			ctx,
-			"error",
-			key,
-			string.format("expected an object, got %s; using the defaults for this section.", describeGot(raw))
-		)
-		return out
-	end
-	local known: { [string]: boolean } = {}
-	for _, f in fields do
-		known[f.key] = true
-		local v = raw[f.key]
-		if v ~= nil then
-			out[f.key] = f.check(v, key .. "." .. f.key, defaults[f.key], ctx)
+end
+
+-- Catalog -----------------------------------------------------------------------
+
+-- JSON Schema patterns below restate the Lua patterns of the checks above.
+local PROGRAM_SCHEMA = { type = "string", pattern = "^(/|~/|[^/]+$)" }
+local NO_CONTROL = "^[^\\x00-\\x1F\\x7F]+$"
+local DNS_LABEL_SCHEMA = { type = "string", maxLength = 63, pattern = "^[a-z0-9]([a-z0-9-]*[a-z0-9])?$" }
+local REL_PATH_SCHEMA = { type = "string", maxLength = 4096, pattern = NO_CONTROL }
+
+local function spec(
+	key: string,
+	kind: Kind,
+	doc: string,
+	check: Check,
+	schema: { [string]: any },
+	extra: { [string]: any }?
+): Spec
+	local s: { [string]: any } = { key = key, kind = kind, doc = doc, check = check, schema = schema }
+	if extra then
+		for k, v in extra do
+			s[k] = v
 		end
 	end
-	warnUnknown(raw, known, key .. ".", ctx)
-	return out
+	return s :: any
+end
+
+local function boolSpec(key: string, doc: string): Spec
+	return spec(key, "bool", doc, bool(), { type = "boolean" })
+end
+
+local function intSpec(key: string, min: number, max: number, doc: string): Spec
+	return spec(
+		key,
+		"int",
+		doc,
+		int(min, max),
+		{ type = "integer", minimum = min, maximum = max },
+		{ min = min, max = max }
+	)
+end
+
+local function sectionSpec(key: string, doc: string, fields: { Spec }): Spec
+	return spec(key, "section", doc, section(fields), { type = "object" }, { fields = fields })
+end
+
+local PLACEMENTS = { "right", "down", "tab" }
+
+-- Every key of the file in its documented order (the order Settings lists
+-- and writes them).
+M.CATALOG = freezeDeep({
+	spec(
+		"$schema",
+		"string",
+		"JSON Schema of this file, for editor completion and validation; tern-kube ignores it",
+		schemaRef(),
+		{ type = "string" },
+		{ managed = true }
+	),
+	spec(
+		"schema_version",
+		"int",
+		"Version of this file's format; kept by tern-kube",
+		schemaVersion(),
+		{ type = "integer", minimum = 1, maximum = M.SCHEMA_VERSION },
+		{ managed = true }
+	),
+	sectionSpec("general", "Native views, capture limits and the login-shell environment", {
+		boolSpec("native_default", "Native views for lensed kubectl output; off shows Tern's raw output"),
+		intSpec("max_rows", 1, 100000, "Output lines recorded for a native view; more falls back to raw"),
+		intSpec("max_rendered_rows", 1, 10000, "Rows drawn at once (lens pages, Explore windows)"),
+		intSpec("max_capture_bytes", 65536, 268435456, "Output bytes captured per command; more falls back to raw"),
+		boolSpec(
+			"shell_env",
+			"Read PATH and KUBECONFIG from your login shell (once per Tern daemon) so kubectl, helm, gh and "
+				.. "credential plugins are found when Tern starts from the Dock or Finder"
+		),
+	}),
+	sectionSpec("aliases", "Command aliases for kubectl", {
+		spec(
+			"additional",
+			"list",
+			"Alias names you intend to claim (informational; scripts/tern-kube-aliases writes the claims)",
+			aliasNames(),
+			{
+				type = "array",
+				items = { type = "string", maxLength = 64, pattern = "^[A-Za-z0-9_][A-Za-z0-9_.-]*$" },
+			}
+		),
+	}),
+	sectionSpec("explore", "The Tern Kube Explore block", {
+		boolSpec("allow_live_queries", "Off: Explore opens but runs no kubectl command"),
+		spec(
+			"auto_refresh",
+			"bool",
+			"Only false is supported: Explore never polls",
+			autoRefresh(),
+			{ type = "boolean", const = false }
+		),
+		intSpec("query_timeout_ms", 500, 600000, "Each Explore kubectl call is killed after this many ms"),
+		intSpec("relationship_max_nodes", 1, 5000, "Objects in a relations graph before it is truncated"),
+	}),
+	sectionSpec("mutations", "Previews and confirmations for apply, delete, rollout restart and scale", {
+		boolSpec("enabled", "Off hides every mutating action; the approve block refuses"),
+		boolSpec("interactive_guard", "Marks the opt-in shell guard as wanted (installed separately)"),
+		boolSpec("require_target_confirmation", "Mutations need a named or confirmed context, never an inferred one"),
+		boolSpec("allow_failed_preview_override", "Allow confirming when the dry run or diff failed"),
+		intSpec("preview_timeout_ms", 1000, 600000, "Each preview step is killed after this many ms"),
+		intSpec("execute_timeout_ms", 1000, 3600000, "A confirmed mutation is killed after this many ms"),
+	}),
+	sectionSpec("security", "Secret and sensitive value masking", {
+		boolSpec("show_secret_values", "Show Secret values in native views (trusted screens only)"),
+		boolSpec("sensitive_output_strict_mode", "Also mask values whose names look sensitive (heuristic)"),
+	}),
+	sectionSpec("quick_actions", "Shell, logs, port-forward and debug terminals", {
+		spec(
+			"placement",
+			"enum",
+			"Where quick-action terminals open",
+			enum(PLACEMENTS),
+			{ type = "string", enum = PLACEMENTS },
+			{ values = PLACEMENTS }
+		),
+		spec(
+			"shell_command",
+			"list",
+			"Program and arguments the Shell action runs in the container",
+			argv(),
+			{ type = "array", minItems = 1, maxItems = 32, items = { type = "string", minLength = 1 } }
+		),
+		intSpec("logs_tail", 1, 100000, "History lines the Logs action shows before following"),
+		spec(
+			"debug_image",
+			"string",
+			"Image for debug containers and node debug pods",
+			image(),
+			{ type = "string", maxLength = 255, pattern = "^[A-Za-z0-9][A-Za-z0-9._/:@-]*$" }
+		),
+	}),
+	spec(
+		"kubectl",
+		"string",
+		"kubectl program: an absolute path, or a name looked up on your shell's PATH, common install dirs, then Tern's PATH",
+		filePath(true),
+		PROGRAM_SCHEMA
+	),
+	spec(
+		"kubeconfig",
+		"string",
+		"Kubeconfig for Explore links that name none (absolute path; empty = unset)",
+		filePath(false),
+		{ type = { "string", "null" }, pattern = "^(/|~/|~$)" },
+		{ optional = true }
+	),
+	sectionSpec("gitops", "Manifest index, diff, drift and export", {
+		spec(
+			"helm",
+			"json",
+			"Helm releases for diff and drift: [{chart, release, namespace?, values?}]",
+			helmReleases(),
+			{
+				type = "array",
+				items = {
+					type = "object",
+					required = { "chart", "release" },
+					properties = {
+						chart = REL_PATH_SCHEMA,
+						release = DNS_LABEL_SCHEMA,
+						namespace = DNS_LABEL_SCHEMA,
+						values = { type = "array", items = REL_PATH_SCHEMA },
+					},
+				},
+			}
+		),
+		spec(
+			"unmanaged_kinds",
+			"list",
+			"Kinds the drift report checks for unmanaged objects (empty = the source's kinds)",
+			kindList(),
+			{
+				type = { "array", "null" },
+				minItems = 1,
+				maxItems = 64,
+				items = { type = "string", maxLength = 253, pattern = "^[A-Za-z][A-Za-z0-9-]*[.A-Za-z0-9-]*$" },
+			},
+			{ optional = true }
+		),
+		intSpec("max_files", 1, 20000, "Manifest files indexed per scan"),
+		intSpec("max_bytes", 1048576, 268435456, "Total bytes read per manifest scan"),
+		intSpec("max_file_bytes", 4096, 16777216, "Larger manifest files are skipped"),
+		boolSpec("render_kustomize", "Render kustomizations while indexing so overlays map to live names"),
+		spec(
+			"gh",
+			"string",
+			"GitHub CLI for the optional pull request step: an absolute path, or a name looked up like kubectl's",
+			filePath(true),
+			PROGRAM_SCHEMA
+		),
+	}),
+}) :: { Spec }
+
+local KNOWN_TOP: { [string]: boolean } = {}
+for _, s in M.CATALOG do
+	KNOWN_TOP[s.key] = true
 end
 
 -- Invalid JSON ------------------------------------------------------------------
@@ -704,17 +869,10 @@ function M.parse(text: string?, decode: (string) -> any, opts: ParseOptions?): (
 	local out: { [string]: any } = table.clone(defaults :: any)
 
 	local dflt = defaults :: any
-	local top = TOP_LEVEL[1]
-	if value[top.key] ~= nil then
-		out[top.key] = top.check(value[top.key], top.key, dflt[top.key], ctx)
-	end
-	for _, s in SECTIONS do
-		out[s.key] = applySection(value[s.key], s.key, s.fields, dflt[s.key], ctx)
-	end
-	for i = 2, #TOP_LEVEL do
-		local f = TOP_LEVEL[i]
-		if value[f.key] ~= nil then
-			out[f.key] = f.check(value[f.key], f.key, dflt[f.key], ctx)
+	for _, s in M.CATALOG do
+		local v = value[s.key]
+		if v ~= nil then
+			out[s.key] = s.check(v, s.key, dflt[s.key], ctx)
 		end
 	end
 	warnUnknown(value, KNOWN_TOP, "", ctx)
@@ -736,20 +894,8 @@ function M.path(env: { XDG_CONFIG_HOME: string?, HOME: string? }): string?
 	return nil
 end
 
--- The kubectl program to run. The kv override serves tests and the settings
--- flow; an explicit config value beats TKUBE_KUBECTL; the bare default
--- "kubectl" defers to it.
-function M.kubectlProgram(cfg: Config, kvValue: any, envValue: string?): string
-	if type(kvValue) == "string" and kvValue ~= "" then
-		return kvValue
-	end
-	if cfg.kubectl ~= "kubectl" then
-		return cfg.kubectl
-	end
-	if envValue and envValue ~= "" then
-		return envValue
-	end
-	return "kubectl"
-end
+-- What the first plugin load writes when there is no config file: just
+-- enough for editors to find the schema; every setting stays at its default.
+M.STUB_TEXT = string.format('{\n  "$schema": "%s",\n  "schema_version": %d\n}\n', M.SCHEMA_URL, M.SCHEMA_VERSION)
 
 return M

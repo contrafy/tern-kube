@@ -8,8 +8,10 @@
 -- covers a closed pane). A native mutation, once spawned, runs to the end.
 
 local ConfigHost = require("./config_host")
+local EnvHost = require("./env_host")
 local Link = require("./lib/mutation/link")
 local Render = require("./lib/mutation/render")
+local Shellenv = require("./lib/env/shellenv")
 local Session = require("./lib/mutation/session")
 
 local log = tern.log
@@ -89,21 +91,20 @@ end
 local function run(h: Host, e: Effect)
 	local t0 = tern.now()
 	local opts: ProcessOptions = { timeout_ms = e.timeout_ms, cwd = e.cwd, env = e.env, stdin = e.stdin }
-	local ok, err = pcall(function()
-		tern.process.run(e.argv :: { string }, opts, function(res: ProcessResult)
-			log.debug(
-				"tern-kube approve.run",
-				e.tag,
-				"status=" .. res.status,
-				"timed_out=" .. tostring(res.timed_out),
-				"took_ms=" .. math.floor(tern.now() - t0)
-			)
+	EnvHost.run(e.argv :: { string }, opts, function(res: ProcessResult, spawnError: string?)
+		log.debug(
+			"tern-kube approve.run",
+			e.tag,
+			"status=" .. res.status,
+			"timed_out=" .. tostring(res.timed_out),
+			"took_ms=" .. math.floor(tern.now() - t0)
+		)
+		if spawnError then
+			deliver(h, e, { status = -1, stdout = "", stderr = spawnError, timed_out = false })
+		else
 			deliver(h, e, res)
-		end)
+		end
 	end)
-	if not ok then
-		deliver(h, e, { status = -1, stdout = "", stderr = tostring(err), timed_out = false })
-	end
 end
 
 local function read(h: Host, e: Effect)
@@ -114,7 +115,7 @@ local function read(h: Host, e: Effect)
 		if ok then
 			table.insert(files, { path = path, text = text })
 		else
-			table.insert(files, { path = path, error = tostring(text) })
+			table.insert(files, { path = path, error = Shellenv.errorText(text) })
 		end
 	end
 	-- Delivered on the next tick: effects never re-enter update.
@@ -132,7 +133,7 @@ local function write(h: Host, e: Effect)
 	end)
 	if not ok then
 		tern.timer(1, function()
-			deliver(h, e, { status = -1, stdout = "", stderr = tostring(err), timed_out = false })
+			deliver(h, e, { status = -1, stdout = "", stderr = Shellenv.errorText(err), timed_out = false })
 		end)
 		return
 	end
@@ -259,7 +260,11 @@ local function errorView(err: any): BlockView
 			c = {
 				{
 					k = "text",
-					p = { spans = { { t = "Tern Kube Approve could not render: " .. tostring(err), s = "error" } } },
+					p = {
+						spans = {
+							{ t = "Tern Kube Approve could not render: " .. Shellenv.errorText(err), s = "error" },
+						},
+					},
 				},
 			},
 		} :: any,
@@ -274,7 +279,7 @@ local function requestFile(arg: string?): { text: string?, error: string? }?
 	if ok then
 		return { text = text }
 	end
-	return { error = tostring(text) }
+	return { error = Shellenv.errorText(text) }
 end
 
 function M.register()
@@ -283,14 +288,13 @@ function M.register()
 		init = function(cx: BlockCx, args: { string }, _saved: any): Host
 			local conf = settings()
 			local cfg = ConfigHost.current()
-			local env = ConfigHost.env()
 			local s, effects = Session.init({
 				args = args,
 				now = os.time(),
 				config = conf,
-				kubectl = ConfigHost.kubectl(),
-				kubeconfig = cfg.kubeconfig or env.kubeconfig,
-				home = env.home,
+				kubectl = EnvHost.program("kubectl"),
+				kubeconfig = cfg.kubeconfig or EnvHost.kubeconfig(),
+				home = tern.getenv("HOME"),
 				spool = M.SPOOL,
 				request = requestFile(args[1]),
 				panes = paneIds(),

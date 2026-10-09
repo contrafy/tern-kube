@@ -133,11 +133,19 @@ end
 local function targetNodes(s: State): { Node }
 	local t = s.target
 	local out: { Node } = {}
+	if s.envPending then
+		table.insert(out, ui.text({ ui.span("reading your shell's PATH …", "muted") }, { key = "env" }))
+		return out
+	end
 	if t.context == nil then
-		table.insert(
-			out,
-			chip("no context", "nav=contexts", { tone = "error", title = "Pick the cluster context", key = "ctx" })
-		)
+		-- kubectl could not run: the error card says why; a context chooser
+		-- would only fail the same way.
+		if s.targetErrorKind ~= "spawn" then
+			table.insert(
+				out,
+				chip("no context", "nav=contexts", { tone = "error", title = "Pick the cluster context", key = "ctx" })
+			)
+		end
 		return out
 	end
 	local provenance = SOURCE_TEXT[t.contextSource] or t.contextSource
@@ -251,6 +259,25 @@ local function errorNode(text: string): Node
 	return ui.text({ ui.span(text, "error") }, { key = "error", role = "tern-kube.error" })
 end
 
+-- The target error, shown once; kubectl that could not run gets the ways out.
+local function targetErrorNode(s: State): Node
+	local text = errorNode(s.targetError or "")
+	if s.targetErrorKind ~= "spawn" then
+		return text
+	end
+	return ui.col({
+		text,
+		ui.row({
+			chip("Open Settings", "settings", {
+				tone = "accent",
+				key = "settings",
+				title = "Tern Kube: Settings (set kubectl to its full path)",
+			}),
+			chip("Retry", "refresh", { key = "retry", title = "Re-read the config and run kubectl again (r)" }),
+		}, { key = "fix", wrap = true, role = "tern-kube.chips" }),
+	}, { key = "target-error", role = "tern-kube.explore-error" })
+end
+
 local function loadingNode(load: Load): Node
 	return ui.text({ ui.span("Running " .. typed(load.argv) .. " …", "muted") }, { key = "loading" })
 end
@@ -258,6 +285,9 @@ end
 -- Status of a load that has no data to show yet; nil when it has data.
 local function pendingNode(s: State, load: Load?): Node?
 	if load == nil then
+		if s.envPending then
+			return ui.muted("Reading PATH and KUBECONFIG from your login shell …")
+		end
 		if s.targetError then
 			return ui.muted("Nothing is queried until the target is resolved.")
 		end
@@ -518,7 +548,11 @@ local function actionChips(s: State, ref: Ref): Node
 		table.insert(
 			children,
 			ui.text({
-				ui.span("exec runs a shell inside the container on context " .. (s.target.context or "?"), "warning"),
+				ui.span(
+					"exec runs a shell inside the container on "
+						.. (if s.target.context then "context " .. s.target.context else "the current context"),
+					"warning"
+				),
 			}, { key = "exec-warning" })
 		)
 	end
@@ -773,7 +807,7 @@ end
 local function namesBody(s: State, route: Route, load: Load?): { Node }
 	local out: { Node } = {}
 	if route.kind == "contexts" and s.targetError then
-		table.insert(out, errorNode(s.targetError))
+		table.insert(out, targetErrorNode(s))
 	end
 	local items = State.items(s, route)
 	local rows: { GridRow } = {}
@@ -853,7 +887,14 @@ local function dock(s: State): Node
 	elseif s.editing then
 		spans = { ui.span("filter: ", "accent"), ui.span("type to narrow · enter keep · esc done", "muted") }
 	elseif s.targetError then
-		spans = { ui.span(s.targetError, "error") }
+		-- The error itself is in the main area; repeating it here showed it twice.
+		if s.targetErrorKind == "spawn" then
+			spans = { ui.span("kubectl could not run", "error"), ui.span("  · r retry", "muted") }
+		elseif s.targetErrorKind == "disabled" then
+			spans = { ui.span("live queries are off", "muted") }
+		else
+			spans = { ui.span("no usable cluster target", "error"), ui.span("  · c contexts · r retry", "muted") }
+		end
 	elseif load and load.status == "loading" then
 		spans = { ui.span("loading … ", "accent"), ui.span(typed(load.argv), "muted mono") }
 	elseif load and load.status == "error" then
@@ -927,7 +968,7 @@ function M.view(s: State, _cols: number, _rows: number): View
 	local route = s.stack[#s.stack]
 	local children: { Node } = { header(s) }
 	if s.targetError and route.kind ~= "contexts" then
-		table.insert(children, errorNode(s.targetError))
+		table.insert(children, targetErrorNode(s))
 	end
 	if FILTERABLE[route.kind] then
 		local text = s.filter[State.currentKey(s)] or ""

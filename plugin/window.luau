@@ -4,11 +4,14 @@ local ConfigHost = require("./config_host")
 local Link = require("./lib/mutation/link")
 local PaneEnv = require("./lib/actions/pane_env")
 local Quick = require("./lib/actions/quick")
+local Shellenv = require("./lib/env/shellenv")
 
 local log = tern.log
 
 local SCHEME = "tern-kube://"
 local APPROVE = "tern-kube.approve"
+local SETTINGS = "tern-kube.settings"
+local SETTINGS_URL = "tern-kube://settings"
 local SPOOL = tern.plugin.data .. "/spool"
 
 -- The KUBECONFIG the shell in `pane` had at its last prompt, when the opt-in
@@ -29,9 +32,17 @@ local function paneKubeconfig(pane: number?): string?
 	return value
 end
 
+-- The split's shell has the user's login environment, so a bare kubectl
+-- resolves there; only an explicit program setting is pinned.
+local function quickProgram(configValue: string): string
+	local explicit = Shellenv.explicitKubectl(configValue, tern.kv.get("kubectl"), tern.getenv("TKUBE_KUBECTL"))
+	return if explicit then explicit.value else "kubectl"
+end
+
 local function launch(link: LinkRequest, req: Quick.Request, cx: WindowCx)
 	local cfg = ConfigHost.load().config
-	local target = { context = req.target.context, kubeconfig = req.target.kubeconfig, program = ConfigHost.kubectl() }
+	local target =
+		{ context = req.target.context, kubeconfig = req.target.kubeconfig, program = quickProgram(cfg.kubectl) }
 	local cmd, cerr = Quick.command(req.action, target, req.ref, req.opts, {
 		shellCommand = cfg.quick_actions.shell_command,
 		logsTail = cfg.quick_actions.logs_tail,
@@ -102,6 +113,16 @@ tern.route.link(function(link: LinkRequest, cx: WindowCx): RouteDecision?
 	if string.sub(link.url, 1, #Link.SCHEME) == Link.SCHEME then
 		return { block = APPROVE, args = { link.url } }
 	end
+	if link.url == SETTINGS_URL or string.sub(link.url, 1, #SETTINGS_URL + 1) == SETTINGS_URL .. "?" then
+		-- `key` selects that setting (Explore's kubectl-not-found card).
+		local args: { string } = {}
+		for _, p in Command.parseQuery(link.url) do
+			if p.key == "key" then
+				args = { p.value }
+			end
+		end
+		return { block = SETTINGS, args = args }
+	end
 	if string.sub(link.url, 1, #Quick.SCHEME) == Quick.SCHEME then
 		local decision: RouteDecision? = nil
 		local ok, err = pcall(function()
@@ -110,7 +131,7 @@ tern.route.link(function(link: LinkRequest, cx: WindowCx): RouteDecision?
 		if not ok then
 			log.warn("tern-kube quick action failed", link.url, tostring(err))
 			pcall(function()
-				cx:toast("error", "Tern Kube: quick action failed", tostring(err))
+				cx:toast("error", "Tern Kube: quick action failed", Shellenv.errorText(err))
 			end)
 		end
 		return decision or { handled = true }
@@ -176,7 +197,7 @@ tern.command({
 	title = "Tern Kube: Settings",
 	icon = "sliders",
 	run = function(cx: WindowCx)
-		if cx:new_block("tern-kube.settings", {}, "beside") == nil then
+		if cx:new_block(SETTINGS, {}, "beside") == nil then
 			cx:toast("error", "Tern Kube is not loaded on this host")
 		end
 	end,

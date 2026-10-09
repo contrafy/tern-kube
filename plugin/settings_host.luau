@@ -6,8 +6,10 @@
 -- over it with mv).
 
 local ConfigHost = require("./config_host")
+local EnvHost = require("./env_host")
 local PaneEnv = require("./lib/actions/pane_env")
 local Render = require("./lib/settings/render")
+local Shellenv = require("./lib/env/shellenv")
 local State = require("./lib/settings/state")
 
 local log = tern.log
@@ -76,7 +78,7 @@ local function readConfig(path: string, done: (text: string?, err: string?, targ
 		return
 	end
 	if not string.find(tostring(text), "non-symlink", 1, true) then
-		done(nil, "could not read " .. path .. ": " .. tostring(text), path)
+		done(nil, "could not read " .. path .. ": " .. Shellenv.errorText(text), path)
 		return
 	end
 	local spawned = pcall(tern.process.run, { "realpath", path }, { timeout_ms = 2000 }, function(r: ProcessResult)
@@ -89,7 +91,7 @@ local function readConfig(path: string, done: (text: string?, err: string?, targ
 		if tok then
 			done(ttext, nil, target)
 		else
-			done(nil, "could not read " .. target .. ": " .. tostring(ttext), target)
+			done(nil, "could not read " .. target .. ": " .. Shellenv.errorText(ttext), target)
 		end
 	end)
 	if not spawned then
@@ -149,7 +151,7 @@ local function write(h: Host, e: Effect)
 	end)
 	if not ok then
 		pcall(tern.fs.remove, tmp)
-		finish(false, tostring(err))
+		finish(false, Shellenv.errorText(err))
 		return
 	end
 	local spawned, serr = pcall(function()
@@ -165,7 +167,7 @@ local function write(h: Host, e: Effect)
 	end)
 	if not spawned then
 		pcall(tern.fs.remove, tmp)
-		finish(false, tostring(serr))
+		finish(false, Shellenv.errorText(serr))
 	end
 end
 
@@ -201,67 +203,58 @@ local function probe(h: Host)
 	end
 	info.paneRecords = records
 
-	local cfg = ConfigHost.current()
-	local program = ConfigHost.kubectl()
-	local kenv = tern.getenv("TKUBE_KUBECTL")
-	local kubectl: State.KubectlInfo = {
-		program = program,
-		source = State.kubectlSource(cfg, tern.kv.get("kubectl"), kenv),
-		resolved = nil,
-		version = nil,
-		error = nil,
-		pending = true,
-	}
-	info.kubectl = kubectl
 	info.ternPending = true
+	info.shellEnv = EnvHost.status()
 	dispatch(h, { t = "info", info = info })
 
-	local function kubectlDone(patch: { [string]: any })
-		local k = table.clone(h.s.info.kubectl or kubectl) :: any
-		for key, v in patch do
-			k[key] = v
-		end
-		k.pending = false
-		deliver(h, { t = "info", info = { kubectl = k } })
-	end
-	local resolver = { "sh", "-c", 'command -v -- "$1"', "sh", program }
-	local okRun = pcall(tern.process.run, resolver, { timeout_ms = M.PROBE_TIMEOUT_MS }, function(r: ProcessResult)
-		local resolved = if r.status == 0 then string.match(r.stdout, "^([^\n]+)") else nil
-		if resolved == nil then
-			kubectlDone({ error = "not found on the daemon's PATH" })
+	-- Programs resolve against the login shell's PATH, so wait for it.
+	EnvHost.ready(function()
+		if h.stopped then
 			return
 		end
-		local okVer = pcall(
-			tern.process.run,
-			{ resolved, "version", "--client", "-o", "json" },
+		local patch: { [string]: any } = { shellEnv = EnvHost.status() }
+		for _, name in { "kubectl", "helm", "gh" } do
+			local r = EnvHost.resolve(name)
+			local tool: State.ToolInfo = {
+				program = r.program,
+				source = Shellenv.describe(r),
+				found = r.found,
+				version = nil,
+				error = nil,
+				pending = name == "kubectl" and r.found,
+			}
+			patch[name] = tool
+		end
+		deliver(h, { t = "info", info = patch })
+
+		local kubectl = patch.kubectl :: State.ToolInfo
+		if kubectl.found then
+			EnvHost.run(
+				{ kubectl.program, "version", "--client", "-o", "json" },
+				{ timeout_ms = M.PROBE_TIMEOUT_MS },
+				function(v: ProcessResult, spawnError: string?)
+					local k = table.clone(kubectl)
+					k.pending = false
+					if spawnError then
+						k.error = spawnError
+					elseif v.status == 0 then
+						k.version = State.kubectlVersion(v.stdout, tern.json.decode)
+					else
+						k.error = "kubectl version exited " .. v.status
+					end
+					deliver(h, { t = "info", info = { kubectl = k } })
+				end
+			)
+		end
+		EnvHost.run(
+			{ "tern", "--version" },
 			{ timeout_ms = M.PROBE_TIMEOUT_MS },
-			function(v: ProcessResult)
-				kubectlDone({
-					resolved = resolved,
-					version = if v.status == 0 then State.kubectlVersion(v.stdout, tern.json.decode) else nil,
-				})
+			function(r: ProcessResult, spawnError: string?)
+				local version = if spawnError == nil and r.status == 0 then State.ternVersion(r.stdout) else nil
+				deliver(h, { t = "info", info = { ternVersion = version, ternPending = false } })
 			end
 		)
-		if not okVer then
-			kubectlDone({ resolved = resolved })
-		end
 	end)
-	if not okRun then
-		kubectlDone({ error = "could not run sh to resolve it" })
-	end
-
-	local okTern = pcall(
-		tern.process.run,
-		{ "tern", "--version" },
-		{ timeout_ms = M.PROBE_TIMEOUT_MS },
-		function(r: ProcessResult)
-			local version = if r.status == 0 then State.ternVersion(r.stdout) else nil
-			deliver(h, { t = "info", info = { ternVersion = version, ternPending = false } })
-		end
-	)
-	if not okTern then
-		dispatch(h, { t = "info", info = { ternVersion = nil, ternPending = false } })
-	end
 end
 
 function exec(h: Host, effects: { Effect })
@@ -296,7 +289,11 @@ local function errorView(err: any): BlockView
 			c = {
 				{
 					k = "text",
-					p = { spans = { { t = "Tern Kube Settings could not render: " .. tostring(err), s = "error" } } },
+					p = {
+						spans = {
+							{ t = "Tern Kube Settings could not render: " .. Shellenv.errorText(err), s = "error" },
+						},
+					},
 				},
 			},
 		} :: any,
@@ -305,9 +302,11 @@ end
 
 function M.register()
 	tern.block.define("settings", {
-		init = function(cx: BlockCx, _args: { string }, saved: any): Host
+		init = function(cx: BlockCx, args: { string }, saved: any): Host
 			local env = ConfigHost.env()
-			local s, effects = State.init({ decode = tern.json.decode, isList = isList, home = env.home }, saved)
+			-- tern-kube://settings?key=K opens with setting K selected.
+			local restore = if args[1] then { page = "settings", sel = args[1] } else saved
+			local s, effects = State.init({ decode = tern.json.decode, isList = isList, home = env.home }, restore)
 			local h: Host = { s = s, cx = cx, stopped = false, warned = false }
 			exec(h, effects)
 			return h

@@ -18,7 +18,7 @@ M.ALIAS_END = "# END tern-kube aliases"
 
 -- Catalog ----------------------------------------------------------------------
 
-export type Kind = "bool" | "int" | "enum" | "string" | "list" | "json"
+export type Kind = Config.Kind
 
 export type Field = {
 	path: string,
@@ -33,84 +33,51 @@ export type Field = {
 	doc: string,
 }
 
-local function field(path: string, kind: Kind, doc: string, extra: { [string]: any }?): Field
-	local section, key = string.match(path, "^([%w_]+)%.([%w_]+)$")
-	local f: { [string]: any } = {
-		path = path,
+local function field(spec: Config.Spec, section: string?): Field
+	return table.freeze({
+		path = if section then section .. "." .. spec.key else spec.key,
 		section = section,
-		key = key or path,
-		kind = kind,
-		doc = doc,
-	}
-	if extra then
-		for k, v in extra do
-			f[k] = v
+		key = spec.key,
+		kind = spec.kind,
+		min = spec.min,
+		max = spec.max,
+		values = spec.values,
+		optional = spec.optional,
+		doc = spec.doc,
+	})
+end
+
+-- Every key of Config.CATALOG that the user edits, in its order. The
+-- managed keys ($schema, schema_version) are kept as they are.
+local fields: { Field } = {}
+-- Key order of the written file: the documented order, unknown keys after
+-- (sorted), so a rewrite never reshuffles a hand-written file needlessly.
+local TOP_ORDER: { string } = {}
+local ORDER: { [string]: { string } } =
+	{ [""] = TOP_ORDER, ["gitops.helm[]"] = { "chart", "release", "namespace", "values" } }
+local LIST_PATHS: { [string]: boolean } = { ["gitops.helm[].values"] = true }
+for _, spec in Config.CATALOG do
+	table.insert(TOP_ORDER, spec.key)
+	local children: { Config.Spec } = spec.fields or { spec }
+	local section = if spec.fields then spec.key else nil
+	if section then
+		ORDER[section] = {}
+	end
+	for _, child in children do
+		if child.managed then
+			continue
+		end
+		local f = field(child, section)
+		table.insert(fields, f)
+		if section then
+			table.insert(ORDER[section], f.key)
+		end
+		if f.kind == "list" or f.kind == "json" then
+			LIST_PATHS[f.path] = true
 		end
 	end
-	return table.freeze(f) :: any
 end
-
-local function int(path: string, min: number, max: number, doc: string): Field
-	return field(path, "int", doc, { min = min, max = max })
-end
-
--- Every key of plugin/lib/config.luau except schema_version (kept as is);
--- tests/unit/settings/state.spec.luau checks the two stay in step.
-M.FIELDS = table.freeze({
-	field("general.native_default", "bool", "Native views for lensed kubectl output; off shows Tern's raw output"),
-	int("general.max_rows", 1, 100000, "Output lines recorded for a native view; more falls back to raw"),
-	int("general.max_rendered_rows", 1, 10000, "Rows drawn at once (lens pages, Explore windows)"),
-	int("general.max_capture_bytes", 65536, 268435456, "Output bytes captured per command; more falls back to raw"),
-	field(
-		"aliases.additional",
-		"list",
-		"Alias names you intend to claim (informational; scripts/tern-kube-aliases writes the claims)"
-	),
-	field("explore.allow_live_queries", "bool", "Off: Explore opens but runs no kubectl command"),
-	field("explore.auto_refresh", "bool", "Only false is supported: Explore never polls"),
-	int("explore.query_timeout_ms", 500, 600000, "Each Explore kubectl call is killed after this many ms"),
-	int("explore.relationship_max_nodes", 1, 5000, "Objects in a relations graph before it is truncated"),
-	field("mutations.enabled", "bool", "Off hides every mutating action; the approve block refuses"),
-	field("mutations.interactive_guard", "bool", "Marks the opt-in shell guard as wanted (installed separately)"),
-	field(
-		"mutations.require_target_confirmation",
-		"bool",
-		"Mutations need a named or confirmed context, never an inferred one"
-	),
-	field("mutations.allow_failed_preview_override", "bool", "Allow confirming when the dry run or diff failed"),
-	int("mutations.preview_timeout_ms", 1000, 600000, "Each preview step is killed after this many ms"),
-	int("mutations.execute_timeout_ms", 1000, 3600000, "A confirmed mutation is killed after this many ms"),
-	field("security.show_secret_values", "bool", "Show Secret values in native views (trusted screens only)"),
-	field("security.sensitive_output_strict_mode", "bool", "Also mask values whose names look sensitive (heuristic)"),
-	field(
-		"quick_actions.placement",
-		"enum",
-		"Where quick-action terminals open",
-		{ values = table.freeze({ "right", "down", "tab" }) }
-	),
-	field("quick_actions.shell_command", "list", "Program and arguments the Shell action runs in the container"),
-	int("quick_actions.logs_tail", 1, 100000, "History lines the Logs action shows before following"),
-	field("quick_actions.debug_image", "string", "Image for debug containers and node debug pods"),
-	field("kubectl", "string", "kubectl program: a name on the daemon's PATH or an absolute path"),
-	field(
-		"kubeconfig",
-		"string",
-		"Kubeconfig for Explore links that name none (absolute path; empty = unset)",
-		{ optional = true }
-	),
-	field("gitops.helm", "json", "Helm releases for diff and drift: [{chart, release, namespace?, values?}]"),
-	field(
-		"gitops.unmanaged_kinds",
-		"list",
-		"Kinds the drift report checks for unmanaged objects (empty = the source's kinds)",
-		{ optional = true }
-	),
-	int("gitops.max_files", 1, 20000, "Manifest files indexed per scan"),
-	int("gitops.max_bytes", 1048576, 268435456, "Total bytes read per manifest scan"),
-	int("gitops.max_file_bytes", 4096, 16777216, "Larger manifest files are skipped"),
-	field("gitops.render_kustomize", "bool", "Render kustomizations while indexing so overlays map to live names"),
-	field("gitops.gh", "string", "GitHub CLI for the optional pull request step"),
-})
+M.FIELDS = table.freeze(fields)
 
 local BY_PATH: { [string]: Field } = {}
 for _, f in M.FIELDS do
@@ -120,41 +87,6 @@ end
 function M.field(path: string): Field?
 	return BY_PATH[path]
 end
-
--- Key order of the written file: the documented order, unknown keys after
--- (sorted), so a rewrite never reshuffles a hand-written file needlessly.
-local TOP_ORDER = {
-	"schema_version",
-	"general",
-	"aliases",
-	"explore",
-	"mutations",
-	"security",
-	"quick_actions",
-	"kubectl",
-	"kubeconfig",
-	"gitops",
-}
-local ORDER: { [string]: { string } } =
-	{ [""] = TOP_ORDER, ["gitops.helm[]"] = { "chart", "release", "namespace", "values" } }
-for _, f in M.FIELDS do
-	if f.section then
-		local list = ORDER[f.section]
-		if list == nil then
-			list = {}
-			ORDER[f.section] = list
-		end
-		table.insert(list, f.key)
-	end
-end
-
-local LIST_PATHS: { [string]: boolean } = {
-	["aliases.additional"] = true,
-	["quick_actions.shell_command"] = true,
-	["gitops.helm"] = true,
-	["gitops.unmanaged_kinds"] = true,
-	["gitops.helm[].values"] = true,
-}
 
 -- JSON -------------------------------------------------------------------------
 
@@ -378,13 +310,27 @@ export type Env = {
 	home: string?,
 }
 
-export type KubectlInfo = {
+-- An external program as the plugin runs it (env_host.resolve).
+export type ToolInfo = {
+	-- What goes in argv[1]: absolute when found.
 	program: string,
+	-- Shellenv.describe: "from your shell's PATH", "not found", ...
 	source: string,
-	resolved: string?,
+	found: boolean,
 	version: string?,
 	error: string?,
 	pending: boolean,
+}
+
+-- The login-shell read (env_host.status).
+export type ShellEnvInfo = {
+	phase: string,
+	shell: string?,
+	tookMs: number?,
+	error: string?,
+	entries: number?,
+	daemonPath: string,
+	kubeconfig: string?,
 }
 
 export type PaneRecord = { pane: number, kubeconfig: string?, problem: string?, live: boolean }
@@ -395,7 +341,10 @@ export type Info = {
 	pluginDir: string?,
 	ternVersion: string?,
 	ternPending: boolean,
-	kubectl: KubectlInfo?,
+	kubectl: ToolInfo?,
+	helm: ToolInfo?,
+	gh: ToolInfo?,
+	shellEnv: ShellEnvInfo?,
 	aliasClaims: { string }?,
 	aliasError: string?,
 	spool: string?,
@@ -460,6 +409,9 @@ local function emptyInfo(): Info
 		ternVersion = nil,
 		ternPending = true,
 		kubectl = nil,
+		helm = nil,
+		gh = nil,
+		shellEnv = nil,
 		aliasClaims = nil,
 		aliasError = nil,
 		spool = nil,
@@ -642,6 +594,9 @@ local function commit(s: State, f: Field, value: any, effects: { Effect }): bool
 	if raw.schema_version == nil then
 		raw.schema_version = Config.SCHEMA_VERSION
 	end
+	if s.text == nil then
+		raw["$schema"] = Config.SCHEMA_URL
+	end
 	local text = M.encode(raw, s.env.isList)
 	local _, diags = Config.parse(text, s.env.decode, { home = s.env.home })
 	for _, d in M.diagnosticsFor(diags, f.path) do
@@ -706,7 +661,7 @@ local function openFile(s: State, effects: { Effect }): boolean
 		table.insert(effects, {
 			t = "write",
 			path = s.target,
-			text = M.encode({ schema_version = Config.SCHEMA_VERSION }, s.env.isList),
+			text = Config.STUB_TEXT,
 			base = nil,
 			existed = false,
 			open = true,
@@ -976,20 +931,6 @@ function M.aliasNames(claims: { string }): { string }
 		end
 	end
 	return out
-end
-
--- Where the effective kubectl program comes from (Config.kubectlProgram order).
-function M.kubectlSource(cfg: Config, kvValue: any, envValue: string?): string
-	if type(kvValue) == "string" and kvValue ~= "" then
-		return "Tern kv key kubectl"
-	end
-	if cfg.kubectl ~= "kubectl" then
-		return "config kubectl"
-	end
-	if envValue and envValue ~= "" then
-		return "TKUBE_KUBECTL"
-	end
-	return "the daemon's PATH"
 end
 
 -- clientVersion.gitVersion of `kubectl version --client -o json`.

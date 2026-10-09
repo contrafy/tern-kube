@@ -6,8 +6,9 @@
 --
 -- Processes cannot be killed: `cancel()` only makes late results be ignored.
 
-local ConfigHost = require("./config_host")
+local EnvHost = require("./env_host")
 local Index = require("./lib/gitops/index")
+local Shellenv = require("./lib/env/shellenv")
 
 export type HelmRelease = {
 	chart: string,
@@ -48,7 +49,7 @@ M.MAX_RENDERS = 16
 M.WALK_DEPTH = 8
 M.WALK_MAX_ENTRIES = 20000
 M.STATUS_BATCH = 200
--- The helm program; `command -v` decides whether helm features are offered.
+-- The helm program; decides whether helm features are offered.
 M.HELM = "helm"
 
 local SKIP_DIRS = { [".git"] = true, node_modules = true, vendor = true, [".terraform"] = true }
@@ -65,16 +66,16 @@ local function failure(what: string, result: ProcessResult): string
 	return string.format("%s exited %d%s", what, result.status, if detail ~= "" then ": " .. detail else "")
 end
 
--- Runs argv; spawn failures are reported like process failures.
+-- Runs argv with the user's PATH; spawn failures are reported like process
+-- failures.
 local function run(argv: { string }, opts: ProcessOptions, cb: (ProcessResult) -> ())
-	local ok, err = pcall(function()
-		tern.process.run(argv, opts, function(result: ProcessResult)
+	EnvHost.run(argv, opts, function(result: ProcessResult, spawnError: string?)
+		if spawnError then
+			cb({ status = -1, stdout = "", stderr = spawnError, timed_out = false })
+		else
 			cb(result)
-		end)
+		end
 	end)
-	if not ok then
-		cb({ status = -1, stdout = "", stderr = tostring(err), timed_out = false })
-	end
 end
 
 local function trimNewline(s: string): string
@@ -87,7 +88,7 @@ end
 
 -- Renders a kustomization directory with the configured kubectl.
 function M.renderKustomize(dir: string, cb: TextCb)
-	run({ ConfigHost.kubectl(), "kustomize", dir }, { timeout_ms = M.RENDER_TIMEOUT_MS }, function(result)
+	run({ EnvHost.program("kubectl"), "kustomize", dir }, { timeout_ms = M.RENDER_TIMEOUT_MS }, function(result)
 		if result.status == 0 then
 			cb(result.stdout, nil)
 		else
@@ -96,18 +97,11 @@ function M.renderKustomize(dir: string, cb: TextCb)
 	end)
 end
 
-local helmPath: string? | false = nil
-
 -- Calls back with the helm executable, or nil when helm is not installed.
 function M.helmAvailable(cb: (path: string?) -> ())
-	if helmPath ~= nil then
-		cb(if helmPath then helmPath else nil)
-		return
-	end
-	run({ "sh", "-c", 'command -v "$1"', "sh", M.HELM }, { timeout_ms = M.GIT_TIMEOUT_MS }, function(result)
-		local path = if result.status == 0 then trimNewline(result.stdout) else ""
-		helmPath = if path ~= "" then path else false
-		cb(if path ~= "" then path else nil)
+	EnvHost.ready(function()
+		local r = EnvHost.resolve(M.HELM)
+		cb(if r.found then r.program else nil)
 	end)
 end
 
@@ -116,7 +110,10 @@ end
 function M.renderHelm(spec: HelmRelease, cb: TextCb)
 	M.helmAvailable(function(helm: string?)
 		if helm == nil then
-			cb(nil, "helm is not installed (" .. M.HELM .. " not found on PATH)")
+			cb(
+				nil,
+				"helm is not installed (" .. M.HELM .. " is not on your shell's PATH or in a common install location)"
+			)
 			return
 		end
 		local argv = { helm, "template", spec.release, spec.chart }
@@ -357,7 +354,7 @@ local function readAll(s: ScanState, files: { string })
 		elseif string.find(tostring(text), "non-symlink", 1, true) then
 			table.insert(links, path)
 		else
-			diagnostic(index, "warning", path, "not read: " .. tostring(text))
+			diagnostic(index, "warning", path, "not read: " .. Shellenv.errorText(text))
 		end
 	end
 	local i = 0
@@ -391,7 +388,7 @@ local function readAll(s: ScanState, files: { string })
 				if ok then
 					add(path, text)
 				else
-					diagnostic(index, "warning", path, "not read: " .. tostring(text))
+					diagnostic(index, "warning", path, "not read: " .. Shellenv.errorText(text))
 				end
 			end
 			render(s, index)
