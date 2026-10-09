@@ -1,10 +1,12 @@
 {
+  "$schema": "https://raw.githubusercontent.com/contrafy/tern-kube/master/schema/config.schema.json",
   "schema_version": 1,
   "general": {
     "native_default": true,
     "max_rows": 20000,
     "max_rendered_rows": 500,
-    "max_capture_bytes": 16777216
+    "max_capture_bytes": 16777216,
+    "shell_env": true
   },
   "aliases": {
     "additional": []

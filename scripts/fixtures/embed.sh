@@ -3,7 +3,8 @@
 # a generated Luau module that specs can require. Regenerate after adding or
 # changing fixtures: `make fixtures` (or `sh scripts/fixtures/embed.sh`).
 # examples/ is embedded too (key "examples/<file>") so specs can check it, and
-# so are the tern-kube-drift golden diffs (key "tests/shell/drift/cases/<file>")
+# so are the published config schema (key "schema/<file>") and the
+# tern-kube-drift golden diffs (key "tests/shell/drift/cases/<file>")
 # that the plugin's diff redaction must agree with.
 set -eu
 
@@ -14,7 +15,7 @@ tmp="$out.tmp.$$"
 trap 'rm -f "$tmp"' EXIT INT TERM
 
 dirs=""
-for d in tests/fixtures/kubectl tests/fixtures/real tests/fixtures/synthetic tests/fixtures/gitops tests/fixtures/drift examples tests/shell/drift/cases; do
+for d in tests/fixtures/kubectl tests/fixtures/real tests/fixtures/synthetic tests/fixtures/gitops tests/fixtures/drift examples schema tests/shell/drift/cases; do
 	[ -d "$d" ] && dirs="$dirs $d"
 done
 

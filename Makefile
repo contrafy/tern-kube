@@ -7,10 +7,10 @@ STYLUA = $(BIN)/stylua
 SELENE = $(BIN)/selene
 TERN_DEFS = .tools/types/tern.lsp.d.luau
 
-LUAU_DIRS = $(wildcard plugin tests) scripts/bench.luau
+LUAU_DIRS = $(wildcard plugin tests) scripts/bench.luau scripts/gen-config-schema.luau
 FILTER =
 
-.PHONY: bootstrap tools fixtures test test-runner-selfcheck bench e2e lint fmt fmt-check typecheck check
+.PHONY: bootstrap tools fixtures test test-runner-selfcheck bench e2e lint fmt fmt-check typecheck schema schema-check check
 
 bootstrap:
 	sh scripts/bootstrap.sh
@@ -54,7 +54,16 @@ fmt-check: tools
 typecheck: tools fixtures
 	$(LUAU_LSP) analyze --platform=standard --definitions=@tern=$(TERN_DEFS) --ignore='**/.transcripts/**' $(LUAU_DIRS)
 
-check: fmt-check lint typecheck test-runner-selfcheck test bench
+# schema/config.schema.json is generated from plugin/lib/config.luau.
+schema: tools
+	@$(LUAU) scripts/gen-config-schema.luau >schema/config.schema.json.tmp && \
+		mv schema/config.schema.json.tmp schema/config.schema.json
+
+schema-check: tools
+	@$(LUAU) scripts/gen-config-schema.luau | cmp -s - schema/config.schema.json || \
+		{ echo "schema/config.schema.json is stale: run 'make schema'" >&2; exit 1; }
+
+check: fmt-check lint typecheck schema-check test-runner-selfcheck test bench
 
 .PHONY: test-shell-aliases
 test-shell-aliases:
