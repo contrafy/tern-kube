@@ -8,8 +8,10 @@
 -- generations; `stopped` covers a closed pane).
 
 local ConfigHost = require("./config_host")
+local EnvHost = require("./env_host")
 local GitopsHost = require("./gitops_host")
 local Render = require("./lib/explore/render")
+local Shellenv = require("./lib/env/shellenv")
 local State = require("./lib/explore/state")
 
 local log = tern.log
@@ -17,7 +19,16 @@ local log = tern.log
 type Effect = State.Effect
 type Msg = State.Msg
 
-type Host = { s: State.State, cx: BlockCx, stopped: boolean, warned: boolean, scan: GitopsHost.Scan? }
+type Host = {
+	s: State.State,
+	cx: BlockCx,
+	stopped: boolean,
+	warned: boolean,
+	scan: GitopsHost.Scan?,
+	args: { string },
+	-- Bumped by every (re)start; a stale ready callback does nothing.
+	starts: number,
+}
 
 local M = {}
 
@@ -38,6 +49,7 @@ local function warnOnce(h: Host, what: string, err: any)
 end
 
 local exec: (h: Host, effects: { Effect }) -> ()
+local start: (h: Host, saved: any) -> ()
 
 -- Applies `msg`; true when the state or the screen changed.
 local function dispatch(h: Host, msg: Msg): boolean
@@ -75,22 +87,20 @@ local function run(h: Host, e: Effect)
 			at = os.time(),
 		})
 	end
-	local ok, err = pcall(function()
-		tern.process.run(argv, {
-			timeout_ms = e.timeout_ms,
-			cwd = e.cwd or h.cx.cwd,
-			env = e.env,
-			stdin = e.stdin,
-		}, function(res: ProcessResult)
-			deliver(res, nil)
-			if not h.stopped then
+	EnvHost.run(argv, {
+		timeout_ms = e.timeout_ms,
+		cwd = e.cwd or h.cx.cwd,
+		env = e.env,
+		stdin = e.stdin,
+	}, function(res: ProcessResult, spawnError: string?)
+		deliver(res, spawnError)
+		if not h.stopped then
+			-- A spawn failure answers synchronously, possibly before the block is mounted.
+			pcall(function()
 				h.cx:render()
-			end
-		end)
+			end)
+		end
 	end)
-	if not ok then
-		deliver({ status = -1, stdout = "", stderr = "", timed_out = false }, tostring(err))
-	end
 end
 
 local function deliverResult(h: Host, e: Effect, extra: { [string]: any })
@@ -112,7 +122,7 @@ local function deliverResult(h: Host, e: Effect, extra: { [string]: any })
 end
 
 local function failed(err: any): ProcessResult
-	return { status = 1, stdout = "", stderr = tostring(err), timed_out = false }
+	return { status = 1, stdout = "", stderr = Shellenv.errorText(err), timed_out = false }
 end
 
 -- The manifest index (gitops_host.scan): progress messages, then one result.
@@ -190,7 +200,7 @@ local function writeFiles(h: Host, e: Effect)
 			tern.fs.write(f.path, f.text)
 		end)
 		if not ok then
-			deliverResult(h, e, { result = failed(f.path .. ": " .. tostring(err)) })
+			deliverResult(h, e, { result = failed(f.path .. ": " .. Shellenv.errorText(err)) })
 			return
 		end
 	end
@@ -252,6 +262,9 @@ function exec(h: Host, effects: { Effect })
 		elseif e.t == "openfile" then
 			-- Tern opens `<path>:<line>` in a file block at that line.
 			h.cx:open((e.path or "") .. (if e.line then ":" .. e.line else ""))
+		elseif e.t == "restart" then
+			start(h, State.save(h.s))
+			return
 		elseif e.t == "exit" then
 			h.stopped = true
 			if h.scan then
@@ -293,33 +306,73 @@ local function errorView(err: any): BlockView
 			c = {
 				{
 					k = "text",
-					p = { spans = { { t = "Tern Kube Explore could not render: " .. tostring(err), s = "error" } } },
+					p = {
+						spans = {
+							{ t = "Tern Kube Explore could not render: " .. Shellenv.errorText(err), s = "error" },
+						},
+					},
 				},
 			},
 		} :: any,
 	}
 end
 
+local function stateEnv(cx: BlockCx, pending: boolean): State.Env
+	return {
+		kubeconfig = EnvHost.kubeconfig(),
+		home = tern.getenv("HOME"),
+		kubectl = EnvHost.program("kubectl"),
+		daemonPath = EnvHost.daemonPath(),
+		pending = pending,
+		decode = tern.json.decode,
+		now = os.time(),
+		cwd = cx.cwd,
+		dataDir = tern.plugin.data,
+		nonce = nonce,
+		isList = isList,
+		null = tern.json.null,
+	}
+end
+
+-- (Re)initializes from the current config. While the login shell's PATH is
+-- still being read nothing runs (kubectl may not be found without it); init
+-- runs again once it is known, bounded by EnvHost.TIMEOUT_MS.
+function start(h: Host, saved: any)
+	h.starts += 1
+	local id = h.starts
+	local config = ConfigHost.load().config
+	if EnvHost.pending() then
+		h.s = (State.init(h.args, saved, config, stateEnv(h.cx, true)))
+		EnvHost.ready(function()
+			if h.stopped or h.starts ~= id then
+				return
+			end
+			start(h, saved)
+			pcall(function()
+				h.cx:render()
+			end)
+		end)
+		return
+	end
+	local s, effects = State.init(h.args, saved, config, stateEnv(h.cx, false))
+	h.s = s
+	exec(h, effects)
+end
+
 function M.register()
 	tern.block.define("explore", {
 		init = function(cx: BlockCx, args: { string }, saved: any): Host
-			local snap = ConfigHost.load()
-			local env = ConfigHost.env()
 			pcall(sweepTmp)
-			local s, effects = State.init(args, saved, snap.config, {
-				kubeconfig = env.kubeconfig,
-				home = env.home,
-				kubectl = ConfigHost.kubectl(),
-				decode = tern.json.decode,
-				now = os.time(),
-				cwd = cx.cwd,
-				dataDir = tern.plugin.data,
-				nonce = nonce,
-				isList = isList,
-				null = tern.json.null,
-			})
-			local h: Host = { s = s, cx = cx, stopped = false, warned = false, scan = nil }
-			exec(h, effects)
+			local h: Host = {
+				s = nil :: any,
+				cx = cx,
+				stopped = false,
+				warned = false,
+				scan = nil,
+				args = args,
+				starts = 0,
+			}
+			start(h, saved)
 			watch(h)
 			return h
 		end,
@@ -341,10 +394,16 @@ function M.register()
 		end,
 		key = function(h: Host, key: Key, cx: BlockCx): boolean?
 			h.cx = cx
+			if h.s.envPending then
+				return false
+			end
 			return dispatch(h, { t = "key", key = key :: any })
 		end,
 		event = function(h: Host, ev: UiEvent, cx: BlockCx)
 			h.cx = cx
+			if h.s.envPending then
+				return
+			end
 			if ev.ev == "focus" and ev.id == State.FILTER_INPUT then
 				dispatch(h, { t = "action", act = "filter-focus" })
 			elseif ev.ev == "focus" and type(ev.id) == "string" and string.sub(ev.id, 1, 12) == "main.gitops-" then

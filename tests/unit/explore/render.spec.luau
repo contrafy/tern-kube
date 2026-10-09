@@ -58,6 +58,56 @@ describe("explore render: header", function()
 		expect(nodes.actions(crumbs)).toEqual({ "crumb=1", "crumb=2" })
 		expect(nodes.text(crumbs)).toContain("Relations pod/")
 	end)
+
+	local function notFound(): State
+		local env = W.env()
+		env.daemonPath = "/usr/bin:/bin:/usr/sbin:/sbin"
+		local s, effects = State.init({ W.link({}) }, nil, W.config(nil), env)
+		return (
+			W.settle(s, effects, function()
+				return nil, "tern.process.run kubectl: No such file or directory (os error 2)"
+			end)
+		)
+	end
+
+	-- The user's report showed the error twice (main and dock) next to a "no
+	-- context" badge that only led to another failing kubectl call.
+	it("kubectl not found is shown once, as a card with Settings and Retry", function()
+		local v = view(notFound())
+		local text = nodes.text(v.main :: any)
+		local _, count = string.gsub(text, "kubectl not found", "")
+		expect(count).toBe(1)
+		expect((string.find(text, "no context", 1, true))).toBeNil()
+		expect((string.find(text, "stack traceback", 1, true))).toBeNil()
+		local card = nodes.find(v.main :: any, nodes.role("tern-kube.explore-error")) :: nodes.Node
+		expect(nodes.actions(card)).toEqual({ "settings", "refresh" })
+		local dock = nodes.text(v.dock :: any)
+		expect((string.find(dock, "not found", 1, true))).toBeNil()
+		expect(dock).toContain("kubectl could not run")
+	end)
+
+	-- With no resolved context the exec hint printed "on context ?".
+	it("the exec hint never names an unknown context", function()
+		local env = W.env()
+		env.daemonPath = "/usr/bin:/bin:/usr/sbin:/sbin"
+		local link = W.link({ namespace = W.NS, kind = "Pod", name = "web-65d7d99975-abcde" })
+		local s, effects = State.init({ link }, nil, W.config(nil), env)
+		s = W.settle(s, effects, function()
+			return nil, "tern.process.run kubectl: No such file or directory (os error 2)"
+		end)
+		local text = nodes.text(main(s))
+		expect((string.find(text, "context ?", 1, true))).toBeNil()
+		expect(text).toContain("exec runs a shell inside the container")
+	end)
+
+	it("says it is reading the shell's PATH while that is pending", function()
+		local env = W.env()
+		env.pending = true
+		local s = State.init({ W.link({}) }, nil, W.config(nil), env)
+		local text = nodes.text(main(s))
+		expect(text).toContain("Reading PATH and KUBECONFIG from your login shell")
+		expect((string.find(text, "no context", 1, true))).toBeNil()
+	end)
 end)
 
 describe("explore render: list", function()

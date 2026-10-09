@@ -3,16 +3,21 @@
 # sandbox (default /tmp/tk-tern, override with TK_TERN_SANDBOX) and never
 # touches the default Tern config, daemon socket or logs.
 #
-#   start [--fake] [--print]  run the sandbox window in the foreground (keep it
-#                     in a long-lived terminal/service). Shells and the daemon
+#   start [--fake | --gui-path] [--print]
+#                     run the sandbox window in the foreground (keep it in a
+#                     long-lived terminal/service). Shells and the daemon
 #                     always get KUBECONFIG=.sandbox/kubeconfig and a neutral
 #                     zsh (sandbox ZDOTDIR, no user rc files); the daemon reads
 #                     tern-kube config from <sandbox>/xdg, never the user's.
 #                     Default: the real kubectl, refused unless that
 #                     kubeconfig's context is kind-tern-kube-dev. --fake puts
 #                     tests/bin (fake kubectl and kubecolor) first on PATH. In
-#                     a pane, `tk_fake [DIR]` and `tk_real` switch. --print
-#                     shows the environment
+#                     a pane, `tk_fake [DIR]` and `tk_real` switch.
+#                     --gui-path starts the window and daemon with the PATH
+#                     a Dock/Finder (launchd) start has,
+#                     /usr/bin:/bin:/usr/sbin:/sbin, and no TKUBE_KUBECTL;
+#                     panes still get the sandbox zsh rc. --print shows the
+#                     environment
 #   link [DIR]        point <sandbox>/cfg/plugins/tern-kube.path at the repo root
 #                     (or DIR, e.g. a snapshot copy) and reload the daemon
 #   unlink            remove the link and reload
@@ -127,16 +132,22 @@ case $cmd in
 start)
 	fake=0
 	print=0
+	gui=0
 	for a in "$@"; do
 		case $a in
 		--fake) fake=1 ;;
+		--gui-path) gui=1 ;;
 		--print) print=1 ;;
 		*)
-			echo "dev-tern: start [--fake] [--print]" >&2
+			echo "dev-tern: start [--fake | --gui-path] [--print]" >&2
 			exit 2
 			;;
 		esac
 	done
+	if [ $fake = 1 ] && [ $gui = 1 ]; then
+		echo "dev-tern: --gui-path runs the real kubectl found the way a Dock launch would; it cannot be combined with --fake" >&2
+		exit 2
+	fi
 	mkdir -p "$TERN_CONFIG_DIR" "$STENCIL_LOG_DIR"
 	export STENCIL_LOG="$window_log"
 	export KUBECONFIG="$kubeconfig"
@@ -169,8 +180,19 @@ start)
 		export TKUBE_KUBECTL="$real"
 		write_zdotdir 0 "$real"
 	fi
+	if [ $gui = 1 ]; then
+		# Tern started from the Dock/Finder: launchd's minimal PATH and no
+		# TKUBE_KUBECTL; tern-kube must find kubectl through the login shell
+		# (the sandbox zsh rc, via ZDOTDIR) or the common install dirs.
+		# KUBECONFIG stays: without it a failed shell read would fall back
+		# to the user's ~/.kube/config. (A sandbox HOME is not an option:
+		# Tern then asks to sign in.)
+		tern_bin=$(command -v "$tern_bin")
+		export PATH=/usr/bin:/bin:/usr/sbin:/sbin
+		unset TKUBE_KUBECTL
+	fi
 	if [ $print = 1 ]; then
-		env | grep -E '^(TERN_|STENCIL_|KUBE|ZDOTDIR=|SHELL=|PATH=)' | sort
+		env | grep -E '^(TERN_|STENCIL_|KUBE|TKUBE_|ZDOTDIR=|SHELL=|PATH=)' | sort
 		echo "$tern_bin --control $ctl_sock $repo  (cwd $sb)"
 		exit 0
 	fi
@@ -265,7 +287,7 @@ env)
 		"$TERN_CONFIG_DIR" "$TERN_DAEMON_SOCKET" "$STENCIL_LOG_DIR" "$window_log" "$kubeconfig"
 	;;
 *)
-	sed -n '2,29p' "$0" | sed 's/^# \{0,1\}//'
+	sed -n '2,35p' "$0" | sed 's/^# \{0,1\}//'
 	[ -z "$cmd" ] && exit 0
 	exit 2
 	;;

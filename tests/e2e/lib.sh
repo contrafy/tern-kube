@@ -129,6 +129,29 @@ reset_pane() {
 	sh_line clear
 }
 
+# restart_window [START ARGS...]: quit the sandbox window and start it again
+# (e.g. with --gui-path), relink the snapshot plugin, back at one clear shell
+# pane. The window keeps running after the calling scenario's subshell.
+restart_window() {
+	reset_pane
+	dev stop >/dev/null 2>&1
+	gone() { ! ctl ready; }
+	E2E_WAIT=15 wait_for "the old window to quit" gone || return 1
+	dev start "$@" >"$E2E_SB/window.out" 2>&1 &
+	E2E_WAIT=30 wait_for "the sandbox window" ctl ready || {
+		cat "$E2E_SB/window.out" >&2
+		return 1
+	}
+	dev link "$E2E_SB/pkg" >/dev/null 2>&1 || {
+		fail "cannot link the plugin"
+		return 1
+	}
+	E2E_WAIT=30 wait_for "the first prompt" ctl ready || return 1
+	ctl resize 1280 800 >/dev/null
+	sleep 1
+	reset_pane
+}
+
 # Text of the lens blocks, raw output included (raw text is not grid text).
 blocktext() {
 	ctl tree '.sf-block' | jq -r '[.nodes[]?.text // empty] | join(" ")'

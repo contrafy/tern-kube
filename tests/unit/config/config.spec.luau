@@ -77,6 +77,19 @@ describe("config defaults", function()
 		expect(cfg.security.sensitive_output_strict_mode).toBe(false)
 	end)
 
+	-- Tern started from the Dock or Finder inherits launchd's minimal PATH,
+	-- where kubectl, helm and gh are usually missing: the login shell's PATH
+	-- is read unless the user turns it off.
+	it("reads the login shell environment unless turned off", function()
+		expect(parse(nil).general.shell_env).toBe(true)
+		local cfg, diags = parse([[{"general": {"shell_env": false}}]])
+		expect(#diags).toBe(0)
+		expect(cfg.general.shell_env).toBe(false)
+		local bad, bdiags = parse([[{"general": {"shell_env": "no"}}]])
+		expect(bad.general.shell_env).toBe(true)
+		expect(find(bdiags, "general.shell_env").level).toBe("error")
+	end)
+
 	it("treats an empty or blank file as missing", function()
 		for _, text in { "", "  \n\t" } do
 			local cfg, diags = parse(text)
@@ -98,6 +111,28 @@ describe("config defaults", function()
 		expect(table.isfrozen(cfg.general)).toBe(true)
 		expect(table.isfrozen(cfg.quick_actions.shell_command)).toBe(true)
 		expect(Config.defaults() ~= Config.defaults()).toBe(true)
+	end)
+end)
+
+-- The stub and examples/config.json point editors at the JSON Schema with a
+-- top-level "$schema"; the loader must not report it as an unknown key, or
+-- every fresh install would start with a warning.
+describe("config $schema", function()
+	it("accepts the schema URL silently and keeps it out of the config", function()
+		local cfg, diags = parse(string.format('{"$schema": "%s", "schema_version": 1}', Config.SCHEMA_URL))
+		expect(diags).toEqual({})
+		expect(cfg).toEqual(Config.defaults())
+	end)
+
+	it("accepts any schema URL, such as one pinned to a release tag", function()
+		local _, diags = parse([[{"$schema": "https://example.com/tern-kube/v0.1.1/config.schema.json"}]])
+		expect(diags).toEqual({})
+	end)
+
+	it("warns about a $schema that is not a string", function()
+		local cfg, diags = parse([[{"$schema": 1}]])
+		expect(cfg).toEqual(Config.defaults())
+		expect(find(diags, "$schema").level).toBe("warning")
 	end)
 end)
 
@@ -445,19 +480,6 @@ describe("config path", function()
 	it("has no path without a usable directory", function()
 		expect(Config.path({})).toBeNil()
 		expect(Config.path({ HOME = "" })).toBeNil()
-	end)
-end)
-
-describe("config kubectl program", function()
-	-- The kv override exists for tests and the settings flow; an explicit
-	-- config path beats the environment; a bare default defers to it.
-	it("resolves kv override, then config, then TKUBE_KUBECTL, then kubectl", function()
-		local custom = parse([[{"kubectl": "/opt/k"}]])
-		local plain = parse(nil)
-		expect(Config.kubectlProgram(custom, "/kv/k", "/env/k")).toBe("/kv/k")
-		expect(Config.kubectlProgram(custom, nil, "/env/k")).toBe("/opt/k")
-		expect(Config.kubectlProgram(plain, "", "/env/k")).toBe("/env/k")
-		expect(Config.kubectlProgram(plain, 5, "")).toBe("kubectl")
 	end)
 end)
 return nil

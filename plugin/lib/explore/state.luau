@@ -25,6 +25,7 @@ local Quick = require("../actions/quick")
 local Redact = require("../model/redact")
 local Relations = require("./relations")
 local Resource = require("../model/resource")
+local Shellenv = require("../env/shellenv")
 local Types = require("../model/types")
 local Values = require("../model/values")
 
@@ -80,8 +81,13 @@ export type Decode = ExploreTypes.Decode
 export type Env = {
 	kubeconfig: string?,
 	home: string?,
-	-- Resolved kubectl program (config_host.kubectl()).
+	-- Resolved kubectl program (env_host.program("kubectl")).
 	kubectl: string?,
+	-- The PATH Tern was launched with, for the kubectl-not-found message.
+	daemonPath: string?,
+	-- The login shell's PATH is still being read: nothing runs yet; the host
+	-- calls init again once it is known.
+	pending: boolean?,
 	decode: Decode,
 	-- os.time() at init.
 	now: number?,
@@ -117,6 +123,11 @@ export type State = {
 	resolve: Resolve,
 	-- Why the target cannot be used (kubectl missing, context not in kubeconfig).
 	targetError: string?,
+	-- M.failure's kind of targetError ("spawn": kubectl could not run).
+	targetErrorKind: string?,
+	-- Waiting for the login shell's PATH (Env.pending).
+	envPending: boolean,
+	daemonPath: string?,
 	quick: PendingQuick?,
 	-- Block height in lines (BlockCx.rows; nil until the host reports it).
 	rows: number?,
@@ -147,6 +158,8 @@ local M = {}
 M.FILTER_INPUT = "main.filter"
 M.RESOLVE_TAG = "resolve"
 M.QUICK_TAG = "quick"
+-- window.luau routes it to the Settings block with the kubectl key selected.
+M.SETTINGS_URL = "tern-kube://settings?key=kubectl"
 M.MAX_RELATION_QUERIES = 60
 -- Lines of a block that are not grid rows (header, crumbs, filter, count,
 -- column heads, dock); a grid row is about 4/3 of a line tall.
@@ -336,8 +349,12 @@ end
 -- An actionable message for a failed kubectl run, plus a short kind.
 function M.failure(s: State, result: ProcessResult, spawnError: string?): (string, string)
 	if spawnError then
+		if Shellenv.isNotFound(spawnError) then
+			return Shellenv.notFoundText("kubectl", s.program, s.daemonPath), "spawn"
+		end
 		return string.format(
-			'Cannot run kubectl (%s): %s. Set "kubectl" in ~/.config/tern-kube/config.json or TKUBE_KUBECTL.',
+			'Cannot run kubectl (%s): %s. Set "kubectl" to its full path in Tern Kube: Settings '
+				.. "(or ~/.config/tern-kube/config.json).",
 			s.program,
 			spawnError
 		),
@@ -899,12 +916,15 @@ function M.init(args: { string }, saved: any, config: Config, env: Env): (State,
 		gen = 0,
 		now = env.now,
 		config = config,
-		program = env.kubectl or Config.kubectlProgram(config, nil, nil),
+		program = env.kubectl or config.kubectl,
 		decode = env.decode,
 		help = false,
 		pendingG = false,
 		resolve = { phase = "current", gen = 0 },
 		targetError = nil,
+		targetErrorKind = nil,
+		envPending = env.pending == true,
+		daemonPath = env.daemonPath,
 		quick = nil,
 		url = url,
 		rows = nil,
@@ -920,9 +940,13 @@ function M.init(args: { string }, saved: any, config: Config, env: Env): (State,
 		null = env.null,
 	}
 	local effects: { Effect } = {}
+	if s.envPending then
+		return s, effects
+	end
 	if not allowLive(s) then
 		s.resolve = { phase = "failed", gen = 0 }
 		s.targetError = "Live queries are disabled (explore.allow_live_queries = false in config.json)."
+		s.targetErrorKind = "disabled"
 		return s, effects
 	end
 	s.gen += 1
@@ -1046,6 +1070,7 @@ local function chooseContext(s: State, name: string, effects: { Effect })
 	t.allNamespaces = false
 	s.target = t
 	s.targetError = nil
+	s.targetErrorKind = nil
 	s.resolve = { phase = "done", gen = s.resolve.gen }
 	-- Back to the root view of the newly chosen cluster.
 	local root = s.stack[1]
@@ -1126,7 +1151,13 @@ local function pushPicker(s: State, kind: RouteKind, effects: { Effect })
 	pushRoute(s, { kind = kind }, effects)
 end
 
+-- After kubectl could not run, a retry starts over (the host re-reads the
+-- config and the program, which the user may just have set).
 function M.refresh(s: State, effects: { Effect })
+	if s.targetErrorKind == "spawn" then
+		table.insert(effects, { t = "restart" })
+		return
+	end
 	local r = top(s)
 	if Gitops.isRoute(r.kind) then
 		enterGitops(s, r, true, effects)
@@ -1732,6 +1763,8 @@ local function onAction(s: State, act: string, value: string, effects: { Effect 
 		truncate(s, tonumber(value) or 0, effects)
 	elseif act == "refresh" then
 		M.refresh(s, effects)
+	elseif act == "settings" then
+		table.insert(effects, { t = "open", url = M.SETTINGS_URL })
 	elseif act == "help" then
 		s.help = not s.help
 	elseif act == "nav" then
@@ -1849,6 +1882,7 @@ local function contextsLoaded(s: State, names: { string }, effects: { Effect })
 		return
 	end
 	s.resolve = { phase = "failed", gen = s.resolve.gen }
+	s.targetErrorKind = "context"
 	s.targetError = string.format(
 		'Context "%s" is not in the kubeconfig%s. Pick a context.',
 		want or "?",
@@ -1868,9 +1902,10 @@ local function onResolve(s: State, msg: Msg, effects: { Effect })
 	local result = msg.result :: ProcessResult
 	local name = if msg.spawnError == nil and result.status == 0 then trim(result.stdout) else ""
 	if name == "" then
-		local text = M.failure(s, result, msg.spawnError)
+		local text, kind = M.failure(s, result, msg.spawnError)
 		s.resolve = { phase = "failed", gen = s.resolve.gen }
 		s.targetError = text
+		s.targetErrorKind = kind
 		if msg.spawnError == nil and not result.timed_out then
 			pushRoute(s, { kind = "contexts" }, effects)
 		end
@@ -1995,7 +2030,9 @@ local function onResult(s: State, msg: Msg, effects: { Effect }): boolean
 		failLoad(s, key :: string, load, msg)
 		if string.sub(key :: string, 1, 9) == "contexts|" and s.resolve.phase == "verify" then
 			s.resolve = { phase = "failed", gen = s.resolve.gen }
-			s.targetError = (s.cache[key :: string] :: Load).error
+			local failed = s.cache[key :: string] :: Load
+			s.targetError = failed.error
+			s.targetErrorKind = failed.errorKind
 		end
 		return true
 	end

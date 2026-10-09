@@ -97,7 +97,9 @@ Installing copies the whole repository (about 6 MB); Tern loads only
 `plugin.toml` and `plugin/`.
 
 Requires Tern 0.6.2 or later with shell integration and native command
-output on (`command_lenses`, the default), and `kubectl` on your `PATH`.
+output on (`command_lenses`, the default), and `kubectl` installed. Started
+from the Dock or Finder, Tern has a minimal `PATH`; tern-kube reads yours
+from your login shell ([Programs and `PATH`](docs/configuration.md#programs-and-path)).
 Tested on macOS; Tern on Linux and remote hosts is not verified yet (see
 [Features](#features)).
 
@@ -110,7 +112,9 @@ tern-kube/scripts/tern-kube-aliases add k   # bash/fish only; zsh expands aliase
 ```
 
 Settings: **Tern Kube: Settings** in the palette, or edit
-`~/.config/tern-kube/config.json` ([configuration](docs/configuration.md)).
+`~/.config/tern-kube/config.json`, created on first load with a `$schema`
+line so editors complete and check every key
+([configuration](docs/configuration.md)).
 
 To remove: `tern plugin remove tern-kube`.
 
@@ -169,7 +173,7 @@ v1.0 is when every row reads done. Release history: [CHANGELOG.md](CHANGELOG.md)
 | Helm values diff and chart auto-detect | planned |
 | Compare one source against several clusters | planned |
 | **Settings and config** | |
-| Versioned JSON at `~/.config/tern-kube/config.json` | done |
+| Versioned JSON at `~/.config/tern-kube/config.json`, with a JSON Schema | done |
 | **Tern Kube: Settings**: validation, reset, status checks | done |
 | Opt-in bash/fish alias claims (`tern-kube-aliases`) | done |
 | Mutation and live-query switches, timeouts, limits | done |

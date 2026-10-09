@@ -117,6 +117,16 @@ describe("settings catalog", function()
 		expect(#State.FIELDS).toBe(#paths)
 	end)
 
+	-- tern-kube owns these two: editing them by hand can only break the file.
+	it("does not offer $schema or schema_version for editing", function()
+		expect(State.field("$schema")).toBeNil()
+		expect(State.field("schema_version")).toBeNil()
+	end)
+
+	it("shows the login shell switch as a toggle", function()
+		expect((State.field("general.shell_env") :: State.Field).kind).toBe("bool")
+	end)
+
 	it("only lists keys the loader accepts (none is reported as unknown)", function()
 		for _, f in State.FIELDS do
 			local raw = State.setValue({}, f, State.configValue(Config.defaults(), f) or "x")
@@ -501,7 +511,9 @@ describe("settings state: writes", function()
 		expect(e.existed).toBe(true)
 	end)
 
-	it("creates the file when there is none, marking that nothing existed", function()
+	-- A file Settings creates is the stub plus the edit, so editors find the
+	-- schema just as they would after the first plugin load.
+	it("creates the file when there is none, with $schema, marking that nothing existed", function()
 		local s = select(open(nil), "general.max_rows")
 		s = key(s, "e")
 		s = key(s, "u", { ctrl = true })
@@ -510,7 +522,29 @@ describe("settings state: writes", function()
 		local e = writeOf(effects) :: Effect
 		expect(e.existed).toBe(false)
 		expect(e.base).toBeNil()
-		expect(decode(e.text :: string)).toEqual({ schema_version = 1, general = { max_rows = 10 } })
+		expect(decode(e.text :: string)).toEqual({
+			["$schema"] = Config.SCHEMA_URL,
+			schema_version = 1,
+			general = { max_rows = 10 },
+		})
+		expect((string.find(e.text :: string, '^{\n  "%$schema": '))).toBe(1)
+	end)
+
+	-- The stub written at plugin load is the file most users first edit;
+	-- a rewrite must keep "$schema" (first, where editors and people look).
+	it("keeps $schema first when it edits the stub", function()
+		local s = select(open(Config.STUB_TEXT), "general.shell_env")
+		local _, effects = key(s, "enter")
+		local e = writeOf(effects) :: Effect
+		expect(e.text).toBe(
+			'{\n  "$schema": "'
+				.. Config.SCHEMA_URL
+				.. '",\n  "schema_version": 1,\n  "general": {\n    "shell_env": false\n  }\n}\n'
+		)
+	end)
+
+	it("rewrites the untouched stub byte for byte", function()
+		expect(State.encode(decode(Config.STUB_TEXT), isList)).toBe(Config.STUB_TEXT)
 	end)
 
 	it("allows one write at a time", function()
@@ -547,11 +581,11 @@ describe("settings state: writes", function()
 		expect((s2.message :: any).text).toContain("already uses its default")
 	end)
 
-	it("creates a minimal file before opening a missing one", function()
+	it("creates the stub before opening a missing file", function()
 		local s, effects = key(open(nil), "o")
 		local e = writeOf(effects) :: Effect
 		expect(e.open).toBe(true)
-		expect(e.text).toBe('{\n  "schema_version": 1\n}\n')
+		expect(e.text).toBe(Config.STUB_TEXT)
 		local _, after = step(s, { t = "written", ok = true, open = true })
 		expect(after[1]).toEqual({ t = "open", path = PATH })
 	end)
@@ -616,15 +650,6 @@ describe("settings status facts", function()
 		local none, why = State.aliasClaims('match = ["kubectl get"]')
 		expect(none).toBeNil()
 		expect(why).toContain("markers are missing")
-	end)
-
-	it("names where kubectl comes from in the loader's order", function()
-		local d = Config.defaults()
-		local custom = Config.parse('{"kubectl": "/opt/kubectl"}', decode)
-		expect(State.kubectlSource(d, "/kv/kubectl", "/env/kubectl")).toBe("Tern kv key kubectl")
-		expect(State.kubectlSource(custom, nil, "/env/kubectl")).toBe("config kubectl")
-		expect(State.kubectlSource(d, nil, "/env/kubectl")).toBe("TKUBE_KUBECTL")
-		expect(State.kubectlSource(d, nil, nil)).toBe("the daemon's PATH")
 	end)
 
 	it("parses kubectl and tern versions", function()

@@ -1,0 +1,299 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/contrafy/tern-kube/master/schema/config.schema.json",
+  "title": "tern-kube config",
+  "description": "Settings of tern-kube, the Kubernetes plugin for Tern: $XDG_CONFIG_HOME/tern-kube/config.json (default ~/.config/tern-kube/config.json). Every key is optional; a bad value falls back to its default with a diagnostic. https://github.com/contrafy/tern-kube/blob/master/docs/configuration.md",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "description": "JSON Schema of this file, for editor completion and validation; tern-kube ignores it",
+      "type": "string"
+    },
+    "schema_version": {
+      "description": "Version of this file's format; kept by tern-kube",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1,
+      "default": 1
+    },
+    "general": {
+      "description": "Native views, capture limits and the login-shell environment",
+      "type": "object",
+      "properties": {
+        "native_default": {
+          "description": "Native views for lensed kubectl output; off shows Tern's raw output",
+          "type": "boolean",
+          "default": true
+        },
+        "max_rows": {
+          "description": "Output lines recorded for a native view; more falls back to raw",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100000,
+          "default": 20000
+        },
+        "max_rendered_rows": {
+          "description": "Rows drawn at once (lens pages, Explore windows)",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10000,
+          "default": 500
+        },
+        "max_capture_bytes": {
+          "description": "Output bytes captured per command; more falls back to raw",
+          "type": "integer",
+          "minimum": 65536,
+          "maximum": 268435456,
+          "default": 16777216
+        },
+        "shell_env": {
+          "description": "Read PATH and KUBECONFIG from your login shell (once per Tern daemon) so kubectl, helm, gh and credential plugins are found when Tern starts from the Dock or Finder",
+          "type": "boolean",
+          "default": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "aliases": {
+      "description": "Command aliases for kubectl",
+      "type": "object",
+      "properties": {
+        "additional": {
+          "description": "Alias names you intend to claim (informational; scripts/tern-kube-aliases writes the claims)",
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 64,
+            "pattern": "^[A-Za-z0-9_][A-Za-z0-9_.-]*$"
+          },
+          "default": []
+        }
+      },
+      "additionalProperties": false
+    },
+    "explore": {
+      "description": "The Tern Kube Explore block",
+      "type": "object",
+      "properties": {
+        "allow_live_queries": {
+          "description": "Off: Explore opens but runs no kubectl command",
+          "type": "boolean",
+          "default": true
+        },
+        "auto_refresh": {
+          "description": "Only false is supported: Explore never polls",
+          "type": "boolean",
+          "const": false,
+          "default": false
+        },
+        "query_timeout_ms": {
+          "description": "Each Explore kubectl call is killed after this many ms",
+          "type": "integer",
+          "minimum": 500,
+          "maximum": 600000,
+          "default": 10000
+        },
+        "relationship_max_nodes": {
+          "description": "Objects in a relations graph before it is truncated",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 5000,
+          "default": 250
+        }
+      },
+      "additionalProperties": false
+    },
+    "mutations": {
+      "description": "Previews and confirmations for apply, delete, rollout restart and scale",
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "description": "Off hides every mutating action; the approve block refuses",
+          "type": "boolean",
+          "default": true
+        },
+        "interactive_guard": {
+          "description": "Marks the opt-in shell guard as wanted (installed separately)",
+          "type": "boolean",
+          "default": false
+        },
+        "require_target_confirmation": {
+          "description": "Mutations need a named or confirmed context, never an inferred one",
+          "type": "boolean",
+          "default": true
+        },
+        "allow_failed_preview_override": {
+          "description": "Allow confirming when the dry run or diff failed",
+          "type": "boolean",
+          "default": false
+        },
+        "preview_timeout_ms": {
+          "description": "Each preview step is killed after this many ms",
+          "type": "integer",
+          "minimum": 1000,
+          "maximum": 600000,
+          "default": 30000
+        },
+        "execute_timeout_ms": {
+          "description": "A confirmed mutation is killed after this many ms",
+          "type": "integer",
+          "minimum": 1000,
+          "maximum": 3600000,
+          "default": 300000
+        }
+      },
+      "additionalProperties": false
+    },
+    "security": {
+      "description": "Secret and sensitive value masking",
+      "type": "object",
+      "properties": {
+        "show_secret_values": {
+          "description": "Show Secret values in native views (trusted screens only)",
+          "type": "boolean",
+          "default": false
+        },
+        "sensitive_output_strict_mode": {
+          "description": "Also mask values whose names look sensitive (heuristic)",
+          "type": "boolean",
+          "default": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "quick_actions": {
+      "description": "Shell, logs, port-forward and debug terminals",
+      "type": "object",
+      "properties": {
+        "placement": {
+          "description": "Where quick-action terminals open",
+          "type": "string",
+          "enum": ["right", "down", "tab"],
+          "default": "right"
+        },
+        "shell_command": {
+          "description": "Program and arguments the Shell action runs in the container",
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 32,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "default": ["sh", "-c", "command -v bash >/dev/null 2>&1 && exec bash || exec sh"]
+        },
+        "logs_tail": {
+          "description": "History lines the Logs action shows before following",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100000,
+          "default": 200
+        },
+        "debug_image": {
+          "description": "Image for debug containers and node debug pods",
+          "type": "string",
+          "maxLength": 255,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._/:@-]*$",
+          "default": "busybox:1.36"
+        }
+      },
+      "additionalProperties": false
+    },
+    "kubectl": {
+      "description": "kubectl program: an absolute path, or a name looked up on your shell's PATH, common install dirs, then Tern's PATH",
+      "type": "string",
+      "pattern": "^(/|~/|[^/]+$)",
+      "default": "kubectl"
+    },
+    "kubeconfig": {
+      "description": "Kubeconfig for Explore links that name none (absolute path; empty = unset)",
+      "type": ["string", "null"],
+      "pattern": "^(/|~/|~$)"
+    },
+    "gitops": {
+      "description": "Manifest index, diff, drift and export",
+      "type": "object",
+      "properties": {
+        "helm": {
+          "description": "Helm releases for diff and drift: [{chart, release, namespace?, values?}]",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["chart", "release"],
+            "properties": {
+              "chart": {
+                "type": "string",
+                "maxLength": 4096,
+                "pattern": "^[^\\x00-\\x1F\\x7F]+$"
+              },
+              "namespace": {
+                "type": "string",
+                "maxLength": 63,
+                "pattern": "^[a-z0-9]([a-z0-9-]*[a-z0-9])?$"
+              },
+              "release": {
+                "type": "string",
+                "maxLength": 63,
+                "pattern": "^[a-z0-9]([a-z0-9-]*[a-z0-9])?$"
+              },
+              "values": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "maxLength": 4096,
+                  "pattern": "^[^\\x00-\\x1F\\x7F]+$"
+                }
+              }
+            }
+          },
+          "default": []
+        },
+        "unmanaged_kinds": {
+          "description": "Kinds the drift report checks for unmanaged objects (empty = the source's kinds)",
+          "type": ["array", "null"],
+          "minItems": 1,
+          "maxItems": 64,
+          "items": {
+            "type": "string",
+            "maxLength": 253,
+            "pattern": "^[A-Za-z][A-Za-z0-9-]*[.A-Za-z0-9-]*$"
+          }
+        },
+        "max_files": {
+          "description": "Manifest files indexed per scan",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 20000,
+          "default": 2000
+        },
+        "max_bytes": {
+          "description": "Total bytes read per manifest scan",
+          "type": "integer",
+          "minimum": 1048576,
+          "maximum": 268435456,
+          "default": 33554432
+        },
+        "max_file_bytes": {
+          "description": "Larger manifest files are skipped",
+          "type": "integer",
+          "minimum": 4096,
+          "maximum": 16777216,
+          "default": 1048576
+        },
+        "render_kustomize": {
+          "description": "Render kustomizations while indexing so overlays map to live names",
+          "type": "boolean",
+          "default": true
+        },
+        "gh": {
+          "description": "GitHub CLI for the optional pull request step: an absolute path, or a name looked up like kubectl's",
+          "type": "string",
+          "pattern": "^(/|~/|[^/]+$)",
+          "default": "gh"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

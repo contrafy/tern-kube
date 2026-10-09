@@ -7,6 +7,18 @@ versions may break).
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-10-09
+
+### Fixed
+
+- `kubectl`, `helm`, `gh` and kubectl's exec credential plugins are found when Tern is launched from the Dock or Finder (launchd's minimal `PATH`): tern-kube reads `PATH` and `KUBECONFIG` from your login shell once per daemon, then searches common install directories (Homebrew, Docker Desktop, Rancher Desktop, mise, asdf, Nix). `general.shell_env: false` skips the shell.
+- Explore shows a missing `kubectl` once, as a card with Open Settings and Retry, instead of a Lua traceback.
+
+### Added
+
+- The first plugin load creates `~/.config/tern-kube/config.json` with only `$schema` and `schema_version` when it is missing; an existing file is never overwritten.
+- JSON Schema of the config file (`schema/config.schema.json`), so editors complete and check every key with its description and default.
+
 ## [0.1.1] - 2026-10-09
 
 ### Fixed
@@ -77,6 +89,7 @@ First public beta.
 - Docs: SDK capability matrix, configuration, performance, architecture,
   security model, testing, releasing.
 
-[Unreleased]: https://github.com/contrafy/tern-kube/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/contrafy/tern-kube/compare/v0.1.2...HEAD
+[0.1.2]: https://github.com/contrafy/tern-kube/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/contrafy/tern-kube/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/contrafy/tern-kube/releases/tag/v0.1.0

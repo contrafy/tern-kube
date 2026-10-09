@@ -239,25 +239,47 @@ end
 
 -- Status page -------------------------------------------------------------------
 
-local function kubectlText(s: State): { ui.SpanLike }
-	local k = s.info.kubectl
-	if k == nil then
+local function toolText(tool: State.ToolInfo?): { ui.SpanLike }
+	if tool == nil or tool.pending then
 		return { ui.span("checking …", "muted") }
 	end
-	local out: { ui.SpanLike } = { ui.span(k.program, "mono"), ui.span("  from " .. k.source, "muted") }
-	if k.pending then
-		table.insert(out, ui.span("  · resolving …", "muted"))
-	elseif k.error then
-		table.insert(out, ui.span("  · " .. k.error, "error"))
-	else
-		if k.resolved and k.resolved ~= k.program then
-			table.insert(out, ui.span("  → " .. k.resolved, "mono"))
-		end
-		if k.version then
-			table.insert(out, ui.span("  " .. k.version, "muted"))
-		end
+	if not tool.found then
+		return {
+			ui.span(tool.program, "mono"),
+			ui.span("  " .. tool.source, "error"),
+		}
+	end
+	local out: { ui.SpanLike } = { ui.span(tool.program, "mono"), ui.span("  " .. tool.source, "muted") }
+	if tool.error then
+		table.insert(out, ui.span("  · " .. tool.error, "error"))
+	elseif tool.version then
+		table.insert(out, ui.span("  " .. tool.version, "muted"))
 	end
 	return out
+end
+
+local FALLBACK = "; using common install locations and Tern's PATH"
+
+local function shellEnvText(s: State): { ui.SpanLike }
+	local e = s.info.shellEnv
+	if e == nil then
+		return { ui.span("checking …", "muted") }
+	end
+	local shell = e.shell or "$SHELL unset"
+	if e.phase == "pending" or e.phase == "idle" then
+		return { ui.span("reading from " .. shell .. " …", "muted") }
+	elseif e.phase == "done" then
+		return {
+			ui.span("read from " .. shell, "mono"),
+			ui.span(string.format("  in %d ms · %d entries", e.tookMs or 0, e.entries or 0), "muted"),
+		}
+	elseif e.phase == "off" then
+		return { ui.span("off (general.shell_env)" .. FALLBACK, "muted") }
+	elseif e.phase == "unsupported" then
+		return { ui.span(shell .. " is not a shell Tern Kube can read" .. FALLBACK, "warning") }
+	end
+	local took = if e.tookMs then string.format(" after %d ms", e.tookMs) else ""
+	return { ui.span(string.format("%s failed%s: %s%s", shell, took, e.error or "unknown error", FALLBACK), "warning") }
 end
 
 local function aliasText(s: State): { ui.SpanLike }
@@ -353,12 +375,19 @@ local function statusPage(s: State): { Node }
 				if info.ternPending
 					then ui.span("checking …", "muted")
 					else ui.span(
-						info.ternVersion or "unknown (`tern` is not on the daemon's PATH)",
+						info.ternVersion or "unknown (the `tern` CLI was not found)",
 						if info.ternVersion then "mono" else "muted"
 					),
 			},
 		},
-		{ { "kubectl" }, kubectlText(s) },
+		{ { "kubectl" }, toolText(info.kubectl) },
+		{ { "helm" }, toolText(info.helm) },
+		{ { "gh" }, toolText(info.gh) },
+		{ { "Shell PATH" }, shellEnvText(s) },
+		{
+			{ "Tern's PATH" },
+			{ ui.span(if info.shellEnv then info.shellEnv.daemonPath else "…", "muted mono") },
+		},
 		{ { "Alias claims" }, aliasText(s) },
 		{ { "Shell guard" }, guardText(s) },
 		{ { "Pane env records" }, recordsText(s) },
