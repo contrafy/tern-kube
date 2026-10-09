@@ -1,6 +1,7 @@
 # Architecture
 
-Tern Kube is one Tern plugin package (`plugin/`) plus tools that live outside
+Tern Kube is one Tern plugin package (the repository root: `plugin.toml`
+loading `plugin/`) plus tools that live outside
 it: the opt-in shell guard (`shell/`), the standalone drift CLI
 (`bin/tern-kube-drift`) and the alias claim generator
 (`scripts/tern-kube-aliases`). SDK facts this design relies on are recorded
@@ -22,9 +23,10 @@ with evidence in [sdk-capability-matrix.md](sdk-capability-matrix.md).
 ## Module map
 
 ```
+plugin.toml            manifest at the repository root (the package root):
+                       lens "kubectl" (claim globs), blocks "explore",
+                       "approve" and "settings", styles; entries under plugin/
 plugin/
-  plugin.toml          manifest: lens "kubectl" (claim globs), blocks
-                       "explore", "approve" and "settings", styles
   host.luau            daemon half: lens "kubectl", spawn hook
                        (TKUBE_SPOOL), registers the blocks below
   window.luau          window half: route.link (every tern-kube:// URL),

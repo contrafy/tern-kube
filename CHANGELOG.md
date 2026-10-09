@@ -7,6 +7,16 @@ versions may break).
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-10-09
+
+### Fixed
+
+- Install from the repository root: `tern plugin install github.com/contrafy/tern-kube`.
+
+### Changed
+
+- Screenshots are optimized PNGs, so an install copies about 6 MB instead of 13 MB.
+
 ## [0.1.0] - 2026-10-08
 
 First public beta.
@@ -67,5 +77,6 @@ First public beta.
 - Docs: SDK capability matrix, configuration, performance, architecture,
   security model, testing, releasing.
 
-[Unreleased]: https://github.com/contrafy/tern-kube/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/contrafy/tern-kube/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/contrafy/tern-kube/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/contrafy/tern-kube/releases/tag/v0.1.0

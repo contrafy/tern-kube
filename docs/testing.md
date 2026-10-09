@@ -95,7 +95,9 @@ Jobs they create in `tern-test-batch`), 23 works in its own
 only the sandbox's config file; all clean up on exit. Scenarios that need
 output a read-only cluster cannot produce switch the pane to the fake
 `tests/bin/kubectl`. `--shots` regenerates `docs/screenshots/`
-(`E2E_SHOTS="m3b m4"` limits it to some groups), `--perf`
+(`E2E_SHOTS="m3b m4"` limits it to some groups) and then runs
+`make shots-optimize` (pngquant quality floor 95, then lossless oxipng;
+idempotent, only `docs/screenshots/*.png`), `--perf`
 prints timings for [performance.md](performance.md). It exits 0 with
 "SKIPPED" when `tern` is not installed.
 

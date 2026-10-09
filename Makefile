@@ -74,3 +74,23 @@ test-shell-guard: guard-flags-check
 .PHONY: test-shell-drift
 test-shell-drift:
 	@LUAU=$(LUAU) sh tests/shell/drift/run.sh
+
+.PHONY: shots-optimize
+OXIPNG = $(BIN)/oxipng
+PNGQUANT = $(BIN)/pngquant
+# Shrinks docs/screenshots/*.png in place: pngquant palette quantization with
+# a quality floor of 95 (a shot it cannot hold stays truecolor), then lossless
+# oxipng. Already-indexed PNGs skip pngquant and oxipng never rewrites a file
+# it cannot shrink, so reruns change nothing.
+shots-optimize:
+	@for t in $(OXIPNG) $(PNGQUANT); do \
+		[ -x "$$t" ] || { echo "missing $$t: run 'make bootstrap'" >&2; exit 1; }; \
+	done; \
+	set -- docs/screenshots/*.png; [ -e "$$1" ] || exit 0; \
+	for f in "$$@"; do \
+		[ "$$(od -An -N8 -tx1 "$$f" | tr -d ' \n')" = 89504e470d0a1a0a ] || { echo "$$f: not PNG data" >&2; exit 1; }; \
+		[ "$$(od -An -j25 -N1 -tu1 "$$f" | tr -d ' ')" = 3 ] && continue; \
+		rc=0; $(PNGQUANT) --quality=95-100 --speed 1 --strip --skip-if-larger --force --ext .png -- "$$f" || rc=$$?; \
+		case $$rc in 0 | 98 | 99) ;; *) echo "pngquant failed on $$f ($$rc)" >&2; exit 1 ;; esac; \
+	done; \
+	$(OXIPNG) -q -o 4 --strip safe -- "$$@"

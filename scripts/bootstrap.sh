@@ -16,6 +16,10 @@ STYLUA_VERSION=2.5.2
 SELENE_VERSION=0.32.0
 KIND_VERSION=0.33.0
 HELM_VERSION=3.22.0
+OXIPNG_VERSION=10.2.1
+# pngquant.org publishes prebuilt binaries only under unversioned URLs; the
+# pinned checksum makes bootstrap fail closed if upstream replaces them.
+PNGQUANT_VERSION=3.0.3
 TERN_SDK_COMMIT=19658cb2a3205ce57c67ad8c5c1c54ed80fefa7e
 TERN_TYPES_SHA256=84682931deee44134bdd38502f81be37fd14ac1697618985228f5cab7e25c51f
 
@@ -39,6 +43,10 @@ Darwin-arm64)
 	KIND_SHA256=0c8c7dbe5e23594a198b786c4bc13dacc101fa6196b0cb0b23a1ca44e61f4b4f
 	HELM_PLATFORM=darwin-arm64
 	HELM_SHA256=4c9982a6cdeb458b60258df66b55398ca5b19293f6877faffe2909ad6f23dfe0
+	OXIPNG_TARGET=aarch64-apple-darwin
+	OXIPNG_SHA256=7039fcfc78e8aa1ed2b57d848057a0296f082e92b3e1807ac65402d10d926764
+	PNGQUANT_ASSET=pngquant.tar.bz2
+	PNGQUANT_SHA256=68c32e4988d3f99f79f0642a94900756b7a2a463166067c5862826ced1e0ce1e
 	;;
 Linux-x86_64)
 	LUAU_ASSET=luau-ubuntu.zip
@@ -53,6 +61,10 @@ Linux-x86_64)
 	KIND_SHA256=aee6151561422756b764a4ae28e7f44cda5af5a9eead3cc9985112b1de8d8e0d
 	HELM_PLATFORM=linux-amd64
 	HELM_SHA256=1e4ab49e429626cf6c6958d914248b78c9730803c2751b87627e171dc800e7bb
+	OXIPNG_TARGET=x86_64-unknown-linux-musl
+	OXIPNG_SHA256=1813750ef592c5350ca79c88f98b2c0876d05c826dc7156245256d4255c1ad17
+	PNGQUANT_ASSET=pngquant-linux.tar.bz2
+	PNGQUANT_SHA256=25d09032f48760d34397155f3267ffadfbbbaeb2b8b39496022fc2ef1d82529e
 	;;
 *)
 	die "unsupported host '$host' (supported: Darwin-arm64, Linux-x86_64)"
@@ -86,8 +98,8 @@ fetch() {
 }
 
 # install_tool NAME VERSION URL SHA256 BINARY... ; archive assets (zip,
-# tar.gz) install every listed archive member under its basename, raw assets
-# are installed as the first BINARY.
+# tar.gz, tar.bz2) install every listed archive member under its basename,
+# raw assets are installed as the first BINARY.
 install_tool() {
 	name=$1
 	version=$2
@@ -112,10 +124,11 @@ install_tool() {
 	asset="$dir/$(basename "$url")"
 	fetch "$url" "$asset" "$want"
 	case "$asset" in
-	*.zip | *.tar.gz)
+	*.zip | *.tar.gz | *.tar.bz2)
 		mkdir -p "$dir/out"
 		case "$asset" in
 		*.zip) unzip -q -o "$asset" -d "$dir/out" ;;
+		*.tar.bz2) tar -xjf "$asset" -C "$dir/out" ;;
 		*) tar -xzf "$asset" -C "$dir/out" ;;
 		esac
 		for b in "$@"; do
@@ -150,6 +163,12 @@ install_tool kind "$KIND_VERSION" \
 install_tool helm "$HELM_VERSION" \
 	"https://get.helm.sh/helm-v$HELM_VERSION-$HELM_PLATFORM.tar.gz" \
 	"$HELM_SHA256" "$HELM_PLATFORM/helm"
+install_tool oxipng "$OXIPNG_VERSION" \
+	"https://github.com/oxipng/oxipng/releases/download/v$OXIPNG_VERSION/oxipng-$OXIPNG_VERSION-$OXIPNG_TARGET.tar.gz" \
+	"$OXIPNG_SHA256" "oxipng-$OXIPNG_VERSION-$OXIPNG_TARGET/oxipng"
+install_tool pngquant "$PNGQUANT_VERSION" \
+	"https://pngquant.org/$PNGQUANT_ASSET" \
+	"$PNGQUANT_SHA256" pngquant
 
 types_file="$TYPES/tern.d.luau"
 if [ -f "$types_file" ] && [ "$(sha256 "$types_file")" = "$TERN_TYPES_SHA256" ]; then
@@ -179,3 +198,6 @@ printf 'luau-lsp %s\n' "$lsp_version"
 "$BIN/selene" --version || die "selene failed to execute"
 "$BIN/kind" version || die "kind failed to execute"
 "$BIN/helm" version --short || die "helm failed to execute"
+"$BIN/oxipng" --version || die "oxipng failed to execute"
+pngquant_version=$("$BIN/pngquant" --version) || die "pngquant failed to execute"
+printf 'pngquant %s\n' "$pngquant_version"

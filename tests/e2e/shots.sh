@@ -216,4 +216,5 @@ for theme in light dark; do
 done
 ctl theme light light >/dev/null
 ctl resize 1280 800 >/dev/null
+make -C "$E2E_REPO" shots-optimize || fail "shots-optimize"
 [ $E2E_FAILED = 0 ]
