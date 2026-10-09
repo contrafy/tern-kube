@@ -9,7 +9,7 @@ set -u
 
 repo=$(CDPATH= cd -- "$(dirname -- "$0")/../../.." && pwd)
 tool=$repo/scripts/tern-kube-aliases
-src_manifest=$repo/plugin/plugin.toml
+src_manifest=$repo/plugin.toml
 
 root=$(mktemp -d "${TMPDIR:-/tmp}/tka-test.XXXXXX") || exit 2
 trap 'rm -rf "$root"' EXIT
@@ -127,8 +127,8 @@ block() {
 # The source manifest must carry the empty marker block the tool edits.
 case_name=manifest
 if [ "$(grep -c '^	# BEGIN tern-kube aliases$' "$src_manifest")" = 1 ] &&
-	[ "$(grep -c '^	# END tern-kube aliases$' "$src_manifest")" = 1 ]; then ok; else bad "plugin/plugin.toml lacks the marker block"; fi
-if [ -z "$(block "$src_manifest")" ]; then ok; else bad "plugin/plugin.toml alias block is not empty"; fi
+	[ "$(grep -c '^	# END tern-kube aliases$' "$src_manifest")" = 1 ]; then ok; else bad "plugin.toml lacks the marker block"; fi
+if [ -z "$(block "$src_manifest")" ]; then ok; else bad "plugin.toml alias block is not empty"; fi
 kubectl_forms=$(grep -c '^	"kubectl[ "]' "$src_manifest")
 
 shell_cases() {

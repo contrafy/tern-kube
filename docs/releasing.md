@@ -5,7 +5,7 @@
 - [SemVer](https://semver.org). Before 1.0.0 a minor bump (`0.y.0`) may
   break config keys, link formats or the guard protocol; patch releases
   (`0.y.z`) only fix.
-- The plugin version is `version` in `plugin/plugin.toml` (Tern shows it in
+- The plugin version is `version` in `plugin.toml` (Tern shows it in
   `tern plugin list`). Tags are `v<version>`.
 - `bin/tern-kube-drift` carries its own `VERSION` (it is also installed
   standalone); bump it when the CLI's behavior or output changes.
@@ -21,7 +21,7 @@ Nothing is pushed, tagged or published without the maintainer's approval.
 1. `master` is green in CI (`.github/workflows/ci.yml`), and `make e2e` is
    green locally on macOS arm64 (CI cannot run Tern).
 2. On a release branch:
-   - set `version` in `plugin/plugin.toml`;
+   - set `version` in `plugin.toml`;
    - bump `VERSION` in `bin/tern-kube-drift` if it changed;
    - in `CHANGELOG.md` rename `## [Unreleased]` to
      `## [X.Y.Z] - YYYY-MM-DD`, add a new empty `## [Unreleased]`, update the
@@ -38,13 +38,13 @@ Nothing is pushed, tagged or published without the maintainer's approval.
    gh release create vX.Y.Z --title "vX.Y.Z" --notes-file /tmp/notes.md
    ```
 
-`tern plugin install github.com/contrafy/tern-kube/plugin` clones the
+`tern plugin install github.com/contrafy/tern-kube` clones the
 default branch, so a release is what `master` holds at the tag. To install
 an exact tag, clone it and install the directory:
 
 ```sh
 git clone --branch vX.Y.Z https://github.com/contrafy/tern-kube
-tern plugin install tern-kube/plugin --force
+tern plugin install ./tern-kube --force
 ```
 
 ## Manual smoke test
@@ -59,7 +59,7 @@ that holds nothing of value (a fresh OS user, or `TERN_CONFIG_DIR` and
 
 Install
 
-- [ ] `tern plugin install github.com/contrafy/tern-kube/plugin`
+- [ ] `tern plugin install github.com/contrafy/tern-kube`
 - [ ] `tern plugin list`: `tern-kube` at the release version, loaded, no
       problems.
 

@@ -13,7 +13,7 @@
 #                     tests/bin (fake kubectl and kubecolor) first on PATH. In
 #                     a pane, `tk_fake [DIR]` and `tk_real` switch. --print
 #                     shows the environment
-#   link [DIR]        point <sandbox>/cfg/plugins/tern-kube.path at plugin/
+#   link [DIR]        point <sandbox>/cfg/plugins/tern-kube.path at the repo root
 #                     (or DIR, e.g. a snapshot copy) and reload the daemon
 #   unlink            remove the link and reload
 #   reload            reload the sandbox daemon's plugins
@@ -180,7 +180,7 @@ start)
 	;;
 link)
 	mkdir -p "$TERN_CONFIG_DIR/plugins"
-	dir=$(CDPATH= cd -- "${1:-$repo/plugin}" && pwd)
+	dir=$(CDPATH= cd -- "${1:-$repo}" && pwd)
 	printf '%s\n' "$dir" >"$TERN_CONFIG_DIR/plugins/tern-kube.path"
 	"$tern_bin" plugin reload
 	;;

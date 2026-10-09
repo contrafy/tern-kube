@@ -4,9 +4,9 @@ name = "Tern Kube"
 version = "0.1.0"
 description = "Native views for kubectl output, with an explicit Explore block and an opt-in mutation guard."
 icon = "box"
-host = "host.luau"
-window = "window.luau"
-styles = ["tern-kube.css", "explore.css", "mutate.css", "settings.css"]
+host = "plugin/host.luau"
+window = "plugin/window.luau"
+styles = ["plugin/tern-kube.css", "plugin/explore.css", "plugin/mutate.css", "plugin/settings.css"]
 
 # Globs over-claim (`kubectl -* get *` also matches `kubectl -n x logs pod get`);
 # the lens re-derives the verb from argv and returns raw for anything else.

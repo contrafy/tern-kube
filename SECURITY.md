@@ -6,7 +6,7 @@ Report privately through GitHub's private vulnerability reporting:
 [Report a vulnerability](https://github.com/contrafy/tern-kube/security/advisories/new)
 (Security tab, "Report a vulnerability"). Do not open a public issue.
 
-Include the version (`version` in `plugin/plugin.toml` or `tern plugin
+Include the version (`version` in `plugin.toml` or `tern plugin
 list`), Tern version, OS and architecture, your shell for guard issues, and
 steps to reproduce. Never include real kubeconfigs, tokens or Secret data.
 

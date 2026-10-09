@@ -90,8 +90,11 @@ Details: [docs/gitops.md](docs/gitops.md).
 ## Install
 
 ```sh
-tern plugin install github.com/contrafy/tern-kube/plugin
+tern plugin install github.com/contrafy/tern-kube
 ```
+
+Installing copies the whole repository (about 6 MB); Tern loads only
+`plugin.toml` and `plugin/`.
 
 Requires Tern 0.6.2 or later with shell integration and native command
 output on (`command_lenses`, the default), and `kubectl` on your `PATH`.
@@ -205,7 +208,7 @@ releases diff and drift but do not export. Node shell is a debug pod.
 make bootstrap   # pinned tools into .tools/
 make check       # format, lint, typecheck, unit tests, benchmark
 make e2e         # drives an isolated Tern window; needs Docker
-tern plugin link plugin   # load the checkout in place; reloads on save
+tern plugin link .   # load the checkout in place; reloads on save
 ```
 
 `make e2e` runs against a disposable [kind](https://kind.sigs.k8s.io)

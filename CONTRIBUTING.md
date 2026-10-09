@@ -5,7 +5,7 @@
 Supported dev hosts: macOS arm64 and Linux x86_64.
 
 ```sh
-make bootstrap   # pinned luau, luau-lsp, StyLua, selene, kind, helm into .tools/
+make bootstrap   # pinned luau, luau-lsp, StyLua, selene, kind, helm, oxipng, pngquant into .tools/
 make check       # format, lint, typecheck, unit tests, benchmark
 ```
 
@@ -29,8 +29,10 @@ and `jq`. See [docs/testing.md](docs/testing.md) and
   Small pure functions, immutable data where practical.
 - Comments only where the code cannot say it (SDK constraints, safety
   reasons). No emojis in code, docs or commit messages.
-- `plugin/` holds only what ships (`.luau`, `.css`, `plugin.toml`); tests,
-  fixtures, scripts and docs live outside it. CI rejects anything else.
+- The package is the repository root: `plugin.toml` there, and everything
+  it loads under `plugin/`, which holds only what ships (`.luau`, `.css`);
+  tests, fixtures, scripts and docs live outside it. CI rejects anything
+  else under `plugin/` and any entry, style or `require` that leaves it.
 - Generated files are regenerated, never hand-edited
   (`plugin/lib/kubectl/flags.luau`, `kinds_data.luau`, the guard's flag
   table via `make guard-flags`, fixtures).

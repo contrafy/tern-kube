@@ -28,7 +28,7 @@ lens as `kubectl get pods`.
 
 options:
   --shell SH        shell to probe (default: basename of $SHELL)
-  --plugin-dir DIR  plugin directory holding plugin.toml (default: the
+  --plugin-dir DIR  package directory holding plugin.toml (default: the
                     installed or linked tern-kube under `tern plugin dir`)
   --force           also accept shell functions and wrapper executables;
                     their behavior is opaque to this script

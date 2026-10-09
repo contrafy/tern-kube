@@ -15,7 +15,7 @@
 # docs/performance.md, --keep leaves the window running.
 #
 # The window runs in its own sandbox (TK_E2E_SANDBOX, default
-# /tmp/tk-tern-e2e) with a snapshot copy of plugin/, so edits made while it
+# /tmp/tk-tern-e2e) with a snapshot copy of plugin.toml and plugin/, so edits made while it
 # runs do not reload the plugin under test.
 
 set -u
@@ -95,7 +95,9 @@ cleanup() {
 dev stop >/dev/null 2>&1
 rm -rf "$E2E_SB"
 mkdir -p "$E2E_SB"
-cp -R "$repo/plugin" "$E2E_SB/plugin"
+mkdir -p "$E2E_SB/pkg"
+cp "$repo/plugin.toml" "$E2E_SB/pkg/plugin.toml"
+cp -R "$repo/plugin" "$E2E_SB/pkg/plugin"
 clip_save
 trap cleanup EXIT
 trap 'exit 130' INT TERM
@@ -106,7 +108,7 @@ E2E_WAIT=30 wait_for "the sandbox window" ctl ready || {
 	cat "$E2E_SB/window.out" >&2
 	exit 1
 }
-dev link "$E2E_SB/plugin" >/dev/null 2>&1 || need "cannot link the plugin"
+dev link "$E2E_SB/pkg" >/dev/null 2>&1 || need "cannot link the plugin"
 E2E_WAIT=30 wait_for "the first prompt" ctl ready || exit 1
 ctl resize 1280 800 >/dev/null
 sleep 1

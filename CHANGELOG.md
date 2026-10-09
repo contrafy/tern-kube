@@ -7,6 +7,10 @@ versions may break).
 
 ## [Unreleased]
 
+### Fixed
+
+- Install from the repository root: `tern plugin install github.com/contrafy/tern-kube`.
+
 ## [0.1.0] - 2026-10-08
 
 First public beta.
