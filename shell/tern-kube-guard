@@ -31,6 +31,46 @@ tkg_restart_lb='|allow-missing-template-keys|recursive|show-managed-fields|'
 tkg_restart_lv='|field-manager|filename|kustomize|output|selector|template|'
 tkg_restart_sb='|R|'
 tkg_restart_sv='|f|k|l|o|'
+tkg_undo_lb='|allow-missing-template-keys|recursive|show-managed-fields|'
+tkg_undo_lv='|dry-run|filename|kustomize|output|selector|template|to-revision|'
+tkg_undo_sb='|R|'
+tkg_undo_sv='|f|k|l|o|'
+tkg_pause_lb='|allow-missing-template-keys|recursive|show-managed-fields|'
+tkg_pause_lv='|field-manager|filename|kustomize|output|selector|template|'
+tkg_pause_sb='|R|'
+tkg_pause_sv='|f|k|l|o|'
+tkg_resume_lb='|allow-missing-template-keys|recursive|show-managed-fields|'
+tkg_resume_lv='|field-manager|filename|kustomize|output|selector|template|'
+tkg_resume_sb='|R|'
+tkg_resume_sv='|f|k|l|o|'
+tkg_patch_lb='|allow-missing-template-keys|local|recursive|show-managed-fields|'
+tkg_patch_lv='|dry-run|field-manager|filename|kustomize|output|patch|patch-file|subresource|template|type|'
+tkg_patch_sb='|R|'
+tkg_patch_sv='|f|k|o|p|'
+tkg_label_lb='|all|all-namespaces|allow-missing-template-keys|list|local|overwrite|recursive|show-managed-fields|'
+tkg_label_lv='|dry-run|field-manager|field-selector|filename|kustomize|output|resource-version|selector|template|'
+tkg_label_sb='|A|R|'
+tkg_label_sv='|f|k|l|o|'
+tkg_annotate_lb='|all|all-namespaces|allow-missing-template-keys|list|local|overwrite|recursive|show-managed-fields|'
+tkg_annotate_lv='|dry-run|field-manager|field-selector|filename|kustomize|output|resource-version|selector|template|'
+tkg_annotate_sb='|A|R|'
+tkg_annotate_sv='|f|k|l|o|'
+tkg_cordon_lb='|'
+tkg_cordon_lv='|dry-run|selector|'
+tkg_cordon_sb='|'
+tkg_cordon_sv='|l|'
+tkg_uncordon_lb='|'
+tkg_uncordon_lv='|dry-run|selector|'
+tkg_uncordon_sb='|'
+tkg_uncordon_sv='|l|'
+tkg_drain_lb='|delete-emptydir-data|disable-eviction|force|ignore-daemonsets|'
+tkg_drain_lv='|chunk-size|dry-run|grace-period|pod-selector|selector|skip-wait-for-delete-timeout|timeout|'
+tkg_drain_sb='|'
+tkg_drain_sv='|l|'
+tkg_edit_lb='|allow-missing-template-keys|output-patch|recursive|save-config|show-managed-fields|windows-line-endings|'
+tkg_edit_lv='|field-manager|filename|kustomize|output|subresource|template|validate|'
+tkg_edit_sb='|R|'
+tkg_edit_sv='|f|k|o|'
 # END generated flags
 
 tkg_err() {
@@ -41,13 +81,14 @@ tkg_cleanup() {
 	[ -n "${tkg_work-}" ] && rm -rf "$tkg_work"
 	[ -n "${tkg_req-}" ] && rm -f "$tkg_req"
 	[ -n "${tkg_resp-}" ] && rm -f "$tkg_resp"
+	[ -n "${tkg_wrap_dir-}" ] && rm -rf "$tkg_wrap_dir"
 	return 0
 }
 
 # Every refusal ends here: nothing has been executed, nothing will be.
 tkg_refuse() {
 	tkg_err "$@"
-	tkg_err "nothing was executed. To run it anyway, without preview or confirmation, use: command kubectl ..."
+	tkg_err "$tkg_hint"
 	tkg_cleanup
 	exit 1
 }
@@ -189,15 +230,19 @@ tkg_find_verb() {
 	tkg_v_sv='|'
 	tkg_walk "$@"
 	case $tkg_verb in
-	apply | delete | scale) tkg_guarded=$tkg_verb ;;
-	rollout) [ "$tkg_sub" = restart ] && tkg_guarded=restart ;;
+	apply | delete | scale | patch | label | annotate | cordon | uncordon | drain | edit) tkg_guarded=$tkg_verb ;;
+	rollout)
+		case $tkg_sub in
+		restart | undo | pause | resume) tkg_guarded=$tkg_sub ;;
+		esac
+		;;
 	esac
 	[ -n "$tkg_guarded" ] || [ -z "$tkg_unknown" ] && return 0
 	# An unknown flag before the verb may have swallowed it: fail closed when
 	# a mutating verb could be the real one.
 	for tkg_t in "$@"; do
 		case $tkg_t in
-		apply | delete | scale | rollout)
+		apply | delete | scale | rollout | patch | label | annotate | cordon | uncordon | drain | edit)
 			tkg_err "cannot tell which kubectl command this is: unknown flag $tkg_unknown before the command name may take '$tkg_t' or another word as its value."
 			tkg_refuse "move the flag after the command name (kubectl $tkg_t ... $tkg_unknown) and retry."
 			;;
@@ -207,13 +252,28 @@ tkg_find_verb() {
 }
 
 # Phase 2: the guarded verb is known; collect what the request needs.
+# Input kinds: f (-f value), k (-k value), p (--patch-file value).
 tkg_add_raw() {
 	case $2 in
 	*'
-'*) tkg_refuse "a -$1 value contains a newline; the guard cannot fingerprint it." ;;
+'*) tkg_refuse "a $(tkg_input_flag "$1") value contains a newline; the guard cannot fingerprint it." ;;
 	esac
 	tkg_raw="$tkg_raw$1 $2
 "
+}
+
+tkg_input_flag() {
+	case $1 in
+	p) printf '%s' --patch-file ;;
+	*) printf '%s' "-$1" ;;
+	esac
+}
+
+tkg_true() {
+	case $1 in
+	true | 1 | t | T | TRUE | True) return 0 ;;
+	esac
+	return 1
 }
 
 tkg_on_flag2() {
@@ -222,12 +282,9 @@ tkg_on_flag2() {
 	namespace) tkg_ns=$2 ;;
 	kubeconfig) tkg_flag_kc=$2 ;;
 	dry-run) tkg_dry=$2 ;;
-	recursive)
-		case $2 in
-		true | 1 | t | T | TRUE | True) tkg_rec=1 ;;
-		*) tkg_rec= ;;
-		esac
-		;;
+	recursive) if tkg_true "$2"; then tkg_rec=1; else tkg_rec=; fi ;;
+	local) if tkg_true "$2"; then tkg_local=1; else tkg_local=; fi ;;
+	list) if tkg_true "$2"; then tkg_list=1; else tkg_list=; fi ;;
 	filename)
 		case $2 in
 		*'"'*) tkg_refuse "-f values containing a double quote are not supported by the guard." ;;
@@ -239,6 +296,7 @@ tkg_on_flag2() {
 		done
 		;;
 	kustomize) tkg_add_raw k "$2" ;;
+	patch-file) tkg_add_raw p "$2" ;;
 	esac
 }
 
@@ -250,6 +308,8 @@ tkg_scan_guarded() {
 	tkg_ns_set=
 	tkg_dry=none
 	tkg_rec=
+	tkg_local=
+	tkg_list=
 	tkg_raw=
 	tkg_unknown2=
 	tkg_on_flag() {
@@ -259,6 +319,20 @@ tkg_scan_guarded() {
 	tkg_on_unknown() { tkg_unknown2=$1; }
 	tkg_on_pos() { :; }
 	tkg_walk "$@"
+}
+
+# Commands that cannot change the cluster run without approval, unless a
+# flag is unknown to the table (it could change what the command does).
+tkg_passes_through() {
+	[ -z "$tkg_unknown2" ] || return 1
+	case $tkg_dry in
+	client | server) return 0 ;;
+	esac
+	case $tkg_guarded in
+	patch) [ -n "$tkg_local" ] ;;
+	label | annotate) [ -n "$tkg_local" ] || [ -n "$tkg_list" ] ;;
+	*) return 1 ;;
+	esac
 }
 
 tkg_sha_tool() {
@@ -296,6 +370,25 @@ tkg_resolve_context() {
 	tkg_ctx_src=current-context
 }
 
+# Refuses input values that cannot be fingerprinted, before anything else.
+tkg_check_value() {
+	case $2 in
+	-)
+		if [ "$1" = p ]; then
+			tkg_refuse "reading a patch from stdin (--patch-file -) cannot be previewed; save it to a file and pass --patch-file FILE."
+		fi
+		tkg_refuse "reading manifests from stdin (-f -) cannot be previewed; save them to a file and pass -f FILE."
+		;;
+	'') tkg_refuse "empty $(tkg_input_flag "$1") value." ;;
+	http://* | https://*)
+		if [ "$1" = p ]; then
+			tkg_refuse "remote patch files ($2) cannot be fingerprinted; download it and pass --patch-file FILE."
+		fi
+		tkg_refuse "remote manifests ($2) cannot be fingerprinted; download them and pass -f FILE."
+		;;
+	esac
+}
+
 # Writes the sorted, de-duplicated absolute input paths to $tkg_work/paths.
 tkg_list_inputs() {
 	: >"$tkg_work/paths.raw"
@@ -308,14 +401,17 @@ tkg_list_inputs() {
 		set +f
 		tkg_kind=${tkg_line%% *}
 		tkg_p=${tkg_line#* }
+		tkg_check_value "$tkg_kind" "$tkg_p"
 		case $tkg_p in
-		-) tkg_refuse "reading manifests from stdin (-f -) cannot be previewed; save them to a file and pass -f FILE." ;;
-		'') tkg_refuse "empty -f/-k value." ;;
-		http://* | https://*) tkg_refuse "remote manifests ($tkg_p) cannot be fingerprinted; download them and pass -f FILE." ;;
 		/*) ;;
 		*) tkg_p=$tkg_cwd/$tkg_p ;;
 		esac
-		if [ -d "$tkg_p" ]; then
+		if [ "$tkg_kind" = p ]; then
+			# kubectl reads exactly this path: never a directory walk.
+			[ -e "$tkg_p" ] || tkg_refuse "no such file: $tkg_p"
+			[ -f "$tkg_p" ] || tkg_refuse "$tkg_p is not a regular file (directories, stdin, devices and pipes cannot be previewed)."
+			printf '%s\n' "$tkg_p" >>"$tkg_work/paths.raw"
+		elif [ -d "$tkg_p" ]; then
 			while :; do
 				case $tkg_p in
 				/) break ;;
@@ -458,7 +554,15 @@ tkg_write_request() {
 			printf ',"size":%s,"sha256":"%s"}' "$tkg_size" "$tkg_h"
 			tkg_sep=,
 		done <"$tkg_work/files"
-		printf '],"fingerprint":"%s","created_at":%s,"timeout_s":%s}\n' "$tkg_fp" "$tkg_created" "$tkg_timeout"
+		printf ']'
+		if [ -n "${tkg_edit_file-}" ]; then
+			printf ',"edit":{"file":'
+			tkg_json "$tkg_edit_file"
+			printf ',"original":'
+			tkg_json "$tkg_edit_orig"
+			printf '}'
+		fi
+		printf ',"fingerprint":"%s","created_at":%s,"timeout_s":%s}\n' "$tkg_fp" "$tkg_created" "$tkg_timeout"
 	} >"$tkg_req"
 }
 
@@ -483,8 +587,8 @@ tkg_on_signal() {
 	tkg_stop_waiting
 	tkg_mark_cancel
 	tkg_cleanup
-	tkg_err "cancelled; nothing was executed."
-	exit 130
+	tkg_err "cancelled; $tkg_hint"
+	exit "$tkg_sig_status"
 }
 
 tkg_status() {
@@ -493,7 +597,7 @@ tkg_status() {
 	printf 'kubectl: %s\n' "$(command -v kubectl 2>/dev/null || echo 'not found on PATH')"
 	printf 'tern: %s\n' "$(command -v "${TERN_BIN:-tern}" 2>/dev/null || echo 'not found on PATH')"
 	printf 'approval timeout: %ss\n' "${TKUBE_GUARD_TIMEOUT:-600}"
-	printf 'guarded verbs: apply, delete, rollout restart, scale\n'
+	printf 'guarded verbs: annotate, apply, cordon, delete, drain, edit (after you save), label, patch, rollout restart, rollout undo, rollout pause, rollout resume, scale, uncordon\n'
 	if [ "${TERM_PROGRAM-}" != tern ] || [ -z "${TERN_PANE-}" ]; then
 		printf 'this shell: not a Tern pane; guarded verbs are refused\n'
 	elif [ -z "${TKUBE_SPOOL-}" ]; then
@@ -503,24 +607,9 @@ tkg_status() {
 	fi
 }
 
-tkg_guard() {
-	tkg_scan_guarded "$@"
-	case $tkg_dry in
-	client | server)
-		# Already a no-op on the cluster: nothing to approve.
-		[ -z "$tkg_unknown2" ] && exec kubectl "$@"
-		;;
-	esac
-	tkg_ifs=$IFS
-	IFS='
-'
-	set -f
-	for tkg_line in $tkg_raw; do
-		[ "${tkg_line#* }" = - ] && tkg_refuse "reading manifests from stdin (-f -) cannot be previewed; save them to a file and pass -f FILE."
-	done
-	set +f
-	IFS=$tkg_ifs
-
+# Checks every approval needs: a Tern pane, the spool, the timeout, kubectl
+# and a sha256 tool. Sets tkg_timeout, tkg_program and tkg_sha.
+tkg_preflight() {
 	[ "${TERM_PROGRAM-}" = tern ] && [ -n "${TERN_PANE-}" ] ||
 		tkg_refuse "kubectl $tkg_verb needs approval in Tern, but this shell is not a Tern pane (TERM_PROGRAM=tern and TERN_PANE are required). Run it in a Tern pane."
 	[ -n "${TKUBE_SPOOL-}" ] ||
@@ -539,7 +628,14 @@ tkg_guard() {
 	*) tkg_program=$(pwd -P)/$tkg_program ;;
 	esac
 	tkg_sha_tool
+}
 
+# Writes a request for argv "$@" (inputs from tkg_raw), waits for the
+# decision and verifies it. Returns with tkg_decision=approve only when every
+# check of PROTOCOL.md "Response" passed, or tkg_decision=deny (reason in
+# tkg_r_reason); every other outcome refuses. When tkg_want_ctx is set, the
+# resolved context must equal it.
+tkg_request_approval() {
 	tkg_umask=$(umask)
 	umask 077
 	tkg_spool=$TKUBE_SPOOL
@@ -560,14 +656,17 @@ tkg_guard() {
 	mkdir "$tkg_work" || tkg_refuse "cannot create $tkg_work."
 	trap tkg_on_signal INT TERM HUP
 
-	tkg_compute kubectl "$@"
+	tkg_compute "$@"
+	if [ -n "${tkg_want_ctx-}" ] && [ "$tkg_ctx" != "$tkg_want_ctx" ]; then
+		tkg_refuse "the current context changed while kubectl $tkg_verb was running (kubectl uses '$tkg_want_ctx', now '$tkg_ctx')."
+	fi
 	tkg_req_fp=$tkg_fp
 	tkg_req_ctx=$tkg_ctx
 	tkg_created=$(date +%s)
 	tkg_req=$tkg_spool/req-$tkg_nonce.json
 	tkg_resp=$tkg_spool/resp-$tkg_nonce.env
 	(set -C && : >"$tkg_req") 2>/dev/null || tkg_refuse "cannot create $tkg_req."
-	tkg_write_request kubectl "$@" || tkg_refuse "cannot write $tkg_req."
+	tkg_write_request "$@" || tkg_refuse "cannot write $tkg_req."
 
 	tkg_err "waiting for approval in Tern (context $tkg_ctx; Ctrl-C cancels)..."
 	"${TERN_BIN:-tern}" open --wait "$tkg_req" </dev/null >/dev/null &
@@ -628,13 +727,11 @@ tkg_guard() {
 	case $tkg_r_decision in
 	approve) ;;
 	deny)
-		if [ -n "$tkg_r_reason" ]; then
-			tkg_err "denied in Tern: $tkg_r_reason"
-		else
-			tkg_err "denied in Tern; nothing was executed."
-		fi
+		trap - INT TERM HUP
 		tkg_cleanup
-		exit 1
+		umask "$tkg_umask"
+		tkg_decision=deny
+		return 0
 		;;
 	*) tkg_refuse "the approval response has no valid decision." ;;
 	esac
@@ -645,7 +742,7 @@ tkg_guard() {
 		[ "$(date +%s)" -le $((tkg_created + tkg_timeout)) ] ||
 		tkg_refuse "the approval is outside the ${tkg_timeout}s window of the request."
 
-	tkg_compute kubectl "$@"
+	tkg_compute "$@"
 	[ "$tkg_ctx" = "$tkg_req_ctx" ] && [ "$tkg_ctx" = "$tkg_r_ctx" ] ||
 		tkg_refuse "the target context changed since the request (requested '$tkg_req_ctx', approved '$tkg_r_ctx', now '$tkg_ctx')."
 	[ "$tkg_fp" = "$tkg_req_fp" ] && [ "$tkg_fp" = "$tkg_r_fp" ] ||
@@ -654,16 +751,306 @@ tkg_guard() {
 	trap - INT TERM HUP
 	tkg_cleanup
 	umask "$tkg_umask"
+	tkg_decision=approve
+}
+
+tkg_guard() {
+	tkg_scan_guarded "$@"
+	tkg_passes_through && exec kubectl "$@"
+	tkg_ifs=$IFS
+	IFS='
+'
+	set -f
+	for tkg_line in $tkg_raw; do
+		tkg_check_value "${tkg_line%% *}" "${tkg_line#* }"
+	done
+	set +f
+	IFS=$tkg_ifs
+
+	tkg_preflight
+	tkg_request_approval kubectl "$@"
+	if [ "$tkg_decision" = deny ]; then
+		if [ -n "$tkg_r_reason" ]; then
+			tkg_err "denied in Tern: $tkg_r_reason"
+		else
+			tkg_err "denied in Tern; nothing was executed."
+		fi
+		exit 1
+	fi
 	exec kubectl "$@"
 }
 
+# Single-quoted sh literal of $1 (any bytes, newlines included).
+tkg_shq() {
+	tkg_q=$1
+	tkg_o=
+	while :; do
+		case $tkg_q in
+		*\'*)
+			tkg_o="$tkg_o${tkg_q%%\'*}'\\''"
+			tkg_q=${tkg_q#*\'}
+			;;
+		*) break ;;
+		esac
+	done
+	printf "'%s%s'" "$tkg_o" "$tkg_q"
+}
+
+tkg_has_space() {
+	case $1 in
+	*' '* | *'	'* | *'
+'*) return 0 ;;
+	esac
+	return 1
+}
+
+tkg_tmpdir() {
+	tkg_tmp=${TMPDIR:-/tmp}
+	while :; do
+		case $tkg_tmp in
+		/) break ;;
+		*/) tkg_tmp=${tkg_tmp%/} ;;
+		*) break ;;
+		esac
+	done
+}
+
+# `kubectl edit` (shell/PROTOCOL.md "Edit approvals"): kubectl runs with
+# KUBE_EDITOR pointing at a hook in a private directory; the hook runs the
+# real editor and asks for approval after each save.
+tkg_edit() {
+	tkg_scan_guarded "$@"
+	[ -z "$tkg_unknown2" ] ||
+		tkg_refuse "kubectl edit with $tkg_unknown2 cannot be previewed (unknown to the guard, or missing its value)."
+	[ -z "${TKUBE_EDIT_DIR-}" ] ||
+		tkg_refuse "kubectl edit is already running under the guard here (TKUBE_EDIT_DIR is set); nested edits are not supported."
+	tkg_preflight
+	command -v "${TERN_BIN:-tern}" >/dev/null 2>&1 ||
+		tkg_refuse "${TERN_BIN:-tern} is not on PATH; kubectl edit needs it to ask for approval after you save."
+	tkg_tmpdir
+	case $tkg_tmp in
+	/*) ;;
+	*) tkg_refuse "TMPDIR must be an absolute path for kubectl edit: $tkg_tmp" ;;
+	esac
+	# kubectl splits KUBE_EDITOR on spaces, so the hook path must have none.
+	tkg_has_space "$tkg_tmp" &&
+		tkg_refuse "TMPDIR contains whitespace ($tkg_tmp), so kubectl could not run the guard's editor hook there; set TMPDIR to a path without spaces."
+	tkg_resolve_context
+	case $0 in
+	/*) tkg_core=$0 ;;
+	*/*) tkg_core=$(pwd -P)/$0 ;;
+	*) tkg_core=$(command -v -- "$0") || tkg_refuse "cannot locate the guard core." ;;
+	esac
+
+	tkg_umask=$(umask)
+	umask 077
+	tkg_wrap_dir=$(mktemp -d "$tkg_tmp/tkube-edit.XXXXXX") || tkg_refuse "cannot create a directory in $tkg_tmp."
+	tkg_wrap_dir=$(cd -P -- "$tkg_wrap_dir" && pwd -P) || tkg_refuse "cannot enter the edit directory."
+	tkg_has_space "$tkg_wrap_dir" &&
+		tkg_refuse "TMPDIR resolves to a path with whitespace ($tkg_wrap_dir); set TMPDIR to a path without spaces."
+	if ! {
+		printf '#!/bin/sh\nexec '
+		tkg_shq "$tkg_core"
+		printf ' edit-hook "$@"\n'
+	} >"$tkg_wrap_dir/hook" || ! chmod 700 "$tkg_wrap_dir/hook"; then
+		tkg_refuse "cannot write the editor hook."
+	fi
+	tkg_args=
+	for tkg_t in "$@"; do
+		tkg_args="$tkg_args $(tkg_shq "$tkg_t")"
+	done
+	{
+		printf 'tkg_e_args='
+		tkg_shq "$tkg_args"
+		printf '\ntkg_e_program='
+		tkg_shq "$tkg_program"
+		printf '\ntkg_e_ctx='
+		tkg_shq "$tkg_ctx"
+		printf '\n'
+	} >"$tkg_wrap_dir/request" || tkg_refuse "cannot write $tkg_wrap_dir/request."
+	umask "$tkg_umask"
+
+	tkg_real=${KUBE_EDITOR:-${EDITOR:-vi}}
+	# Ctrl-C reaches kubectl and the hook in the foreground group; this trap
+	# runs once kubectl has exited.
+	trap 'rm -rf "$tkg_wrap_dir"; exit 130' INT TERM HUP
+	KUBE_EDITOR=$tkg_wrap_dir/hook TKUBE_EDIT_DIR=$tkg_wrap_dir TKUBE_EDIT_REAL=$tkg_real kubectl "$@"
+	tkg_st=$?
+	rm -rf "$tkg_wrap_dir"
+	exit "$tkg_st"
+}
+
+# Runs the editor command $TKUBE_EDIT_REAL on $1 the way kubectl does: no
+# space: one word; spaces but no quote or backslash: split on each single
+# space; otherwise through "$SHELL -c" with the path in Go %q quoting.
+tkg_run_editor() {
+	tkg_ef=$1
+	case $TKUBE_EDIT_REAL in
+	*' '*) ;;
+	*)
+		"$TKUBE_EDIT_REAL" "$tkg_ef"
+		return
+		;;
+	esac
+	case $TKUBE_EDIT_REAL in
+	*[\"\'\\]*)
+		tkg_q=$tkg_ef
+		tkg_o=
+		while [ -n "$tkg_q" ]; do
+			tkg_c=${tkg_q%"${tkg_q#?}"}
+			tkg_q=${tkg_q#?}
+			case $tkg_c in
+			\\ | \") tkg_o="$tkg_o\\$tkg_c" ;;
+			*) tkg_o=$tkg_o$tkg_c ;;
+			esac
+		done
+		"${SHELL:-/bin/bash}" -c "$TKUBE_EDIT_REAL \"$tkg_o\""
+		return
+		;;
+	esac
+	tkg_rest=$TKUBE_EDIT_REAL
+	set --
+	while :; do
+		case $tkg_rest in
+		*' '*)
+			set -- "$@" "${tkg_rest%% *}"
+			tkg_rest=${tkg_rest#* }
+			;;
+		*)
+			set -- "$@" "$tkg_rest" "$tkg_ef"
+			break
+			;;
+		esac
+	done
+	"$@"
+}
+
+# Equal once `#` lines (always comments in kubectl's YAML and JSON files)
+# are dropped: kubectl then cancels the round itself.
+tkg_same_edit() {
+	grep -v '^#' "$1" >"$tkg_dir/cmp.a"
+	grep -v '^#' "$2" >"$tkg_dir/cmp.b"
+	cmp -s "$tkg_dir/cmp.a" "$tkg_dir/cmp.b"
+}
+
+tkg_edit_restore() {
+	cat "$tkg_dir/round.before" >"$tkg_file" 2>/dev/null
+}
+
+tkg_edit_save() {
+	if tkg_copy=$(mktemp "$tkg_tmp/kubectl-edit-denied-XXXXXX") && cat "$tkg_file" >"$tkg_copy"; then
+		tkg_err "your edit is saved at $tkg_copy"
+	else
+		tkg_err "could not save a copy of your edit."
+	fi
+}
+
+# EXIT trap of the hook: unless approved, kubectl must find the bytes it
+# wrote this round, so it applies nothing.
+tkg_edit_exit() {
+	case $tkg_hook_state in
+	editing) tkg_edit_restore ;;
+	pending)
+		tkg_edit_save
+		tkg_edit_restore
+		;;
+	esac
+	return 0
+}
+
+# `tern-kube-guard edit-hook FILE`: KUBE_EDITOR of a guarded kubectl edit,
+# run once per round.
+tkg_edit_hook() {
+	tkg_hint="the edit was not applied."
+	tkg_sig_status=1
+	tkg_verb=edit
+	tkg_guarded=edit
+	tkg_dir=${TKUBE_EDIT_DIR-}
+	if [ $# != 1 ] || [ -z "$tkg_dir" ]; then
+		echo "usage: TKUBE_EDIT_DIR=DIR tern-kube-guard edit-hook FILE (run by a guarded kubectl edit)" >&2
+		exit 2
+	fi
+	case $tkg_dir in
+	/*) ;;
+	*) tkg_refuse "TKUBE_EDIT_DIR must be an absolute path: $tkg_dir" ;;
+	esac
+	[ -d "$tkg_dir" ] && [ ! -L "$tkg_dir" ] && [ -O "$tkg_dir" ] && [ -f "$tkg_dir/request" ] ||
+		tkg_refuse "$tkg_dir is not the guard's edit directory."
+	tkg_file=$1
+	case $tkg_file in
+	/*) ;;
+	*) tkg_file=$(pwd -P)/$tkg_file ;;
+	esac
+	[ -f "$tkg_file" ] || tkg_refuse "$tkg_file is not a regular file."
+	tkg_tmpdir
+	umask 077
+	tkg_orig=$tkg_dir/original.yaml
+	case $tkg_file in
+	*.json) tkg_orig=$tkg_dir/original.json ;;
+	esac
+	# kubectl computes every round's patch against its first fetch.
+	[ -e "$tkg_orig" ] || cp "$tkg_file" "$tkg_orig" || tkg_refuse "cannot copy $tkg_file."
+	cp "$tkg_file" "$tkg_dir/round.before" || tkg_refuse "cannot copy $tkg_file."
+	tkg_hook_state=editing
+	trap tkg_edit_exit EXIT
+
+	tkg_run_editor "$tkg_file"
+	tkg_st=$?
+	[ "$tkg_st" = 0 ] || exit "$tkg_st"
+	if tkg_same_edit "$tkg_file" "$tkg_dir/round.before"; then
+		tkg_hook_state=settled
+		exit 0
+	fi
+	tkg_hook_state=pending
+
+	# Sets tkg_e_args, tkg_e_program and tkg_e_ctx (written by tkg_edit).
+	# shellcheck source=/dev/null
+	. "$tkg_dir/request" || tkg_refuse "cannot read $tkg_dir/request."
+	# shellcheck disable=SC2154
+	eval "set -- $tkg_e_args"
+	tkg_scan_guarded "$@"
+	tkg_raw="p $tkg_file
+p $tkg_orig
+"
+	tkg_edit_file=$tkg_file
+	tkg_edit_orig=$tkg_orig
+	tkg_preflight
+	# shellcheck disable=SC2154
+	tkg_program=$tkg_e_program
+	# shellcheck disable=SC2154
+	tkg_want_ctx=$tkg_e_ctx
+	tkg_request_approval kubectl "$@"
+	if [ "$tkg_decision" = approve ]; then
+		tkg_hook_state=settled
+		exit 0
+	fi
+	if [ -n "$tkg_r_reason" ]; then
+		tkg_err "denied in Tern: $tkg_r_reason"
+	else
+		tkg_err "denied in Tern; the object was not changed."
+	fi
+	tkg_edit_save
+	tkg_edit_restore
+	tkg_hook_state=settled
+	exit 0
+}
+
+tkg_hint="nothing was executed. To run it anyway, without preview or confirmation, use: command kubectl ..."
+tkg_sig_status=130
 case ${1-} in
 kubectl)
 	shift
 	tkg_guarded=
 	tkg_find_verb "$@"
 	[ -n "$tkg_guarded" ] || exec kubectl "$@"
+	if [ "$tkg_guarded" = edit ]; then
+		tkg_edit "$@"
+	fi
 	tkg_guard "$@"
+	;;
+edit-hook)
+	shift
+	tkg_edit_hook "$@"
 	;;
 status)
 	tkg_status

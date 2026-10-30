@@ -1,11 +1,15 @@
 # tern-kube shell guard (opt-in)
 
 Makes mutating `kubectl` commands typed in a Tern pane wait for an approval
-block that previews them (server dry-run, `kubectl diff`, per-resource diffs,
-risk-tier confirmation). Only after you approve does the guard run the exact
-command you typed. Guarded: `apply`, `delete`, `scale`, `rollout restart`.
-Everything else runs immediately, unchanged (one `sh` start plus an argv scan,
-a few milliseconds).
+block that previews them (server dry-run, `kubectl diff` or before/after
+object diffs, risk-tier confirmation). Only after you approve does the guard
+run the exact command you typed. Guarded: `apply`, `delete`, `scale`,
+`patch`, `label`, `annotate`, `cordon`, `uncordon`, `drain`,
+`rollout restart|undo|pause|resume`, and `edit` (approved after you save, see
+below). Everything else runs immediately, unchanged (one `sh` start plus an
+argv scan, a few milliseconds), and so do commands that cannot change the
+cluster: `--dry-run=client|server`, `patch|label|annotate --local`,
+`label|annotate --list`.
 
 The guard is a POSIX sh core, `shell/tern-kube-guard`, plus one small
 activation file per shell that defines a `kubectl` function calling it. It
@@ -65,6 +69,22 @@ installed, the core's path, the `kubectl` and `tern` it will use, the
 approval timeout, and what a guarded verb would do in this shell (ask for
 approval, or be refused and why).
 
+## kubectl edit
+
+`kubectl edit` opens your editor first (`KUBE_EDITOR`, else `EDITOR`, else
+`vi`, as kubectl picks it). When you save and quit with a change, the
+approve block shows the diff and a server dry run of your edit; kubectl
+applies it only if you approve. If you deny, the object is not changed and
+your edited text is kept in `$TMPDIR/kubectl-edit-denied-XXXXXX` (the path
+is printed). A timeout, Ctrl-C or any failed check also keeps that copy and
+makes kubectl stop with "there was a problem with the editor". When kubectl
+rejects an edit and reopens the editor, each changed save asks again.
+
+`TMPDIR` (default `/tmp`) must be an absolute path without spaces: the
+guard puts kubectl's editor hook there, and kubectl splits the editor
+command on spaces. The guard checks this, and everything else it needs,
+before your editor opens.
+
 ## Settings
 
 - `TKUBE_GUARD_TIMEOUT`: seconds to wait for a decision (default 600).
@@ -116,13 +136,21 @@ record".
   when a mutating verb appears in the command is refused; put command flags
   after the verb.
 - Inputs that cannot be fingerprinted are refused: stdin (`-f -`,
-  `/dev/stdin`), URLs, paths containing a newline, `-f` values containing `"`.
-  Save the manifests to a file first.
+  `--patch-file -`, `/dev/stdin`), URLs, paths containing a newline, `-f`
+  values containing `"`. Save the manifests or the patch to a file first.
 - Files a kustomization pulls from outside its directory are not covered by
   the fingerprint.
-- The fingerprint is checked just before kubectl starts; a file changed in
-  the instant between the check and kubectl reading it is not detected.
-- `--dry-run=client|server` runs without approval (it does not mutate).
+- The fingerprint is checked just before kubectl starts (for `edit`: just
+  before kubectl reads your saved file); a file changed in the instant
+  between the check and kubectl reading it is not detected.
+- The cluster state is not fingerprinted: objects a selector matches, the
+  pods a `drain` evicts and the revision a `rollout undo` returns to can
+  change between the preview and the run.
+- `--dry-run=client|server`, `--local` and `--list` run without approval
+  (they do not mutate).
+- A denied or refused `edit` leaves your text in
+  `$TMPDIR/kubectl-edit-denied-*`, which can hold Secret data (kubectl's own
+  failure copies can too); delete it when done.
 - bash and fish report the alias name (`k apply ...`) to Tern while zsh
   reports the expanded line; this affects lens claims, not the guard (see
   `scripts/tern-kube-aliases`).

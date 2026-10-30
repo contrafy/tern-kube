@@ -5,6 +5,21 @@
 #   exit           exit status of every other invocation (default 0)
 # Every other invocation n is recorded as call-n (argv, NUL-separated),
 # env-n (KUBECONFIG value) and stdin-n (stdin, when $FAKE_READ_STDIN is 1).
+#
+# `edit` (the first word that is not a flag or the value of -n, --namespace,
+# --context or --kubeconfig) plays kubectl's editor loop: it writes the
+# object (edit-object, default a ConfigMap) under a comment header to a new
+# $TMPDIR/kubectl-edit-<n>.yaml per round, runs KUBE_EDITOR, else EDITOR,
+# else vi, split on spaces as kubectl splits it, and compares the result
+# without `#` lines:
+#   editor exit != 0   "there was a problem with the editor", exit 1
+#   unchanged          round 1: "Edit cancelled, no changes made.", exit 0;
+#                      later: "Edit cancelled, no valid changes were saved.", 1
+#   changed            while edit-reject holds a positive count: decrement,
+#                      reopen with an error header; else "edited", the
+#                      applied text (without `#` lines) in edit-applied, exit 0
+# Each round's temp file path is appended to edit-files and its initial
+# content copied to edit-round-<n>.
 d=${FAKE_DIR:?FAKE_DIR is required}
 
 is_ctx=
@@ -27,4 +42,82 @@ printf '%s' "${KUBECONFIG-<unset>}" >"$d/env-$n"
 if [ "${FAKE_READ_STDIN-}" = 1 ]; then
 	cat >"$d/stdin-$n"
 fi
+
+verb=
+skip=
+for a in "$@"; do
+	if [ -n "$skip" ]; then
+		skip=
+		continue
+	fi
+	case $a in
+	-n | --namespace | --context | --kubeconfig) skip=1 ;;
+	-*) ;;
+	*)
+		verb=$a
+		break
+		;;
+	esac
+done
+
+if [ "$verb" = edit ]; then
+	editor=${KUBE_EDITOR:-${EDITOR:-vi}}
+	tmp=${TMPDIR:-/tmp}
+	tmp=${tmp%/}
+	if [ -e "$d/edit-object" ]; then
+		cp "$d/edit-object" "$d/edit-current"
+	else
+		printf 'apiVersion: v1\ndata:\n  k: v\nkind: ConfigMap\nmetadata:\n  name: x\n  namespace: default\n' >"$d/edit-current"
+	fi
+	header='# Please edit the object below. Lines beginning with a '"'#'"' will be ignored,
+# and an empty file will abort the edit. If an error occurs while saving this file will be
+# reopened with the relevant failures.
+#'
+	round=0
+	while :; do
+		round=$((round + 1))
+		f=$tmp/kubectl-edit-$$$round.yaml
+		{
+			printf '%s\n' "$header"
+			[ -n "${err-}" ] && printf '# configmaps "x" was not valid:\n# * fake rejection\n#\n'
+			cat "$d/edit-current"
+		} >"$f"
+		printf '%s\n' "$f" >>"$d/edit-files"
+		cp "$f" "$d/edit-round-$round"
+		grep -v '^#' "$f" >"$d/edit-before"
+		IFS=' '
+		set -f
+		# shellcheck disable=SC2086
+		set -- $editor "$f"
+		set +f
+		unset IFS
+		if ! "$@"; then
+			echo "error: there was a problem with the editor \"$editor\"" >&2
+			rm -f "$f"
+			exit 1
+		fi
+		grep -v '^#' "$f" >"$d/edit-after"
+		rm -f "$f"
+		if cmp -s "$d/edit-before" "$d/edit-after"; then
+			if [ "$round" = 1 ]; then
+				echo "Edit cancelled, no changes made."
+				exit 0
+			fi
+			echo "error: Edit cancelled, no valid changes were saved." >&2
+			exit 1
+		fi
+		cp "$d/edit-after" "$d/edit-current"
+		left=$(cat "$d/edit-reject" 2>/dev/null || echo 0)
+		if [ "$left" -gt 0 ]; then
+			echo $((left - 1)) >"$d/edit-reject"
+			echo 'error: configmaps "x" is invalid' >&2
+			err=1
+			continue
+		fi
+		cp "$d/edit-after" "$d/edit-applied"
+		echo "configmap/x edited"
+		exit 0
+	done
+fi
+
 exit "$(cat "$d/exit" 2>/dev/null || echo 0)"
