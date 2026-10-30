@@ -2,6 +2,7 @@
 -- Types shared by the Explore core (state.luau), its GitOps routes
 -- (gitops.luau) and the host glue. Pure: no `tern` global.
 
+local Textfield = require("../textfield")
 local Types = require("../model/types")
 
 type Ref = Types.ResourceRef
@@ -67,7 +68,8 @@ export type FileWrite = { path: string, text: string }
 -- `files` (YAML and kustomization files under `path`); `write` writes
 -- `files` through tern.fs and answers with a `result`; `openfile` opens
 -- `path` at `line` in a Tern file block; `restart` re-runs init with the
--- current config and program.
+-- current config and program; `focus` gives field `id` the caret, `blur`
+-- takes it from every field.
 export type Effect = {
 	t: "run"
 		| "copy"
@@ -76,6 +78,7 @@ export type Effect = {
 		| "exit"
 		| "save"
 		| "focus"
+		| "blur"
 		| "render"
 		| "scan"
 		| "read"
@@ -102,7 +105,7 @@ export type Effect = {
 }
 
 export type Msg = {
-	t: "key" | "action" | "result" | "tick" | "resize" | "progress",
+	t: "key" | "action" | "result" | "tick" | "resize" | "progress" | "edit" | "undo",
 	key: Key?,
 	act: string?,
 	value: string?,
@@ -121,6 +124,9 @@ export type Msg = {
 	index: any?,
 	-- readtree: absolute path -> text.
 	files: { [string]: string }?,
+	-- edit/undo: the field (`main.<key>`) and Tern's native edit.
+	id: string?,
+	edit: Textfield.Edit?,
 }
 
 return {}

@@ -197,6 +197,58 @@ describe("explore state: keys", function()
 		expect(s2.filter[State.currentKey(s2)]).toBe("web")
 	end)
 
+	it("the filter edits at the caret, with native edits and undo", function()
+		local s = W.keys(W.open(), { "/", "w", "b" })
+		s = W.keys(s, { "left" })
+		s = W.keys(s, { "e" })
+		expect(s.filter[State.currentKey(s)]).toBe("web")
+		expect((s.input :: any).cursor).toBe(2)
+		-- Tern replaced a selection (all of it) and put the caret at the end.
+		s = State.update(s, {
+			t = "edit",
+			id = State.FILTER_INPUT,
+			edit = { from = 0, to = 3, text = "db", cursor = 2, len = 3 },
+		})
+		expect(s.filter[State.currentKey(s)]).toBe("db")
+		for _, item in State.items(s) do
+			expect((item.ref :: any).name).toContain("db")
+		end
+		-- One sent with an older text is dropped, not misapplied.
+		local stale = State.update(s, {
+			t = "edit",
+			id = State.FILTER_INPUT,
+			edit = { from = 0, to = 3, text = "", cursor = 0, len = 3 },
+		})
+		expect(stale).toBe(s)
+		s = State.update(s, { t = "undo", id = State.FILTER_INPUT })
+		expect(s.filter[State.currentKey(s)]).toBe("web")
+		s = State.update(s, { t = "undo", id = State.FILTER_INPUT })
+		s = State.update(s, { t = "undo", id = State.FILTER_INPUT })
+		expect(s.filter[State.currentKey(s)]).toBeNil()
+		expect(s.editing).toBe(true)
+	end)
+
+	it("leaving the filter gives up its focus, so list keys stay Explore's", function()
+		local s = W.keys(W.open(), { "/", "w" })
+		local _, effects = State.update(s, W.key("enter"))
+		expect(effects).toEqual({ { t = "blur" } })
+		local _, cancelled = State.update(s, W.key("escape"))
+		expect(cancelled).toEqual({ { t = "blur" } })
+	end)
+
+	it("an edit in the filter while the list has the keys starts editing it", function()
+		local s = W.keys(W.open(), { "/", "w", "e", "b", "enter" })
+		expect(s.editing).toBe(false)
+		local s2, effects = State.update(s, {
+			t = "edit",
+			id = State.FILTER_INPUT,
+			edit = { from = 0, to = 0, text = "", cursor = 0, len = 3 },
+		})
+		expect(s2.editing).toBe(true)
+		expect((s2.input :: any).cursor).toBe(0)
+		expect(effects).toEqual({ { t = "focus", id = "main.filter" } })
+	end)
+
 	it("enter drills in, escape walks back to the root, then clears the filter, then closes", function()
 		local s = W.open()
 		s = W.keys(s, { "/", "w", "e", "b", "enter", "enter" })

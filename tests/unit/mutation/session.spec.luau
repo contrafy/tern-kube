@@ -85,6 +85,23 @@ describe("approve session: native preview", function()
 		expect(s.argv).toEqual({ "kubectl", "scale", "deployment/web", "--replicas=2", "-n", "apps" })
 	end)
 
+	it("the replica prompt takes native edits and undo", function()
+		local s = A.init("tern-kube://mutate?op=scale&kind=deployment&name=web&namespace=apps&context=kind-dev")
+		local respond = A.cluster()
+		A.typeText(s, "12", respond)
+		A.send(
+			s,
+			{ t = "edit", id = Session.TYPED_INPUT, edit = { from = 0, to = 0, text = "", cursor = 0, len = 2 } },
+			respond
+		)
+		A.typeText(s, "3", respond)
+		expect(s.typed).toBe("312")
+		A.send(s, { t = "undo", id = Session.TYPED_INPUT }, respond)
+		expect(s.typed).toBe("12")
+		A.send(s, A.key("enter"), respond)
+		expect(s.argv).toEqual({ "kubectl", "scale", "deployment/web", "--replicas=12", "-n", "apps" })
+	end)
+
 	it("asks for a path when the palette opens an apply with only a cwd", function()
 		local s, effects = A.init("tern-kube://mutate?op=apply&cwd=%2Fw%2Frepo&context=kind-dev")
 		expect(s.phase).toBe("input")
@@ -180,6 +197,50 @@ describe("approve session: native confirm and execute", function()
 		})
 		expect(s.phase).toBe("done")
 		expect(A.count(d.effects, "audit")).toBe(2)
+	end)
+
+	it("edits the typed token at the caret and with native edits; only the exact token confirms", function()
+		local respond = A.cluster()
+		local s = ready(DELETE)
+		A.typeText(s, "wb", respond)
+		A.send(s, A.key("left"), respond)
+		A.typeText(s, "e", respond)
+		expect(s.typed).toBe("web")
+		expect((s.input :: any).cursor).toBe(2)
+		-- The user selected the whole token and pasted it with a trailing space.
+		A.send(
+			s,
+			{ t = "edit", id = Session.TYPED_INPUT, edit = { from = 0, to = 3, text = "web ", cursor = 4, len = 3 } },
+			respond
+		)
+		expect(s.typed).toBe("web ")
+		local d = A.send(s, A.key("enter"), respond)
+		expect(A.find(d.runs, "run", "exec")).toBeNil()
+		expect(type(s.confirmError)).toBe("string")
+		-- An edit made against older text is dropped.
+		local _, _, changed = Session.update(s, {
+			t = "edit",
+			id = Session.TYPED_INPUT,
+			edit = { from = 0, to = 3, text = "", cursor = 0, len = 3 },
+		})
+		expect(changed).toBe(false)
+		expect(s.typed).toBe("web ")
+		A.send(s, { t = "undo", id = Session.TYPED_INPUT }, respond)
+		expect(s.typed).toBe("web")
+		expect(s.confirmError).toBeNil()
+		d = A.send(s, A.key("enter"), respond)
+		present(A.find(d.runs, "run", "exec"))
+	end)
+
+	it("ignores edits to the typed field while it does not take the keyboard", function()
+		local s = ready(SCALE)
+		local _, _, changed = Session.update(s, {
+			t = "edit",
+			id = Session.TYPED_INPUT,
+			edit = { from = 0, to = 0, text = "x", cursor = 1, len = 0 },
+		})
+		expect(changed).toBe(false)
+		expect(s.typed).toBe("")
 	end)
 
 	it("re-reads digests, fingerprint and the target before executing", function()

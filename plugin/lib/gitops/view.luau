@@ -10,6 +10,7 @@ local Diffseg = require("../mutation/diffseg")
 local Gitops = require("../explore/gitops")
 local Index = require("./index")
 local T = require("../explore/types")
+local Textfield = require("../textfield")
 local Types = require("../model/types")
 local ui = require("../ui")
 
@@ -1220,7 +1221,8 @@ end
 
 -- Text inputs of the export / git routes (direct children of the block's
 -- main column, like the filter, so focus events carry `main.<key>`).
-function M.inputs(g: Gitops.G, route: Route, editing: string?): { Node }
+-- `input` is the caret and history of the field being edited.
+function M.inputs(g: Gitops.G, route: Route, editing: string?, input: Textfield.Field?): { Node }
 	local fields: { { string } } = {}
 	if route.kind == "export" and g.export then
 		fields = { { "dir", "directory ", "t edits the target directory" } }
@@ -1238,7 +1240,7 @@ function M.inputs(g: Gitops.G, route: Route, editing: string?): { Node }
 			p = {
 				key = "gitops-" .. f[1],
 				text = text,
-				cursor = #text,
+				cursor = Textfield.caretFor(if editing == f[1] then input else nil, text),
 				placeholder = f[3],
 				prompt = f[2],
 				class = if editing == f[1] then "tk-editing" else nil,

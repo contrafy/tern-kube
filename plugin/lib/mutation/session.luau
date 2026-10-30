@@ -31,6 +31,7 @@ local Quick = require("../actions/quick")
 local Risk = require("./risk")
 local Steps = require("./steps")
 local T = require("./types")
+local Textfield = require("../textfield")
 local Types = require("../model/types")
 local Viewstate = require("../lens/viewstate")
 
@@ -91,6 +92,8 @@ export type Msg = {
 	act: string?,
 	value: string?,
 	id: string?,
+	-- edit: Tern's native edit of the typed field.
+	edit: Textfield.Edit?,
 	-- tick: whether the guard request's pane is alive / its cancel marker exists.
 	paneAlive: boolean?,
 	cancelled: boolean?,
@@ -204,6 +207,8 @@ export type State = {
 	pending: { [string]: boolean },
 	verify: { files: { Fingerprint.FileDigest }?, fingerprint: string?, target: TargetInfo?, current: string? },
 	typed: string,
+	-- Caret and undo history of the typed field (its text is `typed`).
+	input: Textfield.Field?,
 	targetConfirmed: boolean,
 	override: boolean,
 	stale: boolean,
@@ -1084,6 +1089,7 @@ local function blank(env: Init, mode: Mode): State
 		pending = {},
 		verify = {},
 		typed = "",
+		input = nil,
 		targetConfirmed = false,
 		override = false,
 		stale = false,
@@ -1421,21 +1427,22 @@ end
 
 -- Keys and actions ------------------------------------------------------------
 
-local function printable(key: Key): string?
-	if key.ctrl or key.meta or key.alt then
-		return nil
+-- The typed field after an edit `f` (nil: not the field's); false when
+-- nothing changed.
+local function applyTyped(s: State, f: Textfield.Field?): boolean
+	if f == nil or f == s.input then
+		return false
 	end
-	local text = key.text
-	if text and #text >= 1 and not string.find(text, "%c") then
-		return text
+	if f.text ~= s.typed then
+		s.confirmError = nil
 	end
-	if #key.name == 1 then
-		return if key.shift then string.upper(key.name) else key.name
-	end
-	if key.name == "space" then
-		return " "
-	end
-	return nil
+	s.typed = f.text
+	s.input = f
+	return true
+end
+
+local function typedInput(s: State): Textfield.Field
+	return Textfield.sync(s.input, s.typed)
 end
 
 -- The typed-confirmation field takes the keyboard.
@@ -1532,7 +1539,7 @@ end
 
 local function onKey(s: State, key: Key, effects: { Effect }): boolean
 	local name = key.name
-	local ch = printable(key)
+	local ch = Textfield.printable(key)
 	if s.help then
 		if name == "escape" or ch == "?" then
 			s.help = false
@@ -1568,16 +1575,13 @@ local function onKey(s: State, key: Key, effects: { Effect }): boolean
 			end
 			return true
 		end
-		if name == "backspace" then
-			s.typed = string.sub(s.typed, 1, -2)
-		elseif name == "paste" and key.text then
-			s.typed ..= (string.gsub(key.text :: string, "%c", ""))
-		elseif ch then
-			s.typed ..= ch
-		else
+		local before = typedInput(s)
+		local f = Textfield.key(before, key)
+		if f == nil then
 			return false
 		end
-		s.confirmError = nil
+		s.input = before
+		applyTyped(s, f)
 		return true
 	end
 	if name == "enter" or name == "return" then
@@ -1657,6 +1661,20 @@ function M.update(s: State, msg: Msg): (State, { Effect }, boolean)
 				s.pending = {}
 			end
 		end
+	elseif (t == "edit" or t == "undo") and msg.id == M.TYPED_INPUT then
+		if not M.typing(s) then
+			return s, effects, false
+		end
+		local before = typedInput(s)
+		s.input = before
+		local f = if t == "undo"
+			then Textfield.undo(before)
+			elseif msg.edit then Textfield.edit(before, msg.edit)
+			else nil
+		if not applyTyped(s, f) then
+			return s, effects, false
+		end
+		s.focused = true
 	end
 	return s, effects, true
 end

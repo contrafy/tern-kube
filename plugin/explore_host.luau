@@ -13,6 +13,7 @@ local GitopsHost = require("./gitops_host")
 local Render = require("./lib/explore/render")
 local Shellenv = require("./lib/env/shellenv")
 local State = require("./lib/explore/state")
+local Textfield = require("./lib/textfield")
 
 local log = tern.log
 
@@ -249,6 +250,8 @@ function exec(h: Host, effects: { Effect })
 			h.cx:save()
 		elseif e.t == "focus" then
 			h.cx:frame({ { "focus", e.id or State.FILTER_INPUT } })
+		elseif e.t == "blur" then
+			h.cx:frame({ { "focus", tern.json.null } :: { any } })
 		elseif e.t == "render" then
 			h.cx:render()
 		elseif e.t == "scan" then
@@ -408,6 +411,10 @@ function M.register()
 				dispatch(h, { t = "action", act = "filter-focus" })
 			elseif ev.ev == "focus" and type(ev.id) == "string" and string.sub(ev.id, 1, 12) == "main.gitops-" then
 				dispatch(h, { t = "action", act = "field-focus", value = string.sub(ev.id, 13) })
+			elseif ev.ev == "edit" and type(ev.id) == "string" then
+				dispatch(h, { t = "edit", id = ev.id, edit = ev :: any })
+			elseif ev.ev == "undo" and type(ev.id) == "string" then
+				dispatch(h, { t = "undo", id = ev.id })
 			elseif ev.ev == "action" and type(ev.act) == "string" then
 				dispatch(h, {
 					t = "action",
@@ -416,6 +423,9 @@ function M.register()
 				})
 			end
 		end,
+		-- Clicks place the caret, ⇧-arrows and drags select, ⌘Z undoes: the
+		-- filter and GitOps fields edit like any text field.
+		features = Textfield.FEATURES,
 		save = function(h: Host): any
 			return State.save(h.s)
 		end,

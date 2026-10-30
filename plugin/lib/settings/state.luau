@@ -6,6 +6,7 @@
 -- performs the effects: reads, the atomic write, opening the file.
 
 local Config = require("../config")
+local Textfield = require("../textfield")
 
 type Config = Config.Config
 type Diagnostic = Config.Diagnostic
@@ -355,7 +356,7 @@ export type Message = { level: "info" | "success" | "error", text: string }
 
 export type Page = "settings" | "status"
 
-export type Edit = { path: string, text: string }
+export type Edit = { path: string, field: Textfield.Field }
 
 export type State = {
 	env: Env,
@@ -380,7 +381,7 @@ export type State = {
 }
 
 export type Effect = {
-	t: "write" | "reload" | "open" | "focus" | "exit" | "probe",
+	t: "write" | "reload" | "open" | "focus" | "blur" | "exit" | "probe",
 	path: string?,
 	text: string?,
 	base: string?,
@@ -400,6 +401,8 @@ export type Msg =
 	| { t: "key", key: Key }
 	| { t: "action", act: string, value: string }
 	| { t: "resize", rows: number }
+	| { t: "edit", id: string, edit: Textfield.Edit }
+	| { t: "undo", id: string }
 
 local function emptyInfo(): Info
 	return {
@@ -633,7 +636,7 @@ local function startEdit(s: State, effects: { Effect }): boolean
 		return true
 	end
 	s.page = "settings"
-	s.editing = { path = f.path, text = M.editText(s, f) }
+	s.editing = { path = f.path, field = Textfield.new(M.editText(s, f)) }
 	table.insert(effects, { t = "focus", id = M.EDIT_INPUT })
 	return true
 end
@@ -678,23 +681,6 @@ local function move(s: State, delta: number?, to: number?)
 	s.sel = math.clamp(target, 1, n)
 end
 
-local function printable(key: Key): string?
-	if key.ctrl or key.meta or key.alt then
-		return nil
-	end
-	local text = key.text
-	if text and #text >= 1 and not string.find(text, "%c") then
-		return text
-	end
-	if #key.name == 1 then
-		return if key.shift then string.upper(key.name) else key.name
-	end
-	if key.name == "space" then
-		return " "
-	end
-	return nil
-end
-
 local function editKey(s: State, key: Key, effects: { Effect }): boolean
 	local edit = s.editing :: Edit
 	local name = key.name
@@ -704,30 +690,48 @@ local function editKey(s: State, key: Key, effects: { Effect }): boolean
 		return true
 	elseif name == "enter" or name == "return" then
 		local f = M.field(edit.path) :: Field
-		local value, problem = M.parseEdit(s, f, edit.text)
+		local value, problem = M.parseEdit(s, f, edit.field.text)
 		if problem then
 			s.message = { level = "error", text = problem }
 			return true
 		end
 		s.editing = nil
 		return commit(s, f, value, effects)
-	elseif name == "backspace" then
-		s.editing = { path = edit.path, text = string.sub(edit.text, 1, -2) }
-		return true
-	elseif name == "paste" then
-		local text = string.gsub(key.text or "", "[\r\n]+", " ")
-		s.editing = { path = edit.path, text = edit.text .. text }
-		return true
-	elseif key.ctrl and name == "u" then
-		s.editing = { path = edit.path, text = "" }
-		return true
 	end
-	local ch = printable(key)
-	if ch then
-		s.editing = { path = edit.path, text = edit.text .. ch }
-		return true
+	local next = Textfield.key(edit.field, key)
+	if next == nil then
+		return false
 	end
-	return false
+	s.editing = { path = edit.path, field = next }
+	return true
+end
+
+-- An `edit` or `undo` event of the input: Tern reports one only for the
+-- focused field, so while browsing it starts editing the selected key.
+local function inputEvent(
+	s: State,
+	id: string,
+	effects: { Effect },
+	apply: (Textfield.Field) -> Textfield.Field?
+): boolean
+	if id ~= M.EDIT_INPUT then
+		return false
+	end
+	local started = false
+	if s.editing == nil then
+		local f = M.selected(s)
+		if f.kind == "bool" or f.kind == "enum" or not startEdit(s, effects) then
+			return false
+		end
+		started = true
+	end
+	local edit = s.editing :: Edit
+	local next = apply(edit.field)
+	if next == nil or next == edit.field then
+		return started
+	end
+	s.editing = { path = edit.path, field = next }
+	return true
 end
 
 local function onKey(s: State, key: Key, effects: { Effect }): boolean
@@ -735,7 +739,7 @@ local function onKey(s: State, key: Key, effects: { Effect }): boolean
 		return editKey(s, key, effects)
 	end
 	local name = key.name
-	local ch = printable(key)
+	local ch = Textfield.printable(key)
 	if s.help then
 		if name == "escape" or ch == "?" then
 			s.help = false
@@ -890,11 +894,23 @@ function M.update(prev: State, msg: Msg): (State, { Effect })
 	elseif msg.t == "resize" then
 		changed = s.rows ~= (msg :: any).rows
 		s.rows = (msg :: any).rows
+	elseif msg.t == "edit" then
+		local m = msg :: any
+		changed = inputEvent(s, m.id, effects, function(f)
+			return Textfield.edit(f, m.edit)
+		end)
+	elseif msg.t == "undo" then
+		changed = inputEvent(s, (msg :: any).id, effects, Textfield.undo)
 	else
 		changed = false
 	end
 	if not changed and #effects == 0 then
 		return prev, effects
+	end
+	-- The input stays on screen: left focused, it would keep Tern's native
+	-- editing keys (Home/End, ⇧-arrows, ⌘A) away from the list.
+	if prev.editing and s.editing == nil then
+		table.insert(effects, { t = "blur" })
 	end
 	return s, effects
 end

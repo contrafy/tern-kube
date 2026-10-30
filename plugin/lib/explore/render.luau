@@ -16,6 +16,7 @@ local Query = require("./query")
 local Quick = require("../actions/quick")
 local Redact = require("../model/redact")
 local State = require("./state")
+local Textfield = require("../textfield")
 local Types = require("../model/types")
 local Viewstate = require("../lens/viewstate")
 local ui = require("../ui")
@@ -977,13 +978,14 @@ function M.view(s: State, _cols: number, _rows: number): View
 			p = {
 				key = "filter",
 				text = text,
-				cursor = #text,
+				cursor = Textfield.caretFor(if s.editing and s.field == nil then s.input else nil, text),
 				placeholder = "press / to filter",
 				prompt = "/",
 			},
 		})
 	end
-	for _, n in GitopsView.inputs(s.gitops, route, if s.editing then s.field else nil) do
+	local editing = if s.editing then s.field else nil
+	for _, n in GitopsView.inputs(s.gitops, route, editing, if editing then s.input else nil) do
 		table.insert(children, n)
 	end
 	table.insert(children, body(s))
