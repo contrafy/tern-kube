@@ -1,5 +1,6 @@
 --!strict
 local mutation = require("../../../plugin/lib/parse/mutation")
+local fixtures = require("../../lib/fixtures")
 local t = require("../../lib/test")
 local describe, it, expect = t.describe, t.it, t.expect
 
@@ -181,6 +182,105 @@ describe("mutation.parse rollout restart and scale", function()
 		local elapsed = os.clock() - started
 		expect(#out.results).toBe(1000)
 		expect(elapsed < 0.2).toBe(true)
+	end)
+end)
+
+describe("mutation.parse guarded verbs (track 1)", function()
+	local function parsed(verb: string, fixture: string): { [string]: any }
+		local out = mutation.parse(verb, fixtures.lines("kubectl/track1/" .. fixture))
+		expect(out.diagnostics).toEqual({})
+		expect(#out.results).toBe(1)
+		return out.results[1] :: any
+	end
+
+	-- Recorded from kind: each verb's own wording must survive as the action
+	-- so the lens shows what kubectl said, dry runs still marked.
+	it("reads label, annotate, cordon and rollout undo words from recorded output", function()
+		local cases: { { verb: string, fixture: string, kind: string, group: string?, action: string } } = {
+			{ verb = "label", fixture = "label-not-labeled.txt", kind = "configmap", action = "not labeled" },
+			{ verb = "label", fixture = "label-unlabeled.txt", kind = "configmap", action = "unlabeled" },
+			{ verb = "annotate", fixture = "annotate-cm.txt", kind = "configmap", action = "annotated" },
+			{ verb = "cordon", fixture = "cordon-server.txt", kind = "node", action = "cordoned" },
+			{ verb = "uncordon", fixture = "uncordon-server.txt", kind = "node", action = "already uncordoned" },
+			{
+				verb = "rollout",
+				fixture = "undo-deploy-server.txt",
+				kind = "deployment",
+				group = "apps",
+				action = "rolled back",
+			},
+			{
+				verb = "rollout",
+				fixture = "undo-sts-server.txt",
+				kind = "statefulset",
+				group = "apps",
+				action = "rolled back",
+			},
+		}
+		for _, c in cases do
+			local r = parsed(c.verb, c.fixture)
+			expect(r.kind).toBe(c.kind)
+			expect(r.group).toBe(c.group)
+			expect(r.action).toBe(c.action)
+			expect(r.dryRun).toBe("server")
+		end
+	end)
+
+	-- patch prints no dry-run marker at all, and its no-op is a suffix:
+	-- a no-op must never read as a change.
+	it("reads patch's (no change) suffix as unchanged", function()
+		expect(parsed("patch", "patch-cm.txt").action).toBe("patched")
+		local r = parsed("patch", "patch-cm-nochange.txt")
+		expect(r.action).toBe("unchanged")
+		expect(r.name).toBe("cm")
+		expect(r.dryRun).toBeNil()
+		local both = mutation.parse("patch", { "configmap/cm patched (no change) (server dry run)" })
+		expect(both.results[1].action).toBe("unchanged")
+		expect(both.results[1].dryRun).toBe("server")
+	end)
+
+	it("reads the words of real pause, resume and edit runs", function()
+		local out = mutation.parse("rollout", {
+			"deployment.apps/web paused",
+			"deployment.apps/web resumed",
+			"configmap/cm edited",
+			"node/n already cordoned",
+		})
+		expect(out.diagnostics).toEqual({})
+		local actions = {}
+		for _, r in out.results do
+			table.insert(actions, r.action)
+		end
+		expect(actions).toEqual({ "paused", "resumed", "edited", "already cordoned" })
+	end)
+
+	it("reports several labeled objects one result each", function()
+		local out = mutation.parse("label", fixtures.lines("kubectl/track1/label-cm-cm2.txt"))
+		expect(#out.results).toBe(2)
+		expect(out.results[2].name).toBe("cm2")
+	end)
+
+	it("implies the action of -o name lines from the verb", function()
+		local cases = {
+			{ "patch", "patched" },
+			{ "label", "labeled" },
+			{ "annotate", "annotated" },
+			{ "rollout undo", "rolled back" },
+			{ "rollout pause", "paused" },
+			{ "rollout resume", "resumed" },
+		}
+		for _, c in cases do
+			expect(mutation.parse(c[1], { "configmap/cm" }).results[1].action).toBe(c[2])
+		end
+	end)
+
+	it("keeps kubectl's refusals as error diagnostics", function()
+		local conflict = mutation.parse("label", fixtures.lines("kubectl/track1/label-conflict.stderr"))
+		expect(conflict.results).toEqual({})
+		expect(conflict.diagnostics[1].severity).toBe("error")
+		expect(conflict.diagnostics[1].text).toContain("--overwrite is false")
+		local undo = mutation.parse("rollout", fixtures.lines("kubectl/track1/undo-deploy-to9-server.stderr"))
+		expect(undo.diagnostics[1].severity).toBe("error")
 	end)
 end)
 

@@ -1,7 +1,11 @@
 --!strict
--- Reads the per-object lines kubectl prints for apply, delete, rollout restart
--- and scale: `kind[.group]/name action` and `kind[.group] "name" action [from
--- ns namespace]`, each optionally suffixed with a dry-run marker.
+-- Reads the per-object lines kubectl prints for the mutating verbs:
+-- `kind[.group]/name action` and `kind[.group] "name" action [from ns
+-- namespace]`, each optionally suffixed with a dry-run marker. Actions are
+-- kubectl's words (`configured`, `labeled`, `not labeled`, `unlabeled`,
+-- `already cordoned`, `rolled back`, `paused`, `edited`, ...); patch's no-op
+-- `patched (no change)` (printed without a dry-run marker even in a dry
+-- run) reads as `unchanged`, like apply's.
 
 local Types = require("../model/types")
 
@@ -11,6 +15,7 @@ type MutationParse = Types.MutationParse
 
 local M = {}
 
+-- `-o name` prints only `kind/name`; the verb implies the action.
 local NAME_ONLY_ACTIONS: { [string]: string } = {
 	apply = "applied",
 	delete = "deleted",
@@ -18,6 +23,13 @@ local NAME_ONLY_ACTIONS: { [string]: string } = {
 	rollout = "restarted",
 	restart = "restarted",
 	["rollout restart"] = "restarted",
+	["rollout undo"] = "rolled back",
+	["rollout pause"] = "paused",
+	["rollout resume"] = "resumed",
+	patch = "patched",
+	label = "labeled",
+	annotate = "annotated",
+	edit = "edited",
 }
 
 local function splitResource(token: string): (string, string?)
@@ -46,6 +58,10 @@ end
 
 local function result(resource: string, name: string, rest: string, lineNo: number, quoted: boolean): MutationResult?
 	local action, dryRun: ("server" | "client")? = splitDryRun(rest)
+	local noChange = string.match(action, "^(.-)%s*%(no change%)$")
+	if noChange and isAction(noChange) then
+		action = "unchanged"
+	end
 	local namespace: string? = nil
 	if quoted then
 		local base, ns = string.match(action, "^(.-) from (%S+) namespace$")
