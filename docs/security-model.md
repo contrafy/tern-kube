@@ -83,6 +83,44 @@ the size and sha256 of every input file. Limits:
 - a spawned native mutation cannot be cancelled (`tern.process.run` has no
   kill handle).
 
+## Guarded verbs and `kubectl edit`
+
+The approve block and the shell guard cover `apply`, `delete`, `scale`,
+`patch`, `label`, `annotate`, `cordon`, `uncordon`, `drain`,
+`rollout restart|undo|pause|resume` and `edit`. Commands that cannot change
+the cluster (`--dry-run=client|server`, `--local`, `--list`) run without
+approval, but only when every flag is known to the guard's table for that
+verb (`shell/PROTOCOL.md`, "Preconditions"). A `--patch-file` is an input
+file like `-f`: hashed into the fingerprint, re-hashed before kubectl runs.
+
+- Server state is not fingerprinted (see above): the pods a `drain`
+  evicts, the PodDisruptionBudgets that block it, and the objects a
+  `label`/`annotate` selector matches are what the preview saw, not what
+  kubectl finds later.
+- `rollout undo` without `--to-revision` targets "the previous revision",
+  which moves with every rollout. At confirm the block re-reads the
+  revision list and refuses when any object's newest revision changed
+  since the preview.
+- `kubectl edit` is approved after you save (`shell/PROTOCOL.md`, "Edit
+  approvals"): the guard points `KUBE_EDITOR` at a hook in a private 0700
+  directory under `TMPDIR`, which runs your editor, then asks for approval.
+  Between the approval and kubectl reading the file, kubectl's temp file
+  (0600, in `TMPDIR`) is the only copy of what will be applied; a same-user
+  process that rewrites it in that instant is inside the trust boundary
+  above, as with any `-f` file. The fingerprint covers the edited file and
+  kubectl's original serialization, both re-hashed just before the hook
+  lets kubectl continue. An unapproved edit never reaches the cluster: an
+  EXIT trap writes back the bytes kubectl produced, so kubectl sees no
+  change (deny) or an editor failure (any refusal).
+- Denied and refused edits are kept in `TMPDIR/kubectl-edit-denied-*`
+  (mode 0600) so no work is lost. Such a copy can contain Secret data in
+  clear (base64 `data` or `stringData`), as can kubectl's own copies of
+  failed edits; neither is removed automatically.
+- The preview of an edit is a server dry run of the JSON merge patch from
+  the original to the edited object. When the live object changed since
+  kubectl fetched it, the block says so; kubectl itself sends a strategic
+  merge patch computed against its first fetch.
+
 ## Secrets
 
 - Native views mask Secret `data`/`stringData` and the Secret's
@@ -134,8 +172,11 @@ kubeconfig.
 `v`, `decided_at`, `decision` (approved, denied, cancelled, blocked,
 executed, failed), `mode` (native, guard), `op`, `family`, `context`,
 `context_source`, `namespace`, `kubeconfig` (path), `cwd`, `argv`, `tier`,
-`fingerprint`, `exit_code`, `previewed_at`, `started_at`, `finished_at`.
-Values of `--token` and `--password` in argv are replaced by `<redacted>`.
+`fingerprint`, `exit_code`, `previewed_at`, `started_at`, `finished_at`,
+`objects` (up to 50 previewed `Kind namespace/name`), `objects_total` and
+`files` (path and sha256 of each fingerprinted input file).
+Values of `--token` and `--password` in argv are replaced by `<redacted>`;
+inline `-p` patch text stays in argv, since it is the command.
 Command output, environment values and file contents are never logged. The
 log is local, unsigned and user-writable: a record of what Tern Kube did,
 not tamper evidence. Commands that bypass Tern Kube are not in it.

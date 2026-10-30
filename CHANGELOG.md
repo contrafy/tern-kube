@@ -7,6 +7,17 @@ versions may break).
 
 ## [Unreleased]
 
+### Added
+
+- Guarded `rollout undo`, `rollout pause`, `rollout resume`, `patch`, `label`, `annotate`, `cordon`, `uncordon` and `drain`: Explore keys (`U` `p` `P` `X` `t` `T` `C` `u` `D`), lens inspector chips and the shell guard, each with a before/after object diff from a server dry run (or the target revision for `rollout undo`) and risk tiers.
+- `drain` previews the pods it would evict, the DaemonSet, unmanaged and emptyDir pods, and pods a PodDisruptionBudget blocks right now.
+- `kubectl edit` as preview then apply: after you save, the approve block shows the diff and a server dry run; deny restores the object and keeps your edit in a file. Explore `e` and the lens Edit chip open it in a split.
+- Audit records list the previewed objects and the digests of input files.
+
+### Changed
+
+- The lens shows native results for `label`, `annotate`, `patch`, `cordon`, `uncordon` and `rollout undo|pause|resume`.
+
 ## [0.1.2] - 2026-10-09
 
 ### Fixed
