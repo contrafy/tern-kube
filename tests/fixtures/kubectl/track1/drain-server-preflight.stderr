@@ -1,0 +1,6 @@
+error: unable to drain node "tern-kube-dev-control-plane" due to error: [cannot delete Pods with local storage (use --delete-emptydir-data to override): tern-test-t1/ed, cannot delete cannot delete Pods that declare no controller (use --force to override): tern-test-t1/bare, cannot delete DaemonSet-managed Pods (use --ignore-daemonsets to ignore): tern-test-t1/ds-9rrlz], continuing command...
+There are pending nodes to be drained:
+ tern-kube-dev-control-plane
+cannot delete Pods with local storage (use --delete-emptydir-data to override): tern-test-t1/ed
+cannot delete cannot delete Pods that declare no controller (use --force to override): tern-test-t1/bare
+cannot delete DaemonSet-managed Pods (use --ignore-daemonsets to ignore): tern-test-t1/ds-9rrlz

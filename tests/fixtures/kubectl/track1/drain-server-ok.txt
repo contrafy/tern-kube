@@ -1,0 +1,6 @@
+node/tern-kube-dev-control-plane cordoned (server dry run)
+evicting pod tern-test-t1/one-585b986bcd-r7sf7 (server dry run)
+evicting pod tern-test-t1/db-0 (server dry run)
+evicting pod tern-test-t1/ed (server dry run)
+evicting pod tern-test-t1/bare (server dry run)
+node/tern-kube-dev-control-plane drained (server dry run)

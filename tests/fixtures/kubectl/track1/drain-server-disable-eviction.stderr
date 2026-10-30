@@ -1,0 +1,10 @@
+Warning: ignoring DaemonSet-managed Pods: tern-test-t1/ds-9rrlz; deleting Pods that declare no controller: tern-test-t1/bare, tern-test-t1/ed
+There are pending pods in node "tern-kube-dev-control-plane" when an error occurred: context deadline exceeded
+pod/bare
+pod/db-0
+pod/ed
+pod/one-585b986bcd-r7sf7
+error: unable to drain node "tern-kube-dev-control-plane" due to error: context deadline exceeded, continuing command...
+There are pending nodes to be drained:
+ tern-kube-dev-control-plane
+error: context deadline exceeded

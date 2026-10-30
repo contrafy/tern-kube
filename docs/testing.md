@@ -117,6 +117,7 @@ files).
 | `tests/fixtures/real/` | `scripts/fixtures/capture.sh [--reuse]` | rebuilds every `tern-test-*` namespace |
 | `tests/fixtures/real/json-world/` | `scripts/fixtures/capture-json.sh` | none |
 | `tests/fixtures/real/mutate-preview/` | `scripts/fixtures/capture-mutate-preview.sh` | none (diff, server dry run) |
+| `tests/fixtures/kubectl/track1/` | `scripts/fixtures/capture-track1.sh` | creates and deletes `tern-test-t1` (second revisions via `set image`); everything captured is a read, a dry run or `patch --local` |
 | `tests/fixtures/drift/` | `scripts/fixtures/capture-drift.sh` | recreates `tern-test-drift`, `tern-test-gitops` |
 | `tests/fixtures/gitops/captured/` | `scripts/fixtures/capture-gitops.sh` | none (kustomize/helm render) |
 | `tests/fixtures/synthetic/` | `scripts/fixtures/synth.sh` | none (deterministic seed) |

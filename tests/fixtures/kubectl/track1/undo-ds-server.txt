@@ -1,0 +1,1 @@
+daemonset.apps/ds rolled back (server dry run)

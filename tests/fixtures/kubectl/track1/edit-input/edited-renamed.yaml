@@ -1,0 +1,16 @@
+apiVersion: lens.example.com/v1alpha1
+kind: Widget
+metadata:
+  name: w9
+  namespace: tern-test-t1
+  resourceVersion: "1234"
+  labels:
+    app: widgets
+spec:
+  color: blue
+  size: 3
+  ratio: 1.50
+  enabled: yes
+  tags: []
+  extra: {}
+  owner: team-a

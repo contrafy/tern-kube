@@ -1,0 +1,19 @@
+{
+    "apiVersion": "lens.example.com/v1alpha1",
+    "kind": "Widget",
+    "metadata": {
+        "annotations": {
+            "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"lens.example.com/v1alpha1\",\"kind\":\"Widget\",\"metadata\":{\"annotations\":{},\"name\":\"w1\",\"namespace\":\"tern-test-t1\"},\"spec\":{\"color\":\"blue\",\"size\":3}}\n"
+        },
+        "creationTimestamp": "2026-10-30T21:54:07Z",
+        "generation": 2,
+        "name": "w1",
+        "namespace": "tern-test-t1",
+        "resourceVersion": "657616",
+        "uid": "1f132cde-311d-4be2-aeef-087c5a14c564"
+    },
+    "spec": {
+        "color": "blue",
+        "size": 4
+    }
+}

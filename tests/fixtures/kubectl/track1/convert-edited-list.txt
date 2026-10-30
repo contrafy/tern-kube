@@ -1,0 +1,25 @@
+{
+    "apiVersion": "v1",
+    "data": {
+        "added": "1",
+        "k": "on"
+    },
+    "kind": "ConfigMap",
+    "metadata": {
+        "name": "cm",
+        "namespace": "tern-test-t1",
+        "resourceVersion": "100"
+    }
+}
+{
+    "apiVersion": "v1",
+    "data": {
+        "k": "v"
+    },
+    "kind": "ConfigMap",
+    "metadata": {
+        "name": "cm2",
+        "namespace": "tern-test-t1",
+        "resourceVersion": "101"
+    }
+}
