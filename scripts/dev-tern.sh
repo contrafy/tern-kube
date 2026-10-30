@@ -266,16 +266,31 @@ logs)
 	esac
 	;;
 stop)
+	# The daemon outlives its windows (it keeps their panes for the next
+	# one), and a new window attaches to whatever daemon holds the socket,
+	# with that daemon's environment: a restart (--gui-path) is only real
+	# once the old daemon is gone, so stop it and wait for it.
 	ctl quit >/dev/null 2>&1 || true
 	i=0
-	while [ -n "$(daemon_pids)" ] && [ $i -lt 20 ]; do
+	while ctl ready >/dev/null 2>&1 && [ $i -lt 40 ]; do
 		sleep 0.25
 		i=$((i + 1))
 	done
+	for sig in TERM KILL; do
+		pids=$(daemon_pids)
+		[ -n "$pids" ] || break
+		# shellcheck disable=SC2086
+		kill -s $sig $pids 2>/dev/null || true
+		i=0
+		while [ -n "$(daemon_pids)" ] && [ $i -lt 40 ]; do
+			sleep 0.25
+			i=$((i + 1))
+		done
+	done
 	pids=$(daemon_pids)
 	if [ -n "$pids" ]; then
-		# shellcheck disable=SC2086
-		kill $pids 2>/dev/null || true
+		echo "dev-tern: daemon $pids did not exit" >&2
+		exit 1
 	fi
 	;;
 clean)
