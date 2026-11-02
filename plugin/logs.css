@@ -2,8 +2,14 @@
    Error and warning lines are marked so they stand out in a long log; Wrap
    lets long lines break instead of ending in an ellipsis. */
 
+/* --bad-fill is Tern's solid button fill; under it the red ERROR badge and
+   the error-toned cells are unreadable, so rows get a light tint and a bar. */
 .tk-grid .tk-lvl-error .tk-c {
-	background: var(--bad-fill);
+	background: color-mix(in srgb, var(--bad) 14%, transparent);
+}
+
+.tk-grid .tk-lvl-error .tk-c:first-child {
+	box-shadow: inset 3px 0 0 var(--bad);
 }
 
 .tk-grid .tk-lvl-warn .tk-c:first-child {

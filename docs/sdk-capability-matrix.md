@@ -47,6 +47,31 @@ with them:
 | `tern.process.run`, lenses, hooks, `tern.fs`, routing, `Launch` | Unchanged | Same shapes; still no kill handle, streaming, lens keys or pre-exec veto. | See [upstream-opportunities.md](upstream-opportunities.md). |
 | Docs vs types on `features` | Note | The input/protocol guides still say plugin blocks advertise no features; the Host API reference and the types list `features`, and the live check confirms the types. Nothing documents how Tern before 0.9 treats the key. | README requires Tern 0.9 or later. |
 
+### Logs and events (0.3.0)
+
+Probed on Tern 0.9.8 (f21d9a3) in sandbox `/tmp/tk-tern-track2` with a
+throwaway probe plugin (lens claiming `kubectl logs *`, `kubectl events *`,
+`kubectl get events *`, logging `tern.now()` per callback) against kind
+namespace `tern-test-logs` (`tk-logmix`: 2 pods x `app`/`side`/`crashy`),
+unless marked built-in. The last row came from building the shipped logs
+view.
+
+| # | Capability | Status | Evidence (Tern 0.9.8) | tern-kube |
+| --- | --- | --- | --- | --- |
+| F1 | Built-in logs lens | Verified (built-in) | No plugin linked: `kubectl logs ...` -> role `lens.docker.logs`, a `table` with `Time` (only when detected), `Level`, `Message`. JSON fields other than the message dropped, klog severity letter eaten into the time, prefixed or `--timestamps` JSON error lines without a level, continuation lines as separate rows, the newest 5 000 rows kept. | The logs lens claims `kubectl logs` and must beat this (README, CHANGELOG 0.3.0). |
+| F2 | Built-in for events | Verified (built-in) | `kubectl events ...` (incl. `--for`, `--types`): no lens (raw). `kubectl get events`: `lens.k8s.get` plain table. | Both render through the table pipeline with object refs. |
+| F3 | Plugin lens line delivery | Verified (hazard) | `line` fires only when a row scrolls off an 8-row scratch screen. `logs -f --tail=3` at 1 line/s: first `line` 4.45 s after `open` (about 6 lines behind); 20 lines at 5/s: +1.49 s; 6 lines 3 s apart: no `line` until `finish`. The built-in shows lines with no lag. | A running `logs -f` shows raw by default (`general.streaming_view = "raw"`); `native` shows a "trails the stream" note. Upstream ask U1. |
+| F4 | Live view while running | Verified | `view` runs while the command runs, after `line`s, coalesced: 250-260 ms apart at 5 lines/s; a 20 000-line burst (about 240 ms) produced 2 views. | Parsing is incremental (per `line`), `view` is O(page). |
+| F5 | Clicks while running | Verified | A click during a stream delivered the action and `view` re-ran. | Chips work while a non-follow stream renders natively. |
+| F6 | Ctrl-C of `kubectl logs -f` | Verified | `finish` status **1** (not 130), last line `^C%` (zsh `PROMPT_EOL_MARK` after a line without newline). A lone trailing `%` on a finished `logs --timestamps`. | Status 1 + trailing `^C...` = "stopped (Ctrl-C)"; the `^C`/`%` lines are dropped. |
+| F7 | Text input in a lens | Unsupported | `ui.el("input")` -> event `{"ev":"error","msg":"unknown el tag input"}`, node dropped; `type=checkbox` renders inert. | The lens is pointer-only (chips); **Search…** opens Explore logs with the filter focused. |
+| F8 | `cx:pick` / `cx:prompt` from a lens link | Verified | Lens chip -> `cx:open` -> window `route.link` -> `cx:pick` showed a picker and resolved; `cx:prompt` resolved typed text (dismiss -> nil). | Not used: a window callback cannot re-render a lens (upstream ask U2). |
+| F9 | Split + typed command is lensed | Verified | `cx.layout:split(link.pane, "right", {})` (no command) -> interactive shell; `cx:run(pane, "kubectl logs ...\r")` -> the lens `open`ed in the new pane 60 ms later; the pane returns to its prompt. A `{command=...}` split runs `$SHELL -l -c`, is never lensed and closes on exit 0. | **Run in split** variants are typed into an interactive split (e2e `43-logs-actions`). |
+| F10 | `tern.process.run` streaming | Unsupported (unchanged) | `run(argv, opts, cb)` only; no kill handle. | Explore never follows; following is a split. |
+| F11 | Plugin reload while a lens streams | Unverified | `tern plugin reload` mid-stream: the same VM kept running (counters continued, no new `open`). Inconclusive. | `open`/`line`/`finish` stay side-effect free; view state lives in action values. |
+| F12 | `ui.spark` / `ui.bars` | Unverified | In the 0.9.8 types; not rendered. | Not used. |
+| F13 | `ui.lines` with a role and keyed children | Unsupported (silent) | The logs view's notices (`Found 2 pods`, `Defaulted container`) as `ui.lines` of keyed `ui.text` children with `{ key, role = "tern-kube.notices" }`: Tern dropped the whole native view and showed raw, logged nothing, and the block's Native/Raw toggle disappeared (e2e `41-logs-multi`, `logs deploy/tk-logmix`). The same children in `ui.col` render. `ui.lines` of unkeyed `ui.text` children without a role (the table header's info line) renders; whether the role or the child keys trigger the fallback was not isolated. | Notices use `ui.col` (`plugin/lib/logs/render.luau`). Use `ui.col` for keyed or roled line lists. |
+
 ## Tern 0.6.2 (M0, M2 quick actions)
 
 | Capability | Status | Evidence (Tern 0.6.2) | Notes / fallback |
@@ -112,7 +137,13 @@ with them:
 | Quick: `kubectl port-forward` in a split (6a) | Verified | Real `svc/tk-qa-shell` port 80 -> `Forwarding from 127.0.0.1:8080 -> 8080`; `curl http://127.0.0.1:8080/index.html` -> `tk-qa-ok` (also from another Tern pane). Deployment without a known port: the script resolved the first declared port (8080) at run time. After closing the panes, curl failed to connect and no `port-forward` process remained. | Closing the pane stops it. |
 | Quick: mutating actions in M2 (6b) | Verified (refused) | Real: debug-pod link -> toast "Tern Kube: Debug needs confirmation (coming in M3)", no pane. | |
 | Quick: invalid links (6c) | Verified (refused, claimed) | `name=x%3Breboot` -> toast "invalid quick action: name must be a DNS-1123 subdomain"; `act/rm` -> "unknown action \"rm\"". No OS fallthrough in the log. | |
-| Quick: remote (ssh) hosts, fish login shell | Unverified | Not exercised: the split would run on the pane's host while the window reads its own config file; fish not installed. | |
+| Quick: remote host pane ids (Tern 0.9.8 window, 0.9.10 host) | Verified | `route.link` logged `host remote tk@localhost:2222 panes=1 listed=true` for a chip clicked on a remote lens row. | `ManagedHost.panes` holds the window pane ids that `LinkRequest.pane` carries, so the split opens on the pane's host. |
+| Quick: remote split command | Verified | Remote shell split ran bare `kubectl exec ...` (window `TKUBE_KUBECTL` not used); remote config `placement=tab` honoured; port-forward printed `tern-kube: from this machine: ssh -N -L 8080:localhost:8080 -p 2222 tk@localhost`. | No pane KUBECONFIG record on remote panes: the split prints `kubeconfig from the login environment`. |
+| Grant token randomness in the window | Verified (workaround) | `tern.fs.read("/dev/urandom")` is refused in the window VM (device file); `od -An -tx1 -N16 /dev/urandom` through `tern.process.run` works. | `plugin/lib/env/entropy.luau`; no clean read, no grant (fail closed). |
+| `route.link` waiting on a process | Not supported | The handler must return synchronously; it cannot await `tern.process.run`. | The approve block opens from the process callback via `cx:new_block`. |
+| `cx:new_block` placement with remote hosts | Verified | Approve, palette Explore and Settings blocks open on the window's current host, not the clicked pane's host. | e2e switches to the remote host before scenarios that expect a remote block. |
+| `TERN_EXE` in remote panes | Verified | Set in local and remote panes; `tern` from `tern remote setup` sits in `~/.local/bin`, often not on the login `PATH`. | Guard and alias helper use `${TERN_BIN:-${TERN_EXE:-tern}}`. |
+| fish login shell (local and remote) | Verified | `PATH` probe via `fish -l -c`; Settings `Shell PATH read from /usr/bin/fish`; quick-action lines parsed by fish 4 (quotes in context/kubeconfig included). | `make test-shell-login`, e2e 61-69. |
 | Performance | Verified | See "Performance" below. | |
 | Screenshots of the real window | Verified | `tern ctl --control <ctl> shot NAME` -> `{"png":"target/shots/tern/live/NAME.png","size":[2560,1600]}` relative to the window's cwd; PNGs show the plugin view. | |
 | Headless `tern shot` | Verified (no user plugins) | `tern shot headless.txt --out ...` with `TERN_CONFIG_DIR` = sandbox (tern-kube linked) ran a real shell and rendered the built-in `kubectl get` table, not the plugin view. | CI cannot screenshot the plugin headlessly; use the real-window `--control` path. |

@@ -1325,7 +1325,10 @@ local function valueChanges(v: Ctx, old: { [string]: any }, new: { [string]: any
 	for p in paths do
 		if rawOld[p] ~= rawNew[p] then
 			local a, b = shownOld[p] or "", shownNew[p] or ""
-			table.insert(out, { path = p, old = a, new = b, masked = a == b or a ~= rawOld[p] or b ~= rawNew[p] })
+			-- A path missing on one side shows "" on that side, unmasked.
+			local collided = a == b and rawOld[p] ~= nil and rawNew[p] ~= nil
+			local masked = collided or a ~= (rawOld[p] or "") or b ~= (rawNew[p] or "")
+			table.insert(out, { path = p, old = a, new = b, masked = masked })
 		end
 	end
 	table.sort(out, function(x: ValueChange, y: ValueChange): boolean

@@ -27,36 +27,52 @@ plugin.toml            manifest at the repository root (the package root):
                        lens "kubectl" (claim globs), blocks "explore",
                        "approve" and "settings", styles; entries under plugin/
 plugin/
-  host.luau            daemon half: lens "kubectl", spawn hook
-                       (TKUBE_SPOOL), registers the blocks below
+  host.luau            daemon half: lens "kubectl" (logs branch and table/
+                       describe branch), spawn hook (TKUBE_SPOOL), registers
+                       the blocks below
   window.luau          window half: route.link (every tern-kube:// URL),
                        route.open (guard requests), palette commands
   config_host.luau     reads/caches $XDG_CONFIG_HOME/tern-kube/config.json
   explore_host.luau    block "explore": runs lib/explore/state effects
   mutate_host.luau     block "approve": runs lib/mutation/session effects,
                        audit log, quick-action grants
-  gitops_host.luau     manifest scan, kustomize/helm render, git status
+  gitops_host.luau     manifest scan, kustomize/helm render (Chart.yaml
+                       reads for auto-detect), git status
   settings_host.luau   block "settings": runs lib/settings/state effects
   lib/
     kubectl/           argv parser (cobra/pflag rules), generated flag and
                        kind tables, copyable commands and Explore links
     parse/             table, describe, json, yaml, mutation-result output
     model/             shared types, typed cell values, resource keys,
-                       redaction policy
+                       redaction policy (+ maskTree/maskEchoes for Helm
+                       values), linediff (LCS unified diff)
     lens/              capture (run -> immutable model), query (filter,
                        sort), viewstate (state encoded in action values),
                        view (dispatch)
     render/            grid, table/describe/yaml/objtree/mutation views,
-                       header, summary
+                       header, summary, helm_chip (lens "Helm release" chip)
+    logs/              parse (JSON, klog, logfmt, plain; prefix, kubelet
+                       time, continuations), store (incremental ring of
+                       records), query (filters, pages, context, next
+                       error), viewstate (`lv=` action values), render
+    events/            model (EventList and table rows -> events), timeline
+                       (sort, filter, time groups, ownerReferences closure)
     explore/           state (Elm-style core), gitops (manifest, diff,
-                       drift, export and git routes), render, query (pinned
+                       drift, export and git routes), helm (Helm routes:
+                       loads, keys, rollback links), render, query (pinned
                        argv), relations, label selectors
+    helm/              types, query (pinned helm argv, extras template),
+                       parse (list/history/status/values/extras), owner
+                       (object -> release), values (defaults vs user vs
+                       computed), revdiff (two revision manifests ->
+                       diff segments), detect (chart dir <-> release), view
     actions/quick.luau shell, logs, port-forward, debug, CronJob run-now
-                       links and the commands they launch
-    mutation/          plan, steps, diffseg, objdiff (before/after diffs),
-                       drain, rollout, edit, risk, confirm, fingerprint,
-                       audit, link (mutate links + grants), session (approve
-                       block core), render
+                       links, the commands they launch and typed logs lines
+    mutation/          plan, helm_plan (`helm rollback` argv), steps,
+                       diffseg, objdiff (before/after diffs), drain,
+                       rollout, edit, risk, confirm, fingerprint, audit, link
+                       (mutate links + grants), session (approve block
+                       core), render
     gitops/            index, controllers, clean, emit, export, drift, view
     settings/          settings block core and view
     config.luau        config schema, validation, defaults
@@ -73,14 +89,22 @@ bin/tern-kube-drift    POSIX sh drift report for CI (no Tern)
       v
  host.luau lens "kubectl"
    open/line/finish: record argv, lines, exit status only
-   view:  lib/lens/capture -> lib/parse/* -> lib/lens/view -> lib/render/*
-   event: "v=<state>" re-render | copy | explore | act
+                     (logs: Store.push per line, pure state)
+   view:  logs   -> lib/logs/{query,render}
+          other  -> lib/lens/capture -> lib/parse/* -> lib/lens/view
+                    -> lib/render/*  (events tables: lib/events/model rows)
+   event: "v=<state>" | "lv=<state>" re-render | copy | explore | act
       |  cx:open("tern-kube://...")
       v
  window.luau route.link  (claims every tern-kube:// URL, pcall-wrapped)
-   act/<shell|logs|port-forward>  -> lib/actions/quick -> layout:split,
+   act/<shell|logs-follow|port-forward> -> lib/actions/quick -> layout:split,
                                      new pane runs a visible kubectl line
-   act/<debug-*|cronjob-run>      -> needs a confirm grant, else approve block
+   act/logs (Run in split)        -> lib/actions/quick typedLine ->
+                                     split(pane, dir, {}) + cx:run(line):
+                                     an interactive shell, so the lens
+                                     claims the typed line in the new pane
+   act/<debug-*|cronjob-run>      -> with a valid confirm grant: split;
+                                     else mint a grant, approve block
    mutate?...                     -> block "approve"  (mutate_host)
    anything else                  -> block "explore"  (explore_host)
 
@@ -97,17 +121,54 @@ bin/tern-kube-drift    POSIX sh drift report for CI (no Tern)
       -> guard verifies nonce, context, fingerprint -> exec kubectl "$@"
 ```
 
+### Where each half runs
+
+The host half runs on the machine of the pane (local, or a host added with
+`tern remote setup`): lenses, Explore, approve and Settings blocks, their
+kubectl calls, config file and audit log. The window half always runs on
+the desktop: `route.link` finds the clicked pane's host in
+`ManagedHost.panes` and splits there, while blocks it opens with
+`cx:new_block` land on the window's current host. Details and limits:
+[remote-hosts.md](remote-hosts.md).
+
+### Quick-action grants
+
+The window, not the approve block, mints the grant: on a mutating quick
+action without a valid `confirm`, it reads 16 bytes of `/dev/urandom`
+through a short process (`env/entropy.luau`; `tern.fs.read` refuses device
+files and `route.link` cannot await, so the block opens from the process
+callback), stores the token with the exact link in the window kv
+(`Link.mintGrant`, 600 s) and opens the approve block with `{url, token}`.
+On confirm the block, possibly on another host with its own kv, emits one
+`open` of the link with `confirm=<token>`; the window consumes the token once
+(`Link.consumeGrant`): every minted field must come back unchanged and only
+resolved fields (`context`, `kubeconfig`, `image`, `suffix`) may be added.
+No randomness, no grant, no block: fail closed.
+
 ### Lens
 
 - Claims are broad, views strict: globs such as `kubectl -* get *`
   over-claim, so `view` re-derives the verb from argv
   (`plugin/lib/kubectl/argv.luau`) and returns nil (raw output) for anything
-  it cannot render faithfully: watches, `-o jsonpath`, empty output, output
-  over `general.max_rows` lines or `general.max_capture_bytes`.
+  it cannot render faithfully: watches other than event listings,
+  `-o jsonpath`, empty output, tables over `general.max_rows` lines or
+  `general.max_capture_bytes`.
 - Mutation verbs (`apply`, `delete`, `scale`, `patch`, `label`, `annotate`,
   `cordon`, `uncordon`, `rollout restart|undo|pause|resume`) render as a
   result summary (`plugin/lib/render/mutation_view.luau`); by the time a lens
   sees them the change has happened.
+- `logs` keeps its own state (`plugin/lib/logs/store.luau`): records are
+  parsed per `line` callback, so `view` is O(page) while a stream runs. A log
+  is append-only, so past `general.max_rows` it keeps the newest records and
+  says how many are only in Raw, instead of falling back to raw. A running
+  `logs -f` (and `get events -w`, `events -w`) shows raw unless
+  `general.streaming_view` is `native`: Tern hands lines to a plugin lens
+  late (see the capability matrix), and raw is live. A pointer cannot scroll
+  the pane, so **First error** and **Show in context** render a small
+  context view (20 records either side) instead of jumping.
+- Event listings (`kubectl events`, `get events`) go through the table
+  pipeline; each row's ref is the involved object, so the inspector chips
+  act on it.
 
 ### Rehydration
 
@@ -117,8 +178,10 @@ replays `open`, `line` and `finish`, then calls `view`. Therefore:
 - `open`, `line` and `finish` are side-effect free (`plugin/host.luau`);
 - every clickable carries the whole view state in its action value
   (`v=sort:STATUS;desc:1;f:STATUS~Running;open:<key>`,
-  `plugin/lib/lens/viewstate.luau`), so a click on a rehydrated lens restores
-  sort, filters and the open inspector;
+  `plugin/lib/lens/viewstate.luau`; logs `lv=lvl:error;src:1;open:42`,
+  `plugin/lib/logs/viewstate.luau`, record indices are arrival ordinals so
+  a replay rebuilds the same store), so a click on a rehydrated lens
+  restores sort, filters and the open inspector;
 - parsers use no clock: ages are shown as kubectl printed them.
 
 Running blocks (Explore, approve) are not re-initialized by a reload; their
@@ -128,7 +191,7 @@ timers and pending callbacks are dropped.
 
 Explore and the approve block are Elm-style cores: `init`/`update` return
 the next state and a list of effects (`run`, `read`, `write`, `remove`,
-`audit`, `grant`, `open`, `focus`, ...). The host executes them and delivers
+`audit`, `open`, `focus`, ...). The host executes them and delivers
 results as messages on a later tick, never re-entering `update`.
 `tern.process.run` has no kill handle: every load carries a generation and a
 late result for an older generation is dropped. A spawned native mutation
@@ -162,8 +225,9 @@ palette), quick (mutating quick actions) and guard (spool request).
    are advisory);
 6. confirm (`confirm.luau`): re-read digests, fingerprint, server, inferred
    context and, for `rollout undo`, the revision list; any change refuses;
-7. native: run the pinned argv; quick: grant a single-use token and open
-   the action link; guard: write `resp-<nonce>.env`, exit 0;
+7. native: run the pinned argv; quick: open the action link with
+   `confirm=<window-minted token>` (see Quick-action grants); guard: write
+   `resp-<nonce>.env`, exit 0;
 8. append one JSON line to `<plugin data>/audit.log` (`audit.luau`: argv,
    previewed objects, input file digests).
 
@@ -180,6 +244,7 @@ Families and their preview steps:
 | cordon, uncordon | targets (nodes), server dry run | | live vs `spec.unschedulable` set/removed |
 | drain | targets, client dry run, server eviction probe (bounded `--timeout`) | | node cordoned; evictions card (`drain.luau`) |
 | edit (guard edit hook) | `patch --local -o json` of both files, targets | merge patch dry run per changed object (`edit.luau`) | live vs dry run |
+| helm-rollback | `helm status` of the latest and the target revision, `history --max 1`, the target's extras (soft), `helm rollback --dry-run` | `kubectl diff -f -` of the target manifest (stdin, soft) | the two revision manifests (`helm/revdiff.luau`) |
 
 Families without `kubectl diff` render before/after object diffs through
 `objdiff.luau`: both sides are cleaned (generation, resourceVersion,
@@ -192,6 +257,40 @@ Input ops (scale, apply, label, annotate, patch, drain) open at a prompt
 `Link.withInput`, and `i` after a preview returns to the prompt. A native
 drain must carry a `--timeout` below `mutations.execute_timeout_ms`: the
 block cannot stop kubectl once it runs.
+
+A helm rollback is always typed (token: the release name) and always
+carries `--timeout`, checked against `mutations.execute_timeout_ms` for the
+same reason. Confirm re-runs `helm history --max 1` (`Steps.verifySteps`)
+and refuses when the latest revision or its status moved since the preview.
+
+### Helm
+
+```
+ Explore H / kinds picker / palette / lens chip
+   -> helm-releases (helm list -a, -A or -n by the namespace scope)
+   -> helm-release: status, history, extras (get all --template), computed
+      values (get values --all) -> header, values summary, notes, hooks
+      -> h history -> = revision diff (two statuses + extras -> revdiff)
+      -> v values (defaults from the earliest trustworthy revision, a
+         chart dir in the repository, or helm.chart_sources)
+      -> M manifest, N notes, K hooks, R resources (+ live kubectl get)
+      -> ctrl+r tern-kube://mutate?op=rollback -> approve block
+ Explore detail of an object: Owner.fromObject -> one helm status per
+   release and context -> "Managed by Helm release" line and chip
+ ctrl+g: chart dirs with Chart.yaml x helm list -> Detect.candidates ->
+   helm template (deployed values via a 0600 temp file, or a values file)
+   -> Index.addRendered -> kubectl diff -n <release namespace> -> drift
+```
+
+`plugin/lib/explore/helm.luau` keeps every load (lists, statuses, extras,
+computed values, defaults, diffs, resources) keyed by context, namespace,
+release and revision, each with its generation; `enter` only starts what a
+route still lacks and `r` forgets the release. Rendering
+(`plugin/lib/helm/view.luau`) masks values through `model/redact.luau`
+before any text reaches a node, so copies and toasts see masked text too.
+helm runs with `HELM_DRIVER` from `helm.driver` and the pinned
+`--kube-context`/`--kubeconfig` (a kubeconfig path list goes into the
+environment instead).
 
 ### GitOps
 

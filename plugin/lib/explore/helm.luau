@@ -1243,7 +1243,8 @@ function M.enter(h: H, ctx: Ctx, route: Route, force: boolean, effects: { Effect
 		ensureHistory(h, ctx, route, effects)
 	end
 	local rev = M.revisionOf(h, route)
-	if kind == "helm-values" and rev then
+	-- The release header carries the values summary, which needs both.
+	if (kind == "helm-values" or kind == "helm-release") and rev then
 		ensureComputed(h, ctx, route, rev, effects)
 		ensureDefaults(h, ctx, route, rev, effects)
 	elseif kind == "helm-resources" then

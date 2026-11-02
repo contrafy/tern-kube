@@ -739,12 +739,24 @@ describe("explore gitops: drift", function()
 		local tmp = "/data/tmp/drift-1000-n1.yaml"
 		local lines = G.lines(w)
 		expect(find(lines, "/bin/sh -c")).toBe("/bin/sh -c " .. Gitops.WRITE_SCRIPT .. " tern-kube-tmp " .. tmp)
-		expect(find(lines, " diff ")).toBe("kubectl --context kind-tern-kube-dev diff -f " .. tmp)
+		-- helm template leaves metadata.namespace out of most objects (helm
+		-- install puts them in the release namespace); without -n kubectl
+		-- would diff them against its default namespace and report them missing.
+		expect(find(lines, " diff ")).toBe(
+			"kubectl --context kind-tern-kube-dev diff -f " .. tmp .. " -n tern-test-helm"
+		)
 		expect(w.removed).toEqual({ tmp })
 		expect(driftOf(g, ctx, id :: string).status).toBe("ok")
 		local _, nav = G.press(w, g, ctx, { kind = "drift", source = id }, nil, "X")
 		expect(nav).toBeNil()
 		expect(G.toastTexts(w)[1]).toContain("Charts are not exported")
+		-- Applying the render must land where helm installs it, not in
+		-- kubectl's default namespace (the documents carry no namespace).
+		G.press(w, g, ctx, { kind = "drift", source = id }, nil, "A")
+		local req = decodeOpen(w)
+		expect(req.op).toBe("apply")
+		expect(req.file).toBe("/data/tmp/apply-1000-n2.yaml")
+		expect(req.namespace).toBe("tern-test-helm")
 	end)
 
 	it("a kustomize source diffs with -k and A applies with kustomize=", function()
@@ -905,7 +917,9 @@ describe("explore gitops: chart auto-detect", function()
 		expect(lines[3]).toBe(G.HELM .. " template shop-a " .. CHART .. " -n tern-test-helm -f " .. VALUES_TMP)
 		expect(lines[4]).toBe("rm -f -- " .. VALUES_TMP)
 		expect(w.helmInputs[VALUES_TMP]).toBe(fixtures.read("helm/captured/values-shop-a-r3.json"))
-		expect(find(lines, " diff ")).toBe("kubectl --context kind-tern-kube-dev diff -f /data/tmp/drift-1000-n2.yaml")
+		expect(find(lines, " diff ")).toBe(
+			"kubectl --context kind-tern-kube-dev diff -f /data/tmp/drift-1000-n2.yaml -n tern-test-helm"
+		)
 		expect(w.removed).toEqual({ VALUES_TMP, "/data/tmp/drift-1000-n2.yaml" })
 		expect((next(w.tmp))).toBeNil()
 		local load = driftOf(g, ctx, DEPLOYED)

@@ -8,8 +8,10 @@ ST="[data-surface='plugin.tern-kube.settings']"
 CFG=$E2E_SB/xdg/tern-kube/config.json
 SCHEMA_URL=https://raw.githubusercontent.com/contrafy/tern-kube/master/schema/config.schema.json
 STUB=$(printf '{\n  "$schema": "%s",\n  "schema_version": 1\n}' "$SCHEMA_URL")
+# The reload makes lenses of later scenarios read the restored file.
 settings_cleanup() {
 	printf '%s\n' "$STUB" >"$CFG"
+	dev reload >/dev/null 2>&1
 }
 trap settings_cleanup EXIT
 

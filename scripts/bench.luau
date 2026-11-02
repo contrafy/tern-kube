@@ -20,19 +20,26 @@ local WARMUP = 3
 
 type Stats = { p50: number, p95: number, max: number }
 -- `items`: also report the p50 per item (logs: microseconds per line).
-type Case = { name: string, run: () -> (), p95Limit: number, items: number? }
+-- `setup`: runs untimed before every sample.
+type Case = { name: string, run: () -> (), p95Limit: number, items: number?, setup: (() -> ())? }
 
 local function percentile(sorted: { number }, p: number): number
 	local rank = math.max(1, math.ceil(p / 100 * #sorted))
 	return sorted[rank]
 end
 
-local function measure(fn: () -> ()): Stats
+local function measure(fn: () -> (), setup: (() -> ())?): Stats
 	for _ = 1, WARMUP do
+		if setup then
+			setup()
+		end
 		fn()
 	end
 	local samples: { number } = table.create(RUNS)
 	for i = 1, RUNS do
+		if setup then
+			setup()
+		end
 		local t0 = os.clock()
 		fn()
 		samples[i] = (os.clock() - t0) * 1000
@@ -82,9 +89,17 @@ end
 local prefixedStore = logStore(prefixedLines, true)
 local PAGE = 500
 
+-- Each sample follows an apply of another filter, so the store's last result
+-- does not answer it: the cost of a click that changes the filter, with the
+-- per-record search text and the merged order already built.
+local OTHER_FILTER: LogsQuery.Filter = { merge = false, levels = {} }
+
 local function applyCase(name: string, filter: LogsQuery.Filter): Case
 	return {
 		name = name,
+		setup = function()
+			LogsQuery.apply(prefixedStore, OTHER_FILTER, nil, PAGE)
+		end,
 		run = function()
 			LogsQuery.apply(prefixedStore, filter, nil, PAGE)
 		end,
@@ -169,7 +184,7 @@ local cases: { Case } = {
 local failures: { string } = {}
 print(string.format("%-40s %9s %9s %9s %9s", "case (" .. RUNS .. " runs)", "p50 ms", "p95 ms", "max ms", "limit"))
 for _, case in cases do
-	local s = measure(case.run)
+	local s = measure(case.run, case.setup)
 	local ok = s.p95 < case.p95Limit
 	print(
 		string.format(

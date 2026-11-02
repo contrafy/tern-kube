@@ -243,6 +243,8 @@ export type Bundle = {
 	pending: { [string]: boolean },
 	texts: { [string]: string },
 	tmp: string?,
+	-- The release namespace of helm-rendered documents (applied with -n).
+	namespace: string?,
 }
 
 export type G = {
@@ -921,12 +923,17 @@ local function linkOrigin(ctx: Ctx): { context: string?, source: Link.Source?, k
 	return { context = t.context, source = Link.sourceOf(t.contextSource, t.confirmed), kubeconfig = t.kubeconfig }
 end
 
-local function openApply(ctx: Ctx, fields: { file: string?, kustomize: string? }, effects: { Effect })
+local function openApply(
+	ctx: Ctx,
+	fields: { file: string?, kustomize: string?, namespace: string? },
+	effects: { Effect }
+)
 	local origin = linkOrigin(ctx)
 	local url, err = Link.encode({
 		op = "apply",
 		file = fields.file,
 		kustomize = fields.kustomize,
+		namespace = fields.namespace,
 		recursive = false,
 		overwrite = false,
 		context = origin.context,
@@ -962,6 +969,30 @@ local function docsInFile(g: G, file: string): number
 	return n
 end
 
+-- helm template leaves metadata.namespace out of most objects and helm
+-- installs them into the release namespace; without -n kubectl would apply
+-- them to its default namespace. Documents of one release only, never mixed
+-- with others: one -n cannot be right for both.
+local function releaseNamespace(docs: { Doc }): (string?, string?)
+	local ns: string? = nil
+	local plain = false
+	for _, d in docs do
+		local spec = if d.rendered and d.source.type == "helm" then d.source.helm else nil
+		local releaseNs = if spec then spec.namespace else nil
+		if releaseNs == nil then
+			plain = true
+		elseif ns == nil then
+			ns = releaseNs
+		elseif ns ~= releaseNs then
+			return nil, "The documents come from releases in different namespaces: apply one release at a time"
+		end
+	end
+	if ns and plain then
+		return nil, "Chart renders and other manifests cannot be applied together: apply them separately"
+	end
+	return ns, nil
+end
+
 -- Applies `docs` through the approve block: a document alone in its file is
 -- applied from that file; anything else is bundled into a 0600 temporary
 -- manifest (kept: the approve block re-reads it when it executes).
@@ -973,12 +1004,18 @@ function M.applyDocs(g: G, ctx: Ctx, docs: { Doc }, label: string, effects: { Ef
 		toast(effects, "error", "Nothing to apply", "No manifest declares " .. label)
 		return
 	end
+	local namespace, nsErr = releaseNamespace(docs)
+	if nsErr then
+		toast(effects, "error", "Cannot apply", nsErr)
+		return
+	end
 	local only = docs[1]
 	if #docs == 1 and not only.rendered and docsInFile(g, only.file) == 1 then
 		openApply(ctx, { file = only.file }, effects)
 		return
 	end
-	local b: Bundle = { gen = nextGen(g), label = label, docs = docs, pending = {}, texts = {}, tmp = nil }
+	local b: Bundle =
+		{ gen = nextGen(g), label = label, docs = docs, pending = {}, texts = {}, tmp = nil, namespace = namespace }
 	local reads: { string } = {}
 	for _, d in docs do
 		if not d.rendered and b.pending[d.file] == nil then
@@ -1050,7 +1087,7 @@ local function onApply(g: G, ctx: Ctx, part: string, msg: Msg, effects: { Effect
 			toast(effects, "error", "Cannot write the apply bundle", failText("sh", r, msg.spawnError))
 			return
 		end
-		openApply(ctx, { file = b.tmp }, effects)
+		openApply(ctx, { file = b.tmp, namespace = b.namespace }, effects)
 	end
 end
 
@@ -1591,6 +1628,12 @@ local function compare(g: G, ctx: Ctx, id: string, load: DriftLoad, effects: { E
 		end
 		load.tmp = path
 		push(argv, "-f", path)
+		-- helm template omits metadata.namespace on most objects; helm
+		-- installs them into the release namespace, so diff them there.
+		local spec = (entry.source :: Index.Source).helm
+		if spec and spec.namespace then
+			push(argv, "-n", spec.namespace :: string)
+		end
 	else
 		local files = sourceFiles(scope.docs)
 		for _, f in files do

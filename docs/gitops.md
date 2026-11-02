@@ -58,6 +58,18 @@ reported as unmanaged.
 `A` the whole source (both through the approve block), `E` exports the
 selected live object and `X` everything shown.
 
+For a Helm source (configured or auto-detected) the render is diffed with
+`kubectl diff -f <render> -n <release namespace>` and applied with
+`kubectl apply -f <bundle> -n <release namespace>`: `helm template` leaves
+`metadata.namespace` out of most objects and helm installs them into the
+release namespace, so without `-n` they would be compared with, or applied
+to, kubectl's default namespace. Documents of different releases, or chart
+renders mixed with plain manifests, are never applied together. Objects
+in the namespace that belong to another Helm release (`Helm release
+ns/X`) and Helm hook objects (`Helm hook (pre-install, ...)`) are ignored
+rather than reported as unmanaged, so the report never offers to delete
+them; so are Helm's release records.
+
 ### Helm chart auto-detect
 
 The index reads the `Chart.yaml` of every chart directory in the repository

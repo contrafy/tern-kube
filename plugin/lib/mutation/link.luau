@@ -792,6 +792,9 @@ function M.argv(r: Request, programs: Programs): { string }?
 				add("-R")
 			end
 		end
+		if r.namespace then
+			add("-n", r.namespace :: string)
+		end
 		return argv
 	elseif op == "cordon" or op == "uncordon" then
 		add(op, r.name :: string)

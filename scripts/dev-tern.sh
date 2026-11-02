@@ -62,6 +62,11 @@ esac
 export TERN_CONFIG_DIR="$sb/cfg"
 export TERN_DAEMON_SOCKET="$sb/d.sock"
 export STENCIL_LOG_DIR="$sb/logs"
+# helm run by the plugin (and in panes) keeps its config, cache and
+# repositories in the sandbox, never the user's helm directories.
+export HELM_CONFIG_HOME="$sb/helm/config"
+export HELM_CACHE_HOME="$sb/helm/cache"
+export HELM_DATA_HOME="$sb/helm/data"
 window_log="${STENCIL_LOG:-warn,stencil=info,tern::plugin=debug}"
 # CLI calls (ctl, plugin reload) log to stderr; only the window logs verbosely.
 export STENCIL_LOG=warn
@@ -180,6 +185,9 @@ write_zdotdir() { # $1 = 1 to start in fake mode, $2 = kubectl for Explore
 export KUBECONFIG='$kubeconfig'
 export KUBERC=off
 unset KUBECTL_EXTERNAL_DIFF
+export HELM_CONFIG_HOME='$HELM_CONFIG_HOME'
+export HELM_CACHE_HOME='$HELM_CACHE_HOME'
+export HELM_DATA_HOME='$HELM_DATA_HOME'
 EOF
 	# Panes and splits get KUBE_EDITOR only from here (Tern filters the launch
 	# environment); scenarios that drive `kubectl edit` set a scripted editor.

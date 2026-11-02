@@ -1,10 +1,13 @@
 # Screenshots for docs/screenshots/m1-<view>-<theme>-<size>.png,
 # m2-<view>-<theme>-wide.png, m3-{result,guard,diff-expanded}-<theme>-wide.png,
-# m3b-<view>-<theme>-wide.png, m4-settings-<theme>-wide.png and
-# t1-{label-diff,drain-preview,undo-diff,edit-approve}-dark-wide.png (sourced
-# by scripts/e2e.sh --shots). E2E_SHOTS limits the groups (space-separated:
-# m1 m2 m3 m3b m4 t1; default all). Every shot is of the live sandbox window
-# with the plugin loaded; check each PNG by eye before committing.
+# m3b-<view>-<theme>-wide.png, m4-settings-<theme>-wide.png,
+# t1-{label-diff,drain-preview,undo-diff,edit-approve}-dark-wide.png,
+# t2-{logs,logs-multi,logs-context,events-lens,explore-events,explore-logs}-dark-wide.png
+# and t3-{releases,values-defaults,revision-diff,rollback,lens-chip}-dark-wide.png
+# (sourced by scripts/e2e.sh --shots). E2E_SHOTS limits the groups
+# (space-separated: m1 m2 m3 m3b m4 t1 t2 t3; default all). Every shot is of the
+# live sandbox window with the plugin loaded; check each PNG by eye before
+# committing.
 
 shots_dir="$E2E_REPO/docs/screenshots"
 
@@ -269,8 +272,163 @@ shots_t1() {
 	reset_pane
 }
 
+t2_shot() { # t2_shot VIEW
+	dev shot "t2-$1-$theme-wide" "$shots_dir/t2-$1-$theme-wide.png" >/dev/null || fail "shot t2 $1"
+}
+
+# The logs lens on tk-logmix (tern-test-logs), a 25 000-line fake log's
+# context jump and the events views of tern-test-apps, as scenarios 40, 41,
+# 44, 46, 47 and 49. Nothing mutates.
+shots_t2() {
+	reset_pane
+	pod=$(logmix_pod) || {
+		fail "no tk-logmix pod in $LNS"
+		return
+	}
+	lens "kubectl logs -n $LNS $pod -c app"
+	logs_native || return
+	if has '[data-role="tern-kube.pages"]'; then
+		click_text 1 '[data-role="tern-kube.pages"] .sf-act' || return
+	fi
+	click_text 'server started*' '.tk-grid .tk-c' || return
+	top
+	t2_shot logs
+
+	lens "kubectl logs -n $LNS -l app=tk-logmix --all-containers --prefix --timestamps --tail=6"
+	logs_native || return
+	click_text 'By time' '[data-role="tern-kube.chips"] .sf-act' || return
+	t2_shot logs-multi
+
+	# FAKE: no kind container logs 25 000 lines on demand (as scenario 44).
+	dir=$E2E_SB/fake-logs
+	mkdir -p "$dir"
+	awk 'BEGIN {
+		for (i = 1; i <= 25000; i++) {
+			if (i % 997 == 0) printf "{\"level\":\"error\",\"msg\":\"request %d failed\",\"code\":500}\n", i
+			else if (i % 13 == 0) printf "level=warn msg=\"slow request %d\" dur=2.1s\n", i
+			else printf "{\"level\":\"info\",\"msg\":\"request %d\",\"path\":\"/api\"}\n", i
+		}
+	}' >"$dir/logs_big-0.txt"
+	sh_line "tk_fake '$dir'"
+	E2E_WAIT=60 lens 'kubectl logs big-0'
+	logs_native || return
+	click_text 'First error' '[data-role="tern-kube.chips"] .sf-act' || return
+	E2E_WAIT=5 wait_for "the context view" has '[data-role="tern-kube.context"]' || return
+	top
+	t2_shot logs-context
+	real
+
+	lens "kubectl events -n tern-test-apps"
+	native || return
+	t2_shot events-lens
+
+	lens "kubectl --context kind-tern-kube-dev get pods -n tern-test-apps"
+	click_text crashloop '.tk-grid .tk-c'
+	click_text 'Explore live'
+	explore_open || return
+	xwait 'Object pod/crashloop'
+	xkey escape
+	xwait 'crashloop' '.tk-grid *'
+	xkey v
+	xwait "events · ns tern-test-apps"
+	t2_shot explore-events
+	explore_close
+
+	lens "kubectl --context kind-tern-kube-dev get pods -n $LNS -l app=tk-logmix"
+	click_text "$pod" '.tk-grid .tk-c'
+	click_text 'Explore live'
+	explore_open || return
+	xwait "Object pod/$pod"
+	xkey L
+	xwait "Logs pod/$pod"
+	xwait '--tail=500' '[data-role="tern-kube.logs-summary"] *'
+	xkey ]
+	t2_shot explore-logs
+	explore_close
+	reset_pane
+}
+
+t3_shot() { # t3_shot VIEW
+	dev shot "t3-$1-$theme-wide" "$shots_dir/t3-$1-$theme-wide.png" >/dev/null || fail "shot t3 $1"
+}
+
+# t3_release DEPLOYMENT: Explore of a Helm world Deployment, H opens its
+# release.
+t3_release() {
+	lens "kubectl --context kind-tern-kube-dev get deploy -n $HNS"
+	native
+	click_text "$1" '.tk-grid .tk-c'
+	click_text 'Explore live'
+	explore_open || return 1
+	xwait "Object deployment/$1"
+	xkey H
+	xwait 'rev '
+}
+
+# The Helm views on the tests/e2e/helm.sh world, as scenarios 50-54: the
+# releases route, shop-a's values against the chart defaults, web-b's
+# masked revision diff, a rollback preview (cancelled) and the lens chip.
+shots_t3() {
+	. "$E2E_REPO/tests/e2e/helm.sh"
+	helm_world || return
+	reset_pane
+	lens "kubectl --context kind-tern-kube-dev get deploy -n $HNS"
+	native
+	click_text web-b-web '.tk-grid .tk-c'
+	click_text 'Explore live'
+	explore_open || return
+	xwait 'Object deployment/web-b-web'
+	xkey escape
+	xwait 'web-b-web' '.tk-grid *'
+	xkey :
+	xwait 'Kinds'
+	xkey /
+	ctl type helm >/dev/null
+	xkey enter
+	xwait 'helm releases' '.tk-grid *'
+	xkey enter
+	xwait '4 releases'
+	t3_shot releases
+	explore_close_all
+
+	t3_release shop-a-shop || return
+	xkey v
+	xwait 'Values shop-a (changed)'
+	# changed mode: each overridden key beside its chart default.
+	E2E_WAIT=20 xwait 'image.tag' '.tk-grid *' || return
+	t3_shot values-defaults
+	explore_close_all
+
+	t3_release web-b-web || return
+	xkey h
+	xwait '3 revisions'
+	xkey G =
+	xwait 'Diff web-b rev 1..3'
+	E2E_WAIT=20 xwait 'MODIFY Secret' || return
+	t3_shot revision-diff
+	explore_close_all
+
+	t3_release shop-a-shop || return
+	xkey h
+	xwait '3 revisions'
+	xkey G ctrl+r
+	approve_open || return
+	E2E_WAIT=40 a_ready || return
+	ctl zoom >/dev/null
+	sleep 0.8
+	t3_shot rollback
+	xkey escape
+	approve_closed
+	explore_close_all
+
+	lens "kubectl --context kind-tern-kube-dev describe deploy shop-a-shop -n $HNS"
+	native
+	t3_shot lens-chip
+	reset_pane
+}
+
 wants() {
-	case " ${E2E_SHOTS:-m1 m2 m3 m3b m4 t1} " in *" $1 "*) true ;; *) false ;; esac
+	case " ${E2E_SHOTS:-m1 m2 m3 m3b m4 t1 t2 t3} " in *" $1 "*) true ;; *) false ;; esac
 }
 
 echo "SHOTS -> $shots_dir"
@@ -292,6 +450,8 @@ for theme in light dark; do
 			wants m4 && shots_m4
 			if [ $theme = dark ]; then
 				wants t1 && shots_t1
+				wants t2 && shots_t2
+				wants t3 && shots_t3
 			fi
 		fi
 	done
