@@ -56,6 +56,15 @@ mechanism.
   regenerate).
 - `tests/shell/drift/run.sh`: `bin/tern-kube-drift` against golden
   `kubectl diff` output; `SHELLS="dash bash"` picks the shells.
+- `tests/shell/login/run.sh` (`make test-shell-login`): login-shell
+  behaviour in sh, dash, bash, zsh and fish (missing shells are skipped and
+  counted): the `PATH` probe argv and its parsing (`Shellenv`), and that
+  every shell parses the quick-action split lines exactly, including
+  contexts and kubeconfig paths with quotes.
+
+CI runs all four suites on macOS (Homebrew fish), Ubuntu (fish 3.7) and in
+the `linux-shells` job: a Debian 13 container (fish 4, dash as `/bin/sh`,
+mawk) as user `tk` whose login shell is fish.
 
 ## Integration (kind)
 
@@ -167,6 +176,33 @@ omp management off, so a fresh sandbox never downloads or links omp.
 For manual work: `TK_TERN_SANDBOX=/tmp/tk-tern-<name> scripts/dev-tern.sh
 start` (in a long-lived terminal), then `link`, `reload`, `ctl ...`, `stop`.
 `start --fake` puts the fake kubectl first on `PATH`.
+
+### Remote hosts
+
+`scripts/remote-host.sh` runs a disposable Debian 13 container
+(`tests/remote/Dockerfile`: sshd, fish/bash/zsh/dash, pinned kubectl and
+helm, luau built from source) on the `kind` network as user `tk`, and
+registers it as a Tern remote host of the sandbox in `TK_TERN_SANDBOX`. Its
+ssh key, config and known_hosts live under `TK_REMOTE_DIR` (default
+`/tmp/tk-remote`); `~/.ssh` is never read or written. Commands: `up
+[--shell fish|bash|zsh]` (default fish), `attach`, `install [DIR]`, `run`,
+`suites` (the four shell suites inside the container), `status`, `down
+[--purge]`, `env`.
+
+`scripts/e2e.sh --remote` attaches the running host to the e2e sandbox,
+installs the plugin snapshot there and runs scenarios 60-69 (without
+`--remote` they print a skip line, except 68). Remote objects live in
+`tern-test-remote`. 60 attach and install (host connected, remote Tern on
+the same minor line, `TKUBE_SPOOL` and `TERN_EXE` in a remote pane), 61 the
+lens in a remote fish pane, 62 Explore from a remote row and the palette,
+63 quick actions running on the remote with bare `kubectl`, the remote
+`placement` and the port-forward hint, 64 debug pod and CronJob run now
+through approve plus a refused replayed confirm link, 65 the fish guard on
+the remote without `TERN_BIN`, 66 native delete and Apply from a remote
+cwd, 67 remote Settings, 68 a local fish login shell (`dev-tern.sh start
+--shell fish`), 69 the shell matrix: rerun after `remote-host.sh up --shell
+bash` and `--shell zsh` with `--only '69-*'`. Not in CI: Tern is closed
+beta, the window needs a desktop session and the route needs the iroh relay.
 
 ## Fixtures
 

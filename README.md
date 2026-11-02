@@ -135,8 +135,8 @@ Requires Tern 0.9 or later (tested on 0.9.8) with shell integration and native c
 output on (`command_lenses`, the default), and `kubectl` installed. Started
 from the Dock or Finder, Tern has a minimal `PATH`; tern-kube reads yours
 from your login shell ([Programs and `PATH`](docs/configuration.md#programs-and-path)).
-Tested on macOS; Tern on Linux and remote hosts is not verified yet (see
-[Features](#features)).
+Tested on macOS (window and panes) and on Debian 13 remote hosts with fish,
+bash and zsh login shells.
 
 The shell guard, `tern-kube-drift` and the bash/fish alias helper live
 outside the plugin; clone the repository for those:
@@ -152,6 +152,20 @@ line so editors complete and check every key
 ([configuration](docs/configuration.md)).
 
 To remove: `tern plugin remove tern-kube`.
+
+### On a remote host
+
+Panes on a host added with `tern remote setup user@host` run that host's
+`kubectl` and kubeconfig, so the host half must be installed there too. In a
+pane on the host:
+
+```sh
+"$TERN_EXE" plugin install github.com/contrafy/tern-kube
+```
+
+Keep the local install: the window half (quick actions, links, block
+placement) runs on your machine. Install the same tern-kube version on
+both. Limits and troubleshooting: [remote hosts](docs/remote-hosts.md).
 
 ## Features
 
@@ -213,10 +227,12 @@ v1.0 is when every row reads done. Release history: [CHANGELOG.md](CHANGELOG.md)
 | Opt-in bash/fish alias claims (`tern-kube-aliases`) | done |
 | Mutation and live-query switches, timeouts, limits | done |
 | **Platform** | |
-| Tern on macOS; CI on macOS arm64 and Linux x86_64 | done |
-| Tern on Linux | planned |
-| Remote SSH hosts | planned |
-| fish as login shell | planned |
+| Tern on macOS; CI on macOS arm64, Linux x86_64 and Debian 13 shells (fish 4, dash, mawk) | done |
+| Tern on Linux hosts (remote; Debian 13 verified)[^linux] | done |
+| Remote SSH hosts ([limits](docs/remote-hosts.md#limitations)) | done |
+| fish as login shell | done |
+
+[^linux]: Linux desktop window: same window half, not verified locally.
 
 | Kind | Lens | Relations | Shell/logs | Port-fwd | Rollout/scale | Edit/label/patch | Cordon/drain | Delete | Manifest |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
