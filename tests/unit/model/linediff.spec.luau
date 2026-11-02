@@ -72,6 +72,30 @@ describe("model.linediff unified", function()
 		expect(d).toBe("--- /live/k\n+++ /merged/k\n@@ -1,2 +0,0 @@\n-a\n-b\n")
 		expect(Diffseg.parse(d).segments[1].action).toBe("delete")
 	end)
+
+	-- Revision diffs have no new text for an object a revision dropped; the
+	-- new side keeps the object's path because diffseg keys segments by it.
+	it("diffs a removed text given as nil like an empty one", function()
+		local d = Linediff.unified("a\nb\n", nil, "v1.ConfigMap.ns.cm") :: string
+		expect(d).toBe("--- v1.ConfigMap.ns.cm\n+++ v1.ConfigMap.ns.cm\n@@ -1,2 +0,0 @@\n-a\n-b\n")
+		local seg = Diffseg.parse(d).segments[1]
+		expect(seg.action).toBe("delete")
+		expect(seg.key).toBe("v1.ConfigMap.ns.cm")
+	end)
+
+	it("returns nil when both sides are missing", function()
+		expect(Linediff.unified(nil, nil, "/p")).toBeNil()
+	end)
+end)
+
+-- Callers align masked and raw text line by line, so they must split
+-- exactly as the diff does.
+describe("model.linediff lines", function()
+	it("drops only the final newline's empty tail", function()
+		expect(Linediff.lines("a\n\nb\n")).toEqual({ "a", "", "b" })
+		expect(Linediff.lines("a")).toEqual({ "a" })
+		expect(Linediff.lines("")).toEqual({})
+	end)
 end)
 
 return nil
