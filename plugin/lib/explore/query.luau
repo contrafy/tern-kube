@@ -31,7 +31,21 @@ export type RelQuery = Relations.RelQuery
 
 local M = {}
 
-M.LOG_TAIL = 500
+-- Pods a selector-only logs query reads at once (kubectl's default is 5).
+M.MAX_LOG_REQUESTS = 10
+
+-- What a logs route reads: one object (pod, or TYPE/NAME) or a selector.
+export type LogsSource = {
+	ref: Ref?,
+	selector: string?,
+	-- Namespace of a selector-only source (a ref carries its own).
+	namespace: string?,
+	-- nil = every container.
+	container: string?,
+	previous: boolean,
+	since: string?,
+	tail: number,
+}
 
 local function kubeconfigArgs(program: string, kubeconfig: string?): { string }
 	local argv = { program }
@@ -88,24 +102,47 @@ local function isPod(ref: Ref): boolean
 	return ref.kind == "Pod" and (ref.group == nil or ref.group == "")
 end
 
-function M.logs(
-	program: string,
-	target: Target,
-	ref: Ref,
-	container: string?,
-	previous: boolean,
-	tail: number?
-): { string }
-	local subject = if isPod(ref) then ref.name else Command.resourceType(ref) .. "/" .. ref.name
-	local argv = namespaceOf(append(M.base(program, target), "logs", subject), ref)
-	if container and container ~= "" then
-		append(argv, "-c", container)
+-- Always --timestamps --prefix: Explore owns the argv, and the exact time and
+-- pod/container of every line are what make records sortable and filterable.
+function M.logs(program: string, target: Target, src: LogsSource): { string }
+	local argv = append(M.base(program, target), "logs")
+	local ref = src.ref
+	if ref then
+		table.insert(argv, if isPod(ref) then ref.name else Command.resourceType(ref) .. "/" .. ref.name)
+		namespaceOf(argv, ref)
+	else
+		append(argv, "-l", src.selector or "")
+		if src.namespace and src.namespace ~= "" then
+			append(argv, "-n", src.namespace)
+		end
 	end
-	if previous then
+	if src.container and src.container ~= "" then
+		append(argv, "-c", src.container)
+	else
+		table.insert(argv, "--all-containers")
+	end
+	if src.previous then
 		table.insert(argv, "--previous")
 	end
-	table.insert(argv, "--tail=" .. string.format("%d", tail or M.LOG_TAIL))
+	if src.since and src.since ~= "" then
+		table.insert(argv, "--since=" .. src.since)
+	end
+	append(argv, "--timestamps", "--prefix", "--tail=" .. string.format("%d", src.tail))
+	if ref == nil then
+		table.insert(argv, "--max-log-requests=" .. M.MAX_LOG_REQUESTS)
+	end
 	return argv
+end
+
+-- `get events` rather than `kubectl events`: the same core/v1 EventList
+-- without needing kubectl >= 1.26.
+function M.events(program: string, target: Target, scope: Scope): { string }
+	return M.list(program, target, "events", scope)
+end
+
+-- What a workload owns, for the ownerReferences closure of its events.
+function M.owned(program: string, target: Target, namespace: string?): { string }
+	return M.list(program, target, "replicasets,pods,jobs", { namespace = namespace, all = false })
 end
 
 function M.contexts(program: string, kubeconfig: string?): { string }

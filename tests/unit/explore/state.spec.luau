@@ -286,7 +286,8 @@ describe("explore state: keys", function()
 		expect(top(s).kind).toBe("detail")
 		s = W.keys(s, { "L" })
 		expect(top(s).kind).toBe("logs")
-		expect(((State.currentLoad(s) :: State.Load).data :: any).lines).toEqual({ "log line 1", "log line 2" })
+		local data = (State.currentLoad(s) :: State.Load).data :: State.LogsData
+		expect(data.store.last > 0).toBe(true)
 		local _, effects = State.update(s, W.key("Y"))
 		expect(effects[1].t).toBe("copy")
 		expect(effects[1].text :: string).toContain(

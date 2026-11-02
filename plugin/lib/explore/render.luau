@@ -7,11 +7,14 @@
 local Cells = require("../render/cells")
 local Command = require("../kubectl/command")
 local DescribeView = require("../render/describe_view")
+local EventsModel = require("../events/model")
 local Gitops = require("./gitops")
 local GitopsView = require("../gitops/view")
 local Grid = require("../render/grid")
 local ObjTree = require("../render/objtree")
 local Link = require("../mutation/link")
+local LogsStore = require("../logs/store")
+local LogsTypes = require("../logs/types")
 local Query = require("./query")
 local Quick = require("../actions/quick")
 local Redact = require("../model/redact")
@@ -19,6 +22,7 @@ local State = require("./state")
 local Textfield = require("../textfield")
 local Types = require("../model/types")
 local Viewstate = require("../lens/viewstate")
+local Timeline = require("../events/timeline")
 local ui = require("../ui")
 
 type Node = ui.Node
@@ -86,6 +90,7 @@ local ROUTE_TITLE: { [string]: string } = {
 	relations = "Relations",
 	describe = "Describe",
 	logs = "Logs",
+	events = "Events",
 	contexts = "Contexts",
 	namespaces = "Namespaces",
 	kinds = "Kinds",
@@ -115,8 +120,8 @@ local function clock(at: number?): string
 end
 
 local function scopeText(s: State, route: Route): string
-	if route.kind == "list" then
-		local sc = State.scope(s, route)
+	if route.kind == "list" or (route.kind == "events" and route.ref == nil) then
+		local sc = if route.kind == "list" then State.scope(s, route) else State.eventsScope(s, route)
 		if sc.all then
 			return "all namespaces"
 		end
@@ -206,6 +211,10 @@ local function crumbLabel(s: State, route: Route): string
 	local ref = route.ref
 	if ref then
 		return title .. " " .. string.lower(ref.kind) .. "/" .. ref.name
+	elseif route.kind == "logs" and route.selector then
+		return title .. " -l " .. route.selector
+	elseif route.kind == "events" then
+		return title .. " " .. scopeText(s, route)
 	end
 	return title
 end
@@ -326,40 +335,77 @@ end
 
 type GridRow = Grid.GridRow
 
--- The visible window of a long list (State.window: sized from the block's
--- height, selection kept SCROLLOFF rows from the edges), with clickable
--- "N above" / "N below" rows that page.
-local function pagedGrid(
+export type WindowSpec = {
 	key: string,
 	headers: { string },
 	types: { Types.ColumnType },
-	rows: { GridRow },
+	-- Rows in all; only the visible window is built (rowAt).
+	total: number,
+	rowAt: (i: number) -> GridRow,
 	selected: number,
-	s: State,
-	cell: ((string, Types.ColumnType, string, boolean) -> Node)?
-): { Node }
+	cell: ((string, Types.ColumnType, string, boolean) -> Node)?,
+	-- Inline body under the selected row (logs record inspector).
+	inspector: ((rowKey: string) -> Node?)?,
+	-- A full-width label before row i (events time groups); `first` is the
+	-- first visible row.
+	separator: ((i: number, first: boolean) -> string?)?,
+}
+
+-- The visible window of a long list (State.window: sized from the block's
+-- height, selection kept SCROLLOFF rows from the edges), with clickable
+-- "N above" / "N below" rows that page.
+local function windowGrid(s: State, spec: WindowSpec): { Node }
+	local total = spec.total
 	local size = State.viewport(s.rows, s.config.general.max_rendered_rows)
-	local first, last = State.window(selected, #rows, s.offset[State.currentKey(s)], size)
-	local shown: { GridRow } = if first == 1 and last == #rows
-		then rows
-		else table.move(rows, first, last, 1, table.create(last - first + 1))
-	local selKey = if rows[selected] then rows[selected].key else nil
-	for _, r in shown do
-		if r.key == selKey then
+	local first, last = State.window(spec.selected, total, s.offset[State.currentKey(s)], size)
+	local shown: { GridRow } = table.create(math.max(0, last - first + 1))
+	local labels: { [string]: string } = {}
+	local selKey: string? = nil
+	for i = first, last do
+		local r = spec.rowAt(i)
+		if i == spec.selected then
 			r.open = true
+			selKey = r.key
+		end
+		table.insert(shown, r)
+		local sep = spec.separator
+		local label = if sep then sep(i, i == first) else nil
+		if label then
+			labels[r.key] = label
 		end
 	end
 	local grid = Grid.grid({
-		key = key,
-		headers = headers,
-		types = types,
+		key = spec.key,
+		headers = spec.headers,
+		types = spec.types,
 		rows = shown,
 		sortCol = nil,
 		desc = false,
 		sortAction = noSort,
-		cell = cell,
+		cell = spec.cell,
+		inspector = spec.inspector,
 	})
 	markSelected(grid, selKey)
+	if next(labels) then
+		local inner = (grid.c :: { Node })[1]
+		local children: { Node } = {}
+		for _, child in inner.c :: { Node } do
+			local key = if child.p then child.p.key else nil
+			local label = if type(key) == "string" then labels[key] else nil
+			if label then
+				table.insert(
+					children,
+					ui.el(
+						"div",
+						{ key = "sep-" .. key, class = "tk-sep" },
+						{ ui.text({ ui.span(label, "muted strong") }) }
+					)
+				)
+			end
+			table.insert(children, child)
+		end
+		inner.c = children
+	end
 	local out: { Node } = {}
 	if first > 1 then
 		table.insert(
@@ -372,10 +418,10 @@ local function pagedGrid(
 		)
 	end
 	table.insert(out, grid)
-	if last < #rows then
+	if last < total then
 		table.insert(
 			out,
-			ui.muted(string.format("↓ %d below (j, pagedown, G; / filters)", #rows - last), {
+			ui.muted(string.format("↓ %d below (j, pagedown, G; / filters)", total - last), {
 				key = "overflow",
 				role = "tern-kube.overflow",
 				actions = { click = "page=down" },
@@ -383,6 +429,30 @@ local function pagedGrid(
 		)
 	end
 	return out
+end
+
+local function pagedGrid(
+	key: string,
+	headers: { string },
+	types: { Types.ColumnType },
+	rows: { GridRow },
+	selected: number,
+	s: State,
+	cell: ((string, Types.ColumnType, string, boolean) -> Node)?
+): { Node }
+	return windowGrid(s, {
+		key = key,
+		headers = headers,
+		types = types,
+		total = #rows,
+		rowAt = function(i: number): GridRow
+			return rows[i]
+		end,
+		selected = selected,
+		cell = cell,
+		inspector = nil,
+		separator = nil,
+	})
 end
 
 -- What the GitOps views need: the shared paged grid and chip builders.
@@ -487,6 +557,10 @@ local function actionChips(s: State, ref: Ref): Node
 	if workload then
 		table.insert(chips, chip("Logs (L)", "nav=logs", { key = "a-logs" }))
 	end
+	table.insert(
+		chips,
+		chip("Events (V)", "nav=events", { key = "a-events", title = "Its events timeline (with what it owns)" })
+	)
 	local info, obj = quickInfo(s, ref)
 	-- Workload shells pick a ready pod at run time; offer them like pod shells.
 	if ref.kind ~= "Pod" and workload then
@@ -772,23 +846,164 @@ local function describeBody(s: State, load: Load?): { Node }
 	return out
 end
 
-local function logsBody(s: State, route: Route, load: Load?): { Node }
-	local ref = route.ref :: Ref
-	local out: { Node } = {}
-	local chips: { Node } = {}
-	local containers = State.containers(State.findObject(s, ref))
-	if #containers > 1 then
+-- Logs -----------------------------------------------------------------------
+
+local LEVEL_TONE: { [string]: string } = {
+	fatal = "error",
+	error = "error",
+	warn = "warning",
+	info = "info",
+	debug = "neutral",
+	trace = "neutral",
+}
+
+M.MESSAGE_CAP = 1000
+M.INSPECT_CAP = 65536
+M.FIELDS_INLINE = 6
+
+local function cap(text: string, n: number): string
+	if #text <= n then
+		return text
+	end
+	return string.sub(text, 1, n) .. " …"
+end
+
+-- HH:MM:SS.mmm of a kubelet RFC3339 time (UTC, as kubectl prints it).
+function M.clock(ts: string?): string
+	if ts == nil then
+		return ""
+	end
+	local hms, frac = string.match(ts, "T(%d%d:%d%d:%d%d)%.?(%d*)")
+	if hms == nil then
+		return ts
+	end
+	return if frac and frac ~= "" then hms .. "." .. string.sub(frac .. "000", 1, 3) else hms
+end
+
+local function levelCount(counts: { [LogsTypes.Level]: number }, level: LogsTypes.Level): number
+	return counts[level] or 0
+end
+
+-- The message, its first fields and how many continuation lines it carries.
+function M.messageText(rec: LogsTypes.Record): string
+	local parts = { rec.message }
+	local fields: { LogsTypes.Field } = rec.fields or {}
+	for i, f in fields do
+		if i > M.FIELDS_INLINE then
+			break
+		end
+		table.insert(parts, f.key .. "=" .. f.value)
+	end
+	local text = table.concat(parts, "  ")
+	local more = (if rec.extra then #rec.extra else 0) + (rec.more or 0)
+	if more > 0 then
+		text ..= string.format("  +%d lines", more)
+	end
+	return cap(text, M.MESSAGE_CAP)
+end
+
+local function onePod(store: LogsStore.Store): boolean
+	local pod: string? = nil
+	for _, src in store.sources do
+		if src.pod and pod and src.pod ~= pod then
+			return false
+		end
+		pod = src.pod or pod
+	end
+	return true
+end
+
+local function sourceText(store: LogsStore.Store, index: number, single: boolean): string
+	local src = store.sources[index]
+	if src == nil then
+		return ""
+	end
+	if single then
+		return src.container or src.pod or ""
+	end
+	return (src.pod or "?") .. " · " .. (src.container or "?")
+end
+
+local function logCell(col: string, columnType: Types.ColumnType, value: string, finished: boolean): Node
+	if col == "LEVEL" then
+		if value == "" or value == "none" then
+			return ui.text({ "" })
+		end
+		return ui.badge(string.upper(value), LEVEL_TONE[value] or "neutral", { role = "tern-kube.level" })
+	elseif col == "TIME" then
+		return ui.text({ ui.span(value, "muted mono") })
+	end
+	return Cells.cell(col, columnType, value, finished)
+end
+
+local function recordInspector(store: LogsStore.Store, rec: LogsTypes.Record): Node
+	local items: { KvItem } = {}
+	if rec.ts then
+		table.insert(items, pair({ "Time" }, { ui.span(rec.ts, "mono") }))
+	end
+	if rec.appTime then
+		table.insert(items, pair({ "Logged at" }, { ui.span(rec.appTime, "mono") }))
+	end
+	local src = store.sources[rec.source]
+	if src then
 		table.insert(
-			chips,
-			chip(
-				"default container",
-				"container=",
-				{ key = "ct-", tone = if route.container then "neutral" else "accent" }
-			)
+			items,
+			pair({ "Source" }, { "pod " .. (src.pod or "?") .. ", container " .. (src.container or "?") })
 		)
 	end
-	for _, name in containers do
-		if #containers > 1 then
+	table.insert(items, pair({ "Level" }, { rec.level .. " (" .. rec.format .. ")" }))
+	if rec.location then
+		table.insert(items, pair({ "Location" }, { ui.span(rec.location, "mono") }))
+	end
+	local fields: { LogsTypes.Field } = rec.fields or {}
+	for _, f in fields do
+		table.insert(items, pair({ ui.span(f.key, "mono") }, { ui.span(cap(f.value, 2000), "mono") }))
+	end
+	local text = rec.message
+	if rec.extra then
+		text ..= "\n" .. table.concat(rec.extra, "\n")
+	end
+	if rec.more then
+		text ..= string.format("\n… %d more lines (Copy line has them)", rec.more)
+	end
+	local kv = ui.kv(items);
+	(kv.p :: any).key = "insp-kv"
+	local i = tostring(rec.index)
+	local chips: { Node } = {
+		chip("Copy line", "lcopy=line:" .. i, { key = "c-line", title = "The line as kubectl printed it" }),
+		chip("Copy message", "lcopy=msg:" .. i, { key = "c-msg" }),
+	}
+	if rec.format == "json" then
+		table.insert(chips, chip("Copy JSON", "lcopy=json:" .. i, { key = "c-json" }))
+	end
+	table.insert(chips, chip("Close (enter)", "logs-inspect=", { key = "c-close" }))
+	return ui.col({
+		kv,
+		ui.code(cap(text, M.INSPECT_CAP), nil, nil, { key = "insp-msg" }),
+		ui.row(chips, { key = "insp-chips", wrap = true, role = "tern-kube.chips" }),
+	}, { key = "insp", role = "tern-kube.log-inspector" })
+end
+
+local function noticeText(store: LogsStore.Store, n: LogsTypes.Notice): string
+	if n.kind == "dropped" then
+		return string.format("%d older lines dropped (general.max_rows / general.max_capture_bytes)", store.dropped)
+	end
+	return n.text
+end
+
+local function logsChips(s: State, route: Route): Node
+	local chips: { Node } = {}
+	local containers = State.logContainers(s, route)
+	if #containers > 1 or route.container then
+		table.insert(
+			chips,
+			chip("all containers", "container=", {
+				key = "ct-",
+				tone = if route.container then "neutral" else "accent",
+				title = "a cycles the containers",
+			})
+		)
+		for _, name in containers do
 			table.insert(
 				chips,
 				chip(name, "container=" .. name, {
@@ -800,26 +1015,344 @@ local function logsBody(s: State, route: Route, load: Load?): { Node }
 	end
 	table.insert(
 		chips,
-		chip(if route.previous then "previous: on" else "previous: off", "previous", {
+		chip(if route.previous then "previous: on (o)" else "previous: off (o)", "previous", {
 			key = "prev",
 			tone = if route.previous then "accent" else "neutral",
 			title = "Logs of the previous (crashed) container instance",
 		})
 	)
+	for _, f in { { "", "All levels" }, { "warn", "Warnings+" }, { "error", "Errors+" } } do
+		table.insert(
+			chips,
+			chip(f[2], "logs-floor=" .. f[1], {
+				key = "lv-" .. f[1],
+				tone = if (route.floor or "") == f[1] then "accent" else "neutral",
+				title = "x cycles the level floor",
+			})
+		)
+	end
+	table.insert(chips, chip("◂ Prev error ([)", "logs-jump=prev", { key = "err-prev" }))
+	table.insert(chips, chip("Next error (]) ▸", "logs-jump=next", { key = "err-next" }))
+	table.insert(
+		chips,
+		chip("Wrap (w)", "logs-wrap", { key = "wrap", tone = if route.wrap then "accent" else "neutral" })
+	)
 	table.insert(chips, chip("Follow in split (l)", "quick=logs-follow", { key = "follow", tone = "accent" }))
-	table.insert(out, ui.row(chips, { key = "chips", wrap = true, role = "tern-kube.chips" }))
+	return ui.row(chips, { key = "chips", wrap = true, role = "tern-kube.chips" })
+end
+
+local function logsBody(s: State, route: Route, load: Load?): { Node }
+	local out: { Node } = { logsChips(s, route) }
 	local pending = pendingNode(s, load)
 	if pending or load == nil then
 		table.insert(out, pending :: Node)
 		return out
 	end
-	local lines = (load.data :: State.LogsData).lines
-	if #lines == 0 then
+	local data = load.data :: State.LogsData
+	local store = data.store
+	local size = LogsStore.size(store)
+	local f = s.filter[State.currentKey(s)] or ""
+	local indices = State.logIndices(route, data, f)
+	local counts = store.counts
+	local summary = string.format(
+		"%d lines · %d errors · %d warnings",
+		size,
+		levelCount(counts, "error") + levelCount(counts, "fatal"),
+		levelCount(counts, "warn")
+	)
+	if #store.sources > 1 then
+		summary ..= string.format(" · %d sources", #store.sources)
+	end
+	summary ..= " · --tail=" .. State.logsTail(s, route)
+	if route.since then
+		summary ..= " --since=" .. route.since
+	end
+	if route.previous then
+		summary ..= " · previous instance"
+	end
+	if f ~= "" or route.floor then
+		summary ..= string.format(" · %d shown", #indices)
+	end
+	table.insert(out, ui.text({ ui.span(summary, "muted") }, { key = "count", role = "tern-kube.logs-summary" }))
+	for i, n in store.notices do
+		local tone = if n.kind == "error" or n.kind == "warning" or n.kind == "dropped" then "warning" else "muted"
+		table.insert(
+			out,
+			ui.text({ ui.span(noticeText(store, n), tone) }, { key = "notice" .. i, role = "tern-kube.notice" })
+		)
+	end
+	if size == 0 then
 		table.insert(out, ui.muted("No log lines.", { key = "empty" }))
 		return out
 	end
-	table.insert(out, ui.muted(string.format("last %d lines (--tail=%d)", #lines, 500), { key = "count" }))
-	table.insert(out, ui.code(table.concat(lines, "\n"), nil, nil, { key = "log" }))
+	if #indices == 0 then
+		table.insert(out, ui.muted("Nothing matches. / edits the search; x widens the level.", { key = "empty" }))
+		return out
+	end
+	local single = onePod(store)
+	local withSource = #store.sources > 1
+	local headers = if withSource then { "TIME", "SOURCE", "LEVEL", "MESSAGE" } else { "TIME", "LEVEL", "MESSAGE" }
+	local types: { Types.ColumnType } = table.create(#headers, "text" :: Types.ColumnType)
+	local want = tonumber(s.sel[State.currentKey(s)] or "")
+	local selected = #indices
+	if want then
+		selected = table.find(indices, want) or selected
+	end
+	local grid = windowGrid(s, {
+		key = "log",
+		headers = headers,
+		types = types,
+		total = #indices,
+		rowAt = function(i: number): GridRow
+			local idx = indices[i]
+			local rec = store.records[idx]
+			local cells = { M.clock(rec.ts) }
+			if withSource then
+				table.insert(cells, sourceText(store, rec.source, single))
+			end
+			table.insert(cells, rec.level)
+			table.insert(cells, M.messageText(rec))
+			return { key = tostring(idx), cells = cells, action = "logs-inspect=" .. idx }
+		end,
+		selected = selected,
+		cell = logCell,
+		inspector = if route.inspect
+			then function(rowKey: string): Node?
+				local rec = LogsStore.get(store, tonumber(rowKey) or 0)
+				return if rec then recordInspector(store, rec) else nil
+			end
+			else nil,
+		separator = nil,
+	})
+	table.insert(
+		out,
+		ui.el("div", { key = "records", class = if route.wrap then "tk-logwrap" else "tk-lognowrap" }, grid)
+	)
+	return out
+end
+
+-- Events ---------------------------------------------------------------------
+
+local TONE_STYLE: { [string]: string } = { error = "error strong", warning = "warning strong", success = "success" }
+local TONE_RANK: { [string]: number } = { neutral = 0, success = 1, warning = 2, error = 3 }
+
+-- Compact age: 42s, 7m, 3h, 2d.
+function M.ageText(seconds: number): string
+	local d = math.max(0, math.floor(seconds))
+	if d < 60 then
+		return d .. "s"
+	elseif d < 3600 then
+		return (d // 60) .. "m"
+	elseif d < 86400 then
+		return (d // 3600) .. "h"
+	end
+	return (d // 86400) .. "d"
+end
+
+local function eventTime(e: EventsModel.Event): number?
+	return (if e.last then Timeline.parseTime(e.last) else nil)
+		or (if e.first then Timeline.parseTime(e.first) else nil)
+end
+
+local function eventAge(e: EventsModel.Event, now: number?): string
+	local t = eventTime(e)
+	if t and now then
+		return M.ageText(now - t)
+	end
+	return e.lastSeen or "?"
+end
+
+local function eventsScopeText(s: State, route: Route): string
+	local ref = route.ref
+	if ref then
+		local text = string.lower(ref.kind) .. "/" .. ref.name
+		return if State.related(route) then text .. " and what it owns" else text
+	end
+	local sc = State.eventsScope(s, route)
+	if sc.all then
+		return "all namespaces"
+	end
+	return if sc.namespace then "ns " .. sc.namespace else "ns (context default)"
+end
+
+local function eventsChips(route: Route, reasons: { { reason: string, count: number, tone: string } }, f: string): Node
+	local chips: { Node } = {
+		chip("Warnings only (x)", "events-warnings", {
+			key = "warn",
+			tone = if route.warnings then "accent" else "neutral",
+		}),
+	}
+	if route.ref then
+		table.insert(
+			chips,
+			chip("Include related", "events-related", {
+				key = "related",
+				tone = if State.related(route) then "accent" else "neutral",
+				title = "Also events of what it owns (ReplicaSets, Pods, Jobs)",
+			})
+		)
+		table.insert(
+			chips,
+			chip("Whole namespace", "events-scope", { key = "scope", title = "Every event of the object's namespace" })
+		)
+	end
+	for _, r in reasons do
+		table.insert(
+			chips,
+			chip(r.reason .. " " .. r.count, "events-reason=" .. r.reason, {
+				key = "r-" .. r.reason,
+				tone = if f == r.reason then "accent" else (if r.tone == "neutral" then "neutral" else r.tone),
+				title = "Filter by this reason",
+			})
+		)
+	end
+	return ui.row(chips, { key = "chips", wrap = true, role = "tern-kube.chips" })
+end
+
+M.TOP_REASONS = 6
+
+local function eventsBody(s: State, route: Route, load: Load?): { Node }
+	local f = s.filter[State.currentKey(s)] or ""
+	local pending = pendingNode(s, load)
+	if pending or load == nil then
+		return { eventsChips(route, {}, f), pending :: Node }
+	end
+	local data = load.data :: State.EventsData
+	local scoped = Timeline.filter(data.events, { warnings = false, text = nil, scope = data.scope })
+	local shown = State.eventList(route, data, f)
+	local byReason: { [string]: { reason: string, count: number, tone: string } } = {}
+	local reasons: { { reason: string, count: number, tone: string } } = {}
+	local warnings = 0
+	for _, e in scoped do
+		if e.type == "Warning" then
+			warnings += 1
+		end
+		if e.reason ~= "" then
+			local r = byReason[e.reason]
+			if r == nil then
+				r = { reason = e.reason, count = 0, tone = "neutral" }
+				byReason[e.reason] = r
+				table.insert(reasons, r)
+			end
+			r.count += 1
+			local tone = EventsModel.reasonTone(e.reason, e.type)
+			if TONE_RANK[tone] > TONE_RANK[r.tone] then
+				r.tone = tone
+			end
+		end
+	end
+	table.sort(reasons, function(a, b)
+		if a.count ~= b.count then
+			return a.count > b.count
+		end
+		return a.reason < b.reason
+	end)
+	local top: { { reason: string, count: number, tone: string } } =
+		table.move(reasons, 1, math.min(#reasons, M.TOP_REASONS), 1, {})
+	local out: { Node } = { eventsChips(route, top, f) }
+	local now = s.now or load.fetchedAt
+	local parts = { "events", eventsScopeText(s, route), tostring(#scoped), warnings .. " Warning" }
+	local newest = if scoped[1] then eventTime(scoped[1]) else nil
+	if newest and now then
+		table.insert(parts, "newest " .. M.ageText(now - newest) .. " ago")
+	end
+	if f ~= "" or route.warnings then
+		table.insert(parts, #shown .. " shown")
+	end
+	table.insert(
+		out,
+		ui.text({ ui.span(table.concat(parts, " · "), "muted") }, { key = "count", role = "tern-kube.events-summary" })
+	)
+	if data.note then
+		table.insert(out, ui.text({ ui.span(data.note, "warning") }, { key = "note", role = "tern-kube.notice" }))
+	end
+	if #scoped == 0 then
+		table.insert(
+			out,
+			ui.muted(
+				"No events for " .. eventsScopeText(s, route) .. ". The cluster keeps events for about an hour.",
+				{ key = "empty" }
+			)
+		)
+		return out
+	end
+	if #shown == 0 then
+		table.insert(
+			out,
+			ui.muted("Nothing matches. / edits the filter; x shows Normal events too.", { key = "empty" })
+		)
+		return out
+	end
+	local groupOf: { string } = table.create(#shown)
+	local starts: { [number]: boolean } = {}
+	if now then
+		local at = 1
+		for _, g in Timeline.groups(shown, now) do
+			starts[at] = true
+			local label = g.label .. " · " .. #g.events
+			if g.warnings > 0 then
+				label ..= " (" .. g.warnings .. " Warning)"
+			end
+			for _ = 1, #g.events do
+				groupOf[at] = label
+				at += 1
+			end
+		end
+	end
+	local allNs = route.ref == nil and State.eventsScope(s, route).all
+	local headers = { "AGE", "TYPE", "REASON", "OBJECT", "MESSAGE", "COUNT" }
+	if allNs then
+		table.insert(headers, 2, "NAMESPACE")
+	end
+	local types: { Types.ColumnType } = table.create(#headers, "text" :: Types.ColumnType)
+	local function cell(col: string, columnType: Types.ColumnType, value: string, finished: boolean): Node
+		if col == "TYPE" then
+			return if value == "Warning"
+				then ui.badge(value, "warning", { role = "tern-kube.event-type" })
+				else ui.text({ ui.span(value, "muted") })
+		elseif col == "REASON" then
+			local r = byReason[value]
+			return ui.text({ ui.span(value, if r then TONE_STYLE[r.tone] else nil) })
+		elseif col == "AGE" or col == "COUNT" then
+			return ui.text({ ui.span(value, "muted mono") })
+		end
+		return Cells.cell(col, columnType, value, finished)
+	end
+	local keys: { string } = table.create(#shown)
+	for i, e in shown do
+		keys[i] = e.key
+	end
+	local grid = windowGrid(s, {
+		key = "events",
+		headers = headers,
+		types = types,
+		total = #shown,
+		rowAt = function(i: number): GridRow
+			local e = shown[i]
+			local object = e.object
+			local cells = {
+				eventAge(e, now),
+				e.type,
+				e.reason,
+				if object then object.kind .. "/" .. object.name else "",
+				cap(e.message, M.MESSAGE_CAP),
+				if e.count > 1 then "×" .. e.count else "",
+			}
+			if allNs then
+				table.insert(cells, 2, e.namespace or "")
+			end
+			return { key = e.key, cells = cells, action = "open=" .. e.key }
+		end,
+		selected = selectedIndexIn(s, keys),
+		cell = cell,
+		inspector = nil,
+		separator = function(i: number, first: boolean): string?
+			return if starts[i] or first then groupOf[i] else nil
+		end,
+	})
+	for _, n in grid do
+		table.insert(out, n)
+	end
 	return out
 end
 
@@ -875,6 +1408,8 @@ local function body(s: State): Node
 		children = describeBody(s, load)
 	elseif route.kind == "logs" then
 		children = logsBody(s, route, load)
+	elseif route.kind == "events" then
+		children = eventsBody(s, route, load)
 	elseif Gitops.isRoute(route.kind) then
 		local ref = route.ref
 		children = GitopsView.body(gitopsView(s, route, if ref then State.findObject(s, ref) else nil))
@@ -891,7 +1426,8 @@ local HINTS: { [string]: string } = {
 	detail = "enter relations · d describe · L logs · s shell · l follow logs · F port-forward · e edit · ctrl+d delete · ctrl+r restart · S scale · ? more · esc back",
 	relations = "j/k move · enter open · / filter · r refresh · esc back",
 	describe = "y object · R relations · r refresh · esc back",
-	logs = "r refresh · l follow in split · esc back",
+	logs = "j/k move · enter inspect · / search · ] [ next/prev error · x level · w wrap · a container · o previous · l follow · esc back",
+	events = "j/k move · enter open object · / filter · x Warning only · ] [ next/prev Warning · V object events · r refresh · esc back",
 	contexts = "j/k move · enter choose · / filter · esc back",
 	namespaces = "j/k move · enter choose · / filter · esc back",
 	kinds = "j/k move · enter list · / filter · esc back",
@@ -943,7 +1479,12 @@ M.KEYS = {
 	{ "d", "Describe (native view)", "Describe" },
 	{ "y", "Object view (fields as a tree)", "Object" },
 	{ "R", "Related objects with provenance", "Relations" },
-	{ "L", "Last 500 log lines", "Logs" },
+	{ "L", "Log records: the last explore.logs_tail lines with level, source and time", "Logs" },
+	{ "v / V", "Events timeline of the namespace / of the focused object (with what it owns)", "Events" },
+	{ "] / [", "Logs: next / previous error; events: next / previous Warning", "Next error" },
+	{ "x", "Logs: level floor (all, warnings+, errors+); events: Warning only", "Level chips" },
+	{ "w / o / a", "Logs: wrap long lines, previous instance, cycle the container", "Wrap, previous, containers" },
+	{ "enter", "Logs: inspect the selected line (fields, stack, copy line / message / JSON)", "Click a line" },
 	{ "s", "Shell in a new split (workloads: a ready pod)", "Shell" },
 	{ "l", "Follow logs in a new split", "Follow logs" },
 	{ "shift+f", "Port-forward in a new split", "Port-forward" },
@@ -987,16 +1528,13 @@ end
 
 -- View -----------------------------------------------------------------------
 
-local FILTERABLE: { [string]: boolean } =
-	{ list = true, contexts = true, namespaces = true, kinds = true, relations = true }
-
 function M.view(s: State, _cols: number, _rows: number): View
 	local route = s.stack[#s.stack]
 	local children: { Node } = { header(s) }
 	if s.targetError and route.kind ~= "contexts" then
 		table.insert(children, targetErrorNode(s))
 	end
-	if FILTERABLE[route.kind] then
+	if State.FILTERABLE[route.kind] then
 		local text = s.filter[State.currentKey(s)] or ""
 		table.insert(children, {
 			k = "input",
@@ -1004,7 +1542,9 @@ function M.view(s: State, _cols: number, _rows: number): View
 				key = "filter",
 				text = text,
 				cursor = Textfield.caretFor(if s.editing and s.field == nil then s.input else nil, text),
-				placeholder = "press / to filter",
+				placeholder = if route.kind == "logs"
+					then "press / to search messages, fields and sources"
+					else "press / to filter",
 				prompt = "/",
 			},
 		})

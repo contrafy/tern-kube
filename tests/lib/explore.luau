@@ -151,7 +151,12 @@ function M.responder(argv: { string }): (Result?, string?)
 			"Name:         " .. (cmd[3] or "?") .. "\nNamespace:    " .. (ns or "") .. "\nStatus:       Running\n"
 		)
 	elseif verb == "logs" then
-		return ok("log line 1\nlog line 2\n")
+		return M.logs(argv)
+	elseif verb == "get" and cmd[2] == "events" then
+		if ns == M.NS or has(argv, "-A") then
+			return ok(fixtures.read("real/ns-apps/get_events_-o_json.txt"))
+		end
+		return ok('{"apiVersion":"v1","items":[],"kind":"List","metadata":{"resourceVersion":""}}')
 	elseif verb == "get" and cmd[2] and cmd[3] and flag(argv, "-o") == "json" then
 		local token = M.objectToken(cmd[2], cmd[3], ns)
 		if token then
@@ -191,6 +196,46 @@ function M.responder(argv: { string }): (Result?, string?)
 		return ok("")
 	end
 	return M.fail(1, "fake kubectl: unhandled " .. table.concat(argv, " "))
+end
+
+M.LOGS_POD = "real/ns-logs/logs_tk-logmix-6856789c59-kh4x5_--all-containers_--prefix_--timestamps.txt"
+M.LOGS_SELECTOR = "real/ns-logs/logs_-l_app=tk-logmix_--all-containers_--prefix_--timestamps.txt"
+M.LOGS_CRASHY = "real/ns-logs/logs_tk-logmix-6856789c59-kh4x5_-p_-c_crashy.txt"
+
+-- `kubectl logs ... --timestamps --prefix` from the tk-logmix captures
+-- (app, side and crashy containers), whatever pod Explore names: `-c`
+-- keeps one container; `--previous` exists only for crashy.
+function M.logs(argv: { string }): (Result?, string?)
+	local container = flag(argv, "-c")
+	if has(argv, "--previous") then
+		if container ~= "crashy" then
+			return M.fail(
+				1,
+				'Error from server (BadRequest): previous terminated container "'
+					.. (container or "app")
+					.. '" in pod "tk-logmix-6856789c59-kh4x5" not found'
+			)
+		end
+		local out: { string } = {}
+		for i, line in fixtures.lines(M.LOGS_CRASHY) do
+			table.insert(
+				out,
+				string.format("[pod/tk-logmix-6856789c59-kh4x5/crashy] 2026-11-02T16:40:%02d.000000000Z %s", i, line)
+			)
+		end
+		return ok(table.concat(out, "\n") .. "\n")
+	end
+	local text = fixtures.read(if flag(argv, "-l") then M.LOGS_SELECTOR else M.LOGS_POD)
+	if container == nil then
+		return ok(text)
+	end
+	local out: { string } = {}
+	for _, line in fixtures.toLines(text) do
+		if string.find(line, "/" .. container .. "] ", 1, true) then
+			table.insert(out, line)
+		end
+	end
+	return ok(table.concat(out, "\n") .. "\n")
 end
 
 export type Trace = { runs: { Effect }, effects: { Effect } }

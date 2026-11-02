@@ -42,3 +42,29 @@
 	border: 1px solid var(--l2);
 	border-radius: 8px;
 }
+
+/* Events timeline: time-group labels span the grid between rows. */
+[data-role="tern-kube.explore"] .tk-grid .tk-sep {
+	grid-column: 1 / -1;
+	padding: 8px 6px 2px;
+	font-size: 0.92em;
+}
+
+/* Logs: w wraps long messages in the last column instead of widening it. */
+[data-role="tern-kube.explore"] .tk-logwrap .tk-grid .tk-c:last-child,
+[data-role="tern-kube.explore"] .tk-logwrap .tk-grid .tk-c:last-child .sf-text {
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+}
+
+[data-role="tern-kube.explore"] .tk-logwrap .tk-grid.tk-cols-3 {
+	grid-template-columns: max-content max-content minmax(0, 1fr);
+}
+
+[data-role="tern-kube.explore"] .tk-logwrap .tk-grid.tk-cols-4 {
+	grid-template-columns: max-content max-content max-content minmax(0, 1fr);
+}
+
+[data-role="tern-kube.log-inspector"] [data-role="tern-kube.chip"] {
+	cursor: pointer;
+}
