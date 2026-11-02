@@ -341,6 +341,14 @@ function M.statusTone(header: string, value: string): Tone
 	return worst
 end
 
+-- A pod whose STATUS says it ran to completion: its containers are meant to
+-- be not ready, so a short READY there is not a problem.
+local FINISHED: { [string]: boolean } = { Completed = true, Succeeded = true }
+
+function M.finished(status: string): boolean
+	return FINISHED[status] == true
+end
+
 local function naturalKey(value: string): string
 	return (
 		string.gsub(string.lower(value), "%d+", function(digits: string): string

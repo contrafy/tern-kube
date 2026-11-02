@@ -64,9 +64,9 @@ function M.provenanceLabel(provenance: string): string
 	return if p then p.label else provenance
 end
 
-local function provenanceCell(col: string, columnType: Types.ColumnType, value: string): Node
+local function provenanceCell(col: string, columnType: Types.ColumnType, value: string, finished: boolean): Node
 	if col ~= "VIA" or value == "" then
-		return Cells.cell(col, columnType, value)
+		return Cells.cell(col, columnType, value, finished)
 	end
 	local p = BY_LABEL[value]
 	return ui.badge(value, if p then p.tone else "neutral", { title = if p then p.title else value })
@@ -336,7 +336,7 @@ local function pagedGrid(
 	rows: { GridRow },
 	selected: number,
 	s: State,
-	cell: ((string, Types.ColumnType, string) -> Node)?
+	cell: ((string, Types.ColumnType, string, boolean) -> Node)?
 ): { Node }
 	local size = State.viewport(s.rows, s.config.general.max_rendered_rows)
 	local first, last = State.window(selected, #rows, s.offset[State.currentKey(s)], size)
