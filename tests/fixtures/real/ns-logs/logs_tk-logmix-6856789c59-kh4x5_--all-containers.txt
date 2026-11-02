@@ -1,0 +1,1807 @@
+{"level":"info","ts":"2026-10-30T10:00:00Z","msg":"server started","port":8080}
+I1030 10:00:01.123456       1 controller.go:42] "Starting workers" count=2
+W1030 10:00:02.000001       1 reflector.go:7] watch closed
+E1030 10:00:03.000001       1 sync.go:99] "sync failed" err="boom"
+time=2026-10-30T10:00:04Z level=warn msg="slow request" path=/api dur=2.1s
+2026-10-30 10:00:05,123 ERROR [main] java.lang.IllegalStateException: bad
+	at com.example.Main.run(Main.java:10)
+	at com.example.Main.main(Main.java:3)
+long: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+[WARNING] deprecated flag --foo
+[31mred ansi error line[0m
+{"level":"info","msg":"tick 1","i":1}
+level=debug msg="tick 2"
+WARN tick 3
+{"level":"error","msg":"tick 4 failed","i":4}
+{"level":"info","msg":"tick 5","i":5}
+level=debug msg="tick 6"
+WARN tick 7
+{"level":"error","msg":"tick 8 failed","i":8}
+{"level":"info","msg":"tick 9","i":9}
+level=debug msg="tick 10"
+WARN tick 11
+{"level":"error","msg":"tick 12 failed","i":12}
+{"level":"info","msg":"tick 13","i":13}
+level=debug msg="tick 14"
+WARN tick 15
+{"level":"error","msg":"tick 16 failed","i":16}
+{"level":"info","msg":"tick 17","i":17}
+level=debug msg="tick 18"
+WARN tick 19
+{"level":"error","msg":"tick 20 failed","i":20}
+{"level":"info","msg":"tick 21","i":21}
+level=debug msg="tick 22"
+WARN tick 23
+{"level":"error","msg":"tick 24 failed","i":24}
+{"level":"info","msg":"tick 25","i":25}
+level=debug msg="tick 26"
+WARN tick 27
+{"level":"error","msg":"tick 28 failed","i":28}
+{"level":"info","msg":"tick 29","i":29}
+level=debug msg="tick 30"
+WARN tick 31
+{"level":"error","msg":"tick 32 failed","i":32}
+{"level":"info","msg":"tick 33","i":33}
+level=debug msg="tick 34"
+WARN tick 35
+{"level":"error","msg":"tick 36 failed","i":36}
+{"level":"info","msg":"tick 37","i":37}
+level=debug msg="tick 38"
+WARN tick 39
+{"level":"error","msg":"tick 40 failed","i":40}
+{"level":"info","msg":"tick 41","i":41}
+level=debug msg="tick 42"
+WARN tick 43
+{"level":"error","msg":"tick 44 failed","i":44}
+{"level":"info","msg":"tick 45","i":45}
+level=debug msg="tick 46"
+WARN tick 47
+{"level":"error","msg":"tick 48 failed","i":48}
+{"level":"info","msg":"tick 49","i":49}
+level=debug msg="tick 50"
+WARN tick 51
+{"level":"error","msg":"tick 52 failed","i":52}
+{"level":"info","msg":"tick 53","i":53}
+level=debug msg="tick 54"
+WARN tick 55
+{"level":"error","msg":"tick 56 failed","i":56}
+{"level":"info","msg":"tick 57","i":57}
+level=debug msg="tick 58"
+WARN tick 59
+{"level":"error","msg":"tick 60 failed","i":60}
+{"level":"info","msg":"tick 61","i":61}
+level=debug msg="tick 62"
+WARN tick 63
+{"level":"error","msg":"tick 64 failed","i":64}
+{"level":"info","msg":"tick 65","i":65}
+level=debug msg="tick 66"
+WARN tick 67
+{"level":"error","msg":"tick 68 failed","i":68}
+{"level":"info","msg":"tick 69","i":69}
+level=debug msg="tick 70"
+WARN tick 71
+{"level":"error","msg":"tick 72 failed","i":72}
+{"level":"info","msg":"tick 73","i":73}
+level=debug msg="tick 74"
+WARN tick 75
+{"level":"error","msg":"tick 76 failed","i":76}
+{"level":"info","msg":"tick 77","i":77}
+level=debug msg="tick 78"
+WARN tick 79
+{"level":"error","msg":"tick 80 failed","i":80}
+{"level":"info","msg":"tick 81","i":81}
+level=debug msg="tick 82"
+WARN tick 83
+{"level":"error","msg":"tick 84 failed","i":84}
+{"level":"info","msg":"tick 85","i":85}
+level=debug msg="tick 86"
+WARN tick 87
+{"level":"error","msg":"tick 88 failed","i":88}
+{"level":"info","msg":"tick 89","i":89}
+level=debug msg="tick 90"
+WARN tick 91
+{"level":"error","msg":"tick 92 failed","i":92}
+{"level":"info","msg":"tick 93","i":93}
+level=debug msg="tick 94"
+WARN tick 95
+{"level":"error","msg":"tick 96 failed","i":96}
+{"level":"info","msg":"tick 97","i":97}
+level=debug msg="tick 98"
+WARN tick 99
+{"level":"error","msg":"tick 100 failed","i":100}
+{"level":"info","msg":"tick 101","i":101}
+level=debug msg="tick 102"
+WARN tick 103
+{"level":"error","msg":"tick 104 failed","i":104}
+{"level":"info","msg":"tick 105","i":105}
+level=debug msg="tick 106"
+WARN tick 107
+{"level":"error","msg":"tick 108 failed","i":108}
+{"level":"info","msg":"tick 109","i":109}
+level=debug msg="tick 110"
+WARN tick 111
+{"level":"error","msg":"tick 112 failed","i":112}
+{"level":"info","msg":"tick 113","i":113}
+level=debug msg="tick 114"
+WARN tick 115
+{"level":"error","msg":"tick 116 failed","i":116}
+{"level":"info","msg":"tick 117","i":117}
+level=debug msg="tick 118"
+WARN tick 119
+{"level":"error","msg":"tick 120 failed","i":120}
+{"level":"info","msg":"tick 121","i":121}
+level=debug msg="tick 122"
+WARN tick 123
+{"level":"error","msg":"tick 124 failed","i":124}
+{"level":"info","msg":"tick 125","i":125}
+level=debug msg="tick 126"
+WARN tick 127
+{"level":"error","msg":"tick 128 failed","i":128}
+{"level":"info","msg":"tick 129","i":129}
+level=debug msg="tick 130"
+WARN tick 131
+{"level":"error","msg":"tick 132 failed","i":132}
+{"level":"info","msg":"tick 133","i":133}
+level=debug msg="tick 134"
+WARN tick 135
+{"level":"error","msg":"tick 136 failed","i":136}
+{"level":"info","msg":"tick 137","i":137}
+level=debug msg="tick 138"
+WARN tick 139
+{"level":"error","msg":"tick 140 failed","i":140}
+{"level":"info","msg":"tick 141","i":141}
+level=debug msg="tick 142"
+WARN tick 143
+{"level":"error","msg":"tick 144 failed","i":144}
+{"level":"info","msg":"tick 145","i":145}
+level=debug msg="tick 146"
+WARN tick 147
+{"level":"error","msg":"tick 148 failed","i":148}
+{"level":"info","msg":"tick 149","i":149}
+level=debug msg="tick 150"
+WARN tick 151
+{"level":"error","msg":"tick 152 failed","i":152}
+{"level":"info","msg":"tick 153","i":153}
+level=debug msg="tick 154"
+WARN tick 155
+{"level":"error","msg":"tick 156 failed","i":156}
+{"level":"info","msg":"tick 157","i":157}
+level=debug msg="tick 158"
+WARN tick 159
+{"level":"error","msg":"tick 160 failed","i":160}
+{"level":"info","msg":"tick 161","i":161}
+level=debug msg="tick 162"
+WARN tick 163
+{"level":"error","msg":"tick 164 failed","i":164}
+{"level":"info","msg":"tick 165","i":165}
+level=debug msg="tick 166"
+WARN tick 167
+{"level":"error","msg":"tick 168 failed","i":168}
+{"level":"info","msg":"tick 169","i":169}
+level=debug msg="tick 170"
+WARN tick 171
+{"level":"error","msg":"tick 172 failed","i":172}
+{"level":"info","msg":"tick 173","i":173}
+level=debug msg="tick 174"
+WARN tick 175
+{"level":"error","msg":"tick 176 failed","i":176}
+{"level":"info","msg":"tick 177","i":177}
+level=debug msg="tick 178"
+WARN tick 179
+{"level":"error","msg":"tick 180 failed","i":180}
+{"level":"info","msg":"tick 181","i":181}
+level=debug msg="tick 182"
+WARN tick 183
+{"level":"error","msg":"tick 184 failed","i":184}
+{"level":"info","msg":"tick 185","i":185}
+level=debug msg="tick 186"
+WARN tick 187
+{"level":"error","msg":"tick 188 failed","i":188}
+{"level":"info","msg":"tick 189","i":189}
+level=debug msg="tick 190"
+WARN tick 191
+{"level":"error","msg":"tick 192 failed","i":192}
+{"level":"info","msg":"tick 193","i":193}
+level=debug msg="tick 194"
+WARN tick 195
+{"level":"error","msg":"tick 196 failed","i":196}
+{"level":"info","msg":"tick 197","i":197}
+level=debug msg="tick 198"
+WARN tick 199
+{"level":"error","msg":"tick 200 failed","i":200}
+{"level":"info","msg":"tick 201","i":201}
+level=debug msg="tick 202"
+WARN tick 203
+{"level":"error","msg":"tick 204 failed","i":204}
+{"level":"info","msg":"tick 205","i":205}
+level=debug msg="tick 206"
+WARN tick 207
+{"level":"error","msg":"tick 208 failed","i":208}
+{"level":"info","msg":"tick 209","i":209}
+level=debug msg="tick 210"
+WARN tick 211
+{"level":"error","msg":"tick 212 failed","i":212}
+{"level":"info","msg":"tick 213","i":213}
+level=debug msg="tick 214"
+WARN tick 215
+{"level":"error","msg":"tick 216 failed","i":216}
+{"level":"info","msg":"tick 217","i":217}
+level=debug msg="tick 218"
+WARN tick 219
+{"level":"error","msg":"tick 220 failed","i":220}
+{"level":"info","msg":"tick 221","i":221}
+level=debug msg="tick 222"
+WARN tick 223
+{"level":"error","msg":"tick 224 failed","i":224}
+{"level":"info","msg":"tick 225","i":225}
+level=debug msg="tick 226"
+WARN tick 227
+{"level":"error","msg":"tick 228 failed","i":228}
+{"level":"info","msg":"tick 229","i":229}
+level=debug msg="tick 230"
+WARN tick 231
+{"level":"error","msg":"tick 232 failed","i":232}
+{"level":"info","msg":"tick 233","i":233}
+level=debug msg="tick 234"
+WARN tick 235
+{"level":"error","msg":"tick 236 failed","i":236}
+{"level":"info","msg":"tick 237","i":237}
+level=debug msg="tick 238"
+WARN tick 239
+{"level":"error","msg":"tick 240 failed","i":240}
+{"level":"info","msg":"tick 241","i":241}
+level=debug msg="tick 242"
+WARN tick 243
+{"level":"error","msg":"tick 244 failed","i":244}
+{"level":"info","msg":"tick 245","i":245}
+level=debug msg="tick 246"
+WARN tick 247
+{"level":"error","msg":"tick 248 failed","i":248}
+{"level":"info","msg":"tick 249","i":249}
+level=debug msg="tick 250"
+WARN tick 251
+{"level":"error","msg":"tick 252 failed","i":252}
+{"level":"info","msg":"tick 253","i":253}
+level=debug msg="tick 254"
+WARN tick 255
+{"level":"error","msg":"tick 256 failed","i":256}
+{"level":"info","msg":"tick 257","i":257}
+level=debug msg="tick 258"
+WARN tick 259
+{"level":"error","msg":"tick 260 failed","i":260}
+{"level":"info","msg":"tick 261","i":261}
+level=debug msg="tick 262"
+WARN tick 263
+{"level":"error","msg":"tick 264 failed","i":264}
+{"level":"info","msg":"tick 265","i":265}
+level=debug msg="tick 266"
+WARN tick 267
+{"level":"error","msg":"tick 268 failed","i":268}
+{"level":"info","msg":"tick 269","i":269}
+level=debug msg="tick 270"
+WARN tick 271
+{"level":"error","msg":"tick 272 failed","i":272}
+{"level":"info","msg":"tick 273","i":273}
+level=debug msg="tick 274"
+WARN tick 275
+{"level":"error","msg":"tick 276 failed","i":276}
+{"level":"info","msg":"tick 277","i":277}
+level=debug msg="tick 278"
+WARN tick 279
+{"level":"error","msg":"tick 280 failed","i":280}
+{"level":"info","msg":"tick 281","i":281}
+level=debug msg="tick 282"
+WARN tick 283
+{"level":"error","msg":"tick 284 failed","i":284}
+{"level":"info","msg":"tick 285","i":285}
+level=debug msg="tick 286"
+WARN tick 287
+{"level":"error","msg":"tick 288 failed","i":288}
+{"level":"info","msg":"tick 289","i":289}
+level=debug msg="tick 290"
+WARN tick 291
+{"level":"error","msg":"tick 292 failed","i":292}
+{"level":"info","msg":"tick 293","i":293}
+level=debug msg="tick 294"
+WARN tick 295
+{"level":"error","msg":"tick 296 failed","i":296}
+{"level":"info","msg":"tick 297","i":297}
+level=debug msg="tick 298"
+WARN tick 299
+{"level":"error","msg":"tick 300 failed","i":300}
+{"level":"info","msg":"tick 301","i":301}
+level=debug msg="tick 302"
+WARN tick 303
+{"level":"error","msg":"tick 304 failed","i":304}
+{"level":"info","msg":"tick 305","i":305}
+level=debug msg="tick 306"
+WARN tick 307
+{"level":"error","msg":"tick 308 failed","i":308}
+{"level":"info","msg":"tick 309","i":309}
+level=debug msg="tick 310"
+WARN tick 311
+{"level":"error","msg":"tick 312 failed","i":312}
+{"level":"info","msg":"tick 313","i":313}
+level=debug msg="tick 314"
+WARN tick 315
+{"level":"error","msg":"tick 316 failed","i":316}
+{"level":"info","msg":"tick 317","i":317}
+level=debug msg="tick 318"
+WARN tick 319
+{"level":"error","msg":"tick 320 failed","i":320}
+{"level":"info","msg":"tick 321","i":321}
+level=debug msg="tick 322"
+WARN tick 323
+{"level":"error","msg":"tick 324 failed","i":324}
+{"level":"info","msg":"tick 325","i":325}
+level=debug msg="tick 326"
+WARN tick 327
+{"level":"error","msg":"tick 328 failed","i":328}
+{"level":"info","msg":"tick 329","i":329}
+level=debug msg="tick 330"
+WARN tick 331
+{"level":"error","msg":"tick 332 failed","i":332}
+{"level":"info","msg":"tick 333","i":333}
+level=debug msg="tick 334"
+WARN tick 335
+{"level":"error","msg":"tick 336 failed","i":336}
+{"level":"info","msg":"tick 337","i":337}
+level=debug msg="tick 338"
+WARN tick 339
+{"level":"error","msg":"tick 340 failed","i":340}
+{"level":"info","msg":"tick 341","i":341}
+level=debug msg="tick 342"
+WARN tick 343
+{"level":"error","msg":"tick 344 failed","i":344}
+{"level":"info","msg":"tick 345","i":345}
+level=debug msg="tick 346"
+WARN tick 347
+{"level":"error","msg":"tick 348 failed","i":348}
+{"level":"info","msg":"tick 349","i":349}
+level=debug msg="tick 350"
+WARN tick 351
+{"level":"error","msg":"tick 352 failed","i":352}
+{"level":"info","msg":"tick 353","i":353}
+level=debug msg="tick 354"
+WARN tick 355
+{"level":"error","msg":"tick 356 failed","i":356}
+{"level":"info","msg":"tick 357","i":357}
+level=debug msg="tick 358"
+WARN tick 359
+{"level":"error","msg":"tick 360 failed","i":360}
+{"level":"info","msg":"tick 361","i":361}
+level=debug msg="tick 362"
+WARN tick 363
+{"level":"error","msg":"tick 364 failed","i":364}
+{"level":"info","msg":"tick 365","i":365}
+level=debug msg="tick 366"
+WARN tick 367
+{"level":"error","msg":"tick 368 failed","i":368}
+{"level":"info","msg":"tick 369","i":369}
+level=debug msg="tick 370"
+WARN tick 371
+{"level":"error","msg":"tick 372 failed","i":372}
+{"level":"info","msg":"tick 373","i":373}
+level=debug msg="tick 374"
+WARN tick 375
+{"level":"error","msg":"tick 376 failed","i":376}
+{"level":"info","msg":"tick 377","i":377}
+level=debug msg="tick 378"
+WARN tick 379
+{"level":"error","msg":"tick 380 failed","i":380}
+{"level":"info","msg":"tick 381","i":381}
+level=debug msg="tick 382"
+WARN tick 383
+{"level":"error","msg":"tick 384 failed","i":384}
+{"level":"info","msg":"tick 385","i":385}
+level=debug msg="tick 386"
+WARN tick 387
+{"level":"error","msg":"tick 388 failed","i":388}
+{"level":"info","msg":"tick 389","i":389}
+level=debug msg="tick 390"
+WARN tick 391
+{"level":"error","msg":"tick 392 failed","i":392}
+{"level":"info","msg":"tick 393","i":393}
+level=debug msg="tick 394"
+WARN tick 395
+{"level":"error","msg":"tick 396 failed","i":396}
+{"level":"info","msg":"tick 397","i":397}
+level=debug msg="tick 398"
+WARN tick 399
+{"level":"error","msg":"tick 400 failed","i":400}
+{"level":"info","msg":"tick 401","i":401}
+level=debug msg="tick 402"
+WARN tick 403
+{"level":"error","msg":"tick 404 failed","i":404}
+{"level":"info","msg":"tick 405","i":405}
+level=debug msg="tick 406"
+WARN tick 407
+{"level":"error","msg":"tick 408 failed","i":408}
+{"level":"info","msg":"tick 409","i":409}
+level=debug msg="tick 410"
+WARN tick 411
+{"level":"error","msg":"tick 412 failed","i":412}
+{"level":"info","msg":"tick 413","i":413}
+level=debug msg="tick 414"
+WARN tick 415
+{"level":"error","msg":"tick 416 failed","i":416}
+{"level":"info","msg":"tick 417","i":417}
+level=debug msg="tick 418"
+WARN tick 419
+{"level":"error","msg":"tick 420 failed","i":420}
+{"level":"info","msg":"tick 421","i":421}
+level=debug msg="tick 422"
+WARN tick 423
+{"level":"error","msg":"tick 424 failed","i":424}
+{"level":"info","msg":"tick 425","i":425}
+level=debug msg="tick 426"
+WARN tick 427
+{"level":"error","msg":"tick 428 failed","i":428}
+{"level":"info","msg":"tick 429","i":429}
+level=debug msg="tick 430"
+WARN tick 431
+{"level":"error","msg":"tick 432 failed","i":432}
+{"level":"info","msg":"tick 433","i":433}
+level=debug msg="tick 434"
+WARN tick 435
+{"level":"error","msg":"tick 436 failed","i":436}
+{"level":"info","msg":"tick 437","i":437}
+level=debug msg="tick 438"
+WARN tick 439
+{"level":"error","msg":"tick 440 failed","i":440}
+{"level":"info","msg":"tick 441","i":441}
+level=debug msg="tick 442"
+WARN tick 443
+{"level":"error","msg":"tick 444 failed","i":444}
+{"level":"info","msg":"tick 445","i":445}
+level=debug msg="tick 446"
+WARN tick 447
+{"level":"error","msg":"tick 448 failed","i":448}
+{"level":"info","msg":"tick 449","i":449}
+level=debug msg="tick 450"
+WARN tick 451
+{"level":"error","msg":"tick 452 failed","i":452}
+{"level":"info","msg":"tick 453","i":453}
+level=debug msg="tick 454"
+WARN tick 455
+{"level":"error","msg":"tick 456 failed","i":456}
+{"level":"info","msg":"tick 457","i":457}
+level=debug msg="tick 458"
+WARN tick 459
+{"level":"error","msg":"tick 460 failed","i":460}
+{"level":"info","msg":"tick 461","i":461}
+level=debug msg="tick 462"
+WARN tick 463
+{"level":"error","msg":"tick 464 failed","i":464}
+{"level":"info","msg":"tick 465","i":465}
+level=debug msg="tick 466"
+WARN tick 467
+{"level":"error","msg":"tick 468 failed","i":468}
+{"level":"info","msg":"tick 469","i":469}
+level=debug msg="tick 470"
+WARN tick 471
+{"level":"error","msg":"tick 472 failed","i":472}
+{"level":"info","msg":"tick 473","i":473}
+level=debug msg="tick 474"
+WARN tick 475
+{"level":"error","msg":"tick 476 failed","i":476}
+{"level":"info","msg":"tick 477","i":477}
+level=debug msg="tick 478"
+WARN tick 479
+{"level":"error","msg":"tick 480 failed","i":480}
+{"level":"info","msg":"tick 481","i":481}
+level=debug msg="tick 482"
+WARN tick 483
+{"level":"error","msg":"tick 484 failed","i":484}
+{"level":"info","msg":"tick 485","i":485}
+level=debug msg="tick 486"
+WARN tick 487
+{"level":"error","msg":"tick 488 failed","i":488}
+{"level":"info","msg":"tick 489","i":489}
+level=debug msg="tick 490"
+WARN tick 491
+{"level":"error","msg":"tick 492 failed","i":492}
+{"level":"info","msg":"tick 493","i":493}
+level=debug msg="tick 494"
+WARN tick 495
+{"level":"error","msg":"tick 496 failed","i":496}
+{"level":"info","msg":"tick 497","i":497}
+level=debug msg="tick 498"
+WARN tick 499
+{"level":"error","msg":"tick 500 failed","i":500}
+{"level":"info","msg":"tick 501","i":501}
+level=debug msg="tick 502"
+WARN tick 503
+{"level":"error","msg":"tick 504 failed","i":504}
+{"level":"info","msg":"tick 505","i":505}
+level=debug msg="tick 506"
+WARN tick 507
+{"level":"error","msg":"tick 508 failed","i":508}
+{"level":"info","msg":"tick 509","i":509}
+level=debug msg="tick 510"
+WARN tick 511
+{"level":"error","msg":"tick 512 failed","i":512}
+{"level":"info","msg":"tick 513","i":513}
+level=debug msg="tick 514"
+WARN tick 515
+{"level":"error","msg":"tick 516 failed","i":516}
+{"level":"info","msg":"tick 517","i":517}
+level=debug msg="tick 518"
+WARN tick 519
+{"level":"error","msg":"tick 520 failed","i":520}
+{"level":"info","msg":"tick 521","i":521}
+level=debug msg="tick 522"
+WARN tick 523
+{"level":"error","msg":"tick 524 failed","i":524}
+{"level":"info","msg":"tick 525","i":525}
+level=debug msg="tick 526"
+WARN tick 527
+{"level":"error","msg":"tick 528 failed","i":528}
+{"level":"info","msg":"tick 529","i":529}
+level=debug msg="tick 530"
+WARN tick 531
+{"level":"error","msg":"tick 532 failed","i":532}
+{"level":"info","msg":"tick 533","i":533}
+level=debug msg="tick 534"
+WARN tick 535
+{"level":"error","msg":"tick 536 failed","i":536}
+{"level":"info","msg":"tick 537","i":537}
+level=debug msg="tick 538"
+WARN tick 539
+{"level":"error","msg":"tick 540 failed","i":540}
+{"level":"info","msg":"tick 541","i":541}
+level=debug msg="tick 542"
+WARN tick 543
+{"level":"error","msg":"tick 544 failed","i":544}
+{"level":"info","msg":"tick 545","i":545}
+level=debug msg="tick 546"
+WARN tick 547
+{"level":"error","msg":"tick 548 failed","i":548}
+{"level":"info","msg":"tick 549","i":549}
+level=debug msg="tick 550"
+WARN tick 551
+{"level":"error","msg":"tick 552 failed","i":552}
+{"level":"info","msg":"tick 553","i":553}
+level=debug msg="tick 554"
+WARN tick 555
+{"level":"error","msg":"tick 556 failed","i":556}
+{"level":"info","msg":"tick 557","i":557}
+level=debug msg="tick 558"
+WARN tick 559
+{"level":"error","msg":"tick 560 failed","i":560}
+{"level":"info","msg":"tick 561","i":561}
+level=debug msg="tick 562"
+WARN tick 563
+{"level":"error","msg":"tick 564 failed","i":564}
+{"level":"info","msg":"tick 565","i":565}
+level=debug msg="tick 566"
+WARN tick 567
+{"level":"error","msg":"tick 568 failed","i":568}
+{"level":"info","msg":"tick 569","i":569}
+level=debug msg="tick 570"
+WARN tick 571
+{"level":"error","msg":"tick 572 failed","i":572}
+{"level":"info","msg":"tick 573","i":573}
+level=debug msg="tick 574"
+WARN tick 575
+{"level":"error","msg":"tick 576 failed","i":576}
+{"level":"info","msg":"tick 577","i":577}
+level=debug msg="tick 578"
+WARN tick 579
+{"level":"error","msg":"tick 580 failed","i":580}
+{"level":"info","msg":"tick 581","i":581}
+level=debug msg="tick 582"
+WARN tick 583
+{"level":"error","msg":"tick 584 failed","i":584}
+{"level":"info","msg":"tick 585","i":585}
+level=debug msg="tick 586"
+WARN tick 587
+{"level":"error","msg":"tick 588 failed","i":588}
+{"level":"info","msg":"tick 589","i":589}
+level=debug msg="tick 590"
+WARN tick 591
+{"level":"error","msg":"tick 592 failed","i":592}
+{"level":"info","msg":"tick 593","i":593}
+level=debug msg="tick 594"
+WARN tick 595
+{"level":"error","msg":"tick 596 failed","i":596}
+{"level":"info","msg":"tick 597","i":597}
+level=debug msg="tick 598"
+WARN tick 599
+{"level":"error","msg":"tick 600 failed","i":600}
+{"level":"info","msg":"tick 601","i":601}
+level=debug msg="tick 602"
+WARN tick 603
+{"level":"error","msg":"tick 604 failed","i":604}
+{"level":"info","msg":"tick 605","i":605}
+level=debug msg="tick 606"
+WARN tick 607
+{"level":"error","msg":"tick 608 failed","i":608}
+{"level":"info","msg":"tick 609","i":609}
+level=debug msg="tick 610"
+WARN tick 611
+{"level":"error","msg":"tick 612 failed","i":612}
+{"level":"info","msg":"tick 613","i":613}
+level=debug msg="tick 614"
+WARN tick 615
+{"level":"error","msg":"tick 616 failed","i":616}
+{"level":"info","msg":"tick 617","i":617}
+level=debug msg="tick 618"
+WARN tick 619
+{"level":"error","msg":"tick 620 failed","i":620}
+{"level":"info","msg":"tick 621","i":621}
+level=debug msg="tick 622"
+WARN tick 623
+{"level":"error","msg":"tick 624 failed","i":624}
+{"level":"info","msg":"tick 625","i":625}
+level=debug msg="tick 626"
+WARN tick 627
+{"level":"error","msg":"tick 628 failed","i":628}
+{"level":"info","msg":"tick 629","i":629}
+level=debug msg="tick 630"
+WARN tick 631
+{"level":"error","msg":"tick 632 failed","i":632}
+{"level":"info","msg":"tick 633","i":633}
+level=debug msg="tick 634"
+WARN tick 635
+{"level":"error","msg":"tick 636 failed","i":636}
+{"level":"info","msg":"tick 637","i":637}
+level=debug msg="tick 638"
+WARN tick 639
+{"level":"error","msg":"tick 640 failed","i":640}
+{"level":"info","msg":"tick 641","i":641}
+level=debug msg="tick 642"
+WARN tick 643
+{"level":"error","msg":"tick 644 failed","i":644}
+{"level":"info","msg":"tick 645","i":645}
+level=debug msg="tick 646"
+WARN tick 647
+{"level":"error","msg":"tick 648 failed","i":648}
+{"level":"info","msg":"tick 649","i":649}
+level=debug msg="tick 650"
+WARN tick 651
+{"level":"error","msg":"tick 652 failed","i":652}
+{"level":"info","msg":"tick 653","i":653}
+level=debug msg="tick 654"
+WARN tick 655
+{"level":"error","msg":"tick 656 failed","i":656}
+{"level":"info","msg":"tick 657","i":657}
+level=debug msg="tick 658"
+WARN tick 659
+{"level":"error","msg":"tick 660 failed","i":660}
+{"level":"info","msg":"tick 661","i":661}
+level=debug msg="tick 662"
+WARN tick 663
+{"level":"error","msg":"tick 664 failed","i":664}
+{"level":"info","msg":"tick 665","i":665}
+level=debug msg="tick 666"
+WARN tick 667
+{"level":"error","msg":"tick 668 failed","i":668}
+{"level":"info","msg":"tick 669","i":669}
+level=debug msg="tick 670"
+WARN tick 671
+{"level":"error","msg":"tick 672 failed","i":672}
+{"level":"info","msg":"tick 673","i":673}
+level=debug msg="tick 674"
+WARN tick 675
+{"level":"error","msg":"tick 676 failed","i":676}
+{"level":"info","msg":"tick 677","i":677}
+level=debug msg="tick 678"
+WARN tick 679
+{"level":"error","msg":"tick 680 failed","i":680}
+{"level":"info","msg":"tick 681","i":681}
+level=debug msg="tick 682"
+WARN tick 683
+{"level":"error","msg":"tick 684 failed","i":684}
+{"level":"info","msg":"tick 685","i":685}
+level=debug msg="tick 686"
+WARN tick 687
+{"level":"error","msg":"tick 688 failed","i":688}
+{"level":"info","msg":"tick 689","i":689}
+level=debug msg="tick 690"
+WARN tick 691
+{"level":"error","msg":"tick 692 failed","i":692}
+{"level":"info","msg":"tick 693","i":693}
+level=debug msg="tick 694"
+WARN tick 695
+{"level":"error","msg":"tick 696 failed","i":696}
+{"level":"info","msg":"tick 697","i":697}
+level=debug msg="tick 698"
+WARN tick 699
+{"level":"error","msg":"tick 700 failed","i":700}
+{"level":"info","msg":"tick 701","i":701}
+level=debug msg="tick 702"
+WARN tick 703
+{"level":"error","msg":"tick 704 failed","i":704}
+{"level":"info","msg":"tick 705","i":705}
+level=debug msg="tick 706"
+WARN tick 707
+{"level":"error","msg":"tick 708 failed","i":708}
+{"level":"info","msg":"tick 709","i":709}
+level=debug msg="tick 710"
+WARN tick 711
+{"level":"error","msg":"tick 712 failed","i":712}
+{"level":"info","msg":"tick 713","i":713}
+level=debug msg="tick 714"
+WARN tick 715
+{"level":"error","msg":"tick 716 failed","i":716}
+{"level":"info","msg":"tick 717","i":717}
+level=debug msg="tick 718"
+WARN tick 719
+{"level":"error","msg":"tick 720 failed","i":720}
+{"level":"info","msg":"tick 721","i":721}
+level=debug msg="tick 722"
+WARN tick 723
+{"level":"error","msg":"tick 724 failed","i":724}
+{"level":"info","msg":"tick 725","i":725}
+level=debug msg="tick 726"
+WARN tick 727
+{"level":"error","msg":"tick 728 failed","i":728}
+{"level":"info","msg":"tick 729","i":729}
+level=debug msg="tick 730"
+WARN tick 731
+{"level":"error","msg":"tick 732 failed","i":732}
+{"level":"info","msg":"tick 733","i":733}
+level=debug msg="tick 734"
+WARN tick 735
+{"level":"error","msg":"tick 736 failed","i":736}
+{"level":"info","msg":"tick 737","i":737}
+level=debug msg="tick 738"
+WARN tick 739
+{"level":"error","msg":"tick 740 failed","i":740}
+{"level":"info","msg":"tick 741","i":741}
+level=debug msg="tick 742"
+WARN tick 743
+{"level":"error","msg":"tick 744 failed","i":744}
+{"level":"info","msg":"tick 745","i":745}
+level=debug msg="tick 746"
+WARN tick 747
+{"level":"error","msg":"tick 748 failed","i":748}
+{"level":"info","msg":"tick 749","i":749}
+level=debug msg="tick 750"
+WARN tick 751
+{"level":"error","msg":"tick 752 failed","i":752}
+{"level":"info","msg":"tick 753","i":753}
+level=debug msg="tick 754"
+WARN tick 755
+{"level":"error","msg":"tick 756 failed","i":756}
+{"level":"info","msg":"tick 757","i":757}
+level=debug msg="tick 758"
+WARN tick 759
+{"level":"error","msg":"tick 760 failed","i":760}
+{"level":"info","msg":"tick 761","i":761}
+level=debug msg="tick 762"
+WARN tick 763
+{"level":"error","msg":"tick 764 failed","i":764}
+{"level":"info","msg":"tick 765","i":765}
+level=debug msg="tick 766"
+WARN tick 767
+{"level":"error","msg":"tick 768 failed","i":768}
+{"level":"info","msg":"tick 769","i":769}
+level=debug msg="tick 770"
+WARN tick 771
+{"level":"error","msg":"tick 772 failed","i":772}
+{"level":"info","msg":"tick 773","i":773}
+level=debug msg="tick 774"
+WARN tick 775
+{"level":"error","msg":"tick 776 failed","i":776}
+{"level":"info","msg":"tick 777","i":777}
+level=debug msg="tick 778"
+WARN tick 779
+{"level":"error","msg":"tick 780 failed","i":780}
+{"level":"info","msg":"tick 781","i":781}
+level=debug msg="tick 782"
+WARN tick 783
+{"level":"error","msg":"tick 784 failed","i":784}
+{"level":"info","msg":"tick 785","i":785}
+level=debug msg="tick 786"
+WARN tick 787
+{"level":"error","msg":"tick 788 failed","i":788}
+{"level":"info","msg":"tick 789","i":789}
+level=debug msg="tick 790"
+WARN tick 791
+{"level":"error","msg":"tick 792 failed","i":792}
+{"level":"info","msg":"tick 793","i":793}
+level=debug msg="tick 794"
+WARN tick 795
+{"level":"error","msg":"tick 796 failed","i":796}
+{"level":"info","msg":"tick 797","i":797}
+level=debug msg="tick 798"
+WARN tick 799
+{"level":"error","msg":"tick 800 failed","i":800}
+{"level":"info","msg":"tick 801","i":801}
+level=debug msg="tick 802"
+WARN tick 803
+{"level":"error","msg":"tick 804 failed","i":804}
+{"level":"info","msg":"tick 805","i":805}
+level=debug msg="tick 806"
+WARN tick 807
+{"level":"error","msg":"tick 808 failed","i":808}
+{"level":"info","msg":"tick 809","i":809}
+level=debug msg="tick 810"
+WARN tick 811
+{"level":"error","msg":"tick 812 failed","i":812}
+{"level":"info","msg":"tick 813","i":813}
+level=debug msg="tick 814"
+WARN tick 815
+{"level":"error","msg":"tick 816 failed","i":816}
+{"level":"info","msg":"tick 817","i":817}
+level=debug msg="tick 818"
+WARN tick 819
+{"level":"error","msg":"tick 820 failed","i":820}
+{"level":"info","msg":"tick 821","i":821}
+level=debug msg="tick 822"
+WARN tick 823
+{"level":"error","msg":"tick 824 failed","i":824}
+{"level":"info","msg":"tick 825","i":825}
+level=debug msg="tick 826"
+WARN tick 827
+{"level":"error","msg":"tick 828 failed","i":828}
+{"level":"info","msg":"tick 829","i":829}
+level=debug msg="tick 830"
+WARN tick 831
+{"level":"error","msg":"tick 832 failed","i":832}
+{"level":"info","msg":"tick 833","i":833}
+level=debug msg="tick 834"
+WARN tick 835
+{"level":"error","msg":"tick 836 failed","i":836}
+{"level":"info","msg":"tick 837","i":837}
+level=debug msg="tick 838"
+WARN tick 839
+{"level":"error","msg":"tick 840 failed","i":840}
+{"level":"info","msg":"tick 841","i":841}
+level=debug msg="tick 842"
+WARN tick 843
+{"level":"error","msg":"tick 844 failed","i":844}
+{"level":"info","msg":"tick 845","i":845}
+level=debug msg="tick 846"
+WARN tick 847
+{"level":"error","msg":"tick 848 failed","i":848}
+{"level":"info","msg":"tick 849","i":849}
+level=debug msg="tick 850"
+WARN tick 851
+{"level":"error","msg":"tick 852 failed","i":852}
+{"level":"info","msg":"tick 853","i":853}
+level=debug msg="tick 854"
+WARN tick 855
+{"level":"error","msg":"tick 856 failed","i":856}
+{"level":"info","msg":"tick 857","i":857}
+level=debug msg="tick 858"
+WARN tick 859
+{"level":"error","msg":"tick 860 failed","i":860}
+{"level":"info","msg":"tick 861","i":861}
+level=debug msg="tick 862"
+WARN tick 863
+{"level":"error","msg":"tick 864 failed","i":864}
+{"level":"info","msg":"tick 865","i":865}
+level=debug msg="tick 866"
+WARN tick 867
+{"level":"error","msg":"tick 868 failed","i":868}
+{"level":"info","msg":"tick 869","i":869}
+level=debug msg="tick 870"
+WARN tick 871
+{"level":"error","msg":"tick 872 failed","i":872}
+{"level":"info","msg":"tick 873","i":873}
+level=debug msg="tick 874"
+WARN tick 875
+{"level":"error","msg":"tick 876 failed","i":876}
+{"level":"info","msg":"tick 877","i":877}
+level=debug msg="tick 878"
+WARN tick 879
+{"level":"error","msg":"tick 880 failed","i":880}
+{"level":"info","msg":"tick 881","i":881}
+level=debug msg="tick 882"
+WARN tick 883
+{"level":"error","msg":"tick 884 failed","i":884}
+{"level":"info","msg":"tick 885","i":885}
+level=debug msg="tick 886"
+WARN tick 887
+{"level":"error","msg":"tick 888 failed","i":888}
+{"level":"info","msg":"tick 889","i":889}
+level=debug msg="tick 890"
+WARN tick 891
+{"level":"error","msg":"tick 892 failed","i":892}
+{"level":"info","msg":"tick 893","i":893}
+level=debug msg="tick 894"
+WARN tick 895
+{"level":"error","msg":"tick 896 failed","i":896}
+{"level":"info","msg":"tick 897","i":897}
+level=debug msg="tick 898"
+WARN tick 899
+{"level":"error","msg":"tick 900 failed","i":900}
+{"level":"info","msg":"tick 901","i":901}
+level=debug msg="tick 902"
+WARN tick 903
+{"level":"error","msg":"tick 904 failed","i":904}
+{"level":"info","msg":"tick 905","i":905}
+level=debug msg="tick 906"
+WARN tick 907
+{"level":"error","msg":"tick 908 failed","i":908}
+{"level":"info","msg":"tick 909","i":909}
+level=debug msg="tick 910"
+WARN tick 911
+{"level":"error","msg":"tick 912 failed","i":912}
+{"level":"info","msg":"tick 913","i":913}
+level=debug msg="tick 914"
+WARN tick 915
+{"level":"error","msg":"tick 916 failed","i":916}
+{"level":"info","msg":"tick 917","i":917}
+level=debug msg="tick 918"
+WARN tick 919
+{"level":"error","msg":"tick 920 failed","i":920}
+{"level":"info","msg":"tick 921","i":921}
+level=debug msg="tick 922"
+WARN tick 923
+{"level":"error","msg":"tick 924 failed","i":924}
+{"level":"info","msg":"tick 925","i":925}
+level=debug msg="tick 926"
+WARN tick 927
+{"level":"error","msg":"tick 928 failed","i":928}
+{"level":"info","msg":"tick 929","i":929}
+level=debug msg="tick 930"
+WARN tick 931
+{"level":"error","msg":"tick 932 failed","i":932}
+{"level":"info","msg":"tick 933","i":933}
+level=debug msg="tick 934"
+WARN tick 935
+{"level":"error","msg":"tick 936 failed","i":936}
+{"level":"info","msg":"tick 937","i":937}
+level=debug msg="tick 938"
+WARN tick 939
+{"level":"error","msg":"tick 940 failed","i":940}
+{"level":"info","msg":"tick 941","i":941}
+level=debug msg="tick 942"
+WARN tick 943
+{"level":"error","msg":"tick 944 failed","i":944}
+{"level":"info","msg":"tick 945","i":945}
+level=debug msg="tick 946"
+WARN tick 947
+{"level":"error","msg":"tick 948 failed","i":948}
+{"level":"info","msg":"tick 949","i":949}
+level=debug msg="tick 950"
+WARN tick 951
+{"level":"error","msg":"tick 952 failed","i":952}
+{"level":"info","msg":"tick 953","i":953}
+level=debug msg="tick 954"
+WARN tick 955
+{"level":"error","msg":"tick 956 failed","i":956}
+{"level":"info","msg":"tick 957","i":957}
+level=debug msg="tick 958"
+WARN tick 959
+{"level":"error","msg":"tick 960 failed","i":960}
+{"level":"info","msg":"tick 961","i":961}
+level=debug msg="tick 962"
+WARN tick 963
+{"level":"error","msg":"tick 964 failed","i":964}
+{"level":"info","msg":"tick 965","i":965}
+level=debug msg="tick 966"
+WARN tick 967
+{"level":"error","msg":"tick 968 failed","i":968}
+{"level":"info","msg":"tick 969","i":969}
+level=debug msg="tick 970"
+WARN tick 971
+{"level":"error","msg":"tick 972 failed","i":972}
+{"level":"info","msg":"tick 973","i":973}
+level=debug msg="tick 974"
+WARN tick 975
+{"level":"error","msg":"tick 976 failed","i":976}
+{"level":"info","msg":"tick 977","i":977}
+level=debug msg="tick 978"
+WARN tick 979
+{"level":"error","msg":"tick 980 failed","i":980}
+{"level":"info","msg":"tick 981","i":981}
+level=debug msg="tick 982"
+WARN tick 983
+{"level":"error","msg":"tick 984 failed","i":984}
+{"level":"info","msg":"tick 985","i":985}
+level=debug msg="tick 986"
+WARN tick 987
+{"level":"error","msg":"tick 988 failed","i":988}
+{"level":"info","msg":"tick 989","i":989}
+level=debug msg="tick 990"
+WARN tick 991
+{"level":"error","msg":"tick 992 failed","i":992}
+{"level":"info","msg":"tick 993","i":993}
+level=debug msg="tick 994"
+WARN tick 995
+{"level":"error","msg":"tick 996 failed","i":996}
+{"level":"info","msg":"tick 997","i":997}
+level=debug msg="tick 998"
+WARN tick 999
+{"level":"error","msg":"tick 1000 failed","i":1000}
+{"level":"info","msg":"tick 1001","i":1001}
+level=debug msg="tick 1002"
+WARN tick 1003
+{"level":"error","msg":"tick 1004 failed","i":1004}
+{"level":"info","msg":"tick 1005","i":1005}
+level=debug msg="tick 1006"
+WARN tick 1007
+{"level":"error","msg":"tick 1008 failed","i":1008}
+{"level":"info","msg":"tick 1009","i":1009}
+level=debug msg="tick 1010"
+WARN tick 1011
+{"level":"error","msg":"tick 1012 failed","i":1012}
+{"level":"info","msg":"tick 1013","i":1013}
+level=debug msg="tick 1014"
+WARN tick 1015
+{"level":"error","msg":"tick 1016 failed","i":1016}
+{"level":"info","msg":"tick 1017","i":1017}
+level=debug msg="tick 1018"
+WARN tick 1019
+{"level":"error","msg":"tick 1020 failed","i":1020}
+{"level":"info","msg":"tick 1021","i":1021}
+level=debug msg="tick 1022"
+WARN tick 1023
+{"level":"error","msg":"tick 1024 failed","i":1024}
+{"level":"info","msg":"tick 1025","i":1025}
+level=debug msg="tick 1026"
+WARN tick 1027
+{"level":"error","msg":"tick 1028 failed","i":1028}
+{"level":"info","msg":"tick 1029","i":1029}
+level=debug msg="tick 1030"
+WARN tick 1031
+{"level":"error","msg":"tick 1032 failed","i":1032}
+{"level":"info","msg":"tick 1033","i":1033}
+level=debug msg="tick 1034"
+WARN tick 1035
+{"level":"error","msg":"tick 1036 failed","i":1036}
+{"level":"info","msg":"tick 1037","i":1037}
+level=debug msg="tick 1038"
+WARN tick 1039
+{"level":"error","msg":"tick 1040 failed","i":1040}
+{"level":"info","msg":"tick 1041","i":1041}
+level=debug msg="tick 1042"
+WARN tick 1043
+{"level":"error","msg":"tick 1044 failed","i":1044}
+{"level":"info","msg":"tick 1045","i":1045}
+level=debug msg="tick 1046"
+WARN tick 1047
+{"level":"error","msg":"tick 1048 failed","i":1048}
+{"level":"info","msg":"tick 1049","i":1049}
+level=debug msg="tick 1050"
+WARN tick 1051
+{"level":"error","msg":"tick 1052 failed","i":1052}
+{"level":"info","msg":"tick 1053","i":1053}
+level=debug msg="tick 1054"
+WARN tick 1055
+{"level":"error","msg":"tick 1056 failed","i":1056}
+{"level":"info","msg":"tick 1057","i":1057}
+level=debug msg="tick 1058"
+WARN tick 1059
+{"level":"error","msg":"tick 1060 failed","i":1060}
+{"level":"info","msg":"tick 1061","i":1061}
+level=debug msg="tick 1062"
+WARN tick 1063
+{"level":"error","msg":"tick 1064 failed","i":1064}
+{"level":"info","msg":"tick 1065","i":1065}
+level=debug msg="tick 1066"
+WARN tick 1067
+{"level":"error","msg":"tick 1068 failed","i":1068}
+{"level":"info","msg":"tick 1069","i":1069}
+level=debug msg="tick 1070"
+WARN tick 1071
+{"level":"error","msg":"tick 1072 failed","i":1072}
+{"level":"info","msg":"tick 1073","i":1073}
+level=debug msg="tick 1074"
+WARN tick 1075
+{"level":"error","msg":"tick 1076 failed","i":1076}
+{"level":"info","msg":"tick 1077","i":1077}
+level=debug msg="tick 1078"
+WARN tick 1079
+{"level":"error","msg":"tick 1080 failed","i":1080}
+{"level":"info","msg":"tick 1081","i":1081}
+level=debug msg="tick 1082"
+WARN tick 1083
+{"level":"error","msg":"tick 1084 failed","i":1084}
+{"level":"info","msg":"tick 1085","i":1085}
+level=debug msg="tick 1086"
+WARN tick 1087
+{"level":"error","msg":"tick 1088 failed","i":1088}
+{"level":"info","msg":"tick 1089","i":1089}
+level=debug msg="tick 1090"
+WARN tick 1091
+{"level":"error","msg":"tick 1092 failed","i":1092}
+{"level":"info","msg":"tick 1093","i":1093}
+level=debug msg="tick 1094"
+WARN tick 1095
+{"level":"error","msg":"tick 1096 failed","i":1096}
+{"level":"info","msg":"tick 1097","i":1097}
+level=debug msg="tick 1098"
+WARN tick 1099
+{"level":"error","msg":"tick 1100 failed","i":1100}
+{"level":"info","msg":"tick 1101","i":1101}
+level=debug msg="tick 1102"
+WARN tick 1103
+{"level":"error","msg":"tick 1104 failed","i":1104}
+{"level":"info","msg":"tick 1105","i":1105}
+level=debug msg="tick 1106"
+WARN tick 1107
+{"level":"error","msg":"tick 1108 failed","i":1108}
+{"level":"info","msg":"tick 1109","i":1109}
+level=debug msg="tick 1110"
+WARN tick 1111
+{"level":"error","msg":"tick 1112 failed","i":1112}
+{"level":"info","msg":"tick 1113","i":1113}
+level=debug msg="tick 1114"
+WARN tick 1115
+{"level":"error","msg":"tick 1116 failed","i":1116}
+{"level":"info","msg":"tick 1117","i":1117}
+level=debug msg="tick 1118"
+WARN tick 1119
+{"level":"error","msg":"tick 1120 failed","i":1120}
+{"level":"info","msg":"tick 1121","i":1121}
+level=debug msg="tick 1122"
+WARN tick 1123
+{"level":"error","msg":"tick 1124 failed","i":1124}
+{"level":"info","msg":"tick 1125","i":1125}
+level=debug msg="tick 1126"
+WARN tick 1127
+{"level":"error","msg":"tick 1128 failed","i":1128}
+{"level":"info","msg":"tick 1129","i":1129}
+level=debug msg="tick 1130"
+WARN tick 1131
+{"level":"error","msg":"tick 1132 failed","i":1132}
+{"level":"info","msg":"tick 1133","i":1133}
+level=debug msg="tick 1134"
+WARN tick 1135
+{"level":"error","msg":"tick 1136 failed","i":1136}
+{"level":"info","msg":"tick 1137","i":1137}
+level=debug msg="tick 1138"
+WARN tick 1139
+{"level":"error","msg":"tick 1140 failed","i":1140}
+{"level":"info","msg":"tick 1141","i":1141}
+level=debug msg="tick 1142"
+WARN tick 1143
+{"level":"error","msg":"tick 1144 failed","i":1144}
+{"level":"info","msg":"tick 1145","i":1145}
+level=debug msg="tick 1146"
+WARN tick 1147
+{"level":"error","msg":"tick 1148 failed","i":1148}
+{"level":"info","msg":"tick 1149","i":1149}
+level=debug msg="tick 1150"
+WARN tick 1151
+{"level":"error","msg":"tick 1152 failed","i":1152}
+{"level":"info","msg":"tick 1153","i":1153}
+level=debug msg="tick 1154"
+WARN tick 1155
+{"level":"error","msg":"tick 1156 failed","i":1156}
+{"level":"info","msg":"tick 1157","i":1157}
+level=debug msg="tick 1158"
+WARN tick 1159
+{"level":"error","msg":"tick 1160 failed","i":1160}
+{"level":"info","msg":"tick 1161","i":1161}
+level=debug msg="tick 1162"
+WARN tick 1163
+{"level":"error","msg":"tick 1164 failed","i":1164}
+{"level":"info","msg":"tick 1165","i":1165}
+level=debug msg="tick 1166"
+WARN tick 1167
+{"level":"error","msg":"tick 1168 failed","i":1168}
+{"level":"info","msg":"tick 1169","i":1169}
+level=debug msg="tick 1170"
+WARN tick 1171
+{"level":"error","msg":"tick 1172 failed","i":1172}
+{"level":"info","msg":"tick 1173","i":1173}
+level=debug msg="tick 1174"
+WARN tick 1175
+{"level":"error","msg":"tick 1176 failed","i":1176}
+{"level":"info","msg":"tick 1177","i":1177}
+level=debug msg="tick 1178"
+WARN tick 1179
+{"level":"error","msg":"tick 1180 failed","i":1180}
+{"level":"info","msg":"tick 1181","i":1181}
+level=debug msg="tick 1182"
+WARN tick 1183
+{"level":"error","msg":"tick 1184 failed","i":1184}
+{"level":"info","msg":"tick 1185","i":1185}
+level=debug msg="tick 1186"
+WARN tick 1187
+{"level":"error","msg":"tick 1188 failed","i":1188}
+{"level":"info","msg":"tick 1189","i":1189}
+level=debug msg="tick 1190"
+WARN tick 1191
+{"level":"error","msg":"tick 1192 failed","i":1192}
+{"level":"info","msg":"tick 1193","i":1193}
+level=debug msg="tick 1194"
+WARN tick 1195
+{"level":"error","msg":"tick 1196 failed","i":1196}
+{"level":"info","msg":"tick 1197","i":1197}
+level=debug msg="tick 1198"
+WARN tick 1199
+{"level":"error","msg":"tick 1200 failed","i":1200}
+{"level":"info","msg":"tick 1201","i":1201}
+level=debug msg="tick 1202"
+WARN tick 1203
+{"level":"error","msg":"tick 1204 failed","i":1204}
+{"level":"info","msg":"tick 1205","i":1205}
+level=debug msg="tick 1206"
+WARN tick 1207
+{"level":"error","msg":"tick 1208 failed","i":1208}
+{"level":"info","msg":"tick 1209","i":1209}
+level=debug msg="tick 1210"
+WARN tick 1211
+{"level":"error","msg":"tick 1212 failed","i":1212}
+{"level":"info","msg":"tick 1213","i":1213}
+level=debug msg="tick 1214"
+WARN tick 1215
+{"level":"error","msg":"tick 1216 failed","i":1216}
+{"level":"info","msg":"tick 1217","i":1217}
+level=debug msg="tick 1218"
+WARN tick 1219
+{"level":"error","msg":"tick 1220 failed","i":1220}
+{"level":"info","msg":"tick 1221","i":1221}
+level=debug msg="tick 1222"
+WARN tick 1223
+{"level":"error","msg":"tick 1224 failed","i":1224}
+{"level":"info","msg":"tick 1225","i":1225}
+level=debug msg="tick 1226"
+WARN tick 1227
+{"level":"error","msg":"tick 1228 failed","i":1228}
+{"level":"info","msg":"tick 1229","i":1229}
+level=debug msg="tick 1230"
+WARN tick 1231
+{"level":"error","msg":"tick 1232 failed","i":1232}
+{"level":"info","msg":"tick 1233","i":1233}
+level=debug msg="tick 1234"
+WARN tick 1235
+{"level":"error","msg":"tick 1236 failed","i":1236}
+{"level":"info","msg":"tick 1237","i":1237}
+level=debug msg="tick 1238"
+WARN tick 1239
+{"level":"error","msg":"tick 1240 failed","i":1240}
+{"level":"info","msg":"tick 1241","i":1241}
+level=debug msg="tick 1242"
+WARN tick 1243
+{"level":"error","msg":"tick 1244 failed","i":1244}
+{"level":"info","msg":"tick 1245","i":1245}
+level=debug msg="tick 1246"
+WARN tick 1247
+{"level":"error","msg":"tick 1248 failed","i":1248}
+{"level":"info","msg":"tick 1249","i":1249}
+level=debug msg="tick 1250"
+WARN tick 1251
+{"level":"error","msg":"tick 1252 failed","i":1252}
+{"level":"info","msg":"tick 1253","i":1253}
+level=debug msg="tick 1254"
+WARN tick 1255
+{"level":"error","msg":"tick 1256 failed","i":1256}
+{"level":"info","msg":"tick 1257","i":1257}
+level=debug msg="tick 1258"
+WARN tick 1259
+{"level":"error","msg":"tick 1260 failed","i":1260}
+{"level":"info","msg":"tick 1261","i":1261}
+level=debug msg="tick 1262"
+WARN tick 1263
+{"level":"error","msg":"tick 1264 failed","i":1264}
+{"level":"info","msg":"tick 1265","i":1265}
+level=debug msg="tick 1266"
+WARN tick 1267
+{"level":"error","msg":"tick 1268 failed","i":1268}
+{"level":"info","msg":"tick 1269","i":1269}
+level=debug msg="tick 1270"
+WARN tick 1271
+{"level":"error","msg":"tick 1272 failed","i":1272}
+{"level":"info","msg":"tick 1273","i":1273}
+level=debug msg="tick 1274"
+WARN tick 1275
+{"level":"error","msg":"tick 1276 failed","i":1276}
+{"level":"info","msg":"tick 1277","i":1277}
+level=debug msg="tick 1278"
+WARN tick 1279
+{"level":"error","msg":"tick 1280 failed","i":1280}
+{"level":"info","msg":"tick 1281","i":1281}
+level=debug msg="tick 1282"
+WARN tick 1283
+{"level":"error","msg":"tick 1284 failed","i":1284}
+{"level":"info","msg":"tick 1285","i":1285}
+level=debug msg="tick 1286"
+WARN tick 1287
+{"level":"error","msg":"tick 1288 failed","i":1288}
+{"level":"info","msg":"tick 1289","i":1289}
+level=debug msg="tick 1290"
+WARN tick 1291
+{"level":"error","msg":"tick 1292 failed","i":1292}
+{"level":"info","msg":"tick 1293","i":1293}
+level=debug msg="tick 1294"
+WARN tick 1295
+{"level":"error","msg":"tick 1296 failed","i":1296}
+{"level":"info","msg":"tick 1297","i":1297}
+level=debug msg="tick 1298"
+WARN tick 1299
+{"level":"error","msg":"tick 1300 failed","i":1300}
+{"level":"info","msg":"tick 1301","i":1301}
+level=debug msg="tick 1302"
+WARN tick 1303
+{"level":"error","msg":"tick 1304 failed","i":1304}
+{"level":"info","msg":"tick 1305","i":1305}
+level=debug msg="tick 1306"
+WARN tick 1307
+{"level":"error","msg":"tick 1308 failed","i":1308}
+{"level":"info","msg":"tick 1309","i":1309}
+level=debug msg="tick 1310"
+WARN tick 1311
+{"level":"error","msg":"tick 1312 failed","i":1312}
+{"level":"info","msg":"tick 1313","i":1313}
+level=debug msg="tick 1314"
+WARN tick 1315
+{"level":"error","msg":"tick 1316 failed","i":1316}
+{"level":"info","msg":"tick 1317","i":1317}
+level=debug msg="tick 1318"
+WARN tick 1319
+{"level":"error","msg":"tick 1320 failed","i":1320}
+{"level":"info","msg":"tick 1321","i":1321}
+level=debug msg="tick 1322"
+WARN tick 1323
+{"level":"error","msg":"tick 1324 failed","i":1324}
+{"level":"info","msg":"tick 1325","i":1325}
+level=debug msg="tick 1326"
+WARN tick 1327
+{"level":"error","msg":"tick 1328 failed","i":1328}
+{"level":"info","msg":"tick 1329","i":1329}
+level=debug msg="tick 1330"
+WARN tick 1331
+{"level":"error","msg":"tick 1332 failed","i":1332}
+{"level":"info","msg":"tick 1333","i":1333}
+level=debug msg="tick 1334"
+WARN tick 1335
+{"level":"error","msg":"tick 1336 failed","i":1336}
+{"level":"info","msg":"tick 1337","i":1337}
+level=debug msg="tick 1338"
+WARN tick 1339
+{"level":"error","msg":"tick 1340 failed","i":1340}
+{"level":"info","msg":"tick 1341","i":1341}
+level=debug msg="tick 1342"
+WARN tick 1343
+{"level":"error","msg":"tick 1344 failed","i":1344}
+{"level":"info","msg":"tick 1345","i":1345}
+side: beat 1
+side: beat 2
+side: beat 3
+side: beat 4
+side: beat 5
+side: beat 6
+side: beat 7
+side: beat 8
+side: beat 9
+side: beat 10
+side: beat 11
+side: beat 12
+side: beat 13
+side: beat 14
+side: beat 15
+side: beat 16
+side: beat 17
+side: beat 18
+side: beat 19
+side: beat 20
+side: beat 21
+side: beat 22
+side: beat 23
+side: beat 24
+side: beat 25
+side: beat 26
+side: beat 27
+side: beat 28
+side: beat 29
+side: beat 30
+side: beat 31
+side: beat 32
+side: beat 33
+side: beat 34
+side: beat 35
+side: beat 36
+side: beat 37
+side: beat 38
+side: beat 39
+side: beat 40
+side: beat 41
+side: beat 42
+side: beat 43
+side: beat 44
+side: beat 45
+side: beat 46
+side: beat 47
+side: beat 48
+side: beat 49
+side: beat 50
+side: beat 51
+side: beat 52
+side: beat 53
+side: beat 54
+side: beat 55
+side: beat 56
+side: beat 57
+side: beat 58
+side: beat 59
+side: beat 60
+side: beat 61
+side: beat 62
+side: beat 63
+side: beat 64
+side: beat 65
+side: beat 66
+side: beat 67
+side: beat 68
+side: beat 69
+side: beat 70
+side: beat 71
+side: beat 72
+side: beat 73
+side: beat 74
+side: beat 75
+side: beat 76
+side: beat 77
+side: beat 78
+side: beat 79
+side: beat 80
+side: beat 81
+side: beat 82
+side: beat 83
+side: beat 84
+side: beat 85
+side: beat 86
+side: beat 87
+side: beat 88
+side: beat 89
+side: beat 90
+side: beat 91
+side: beat 92
+side: beat 93
+side: beat 94
+side: beat 95
+side: beat 96
+side: beat 97
+side: beat 98
+side: beat 99
+side: beat 100
+side: beat 101
+side: beat 102
+side: beat 103
+side: beat 104
+side: beat 105
+side: beat 106
+side: beat 107
+side: beat 108
+side: beat 109
+side: beat 110
+side: beat 111
+side: beat 112
+side: beat 113
+side: beat 114
+side: beat 115
+side: beat 116
+side: beat 117
+side: beat 118
+side: beat 119
+side: beat 120
+side: beat 121
+side: beat 122
+side: beat 123
+side: beat 124
+side: beat 125
+side: beat 126
+side: beat 127
+side: beat 128
+side: beat 129
+side: beat 130
+side: beat 131
+side: beat 132
+side: beat 133
+side: beat 134
+side: beat 135
+side: beat 136
+side: beat 137
+side: beat 138
+side: beat 139
+side: beat 140
+side: beat 141
+side: beat 142
+side: beat 143
+side: beat 144
+side: beat 145
+side: beat 146
+side: beat 147
+side: beat 148
+side: beat 149
+side: beat 150
+side: beat 151
+side: beat 152
+side: beat 153
+side: beat 154
+side: beat 155
+side: beat 156
+side: beat 157
+side: beat 158
+side: beat 159
+side: beat 160
+side: beat 161
+side: beat 162
+side: beat 163
+side: beat 164
+side: beat 165
+side: beat 166
+side: beat 167
+side: beat 168
+side: beat 169
+side: beat 170
+side: beat 171
+side: beat 172
+side: beat 173
+side: beat 174
+side: beat 175
+side: beat 176
+side: beat 177
+side: beat 178
+side: beat 179
+side: beat 180
+side: beat 181
+side: beat 182
+side: beat 183
+side: beat 184
+side: beat 185
+side: beat 186
+side: beat 187
+side: beat 188
+side: beat 189
+side: beat 190
+side: beat 191
+side: beat 192
+side: beat 193
+side: beat 194
+side: beat 195
+side: beat 196
+side: beat 197
+side: beat 198
+side: beat 199
+side: beat 200
+side: beat 201
+side: beat 202
+side: beat 203
+side: beat 204
+side: beat 205
+side: beat 206
+side: beat 207
+side: beat 208
+side: beat 209
+side: beat 210
+side: beat 211
+side: beat 212
+side: beat 213
+side: beat 214
+side: beat 215
+side: beat 216
+side: beat 217
+side: beat 218
+side: beat 219
+side: beat 220
+side: beat 221
+side: beat 222
+side: beat 223
+side: beat 224
+side: beat 225
+side: beat 226
+side: beat 227
+side: beat 228
+side: beat 229
+side: beat 230
+side: beat 231
+side: beat 232
+side: beat 233
+side: beat 234
+side: beat 235
+side: beat 236
+side: beat 237
+side: beat 238
+side: beat 239
+side: beat 240
+side: beat 241
+side: beat 242
+side: beat 243
+side: beat 244
+side: beat 245
+side: beat 246
+side: beat 247
+side: beat 248
+side: beat 249
+side: beat 250
+side: beat 251
+side: beat 252
+side: beat 253
+side: beat 254
+side: beat 255
+side: beat 256
+side: beat 257
+side: beat 258
+side: beat 259
+side: beat 260
+side: beat 261
+side: beat 262
+side: beat 263
+side: beat 264
+side: beat 265
+side: beat 266
+side: beat 267
+side: beat 268
+side: beat 269
+side: beat 270
+side: beat 271
+side: beat 272
+side: beat 273
+side: beat 274
+side: beat 275
+side: beat 276
+side: beat 277
+side: beat 278
+side: beat 279
+side: beat 280
+side: beat 281
+side: beat 282
+side: beat 283
+side: beat 284
+side: beat 285
+side: beat 286
+side: beat 287
+side: beat 288
+side: beat 289
+side: beat 290
+side: beat 291
+side: beat 292
+side: beat 293
+side: beat 294
+side: beat 295
+side: beat 296
+side: beat 297
+side: beat 298
+side: beat 299
+side: beat 300
+side: beat 301
+side: beat 302
+side: beat 303
+side: beat 304
+side: beat 305
+side: beat 306
+side: beat 307
+side: beat 308
+side: beat 309
+side: beat 310
+side: beat 311
+side: beat 312
+side: beat 313
+side: beat 314
+side: beat 315
+side: beat 316
+side: beat 317
+side: beat 318
+side: beat 319
+side: beat 320
+side: beat 321
+side: beat 322
+side: beat 323
+side: beat 324
+side: beat 325
+side: beat 326
+side: beat 327
+side: beat 328
+side: beat 329
+side: beat 330
+side: beat 331
+side: beat 332
+side: beat 333
+side: beat 334
+side: beat 335
+side: beat 336
+side: beat 337
+side: beat 338
+side: beat 339
+side: beat 340
+side: beat 341
+side: beat 342
+side: beat 343
+side: beat 344
+side: beat 345
+side: beat 346
+side: beat 347
+side: beat 348
+side: beat 349
+side: beat 350
+side: beat 351
+side: beat 352
+side: beat 353
+side: beat 354
+side: beat 355
+side: beat 356
+side: beat 357
+side: beat 358
+side: beat 359
+side: beat 360
+side: beat 361
+side: beat 362
+side: beat 363
+side: beat 364
+side: beat 365
+side: beat 366
+side: beat 367
+side: beat 368
+side: beat 369
+side: beat 370
+side: beat 371
+side: beat 372
+side: beat 373
+side: beat 374
+side: beat 375
+side: beat 376
+side: beat 377
+side: beat 378
+side: beat 379
+side: beat 380
+side: beat 381
+side: beat 382
+side: beat 383
+side: beat 384
+side: beat 385
+side: beat 386
+side: beat 387
+side: beat 388
+side: beat 389
+side: beat 390
+side: beat 391
+side: beat 392
+side: beat 393
+side: beat 394
+side: beat 395
+side: beat 396
+side: beat 397
+side: beat 398
+side: beat 399
+side: beat 400
+side: beat 401
+side: beat 402
+side: beat 403
+side: beat 404
+side: beat 405
+side: beat 406
+side: beat 407
+side: beat 408
+side: beat 409
+side: beat 410
+side: beat 411
+side: beat 412
+side: beat 413
+side: beat 414
+side: beat 415
+side: beat 416
+side: beat 417
+side: beat 418
+side: beat 419
+side: beat 420
+side: beat 421
+side: beat 422
+side: beat 423
+side: beat 424
+side: beat 425
+side: beat 426
+side: beat 427
+side: beat 428
+side: beat 429
+side: beat 430
+side: beat 431
+side: beat 432
+side: beat 433
+side: beat 434
+side: beat 435
+side: beat 436
+side: beat 437
+side: beat 438
+side: beat 439
+side: beat 440
+side: beat 441
+side: beat 442
+side: beat 443
+side: beat 444
+side: beat 445
+side: beat 446
+side: beat 447
+side: beat 448
+side: beat 449
+crashy: starting
+panic: runtime error: index out of range

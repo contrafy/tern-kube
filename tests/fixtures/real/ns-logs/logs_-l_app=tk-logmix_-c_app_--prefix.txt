@@ -1,0 +1,20 @@
+[pod/tk-logmix-6856789c59-kh4x5/app] {"level":"error","msg":"tick 1336 failed","i":1336}
+[pod/tk-logmix-6856789c59-kh4x5/app] {"level":"info","msg":"tick 1337","i":1337}
+[pod/tk-logmix-6856789c59-kh4x5/app] level=debug msg="tick 1338"
+[pod/tk-logmix-6856789c59-kh4x5/app] WARN tick 1339
+[pod/tk-logmix-6856789c59-kh4x5/app] {"level":"error","msg":"tick 1340 failed","i":1340}
+[pod/tk-logmix-6856789c59-kh4x5/app] {"level":"info","msg":"tick 1341","i":1341}
+[pod/tk-logmix-6856789c59-kh4x5/app] level=debug msg="tick 1342"
+[pod/tk-logmix-6856789c59-kh4x5/app] WARN tick 1343
+[pod/tk-logmix-6856789c59-kh4x5/app] {"level":"error","msg":"tick 1344 failed","i":1344}
+[pod/tk-logmix-6856789c59-kh4x5/app] {"level":"info","msg":"tick 1345","i":1345}
+[pod/tk-logmix-6856789c59-wpjsk/app] {"level":"error","msg":"tick 1344 failed","i":1344}
+[pod/tk-logmix-6856789c59-wpjsk/app] {"level":"info","msg":"tick 1345","i":1345}
+[pod/tk-logmix-6856789c59-wpjsk/app] level=debug msg="tick 1346"
+[pod/tk-logmix-6856789c59-wpjsk/app] WARN tick 1347
+[pod/tk-logmix-6856789c59-wpjsk/app] {"level":"error","msg":"tick 1348 failed","i":1348}
+[pod/tk-logmix-6856789c59-wpjsk/app] {"level":"info","msg":"tick 1349","i":1349}
+[pod/tk-logmix-6856789c59-wpjsk/app] level=debug msg="tick 1350"
+[pod/tk-logmix-6856789c59-wpjsk/app] WARN tick 1351
+[pod/tk-logmix-6856789c59-wpjsk/app] {"level":"error","msg":"tick 1352 failed","i":1352}
+[pod/tk-logmix-6856789c59-wpjsk/app] {"level":"info","msg":"tick 1353","i":1353}

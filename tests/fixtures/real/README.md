@@ -11,6 +11,7 @@ sh scripts/cluster.sh create          # kind cluster + .sandbox/kubeconfig (idem
 sh scripts/fixtures/capture.sh        # delete + rebuild every tern-test-* namespace, capture
 sh scripts/fixtures/capture.sh --reuse  # keep the existing world, recapture only
 sh scripts/fixtures/capture.sh --world-only  # build the world for live tests and e2e, capture nothing
+sh scripts/fixtures/capture.sh --only events,logs  # recapture named groups, keep everything else
 ```
 
 The script only talks to the cluster through `.sandbox/kubeconfig` (verified by
@@ -71,7 +72,8 @@ error messages are relative to it.
 | Scenario | Namespace / scope | Contents |
 | --- | --- | --- |
 | `cluster` | cluster-scoped | version, api-resources, nodes, namespaces, CRDs, describe node, top nodes |
-| `ns-apps` | `tern-test-apps` | healthy Deployment `web` (2 replicas), `broken-image` (ImagePullBackOff), `crashloop`, `pending` (unschedulable), StatefulSet `db`, DaemonSet `node-agent`, ClusterIP/NodePort/headless/LoadBalancer(pending)/ExternalName services, Ingress with 2 hosts + TLS, ConfigMap, fake Secret; every output format, selectors, sort-by, names, multi-kind, events, describe, top |
+| `ns-apps` | `tern-test-apps` | healthy Deployment `web` (2 replicas), `broken-image` (ImagePullBackOff), `crashloop`, `pending` (unschedulable), StatefulSet `db`, DaemonSet `node-agent`, ClusterIP/NodePort/headless/LoadBalancer(pending)/ExternalName services, Ingress with 2 hosts + TLS, ConfigMap, fake Secret; every output format, selectors, sort-by, names, multi-kind, events (`get events` table/wide/JSON, every `kubectl events` form incl. `-A` and `-o json`), describe, top |
+| `ns-logs` | `tern-test-logs` | `tk-logmix` (2 pods x 3 containers: JSON, klog, logfmt, Java stack, ANSI, 3000-char line; a crashing `crashy`): every `kubectl logs` form (pod, `deploy/`, `-l`, `--prefix`, `--timestamps`, `--all-containers`, `--all-pods`, `--limit-bytes`, `-p`) and its errors (bad container, missing pod, no previous container, too many follow streams); `get events -w`/`--watch-only`/`--output-watch-events` and `events -w` ended by `--request-timeout`, with batches appended by scaling `tk-logmix` |
 | `ns-batch` | `tern-test-batch` | completed Job, failed Job, active and suspended CronJobs |
 | `ns-crd` | `tern-test-crd` | `widgets.lens.example.com` with string/integer/date columns plus priority-1 Owner/Enabled (`-o wide`), 3 Widgets incl. a very long description |
 | `ns-edge` | `tern-test-edge` | odd label keys/values (dots, slashes, empty, 63-char), Unicode annotations and ConfigMap data, a 71-char pod name with 2 containers |

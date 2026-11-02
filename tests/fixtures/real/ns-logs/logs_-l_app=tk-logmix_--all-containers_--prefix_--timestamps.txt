@@ -1,0 +1,44 @@
+[pod/tk-logmix-6856789c59-wpjsk/crashy] 2026-11-02T16:44:30.597267795Z crashy: starting
+[pod/tk-logmix-6856789c59-wpjsk/crashy] 2026-11-02T16:44:30.597282712Z panic: runtime error: index out of range
+[pod/tk-logmix-6856789c59-kh4x5/app] 2026-11-02T16:48:21.502310763Z {"level":"error","msg":"tick 1336 failed","i":1336}
+[pod/tk-logmix-6856789c59-kh4x5/app] 2026-11-02T16:48:22.502668375Z {"level":"info","msg":"tick 1337","i":1337}
+[pod/tk-logmix-6856789c59-kh4x5/app] 2026-11-02T16:48:23.504214500Z level=debug msg="tick 1338"
+[pod/tk-logmix-6856789c59-kh4x5/app] 2026-11-02T16:48:24.507570292Z WARN tick 1339
+[pod/tk-logmix-6856789c59-kh4x5/app] 2026-11-02T16:48:25.511769418Z {"level":"error","msg":"tick 1340 failed","i":1340}
+[pod/tk-logmix-6856789c59-kh4x5/app] 2026-11-02T16:48:26.514527543Z {"level":"info","msg":"tick 1341","i":1341}
+[pod/tk-logmix-6856789c59-kh4x5/app] 2026-11-02T16:48:27.516467835Z level=debug msg="tick 1342"
+[pod/tk-logmix-6856789c59-kh4x5/app] 2026-11-02T16:48:28.518436961Z WARN tick 1343
+[pod/tk-logmix-6856789c59-kh4x5/app] 2026-11-02T16:48:29.520272628Z {"level":"error","msg":"tick 1344 failed","i":1344}
+[pod/tk-logmix-6856789c59-kh4x5/app] 2026-11-02T16:48:30.522236128Z {"level":"info","msg":"tick 1345","i":1345}
+[pod/tk-logmix-6856789c59-kh4x5/side] 2026-11-02T16:48:04.258667130Z side: beat 441
+[pod/tk-logmix-6856789c59-kh4x5/side] 2026-11-02T16:48:07.260924132Z side: beat 442
+[pod/tk-logmix-6856789c59-kh4x5/side] 2026-11-02T16:48:10.264070091Z side: beat 443
+[pod/tk-logmix-6856789c59-kh4x5/side] 2026-11-02T16:48:13.266712343Z side: beat 444
+[pod/tk-logmix-6856789c59-kh4x5/side] 2026-11-02T16:48:16.268926511Z side: beat 445
+[pod/tk-logmix-6856789c59-kh4x5/side] 2026-11-02T16:48:19.270603846Z side: beat 446
+[pod/tk-logmix-6856789c59-kh4x5/side] 2026-11-02T16:48:22.271729583Z side: beat 447
+[pod/tk-logmix-6856789c59-kh4x5/side] 2026-11-02T16:48:25.273763418Z side: beat 448
+[pod/tk-logmix-6856789c59-kh4x5/side] 2026-11-02T16:48:28.275653586Z side: beat 449
+[pod/tk-logmix-6856789c59-kh4x5/side] 2026-11-02T16:48:31.277444712Z side: beat 450
+[pod/tk-logmix-6856789c59-kh4x5/crashy] 2026-11-02T16:44:28.580449753Z crashy: starting
+[pod/tk-logmix-6856789c59-kh4x5/crashy] 2026-11-02T16:44:28.580462128Z panic: runtime error: index out of range
+[pod/tk-logmix-6856789c59-wpjsk/app] 2026-11-02T16:48:21.502366138Z {"level":"error","msg":"tick 1344 failed","i":1344}
+[pod/tk-logmix-6856789c59-wpjsk/app] 2026-11-02T16:48:22.502674666Z {"level":"info","msg":"tick 1345","i":1345}
+[pod/tk-logmix-6856789c59-wpjsk/app] 2026-11-02T16:48:23.504733333Z level=debug msg="tick 1346"
+[pod/tk-logmix-6856789c59-wpjsk/app] 2026-11-02T16:48:24.507771459Z WARN tick 1347
+[pod/tk-logmix-6856789c59-wpjsk/app] 2026-11-02T16:48:25.511401959Z {"level":"error","msg":"tick 1348 failed","i":1348}
+[pod/tk-logmix-6856789c59-wpjsk/app] 2026-11-02T16:48:26.514418668Z {"level":"info","msg":"tick 1349","i":1349}
+[pod/tk-logmix-6856789c59-wpjsk/app] 2026-11-02T16:48:27.515631044Z level=debug msg="tick 1350"
+[pod/tk-logmix-6856789c59-wpjsk/app] 2026-11-02T16:48:28.518436961Z WARN tick 1351
+[pod/tk-logmix-6856789c59-wpjsk/app] 2026-11-02T16:48:29.520183086Z {"level":"error","msg":"tick 1352 failed","i":1352}
+[pod/tk-logmix-6856789c59-wpjsk/app] 2026-11-02T16:48:30.522194128Z {"level":"info","msg":"tick 1353","i":1353}
+[pod/tk-logmix-6856789c59-wpjsk/side] 2026-11-02T16:48:01.640813921Z side: beat 443
+[pod/tk-logmix-6856789c59-wpjsk/side] 2026-11-02T16:48:04.642878880Z side: beat 444
+[pod/tk-logmix-6856789c59-wpjsk/side] 2026-11-02T16:48:07.644847965Z side: beat 445
+[pod/tk-logmix-6856789c59-wpjsk/side] 2026-11-02T16:48:10.647627800Z side: beat 446
+[pod/tk-logmix-6856789c59-wpjsk/side] 2026-11-02T16:48:13.649661010Z side: beat 447
+[pod/tk-logmix-6856789c59-wpjsk/side] 2026-11-02T16:48:16.651018303Z side: beat 448
+[pod/tk-logmix-6856789c59-wpjsk/side] 2026-11-02T16:48:19.653099804Z side: beat 449
+[pod/tk-logmix-6856789c59-wpjsk/side] 2026-11-02T16:48:22.653666708Z side: beat 450
+[pod/tk-logmix-6856789c59-wpjsk/side] 2026-11-02T16:48:25.654926376Z side: beat 451
+[pod/tk-logmix-6856789c59-wpjsk/side] 2026-11-02T16:48:28.656968336Z side: beat 452

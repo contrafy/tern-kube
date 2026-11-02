@@ -1,0 +1,172 @@
+{
+    "kind": "EventList",
+    "apiVersion": "v1",
+    "metadata": {},
+    "items": [
+        {
+            "kind": "Event",
+            "apiVersion": "v1",
+            "metadata": {
+                "name": "pending.18e4399ccb191959",
+                "namespace": "tern-test-apps",
+                "uid": "2365bde8-2747-4fae-a59b-5a6adc07eeec",
+                "resourceVersion": "675584",
+                "creationTimestamp": "2026-11-02T12:18:17Z"
+            },
+            "involvedObject": {
+                "kind": "Pod",
+                "namespace": "tern-test-apps",
+                "name": "pending",
+                "uid": "c4775193-f329-4166-a6b1-873a485b57a1",
+                "apiVersion": "v1",
+                "resourceVersion": "1624"
+            },
+            "reason": "FailedScheduling",
+            "message": "0/1 nodes are available: 1 node(s) didn't match Pod's node affinity/selector. preemption: 0/1 nodes are available: 1 Preemption is not helpful for scheduling.",
+            "source": {},
+            "firstTimestamp": null,
+            "lastTimestamp": null,
+            "type": "Warning",
+            "eventTime": "2026-11-02T12:18:17.185367Z",
+            "series": {
+                "count": 12,
+                "lastObservedTime": "2026-11-02T16:36:44.264658Z"
+            },
+            "action": "Scheduling",
+            "reportingComponent": "default-scheduler",
+            "reportingInstance": "default-scheduler-tern-kube-dev-control-plane"
+        },
+        {
+            "kind": "Event",
+            "apiVersion": "v1",
+            "metadata": {
+                "name": "crashloop.18e36b5de6cf9fbd",
+                "namespace": "tern-test-apps",
+                "uid": "cba8bca9-635d-467c-87a9-867eea26952c",
+                "resourceVersion": "676372",
+                "creationTimestamp": "2026-10-30T21:18:48Z"
+            },
+            "involvedObject": {
+                "kind": "Pod",
+                "namespace": "tern-test-apps",
+                "name": "crashloop",
+                "uid": "612bd4fb-9419-49e0-b261-abadd277c0e8",
+                "apiVersion": "v1",
+                "resourceVersion": "651401",
+                "fieldPath": "spec.containers{app}"
+            },
+            "reason": "Pulled",
+            "message": "Container image \"busybox:1.37\" already present on machine and can be accessed by the pod",
+            "source": {
+                "component": "kubelet",
+                "host": "tern-kube-dev-control-plane"
+            },
+            "firstTimestamp": "2026-10-30T21:18:47Z",
+            "lastTimestamp": "2026-11-02T16:44:44Z",
+            "count": 54,
+            "type": "Normal",
+            "eventTime": null,
+            "reportingComponent": "kubelet",
+            "reportingInstance": "tern-kube-dev-control-plane"
+        },
+        {
+            "kind": "Event",
+            "apiVersion": "v1",
+            "metadata": {
+                "name": "broken-image-6869879767-8fqd7.18e36b5e183401fb",
+                "namespace": "tern-test-apps",
+                "uid": "7475b983-d969-41e3-9d92-f97a144892cd",
+                "resourceVersion": "676572",
+                "creationTimestamp": "2026-10-30T21:18:48Z"
+            },
+            "involvedObject": {
+                "kind": "Pod",
+                "namespace": "tern-test-apps",
+                "name": "broken-image-6869879767-8fqd7",
+                "uid": "d468d2e0-00a2-41bb-94d5-ebdcbe8f658c",
+                "apiVersion": "v1",
+                "resourceVersion": "651476",
+                "fieldPath": "spec.containers{app}"
+            },
+            "reason": "BackOff",
+            "message": "Back-off pulling image \"registry.invalid/tern-kube/missing:0.0.0\"",
+            "source": {
+                "component": "kubelet",
+                "host": "tern-kube-dev-control-plane"
+            },
+            "firstTimestamp": "2026-10-30T21:18:48Z",
+            "lastTimestamp": "2026-11-02T16:46:32Z",
+            "count": 681,
+            "type": "Normal",
+            "eventTime": null,
+            "reportingComponent": "kubelet",
+            "reportingInstance": "tern-kube-dev-control-plane"
+        },
+        {
+            "kind": "Event",
+            "apiVersion": "v1",
+            "metadata": {
+                "name": "broken-image-6869879767-8fqd7.18e36b5e18346eb4",
+                "namespace": "tern-test-apps",
+                "uid": "2ac7fcc3-f770-4ff8-b4eb-389b520daf7d",
+                "resourceVersion": "676573",
+                "creationTimestamp": "2026-10-30T21:18:49Z"
+            },
+            "involvedObject": {
+                "kind": "Pod",
+                "namespace": "tern-test-apps",
+                "name": "broken-image-6869879767-8fqd7",
+                "uid": "d468d2e0-00a2-41bb-94d5-ebdcbe8f658c",
+                "apiVersion": "v1",
+                "resourceVersion": "651476",
+                "fieldPath": "spec.containers{app}"
+            },
+            "reason": "Failed",
+            "message": "Error: ImagePullBackOff",
+            "source": {
+                "component": "kubelet",
+                "host": "tern-kube-dev-control-plane"
+            },
+            "firstTimestamp": "2026-10-30T21:18:48Z",
+            "lastTimestamp": "2026-11-02T16:46:32Z",
+            "count": 681,
+            "type": "Warning",
+            "eventTime": null,
+            "reportingComponent": "kubelet",
+            "reportingInstance": "tern-kube-dev-control-plane"
+        },
+        {
+            "kind": "Event",
+            "apiVersion": "v1",
+            "metadata": {
+                "name": "crashloop.18e36b5e180d69ef",
+                "namespace": "tern-test-apps",
+                "uid": "34870465-b4a8-4291-82e3-a8edf1374fa0",
+                "resourceVersion": "676743",
+                "creationTimestamp": "2026-10-30T21:18:48Z"
+            },
+            "involvedObject": {
+                "kind": "Pod",
+                "namespace": "tern-test-apps",
+                "name": "crashloop",
+                "uid": "612bd4fb-9419-49e0-b261-abadd277c0e8",
+                "apiVersion": "v1",
+                "resourceVersion": "651401",
+                "fieldPath": "spec.containers{app}"
+            },
+            "reason": "BackOff",
+            "message": "Back-off restarting failed container app in pod crashloop_tern-test-apps(612bd4fb-9419-49e0-b261-abadd277c0e8)",
+            "source": {
+                "component": "kubelet",
+                "host": "tern-kube-dev-control-plane"
+            },
+            "firstTimestamp": "2026-10-30T21:18:48Z",
+            "lastTimestamp": "2026-11-02T16:47:30Z",
+            "count": 136,
+            "type": "Warning",
+            "eventTime": null,
+            "reportingComponent": "kubelet",
+            "reportingInstance": "tern-kube-dev-control-plane"
+        }
+    ]
+}

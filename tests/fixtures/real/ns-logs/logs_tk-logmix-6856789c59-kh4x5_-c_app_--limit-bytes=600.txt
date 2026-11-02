@@ -1,0 +1,9 @@
+{"level":"info","ts":"2026-10-30T10:00:00Z","msg":"server started","port":8080}
+I1030 10:00:01.123456       1 controller.go:42] "Starting workers" count=2
+W1030 10:00:02.000001       1 reflector.go:7] watch closed
+E1030 10:00:03.000001       1 sync.go:99] "sync failed" err="boom"
+time=2026-10-30T10:00:04Z level=warn msg="slow request" path=/api dur=2.1s
+2026-10-30 10:00:05,123 ERROR [main] java.lang.IllegalStateException: bad
+	at com.example.Main.run(Main.java:10)
+	at com.example.Main.main(Main.java:3)
+long: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
