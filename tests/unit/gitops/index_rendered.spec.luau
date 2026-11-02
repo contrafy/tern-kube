@@ -169,6 +169,33 @@ describe("gitops index addRendered: helm", function()
 		expect(source.label).toBe("helm/chart (release web)")
 		expect(source.root).toBe(repo.ROOT)
 	end)
+
+	-- Auto-detect renders one chart for a release twice (deployed values,
+	-- a proposed values file): replacing one render with the other would
+	-- make the drift report compare against the wrong values.
+	it("keeps renders of one chart with different values apart", function()
+		local index = repo.index()
+		local path = repo.abs("helm/chart")
+		local deployed = Index.source(index, "helm", path, {
+			release = "web",
+			namespace = "tern-test-helm",
+			values = {},
+			deployedValues = true,
+		})
+		local staging = helm(index, "tern-test-helm")
+		expect(deployed == staging).toBe(false)
+		Index.addRendered(index, deployed, fixtures.read("gitops/captured/helm-web.yaml"))
+		expect(#rendered(index, staging)).toBe(3)
+		expect(#rendered(index, deployed)).toBe(3)
+		expect(deployed.label).toBe("helm/chart (release web, deployed values)")
+		expect(Index.findSource(index, "helm", path, {
+			release = "web",
+			namespace = "tern-test-helm",
+			values = {},
+			deployedValues = true,
+		})).toBe(deployed)
+		expect(Index.findSource(index, "helm", path, { release = "web", namespace = nil, values = {} })).toBeNil()
+	end)
 end)
 
 return nil

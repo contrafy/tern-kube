@@ -47,15 +47,55 @@ Secret values are redacted as in the approve block.
 ### Drift report
 
 `ctrl+g` picks a source (a directory, a Kustomization, a configured Helm
-release, or an Argo CD / Flux application checked out locally) and compares
-it with the cluster: **changed** objects with their diff, objects **missing
-in cluster**, and **unmanaged** objects (live in the source's namespaces,
-of kinds the source uses, declared nowhere). Owned objects, defaults and
-controller bookkeeping are not reported as unmanaged.
+release, an auto-detected Helm chart, or an Argo CD / Flux application
+checked out locally) and compares it with the cluster: **changed** objects
+with their diff, objects **missing in cluster**, and **unmanaged** objects
+(live in the source's namespaces, of kinds the source uses, declared
+nowhere). Owned objects, defaults and controller bookkeeping are not
+reported as unmanaged.
 
 `f` cycles the filter, `enter` opens an entry, `a` applies one manifest and
 `A` the whole source (both through the approve block), `E` exports the
 selected live object and `X` everything shown.
+
+### Helm chart auto-detect
+
+The index reads the `Chart.yaml` of every chart directory in the repository
+(subcharts under `charts/` excepted). When `helm.auto_detect` is on (the
+default) and helm is found, opening the drift chooser runs
+`helm list -a -A -o json` once per index (again after `r`) and offers each
+chart directory for every release whose chart name equals the `Chart.yaml`
+name, for example `helm/chart as tern-test-helm/shop-a with deployed values`.
+Equal chart version, equal app version, the release namespace as a path
+segment and a values file named after the release or namespace rank the
+candidates; the note says what matched (`auto: name+version match`). A
+[`gitops.helm`](configuration.md#gitops) entry for the same chart and release
+replaces the guesses. Uninstalled releases are not offered.
+
+Each release comes in variants:
+
+- **with deployed values**: `helm get values R -n NS -o json` (the values the
+  user supplied, not the chart defaults) is written to a temporary file
+  readable only by you (0600) under the plugin data directory,
+  `helm template R CHART -n NS -f <file>` renders the chart, and the file is
+  removed right after the render, also when the render fails or `r` started
+  another one. The report then shows template drift: what the repository's
+  chart would change with the values already in the cluster.
+- **with a values file**: one per `values*.yaml` next to `Chart.yaml` (other
+  than `values.yaml`, which helm applies anyway) and per YAML file in the
+  parent directory that is not a manifest and is named `values*` or after the
+  release, rendered with `helm template R CHART -n NS -f <file>`.
+
+The render is then compared like a configured release. **Copy as gitops.helm
+entry** copies the matching config entry (JSON); Explore never writes the
+config. On a Helm release view, `ctrl+g` opens the drift report of the best
+source for that release (its configured entry, else the best candidate).
+
+When a release's stored chart defaults cannot be trusted, the Helm values
+view falls back to a chart directory here with the same name and version,
+then to [`helm.chart_sources`](configuration.md#helm), a list of
+`{chart, ref}` entries (`oci://...`, `repo/name` or a path) read with
+`helm show values`.
 
 ### Export
 

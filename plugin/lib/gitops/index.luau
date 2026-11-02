@@ -4,6 +4,8 @@
 -- host (gitops_host.luau) lists and reads files and runs the renderers.
 -- Identity comes from parse/yaml.luau, so only kind, apiVersion and
 -- metadata.name/namespace are ever interpreted.
+local Detect = require("../helm/detect")
+local HelmTypes = require("../helm/types")
 local Kinds = require("../kubectl/kinds")
 local Resource = require("../model/resource")
 local Types = require("../model/types")
@@ -13,7 +15,16 @@ type Ref = Types.ResourceRef
 
 export type SourceType = "dir" | "file" | "kustomize" | "helm"
 
-export type HelmSpec = { release: string, namespace: string?, values: { string } }
+-- deployedValues: rendered with a release's deployed user values (written
+-- to a temporary file at render time) instead of `values`. auto: offered by
+-- chart auto-detect rather than configured (not part of the identity).
+export type HelmSpec = {
+	release: string,
+	namespace: string?,
+	values: { string },
+	deployedValues: boolean?,
+	auto: boolean?,
+}
 
 export type Source = {
 	type: SourceType,
@@ -77,12 +88,21 @@ export type Index = {
 	scannedFiles: number,
 	bytes: number,
 	limits: Limits,
+	-- Charts with a readable Chart.yaml, sorted by path.
+	chartDirs: { HelmTypes.ChartDir },
 }
+
+-- A chart's Chart.yaml to read and the files that could hold values for
+-- its releases (values* next to Chart.yaml except values.yaml, YAML files
+-- in the parent directory).
+export type ChartRead = { dir: string, file: string, values: { string } }
 
 export type Plan = {
 	read: { string },
 	kustomizations: { string },
 	charts: { string },
+	-- Top-level charts only: subcharts render as part of their parent.
+	chartReads: { ChartRead },
 	skipped: { { path: string, reason: string } },
 	truncated: boolean,
 	limits: Limits,
@@ -196,6 +216,44 @@ end
 -- `helm template`: their templates are not YAML.
 export type PlanOpts = { maxFiles: number?, maxBytes: number?, maxFileBytes: number? }
 
+local function isValuesName(name: string): boolean
+	local lower = string.lower(name)
+	return string.sub(lower, 1, 6) == "values"
+		and lowerExt(lower) ~= nil
+		and lower ~= "values.yaml"
+		and lower ~= "values.yml"
+end
+
+local function chartReads(charts: { string }, paths: { string }): { ChartRead }
+	local out: { ChartRead } = {}
+	for _, dir in charts do
+		local nested = false
+		for _, other in charts do
+			if other ~= dir and (other == "" or under(other, dir)) then
+				nested = true
+				break
+			end
+		end
+		if nested or hidden(dir) then
+			continue
+		end
+		local parent: string? = if dir == "" or dir == "/" then nil else dirname(dir)
+		local values: { string } = {}
+		for _, path in paths do
+			local name = basename(path)
+			local at = dirname(path)
+			if hidden(path) or KUSTOMIZATION_FILES[name] or name == "Chart.yaml" then
+				continue
+			end
+			if (at == dir and isValuesName(name)) or (at == parent and lowerExt(name) ~= nil) then
+				table.insert(values, path)
+			end
+		end
+		table.insert(out, { dir = dir, file = join(dir, "Chart.yaml"), values = values })
+	end
+	return out
+end
+
 function M.plan(files: { string }, opts: PlanOpts?): Plan
 	local o: PlanOpts = opts or {}
 	local limits: Limits = {
@@ -253,6 +311,7 @@ function M.plan(files: { string }, opts: PlanOpts?): Plan
 		read = read,
 		kustomizations = kustomizations,
 		charts = charts,
+		chartReads = chartReads(charts, paths),
 		skipped = skipped,
 		truncated = truncated,
 		limits = limits,
@@ -273,29 +332,61 @@ function M.new(root: string, limits: Limits?): Index
 		scannedFiles = 0,
 		bytes = 0,
 		limits = limits or DEFAULT_LIMITS,
+		chartDirs = {},
 	}
 end
 
 local function sourceLabel(index: Index, kind: SourceType, path: string, helm: HelmSpec?): string
 	local label = relative(index.root, path)
 	if kind == "helm" and helm then
-		label ..= " (release " .. helm.release .. ")"
+		label ..= " (release " .. helm.release .. (if helm.deployedValues then ", deployed values)" else ")")
 	end
 	return label
 end
 
--- The interned source for (type, path): one entry per directory, overlay,
--- chart or helm release.
-function M.source(index: Index, kind: SourceType, path: string, helm: HelmSpec?): Source
+local function sameList(a: { string }, b: { string }): boolean
+	if #a ~= #b then
+		return false
+	end
+	for i, v in a do
+		if b[i] ~= v then
+			return false
+		end
+	end
+	return true
+end
+
+-- Two renders of one chart are different sources when anything that goes
+-- into `helm template` differs: their documents must never mix.
+local function sameHelm(a: HelmSpec?, b: HelmSpec?): boolean
+	if a == nil or b == nil then
+		return a == b
+	end
+	return a.release == b.release
+		and a.namespace == b.namespace
+		and (a.deployedValues == true) == (b.deployedValues == true)
+		and sameList(a.values, b.values)
+end
+
+-- The interned source for (type, path, helm spec), nil when none exists.
+function M.findSource(index: Index, kind: SourceType, path: string, helm: HelmSpec?): Source?
 	local p = normalize(path)
 	for _, s in index.sources do
-		if s.type == kind and s.path == p and (s.helm and s.helm.release) == (helm and helm.release) then
-			if helm then
-				s.helm = helm
-			end
+		if s.type == kind and s.path == p and sameHelm(s.helm, helm) then
 			return s
 		end
 	end
+	return nil
+end
+
+-- The interned source for (type, path, helm spec): one entry per directory,
+-- overlay, chart or helm render.
+function M.source(index: Index, kind: SourceType, path: string, helm: HelmSpec?): Source
+	local found = M.findSource(index, kind, path, helm)
+	if found then
+		return found
+	end
+	local p = normalize(path)
 	local source: Source =
 		{ type = kind, root = index.root, path = p, helm = helm, label = sourceLabel(index, kind, p, helm) }
 	table.insert(index.sources, source)
@@ -306,6 +397,58 @@ function M.source(index: Index, kind: SourceType, path: string, helm: HelmSpec?)
 		return a.type < b.type
 	end)
 	return source
+end
+
+local function declaresObjects(index: Index, file: string): boolean
+	for _, d in index.docs do
+		if not d.rendered and d.file == file then
+			return true
+		end
+	end
+	return false
+end
+
+-- Records a chart from its Chart.yaml text; call after the plan's files are
+-- added so values candidates that declare objects can be told apart.
+-- Returns nil (with a warning) when Chart.yaml lacks a name or version.
+function M.addChart(index: Index, read: ChartRead, text: string): HelmTypes.ChartDir?
+	local file = normalize(read.file)
+	local meta = Detect.chartYaml(text)
+	if meta == nil then
+		table.insert(index.diagnostics, {
+			file = file,
+			line = nil,
+			severity = "warning",
+			text = "Chart.yaml has no name or version; not offered for chart auto-detect",
+		})
+		return nil
+	end
+	local values: { string } = {}
+	for _, raw in read.values do
+		local v = normalize(raw)
+		if under(index.root, v) and not declaresObjects(index, v) then
+			table.insert(values, v)
+		end
+	end
+	local chart: HelmTypes.ChartDir = {
+		path = normalize(read.dir),
+		name = meta.name,
+		version = meta.version,
+		appVersion = meta.appVersion,
+		valuesFiles = values,
+	}
+	local charts: { HelmTypes.ChartDir } = {}
+	for _, c in index.chartDirs do
+		if c.path ~= chart.path then
+			table.insert(charts, c)
+		end
+	end
+	table.insert(charts, chart)
+	table.sort(charts, function(a: HelmTypes.ChartDir, b: HelmTypes.ChartDir): boolean
+		return a.path < b.path
+	end)
+	index.chartDirs = charts
+	return chart
 end
 
 local function link(index: Index, doc: ManifestDoc)

@@ -107,6 +107,23 @@ describe("drift.scope", function()
 		expect(Drift.scope(SOURCE, { docs = docs }, { defaultNamespace = "team" }).namespaces).toEqual({ "team" })
 		expect(Drift.scope(SOURCE, { docs = docs }, {}).namespaces).toEqual({})
 	end)
+
+	-- One chart dir renders several releases (configured, auto-detected,
+	-- with deployed values or a values file): each render is its own
+	-- source, and mixing them would report one release's objects as
+	-- missing from another's namespace.
+	it("never mixes renders of two helm sources of the same chart dir", function()
+		local chart = "/repo/helm/chart"
+		local a: Drift.Source = { type = "helm", root = "/repo", path = chart, label = "a" }
+		local b: Drift.Source = { type = "helm", root = "/repo", path = chart, label = "b" }
+		local docs: { Drift.Doc } = {}
+		addDocs(docs, "a.yaml", "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: a\n  namespace: ns-a\n", a)
+		for _, d in docs do
+			d.rendered = true
+		end
+		expect(#Drift.scope(a, { docs = docs }, {}).docs).toBe(1)
+		expect(#Drift.scope(b, { docs = docs }, {}).docs).toBe(0)
+	end)
 end)
 
 describe("drift.report over a whole source (kubectl diff -R -f drift)", function()

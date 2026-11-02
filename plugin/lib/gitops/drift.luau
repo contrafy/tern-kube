@@ -111,6 +111,11 @@ local function under(file: string, dir: string): boolean
 end
 
 local function inSource(doc: Doc, source: Source): boolean
+	-- Helm sources are interned per render (release, values): one chart
+	-- dir can back several of them.
+	if source.type == "helm" or doc.source.type == "helm" then
+		return doc.source == source
+	end
 	if doc.source.path == source.path and doc.source.type == source.type then
 		return true
 	end

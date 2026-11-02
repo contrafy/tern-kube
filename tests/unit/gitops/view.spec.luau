@@ -202,6 +202,59 @@ describe("gitops view: drift", function()
 		local err = nodes.find(body(s), nodes.role("tern-kube.error")) :: nodes.Node
 		expect(nodes.text(err)).toBe("kubectl diff exited 2: error: connection refused")
 	end)
+
+	-- An auto source is a guess: the chooser says why it matched and which
+	-- values it renders with, so the user can tell the variants apart.
+	it("the chooser lists auto-detected charts per release and values variant", function()
+		local w = X.helmWorld()
+		local s = X.press(w, X.openHelm(w), "g", { ctrl = true })
+		local b = body(s)
+		local text = nodes.text(b)
+		expect(text).toContain("helm/chart as tern-test-helm/shop-a with deployed values")
+		expect(text).toContain("helm/chart as tern-test-helm/shop-a with helm/values-staging.yaml")
+		expect(text).toContain("auto: name+version+app version match")
+		expect(nodes.actions(b)).toContain("open=helm:/repo/helm/chart:tern-test-helm/shop-a:deployed")
+	end)
+
+	it("a failed helm list is said in the chooser", function()
+		local w = X.helmWorld()
+		w.answer = (function(prev: any)
+			return function(argv: { string }, e: any)
+				if argv[1] == G.HELM then
+					return G.fail(1, "Error: Kubernetes cluster unreachable")
+				end
+				return prev(argv, e)
+			end
+		end)(w.answer)
+		local s = X.press(w, X.openHelm(w), "g", { ctrl = true })
+		local err = nodes.find(body(s), nodes.role("tern-kube.error")) :: nodes.Node
+		expect(nodes.text(err)).toBe(
+			"Chart auto-detect unavailable: helm list exited 1: Error: Kubernetes cluster unreachable"
+		)
+	end)
+
+	it("an auto report says how it was rendered and copies a config entry instead of writing one", function()
+		local w = X.helmWorld()
+		local s = X.press(w, X.openHelm(w), "g", { ctrl = true })
+		s = X.action(w, s, "open", "helm:/repo/helm/chart:tern-test-helm/shop-a:deployed")
+		local b = body(s)
+		local text = nodes.text(b)
+		expect(text).toContain("Drift of helm/chart as tern-test-helm/shop-a with deployed values")
+		expect(text).toContain("Rendered with the deployed values of tern-test-helm/shop-a")
+		expect(text).toContain(
+			"rendered by /opt/helm/bin/helm template shop-a /repo/helm/chart -n tern-test-helm -f /data/tmp/values-"
+		)
+		expect(nodes.actions(b)).toContain("gitops-copyhelm=")
+		expect(table.find(nodes.actions(b), "gitops-key=E")).toBeNil()
+		local _, effects = State.update(s, { t = "action", act = "gitops-copyhelm", value = "" })
+		local copied: string? = nil
+		for _, e in effects do
+			if e.t == "copy" then
+				copied = e.text
+			end
+		end
+		expect(copied).toBe('{"chart":"helm/chart","release":"shop-a","namespace":"tern-test-helm","values":[]}')
+	end)
 end)
 
 describe("gitops view: export and git", function()

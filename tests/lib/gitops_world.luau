@@ -1,10 +1,11 @@
 --!strict
 -- A fake host for the Explore GitOps routes: a repository of manifests
 -- (the drift world captured from kind by scripts/fixtures/capture-drift.sh,
--- mounted at ROOT/drift), a plugin data directory, git, gh and kubectl
--- answers (real captured diffs and listings). `drive` executes the effects
--- the core returns (run, scan, read, readtree, write) and feeds the results
--- back until nothing is left, recording what was run, written and removed.
+-- mounted at ROOT/drift), a plugin data directory, git, gh, kubectl and helm
+-- answers (real captured diffs, listings and releases). `drive` executes
+-- the effects the core returns (run, scan, read, readtree, write) and feeds
+-- the results back until nothing is left, recording what was run, written
+-- and removed.
 local Gitops = require("../../plugin/lib/explore/gitops")
 local Index = require("../../plugin/lib/gitops/index")
 local Query = require("../../plugin/lib/explore/query")
@@ -26,6 +27,7 @@ M.CTX = "kind-tern-kube-dev"
 M.NS = "tern-test-drift"
 M.AT = 1000
 M.REMOTE = "/tmp/remote.git"
+M.HELM = "/opt/helm/bin/helm"
 
 export type World = {
 	files: { [string]: string },
@@ -47,6 +49,8 @@ export type World = {
 	rendered: { { kind: Index.SourceType, path: string, helm: Index.HelmSpec?, text: string } },
 	-- Last argv run per diff file (the temp file's text at diff time).
 	diffInputs: { string },
+	-- Temp files as they were when a helm template read them (`-f`).
+	helmInputs: { [string]: string },
 }
 
 local function ok(stdout: string): Result
@@ -86,6 +90,7 @@ function M.new(files: { [string]: string }?): World
 		scanError = nil,
 		rendered = {},
 		diffInputs = {},
+		helmInputs = {},
 	}
 end
 
@@ -102,6 +107,14 @@ function M.index(w: World): Index.Index
 		Index.addFile(index, M.ROOT .. "/" .. rel, w.files[M.ROOT .. "/" .. rel])
 	end
 	index.scannedFiles = #plan.read
+	for _, c in plan.chartReads do
+		local values: { string } = {}
+		for i, v in c.values do
+			values[i] = M.ROOT .. "/" .. v
+		end
+		local file = M.ROOT .. "/" .. c.file
+		Index.addChart(index, { dir = M.ROOT .. "/" .. c.dir, file = file, values = values }, w.files[file])
+	end
 	for _, r in w.rendered do
 		Index.addRendered(index, Index.source(index, r.kind, r.path, r.helm), r.text)
 	end
@@ -138,6 +151,7 @@ function M.ctx(cfgText: string?, ns: string?): Gitops.Ctx
 			return false
 		end,
 		null = json.null,
+		helm = M.HELM,
 	}
 end
 
@@ -271,6 +285,41 @@ local function git(w: World, argv: { string }): Result
 	return ok("")
 end
 
+-- Latest revision of each captured release (tests/fixtures/helm/captured).
+local LATEST: { [string]: number } =
+	{ ["shop-a"] = 3, ["web-b"] = 3, ["broken-c"] = 1, ["stuck-d"] = 2, ["tricky-e"] = 2 }
+
+-- Captured `helm list`/`get values`; `template` answers with the captured
+-- render of the shop chart and records the values files it was given.
+local function helm(w: World, argv: { string }): Result
+	if has(argv, "list") then
+		return ok(fixtures.read("helm/captured/list.json"))
+	elseif has(argv, "get") and has(argv, "values") then
+		local name = argv[(table.find(argv, "values") :: number) + 1]
+		local rev = LATEST[name]
+		if rev == nil then
+			return M.fail(1, "Error: release: not found")
+		end
+		return ok(fixtures.read(string.format("helm/captured/values-%s-r%d.json", name, rev)))
+	elseif has(argv, "template") then
+		for _, f in flagValues(argv, "-f") do
+			w.helmInputs[f] = w.tmp[f] or w.files[f] or "<missing>"
+		end
+		return ok(fixtures.read("gitops/captured/helm-web.yaml"))
+	end
+	return M.fail(1, "fake helm: unhandled " .. table.concat(argv, " "))
+end
+
+-- The shop chart of tests/fixtures/gitops/helm mounted at ROOT/helm, next to
+-- the drift world.
+function M.helmFiles(): { [string]: string }
+	local out = M.driftFiles()
+	for _, key in fixtures.list("gitops/helm/") do
+		out[M.ROOT .. "/" .. string.sub(key, #"gitops/" + 1)] = fixtures.read(key)
+	end
+	return out
+end
+
 function M.respond(w: World, e: Effect): Result
 	local argv = e.argv :: { string }
 	table.insert(w.runs, argv)
@@ -300,6 +349,8 @@ function M.respond(w: World, e: Effect): Result
 		return ok("")
 	elseif p == "kubectl" then
 		return kubectl(w, argv)
+	elseif p == M.HELM then
+		return helm(w, argv)
 	end
 	return M.fail(127, p .. ": not found")
 end

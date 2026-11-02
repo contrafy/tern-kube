@@ -7,6 +7,7 @@
 -- Processes cannot be killed: `cancel()` only makes late results be ignored.
 
 local EnvHost = require("./env_host")
+local HelmQuery = require("./lib/helm/query")
 local Index = require("./lib/gitops/index")
 local Shellenv = require("./lib/env/shellenv")
 
@@ -116,15 +117,7 @@ function M.renderHelm(spec: HelmRelease, cb: TextCb)
 			)
 			return
 		end
-		local argv = { helm, "template", spec.release, spec.chart }
-		if spec.namespace then
-			table.insert(argv, "-n")
-			table.insert(argv, spec.namespace)
-		end
-		for _, values in spec.values do
-			table.insert(argv, "-f")
-			table.insert(argv, values)
-		end
+		local argv = HelmQuery.template(helm, spec.release, spec.chart, spec.namespace, spec.values)
 		run(argv, { timeout_ms = M.RENDER_TIMEOUT_MS }, function(result)
 			if result.status == 0 then
 				cb(result.stdout, nil)
@@ -389,6 +382,16 @@ local function readAll(s: ScanState, files: { string })
 					add(path, text)
 				else
 					diagnostic(index, "warning", path, "not read: " .. Shellenv.errorText(text))
+				end
+			end
+			-- After the files: values candidates that declare objects are
+			-- known by now and dropped.
+			for _, chart in plan.chartReads do
+				local ok, text = pcall(tern.fs.read, chart.file, plan.limits.maxFileBytes)
+				if ok then
+					Index.addChart(index, chart, text)
+				else
+					diagnostic(index, "warning", chart.file, "not read: " .. Shellenv.errorText(text))
 				end
 			end
 			render(s, index)
