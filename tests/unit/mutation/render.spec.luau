@@ -5,6 +5,7 @@
 -- per-resource hunks the preview produced.
 local A = require("../../lib/approve")
 local Fixtures = require("../../lib/fixtures")
+local Link = require("../../../plugin/lib/mutation/link")
 local N = require("../../lib/nodes")
 local Render = require("../../../plugin/lib/mutation/render")
 local Session = require("../../../plugin/lib/mutation/session")
@@ -170,6 +171,105 @@ describe("approve view: result and help", function()
 
 	it("titles the pane with the operation and context", function()
 		expect(Render.title(ready(SCALE))).toBe("Tern Kube Approve · kubectl scale · kind-dev")
+	end)
+end)
+
+local function linkFor(fields: { [string]: any }): string
+	local r: any = { recursive = false, overwrite = false, context = "kind-dev", source = "chosen" }
+	for k, v in fields do
+		r[k] = v
+	end
+	return (Link.encode(r)) :: string
+end
+
+describe("approve view: track 1 verbs", function()
+	it("asks for input with the op's prompt and hint", function()
+		local s = A.init(linkFor({ op = "label", kind = "configmap", name = "cm", namespace = "apps" }))
+		local v = Render.view(s)
+		expect(N.text(N.find(v.main, N.key("prompt")) :: N.Node)).toContain("Labels for configmap/cm")
+		expect(N.text(v.dock :: N.Node)).toContain("enter preview · esc cancel")
+	end)
+
+	it("groups the pods a drain evicts by namespace and marks the blocked and unmanaged ones", function()
+		local url = linkFor({
+			op = "drain",
+			kind = "node",
+			name = "n1",
+			drainFlags = { "--ignore-daemonsets", "--timeout=1m" },
+		})
+		local s = ready(url, {
+			["step:targets"] = A.ok(Fixtures.read("kubectl/track1/get-node-json.txt")),
+			["step:dry-run"] = {
+				status = 0,
+				stdout = Fixtures.read("kubectl/track1/drain-client-ok.txt"),
+				stderr = Fixtures.read("kubectl/track1/drain-client-ok.stderr"),
+				timed_out = false,
+			},
+			["step:evict"] = {
+				status = 1,
+				stdout = Fixtures.read("kubectl/track1/drain-server-pdb-timeout.txt"),
+				stderr = Fixtures.read("kubectl/track1/drain-server-pdb-timeout.stderr"),
+				timed_out = false,
+			},
+		})
+		expect(s.phase).toBe("ready")
+		local card = N.text(N.find(Render.view(s).main, N.key("drain")) :: N.Node)
+		expect(card).toContain("6 pod(s) to evict")
+		expect(card).toContain("tern-test-t1")
+		expect(card).toContain("PDB-blocked")
+		expect(card).toContain("no controller")
+		expect(card).toContain("DaemonSet ignored")
+	end)
+
+	it("shows the revision each workload rolls back to", function()
+		local KEY = "apps.v1.Deployment.tern-test-t1.web"
+		local w: A.World = {
+			["step:targets"] = A.ok(Fixtures.read("kubectl/track1/get-deploy-web-json.txt")),
+			["step:history"] = A.ok(Fixtures.read("kubectl/track1/rollout-history-deploy.txt")),
+			["step:dry-run"] = A.ok("deployment.apps/web rolled back (server dry run)\n"),
+		}
+		w["step:revision:" .. KEY] = A.ok(Fixtures.read("kubectl/track1/rollout-history-deploy-rev1-json.txt"))
+		local s = ready(linkFor({ op = "undo", kind = "deployment", name = "web", namespace = "tern-test-t1" }), w)
+		local objects = N.text(N.find(Render.view(s).main, N.key("objects")) :: N.Node)
+		expect(objects).toContain("to be rolled back")
+		expect(objects).toContain("revision 2 → 1")
+	end)
+
+	it("names the edited file and the pane of an edit approval", function()
+		local files = {
+			{ path = "/tmp/kubectl-edit-1.yaml", size = 1, sha256 = string.rep("a", 64) },
+			{ path = "/tmp/d/original.yaml", size = 1, sha256 = string.rep("b", 64) },
+		}
+		local s, effects = A.init(A.requestPath(), {
+			request = A.request({
+				argv = { "kubectl", "edit", "widget/w1" },
+				files = files,
+				edit = { file = files[1].path, original = files[2].path },
+			}),
+		})
+		A.drive(
+			s,
+			effects,
+			A.cluster({
+				files = files,
+				["step:convert-original"] = A.ok(Fixtures.read("kubectl/track1/convert-original.txt")),
+				["step:convert-edited"] = A.failed(1, "error: bad yaml"),
+				["step:targets"] = A.ok(Fixtures.read("kubectl/track1/get-widget-json.txt")),
+			})
+		)
+		local card = N.text(N.find(Render.view(s).main, N.key("edit")) :: N.Node)
+		expect(card).toContain("/tmp/kubectl-edit-1.yaml")
+		expect(card).toContain("shell pane 7")
+		expect(card).toContain("error: bad yaml")
+	end)
+
+	it("offers Change input after an input op's preview and lists i in the help", function()
+		local s = ready(linkFor({ op = "scale", kind = "deployment", name = "web", namespace = "apps", replicas = 2 }))
+		local v = Render.view(s)
+		present(N.find(v.main, N.all(N.kind("el"), N.key("input"))))
+		expect(N.text(v.dock :: N.Node)).toContain("i change input")
+		A.send(s, A.key("?", "?"), A.cluster())
+		expect(N.text(Render.view(s).layer :: N.Node)).toContain("Change the input")
 	end)
 end)
 

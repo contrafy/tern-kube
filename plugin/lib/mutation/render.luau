@@ -6,7 +6,9 @@ local Capture = require("../lens/capture")
 local Command = require("../kubectl/command")
 local Confirm = require("./confirm")
 local Diffseg = require("./diffseg")
+local Link = require("./link")
 local MutationView = require("../render/mutation_view")
+local Rollout = require("./rollout")
 local Session = require("./session")
 local T = require("./types")
 local Textfield = require("../textfield")
@@ -137,7 +139,11 @@ local function header(s: State): Node
 	local plan = s.plan
 	if plan then
 		local ns: string
-		if plan.allNamespaces then
+		if plan.family == "cordon" or plan.family == "uncordon" or plan.family == "drain" then
+			ns = "cluster-scoped (nodes)"
+		elseif plan.family == "edit" then
+			ns = "as in the edited objects"
+		elseif plan.allNamespaces then
 			ns = "all namespaces"
 		elseif plan.explicitNamespace then
 			ns = plan.explicitNamespace :: string
@@ -224,6 +230,38 @@ end
 
 -- Summary and objects ---------------------------------------------------------
 
+local TARGET_WORD: { [string]: string } = {
+	delete = "to delete",
+	scale = "to scale",
+	restart = "to restart",
+	undo = "to roll back",
+	pause = "to pause",
+	resume = "to resume",
+	patch = "to patch",
+	label = "to label",
+	annotate = "to annotate",
+	cordon = "to cordon",
+	uncordon = "to uncordon",
+	drain = "to drain",
+	edit = "edited",
+}
+
+local OBJECT_VERB: { [string]: string } = {
+	delete = "deleted",
+	scale = "scaled",
+	restart = "restarted",
+	undo = "rolled back",
+	pause = "paused",
+	resume = "resumed",
+	patch = "patched",
+	label = "labeled",
+	annotate = "annotated",
+	cordon = "cordoned",
+	uncordon = "uncordoned",
+	drain = "drained",
+	edit = "edited",
+}
+
 local function countBadges(s: State): { Node }
 	local out: { Node } = {}
 	local function add(n: number, word: string, tone: string)
@@ -258,15 +296,20 @@ local function countBadges(s: State): { Node }
 	local plan = s.plan
 	if plan and s.targets and plan.family ~= "apply" then
 		local n = #(s.targets :: { any })
-		local word = ({
-			delete = "to delete",
-			scale = "to scale",
-			restart = "to restart",
-		} :: { [string]: string })[plan.family] or "target"
-		add(n, word, if plan.family == "delete" then "error" else "info")
+		local word = TARGET_WORD[plan.family] or "target"
+		add(n, word, if plan.family == "delete" or plan.family == "drain" then "error" else "info")
 		if n == 0 then
 			table.insert(out, ui.badge("nothing matched", "warning", { key = "c-none" }))
 		end
+	end
+	local objects = s.objects
+	if objects then
+		add(#objects.unchanged, "unchanged", "muted")
+	end
+	local d = s.drainFacts
+	if d then
+		add(#d.evictions, "to evict", "error")
+		add(#d.pdbBlocked, "PDB-blocked", "error")
 	end
 	return out
 end
@@ -338,15 +381,28 @@ local function diffCards(s: State): Node?
 	return ui.col(cards, { key = "diffs" })
 end
 
-local function unchangedNote(s: State): Node?
-	local dry = s.dryRun
-	if dry == nil or s.plan == nil or (s.plan :: T.Plan).family ~= "apply" then
-		return nil
+local function keyName(key: string): string
+	local id = Diffseg.identity(key)
+	if id == nil then
+		return key
 	end
+	return string.lower(id.kind) .. "/" .. (if id.namespace then id.namespace .. "/" else "") .. id.name
+end
+
+local function unchangedNote(s: State): Node?
 	local names: { string } = {}
-	for _, r in dry.results do
-		if r.action == "unchanged" then
-			table.insert(names, string.lower(r.kind) .. "/" .. r.name)
+	local objects = s.objects
+	if objects then
+		for _, key in objects.unchanged do
+			table.insert(names, keyName(key))
+		end
+	end
+	local dry = s.dryRun
+	if dry and s.plan and (s.plan :: T.Plan).family == "apply" then
+		for _, r in dry.results do
+			if r.action == "unchanged" then
+				table.insert(names, string.lower(r.kind) .. "/" .. r.name)
+			end
 		end
 	end
 	if #names == 0 then
@@ -360,6 +416,11 @@ local function objectsCard(s: State): Node?
 	local targets = s.targets
 	if plan == nil or targets == nil or plan.family == "apply" or #targets == 0 then
 		return nil
+	end
+	local undoByName: { [string]: { from: number, to: number } } = {}
+	local undoTargets: { Rollout.UndoTarget } = s.undo or {}
+	for _, u in undoTargets do
+		undoByName[u.name] = { from = u.from, to = u.to }
 	end
 	local items: { { { SpanLike } } } = {}
 	for _, r in targets do
@@ -378,12 +439,123 @@ local function objectsCard(s: State): Node?
 				)
 			)
 		end
+		local u = undoByName[r.name]
+		if u then
+			table.insert(value, ui.span(string.format("   revision %d → %d", u.from, u.to), "strong"))
+		end
 		table.insert(items, { { r.kind :: SpanLike }, value })
 	end
 	local kv = ui.kv(items)
-	local verb = ({ delete = "deleted", scale = "scaled", restart = "restarted" } :: { [string]: string })[plan.family]
-		or "affected"
+	local verb = OBJECT_VERB[plan.family] or "affected"
 	return ui.card({ string.format("%d object(s) to be %s", #targets, verb) }, { kv }, { key = "objects" })
+end
+
+local function podKey(p: { namespace: string, name: string }): string
+	return p.namespace .. "/" .. p.name
+end
+
+-- Pods of the drained node(s) by namespace, with what kubectl does to each.
+local function drainCard(s: State): Node?
+	local d = s.drainFacts
+	if d == nil then
+		return nil
+	end
+	local marks: { [string]: { string } } = {}
+	local function mark(list: { { namespace: string, name: string } }, text: string)
+		for _, p in list do
+			local k = podKey(p)
+			marks[k] = marks[k] or {}
+			table.insert(marks[k], text)
+		end
+	end
+	mark(d.daemonSetIgnored, "DaemonSet ignored")
+	mark(d.unmanaged, "no controller")
+	mark(d.pdbBlocked, "PDB-blocked")
+	for _, pf in d.preflight do
+		if pf.category == "local-storage" then
+			mark(pf.pods, "emptyDir")
+		elseif pf.category == "unmanaged" then
+			mark(pf.pods, "no controller")
+		end
+	end
+	local seen: { [string]: boolean } = {}
+	local byNs: { [string]: { string } } = {}
+	local order: { string } = {}
+	local function addPod(p: { namespace: string, name: string })
+		local k = podKey(p)
+		if seen[k] then
+			return
+		end
+		seen[k] = true
+		if byNs[p.namespace] == nil then
+			byNs[p.namespace] = {}
+			table.insert(order, p.namespace)
+		end
+		table.insert(byNs[p.namespace], p.name)
+	end
+	for _, list in { d.evictions, d.pdbBlocked, d.unmanaged, d.daemonSetIgnored } do
+		for _, p in list do
+			addPod(p)
+		end
+	end
+	for _, pf in d.preflight do
+		for _, p in pf.pods do
+			addPod(p)
+		end
+	end
+	table.sort(order)
+	local rows: { Node } = {}
+	for i, ns in order do
+		local names = byNs[ns]
+		table.sort(names)
+		local line: { Node } = { ui.text({ ui.span(ns, "strong") }, { key = "ns" }) }
+		for j, name in names do
+			local cells: { Node } = { ui.text({ ui.span(name, "mono") }, { key = "n" }) }
+			local podMarks: { string } = marks[ns .. "/" .. name] or {}
+			for k, text in podMarks do
+				local tone = if text == "PDB-blocked" or text == "emptyDir" then "error" else "warning"
+				if text == "DaemonSet ignored" then
+					tone = "neutral"
+				end
+				table.insert(cells, ui.badge(text, tone, { key = "b" .. k }))
+			end
+			table.insert(line, ui.row(cells, { key = "p" .. j, wrap = true }))
+		end
+		table.insert(rows, ui.col(line, { key = "g" .. i, gap = "none" }))
+	end
+	if #rows == 0 then
+		table.insert(rows, ui.muted("No pods to evict.", { key = "none" }))
+	end
+	local title = string.format("%d pod(s) to evict", #d.evictions)
+	return ui.card({ title }, rows, { key = "drain", role = "tern-kube.approve-drain" })
+end
+
+local function editCard(s: State): Node?
+	local plan = s.plan
+	local r = s.request
+	if plan == nil or plan.edit == nil then
+		return nil
+	end
+	local edit = plan.edit :: T.EditInput
+	local items: { { { SpanLike } } } = {
+		{ { "Edited file" :: SpanLike }, { ui.span(edit.file, "mono") } },
+	}
+	if r then
+		table.insert(items, { { "Pane" :: SpanLike }, { ui.span("shell pane " .. r.pane, "muted") } })
+	end
+	local f = s.editFacts
+	if f and #f.renamed > 0 then
+		local names: { string } = {}
+		for _, key in f.renamed do
+			table.insert(names, keyName(key))
+		end
+		table.insert(items, { { "Renamed" :: SpanLike }, { ui.span(table.concat(names, ", "), "error") } })
+	end
+	if f and f.rejected then
+		table.insert(items, { { "Rejected" :: SpanLike }, { ui.span(f.rejected :: string, "error") } })
+	end
+	local kv = ui.kv(items)
+	return ui.card({ "kubectl edit" }, { kv }, { key = "edit", role = "tern-kube.approve-edit" })
 end
 
 local function risksCard(s: State): Node?
@@ -446,46 +618,38 @@ local function confirmNodes(s: State, out: { Node })
 	local req = s.requirements
 	if s.phase == "input" then
 		local link = s.link
-		if link and link.op == "apply" then
+		if link then
+			local prompt = Link.prompt(link :: Link.Request)
 			table.insert(
 				out,
 				ui.text({
-					ui.span("Apply which file or directory? ", "strong"),
-					ui.span("relative to ", "muted"),
-					ui.span(link.cwd or "/", "mono"),
-					ui.span("; -k DIR for a kustomization, -R to recurse; then enter", "muted"),
-				}, { key = "prompt" })
-			)
-		else
-			table.insert(
-				out,
-				ui.text({
-					ui.span("Scale ", "strong"),
-					ui.span(if link then (link.kind or "") .. "/" .. (link.name or "") else "", "mono"),
-					ui.span(" to how many replicas? ", "strong"),
-					ui.span("digits, then enter", "muted"),
+					ui.span(prompt.text, "strong"),
+					ui.span("   " .. prompt.hint, "muted"),
 				}, { key = "prompt" })
 			)
 		end
-		local apply = link ~= nil and link.op == "apply"
 		table.insert(out, {
 			k = "input",
 			p = {
 				key = "typed",
 				text = s.typed,
 				cursor = Textfield.caretFor(s.input, s.typed),
-				placeholder = if apply then "path" else "replicas",
-				prompt = if apply then ">" else "#",
+				prompt = ">",
 			},
 		})
 	elseif s.phase == "ready" and req then
 		if #req.blockedBy > 0 then
 			local lines: { Node } = {}
 			for i, r in req.blockedBy do
-				local text = if r.id == "preview-failed"
-					then "The preview failed (see Preview above); a failed preview cannot be confirmed "
-						.. "unless mutations.allow_failed_preview_override is enabled."
-					else r.text
+				local text = r.text
+				if r.id == "preview-failed" then
+					text = if string.sub(r.text, 1, 18) == "The preview failed"
+						then "The preview failed (see Preview above); a failed preview cannot be confirmed "
+							.. "unless mutations.allow_failed_preview_override is enabled."
+						else r.text
+							.. " (a failed preview cannot be confirmed unless "
+							.. "mutations.allow_failed_preview_override is enabled)"
+				end
 				table.insert(lines, ui.text({ ui.span(text, "error") }, { key = "b" .. i }))
 			end
 			table.insert(
@@ -603,6 +767,9 @@ local function confirmNodes(s: State, out: { Node })
 	if s.phase == "ready" or s.phase == "error" then
 		if s.argv and not s.decided then
 			table.insert(buttons, button("Preview again", "rerun", "tk-mbtn-plain", "rerun", "r"))
+		end
+		if Session.canReinput(s) then
+			table.insert(buttons, button("Change input", "input", "tk-mbtn-plain", "input", "i"))
 		end
 	end
 	table.insert(buttons, button("?", "help", "tk-mbtn-plain", "help", "help"))
@@ -733,8 +900,8 @@ end
 local function hints(s: State): { SpanLike }
 	if s.phase == "input" then
 		local link = s.link
-		local apply = link ~= nil and link.op == "apply"
-		return { ui.span((if apply then "path" else "digits") .. " · enter preview · esc cancel", "muted") }
+		local hint = if link then Link.prompt(link :: Link.Request).hint .. " · " else ""
+		return { ui.span(hint .. "enter preview · esc cancel", "muted") }
 	elseif s.phase == "ready" then
 		if Session.typing(s) then
 			return {
@@ -745,12 +912,15 @@ local function hints(s: State): { SpanLike }
 			}
 		end
 		local tier = s.assessment and s.assessment.tier
+		local reinput = if Session.canReinput(s) then "i change input · " else ""
 		if tier == "blocked" then
 			return {
 				ui.span(
 					"esc "
 						.. (if s.mode == "guard" then "deny" else "cancel")
-						.. " · r preview again · c command · ? help",
+						.. " · r preview again · "
+						.. reinput
+						.. "c command · ? help",
 					"muted"
 				),
 			}
@@ -760,7 +930,9 @@ local function hints(s: State): { SpanLike }
 		return {
 			ui.span(
 				target
-					.. "enter confirm · esc cancel · tab next diff · r preview again · c command · y copy · ? help",
+					.. "enter confirm · esc cancel · tab next diff · r preview again · "
+					.. reinput
+					.. "c command · y copy · ? help",
 				"muted"
 			),
 		}
@@ -771,7 +943,14 @@ local function hints(s: State): { SpanLike }
 	elseif s.phase == "expired" then
 		return { ui.span("the request expired; esc closes", "warning") }
 	elseif s.phase == "error" then
-		return { ui.span("esc close · c command · ? help", "muted") }
+		return {
+			ui.span(
+				if Session.canReinput(s)
+					then "esc close · i change input · c command · ? help"
+					else "esc close · c command · ? help",
+				"muted"
+			),
+		}
 	end
 	return { ui.span("previewing … esc cancel", "muted") }
 end
@@ -783,6 +962,7 @@ M.KEYS = {
 	{ "tab / shift+tab", "Next / previous resource diff" },
 	{ "t", "Confirm an inferred target context" },
 	{ "r", "Preview again (after a result: requery)" },
+	{ "i", "Change the input (scale, apply, label, annotate, patch, drain) and preview again" },
 	{ "c", "Show the exact command" },
 	{ "y", "Copy the exact command" },
 	{ "?", "This help" },
@@ -837,6 +1017,8 @@ function M.view(s: State): View
 	add(diffCards(s))
 	add(unchangedNote(s))
 	add(objectsCard(s))
+	add(drainCard(s))
+	add(editCard(s))
 	add(risksCard(s))
 	if s.phase == "done" then
 		resultNodes(s, main)

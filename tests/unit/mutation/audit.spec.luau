@@ -102,4 +102,40 @@ describe("audit record", function()
 	end)
 end)
 
+describe("audit record: previewed objects and input files", function()
+	local function with(over: { [string]: any }): Audit.Event
+		local e: any = table.clone(EVENT)
+		for k, v in over do
+			e[k] = v
+		end
+		return e
+	end
+
+	it("lists what the preview resolved, capped at 50 with the true total", function()
+		local objects: { string } = {}
+		for i = 1, 60 do
+			table.insert(objects, "ConfigMap apps/cm" .. i)
+		end
+		local r =
+			Audit.record(plan({ "kubectl", "label", "configmap", "-l", "a=b", "x=y" }), with({ objects = objects }))
+		expect(#(r.objects :: { string })).toBe(50)
+		expect(r.objects_total).toBe(60)
+		expect(Audit.line(r)).toContain('"objects":["ConfigMap apps/cm1",')
+	end)
+
+	it("records the digest of every fingerprinted input file, never its size or content", function()
+		local r = Audit.record(
+			plan({ "kubectl", "patch", "configmap/cm", "--patch-file", "p.json" }),
+			with({ files = { { path = "/w/p.json", size = 12, sha256 = string.rep("c", 64) } } })
+		)
+		expect(Audit.line(r)).toContain('"files":[{"path":"/w/p.json","sha256":"' .. string.rep("c", 64) .. '"}]')
+	end)
+
+	it("keeps the record version at 1: the new fields are additive", function()
+		local r = Audit.record(plan({ "kubectl", "cordon", "n1" }), with({ objects = { "Node n1" } }))
+		expect(r.v).toBe(1)
+		expect((string.find(Audit.line(r), '"files"', 1, true))).toBeNil()
+	end)
+end)
+
 return nil

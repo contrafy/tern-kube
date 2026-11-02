@@ -548,4 +548,209 @@ describe("approve session: quick-action mutations", function()
 	end)
 end)
 
+local function linkFor(fields: { [string]: any }): string
+	local r: any = { recursive = false, overwrite = false, context = "kind-dev", source = "chosen" }
+	for k, v in fields do
+		r[k] = v
+	end
+	return (Link.encode(r)) :: string
+end
+
+describe("approve session: two-stage previews (rollout undo)", function()
+	local LIVE = Fixtures.read("kubectl/track1/get-deploy-web-json.txt")
+	local HISTORY = Fixtures.read("kubectl/track1/rollout-history-deploy.txt")
+	local REV1 = Fixtures.read("kubectl/track1/rollout-history-deploy-rev1-json.txt")
+	local KEY = "apps.v1.Deployment.tern-test-t1.web"
+	local UNDO = linkFor({ op = "undo", kind = "deployment", name = "web", namespace = "tern-test-t1" })
+	local function world(extra: { [string]: any }?): A.World
+		local w: A.World = {
+			["step:targets"] = A.ok(LIVE),
+			["step:history"] = A.ok(HISTORY),
+			["step:dry-run"] = A.ok("deployment.apps/web rolled back (server dry run)\n"),
+			["step:revision:" .. KEY] = A.ok(REV1),
+			["v-history"] = A.ok(HISTORY),
+		}
+		local fields: { [string]: any } = extra or {}
+		for k, v in fields do
+			w[k] = v
+		end
+		return w
+	end
+
+	it("reads the target revision only after the history named it, then diffs the template", function()
+		local s, d = ready(UNDO, world())
+		expect(s.phase).toBe("ready")
+		local rev = A.find(d.runs, "run", "step:revision:" .. KEY) :: Effect
+		expect(table.find(argvOf(rev), "--revision=1") ~= nil).toBe(true)
+		expect(s.undo).toEqual({ { key = KEY, name = "web", from = 2, to = 1 } })
+		local diff = s.diff :: any
+		expect(diff.modify).toBe(1)
+		expect(table.concat(diff.segments[1].lines, "\n")).toContain("pause:3.9")
+		expect((s.assessment :: any).tier).toBe("typed")
+		expect((s.requirements :: any).typed).toBe("web")
+	end)
+
+	it("fails the preview when the history has no revision to roll back to", function()
+		local s = ready(
+			UNDO,
+			world({ ["step:history"] = A.ok("deployment.apps/web\nREVISION  CHANGE-CAUSE\n1         <none>\n") })
+		)
+		expect(s.phase).toBe("ready")
+		expect((s.assessment :: any).tier).toBe("blocked")
+		expect((s.assessment :: any).reasons[1].text).toContain("no previous revision")
+	end)
+
+	it("refuses at confirm when a rollout happened since the preview", function()
+		local moved = HISTORY .. "3         <none>\n"
+		local s = ready(UNDO, world({ ["v-history"] = A.ok(moved) }))
+		local respond = A.cluster(world({ ["v-history"] = A.ok(moved) }))
+		A.typeText(s, "web", respond)
+		local d = A.send(s, A.key("enter"), respond)
+		expect(s.phase).toBe("ready")
+		expect(s.stale).toBe(true)
+		expect(s.confirmError).toContain("A rollout happened since the preview")
+		expect(A.find(d.runs, "run", "exec")).toBeNil()
+	end)
+
+	it("runs the undo when the history did not move", function()
+		local s = ready(UNDO, world())
+		local respond = A.cluster(world())
+		A.typeText(s, "web", respond)
+		local d = A.send(s, A.key("enter"), respond)
+		present(A.find(d.runs, "run", "v-history"))
+		local exec = A.find(d.runs, "run", "exec") :: Effect
+		expect(table.concat(argvOf(exec), " ")).toContain("rollout undo deployment/web")
+	end)
+end)
+
+describe("approve session: object diffs and input ops", function()
+	local CM = '{"apiVersion":"v1","kind":"ConfigMap","metadata":{"name":"cm","namespace":"apps"%s}}'
+	local LABEL = linkFor({ op = "label", kind = "configmap", name = "cm", namespace = "apps", edits = { "a=b" } })
+	local function world(): A.World
+		return {
+			["step:targets"] = A.ok(string.format(CM, "")),
+			["step:after"] = A.ok(string.format(CM, ',"labels":{"a":"b"}')),
+		}
+	end
+
+	it("diffs the live object against the server dry run of the label", function()
+		local s, d = ready(LABEL, world())
+		expect(s.phase).toBe("ready")
+		local after = A.find(d.runs, "run", "step:after") :: Effect
+		expect(table.concat(argvOf(after), " ")).toContain("label configmap/cm a=b")
+		expect(table.find(argvOf(after), "--dry-run=server") ~= nil).toBe(true)
+		local seg = (s.diff :: any).segments[1]
+		expect(seg.action).toBe("modify")
+		expect(table.concat(seg.lines, "\n")).toContain("+    a: b")
+		expect((s.assessment :: any).tier).toBe("simple")
+	end)
+
+	it("i returns to the prompt with the last input, and the edited input previews again", function()
+		local s = ready(LABEL, world())
+		local respond = A.cluster(world())
+		local d = A.send(s, A.key("i", "i"), respond)
+		expect(s.phase).toBe("input")
+		expect(s.typed).toBe("a=b")
+		present(A.find(d.effects, "focus"))
+		A.typeText(s, " c=d", respond)
+		A.send(s, A.key("enter"), respond)
+		expect(s.phase).toBe("ready")
+		expect(s.argv).toEqual({ "kubectl", "label", "configmap/cm", "a=b", "c=d", "-n", "apps" })
+	end)
+
+	it("i does nothing for ops without input", function()
+		local s = ready(linkFor({ op = "restart", kind = "deployment", name = "web", namespace = "apps" }))
+		expect((s.assessment :: any).tier).toBe("simple")
+		local _, _, changed = Session.update(s, A.key("i", "i"))
+		expect(changed).toBe(false)
+		expect(s.phase).toBe("ready")
+	end)
+
+	it("starts a label link without edits at the prompt", function()
+		local s, effects = A.init(linkFor({ op = "label", kind = "configmap", name = "cm", namespace = "apps" }))
+		expect(s.phase).toBe("input")
+		expect(s.typed).toBe("")
+		present(A.find(effects, "focus"))
+	end)
+
+	it("refuses a native drain whose timeout could outlive the execute timeout", function()
+		local s, d = ready(linkFor({
+			op = "drain",
+			kind = "node",
+			name = "n1",
+			drainFlags = { "--ignore-daemonsets", "--timeout=10m" },
+		}))
+		expect(s.phase).toBe("error")
+		expect(s.errors[1]).toContain("below mutations.execute_timeout_ms (300 s)")
+		expect(A.find(d.runs, "run", "step:targets")).toBeNil()
+	end)
+end)
+
+describe("approve session: edit approvals", function()
+	local FILE = "/tmp/kubectl-edit-1.yaml"
+	local ORIGINAL = "/tmp/tkube-edit.abc/original.yaml"
+	local FILES = {
+		{ path = FILE, size = 10, sha256 = string.rep("a", 64) },
+		{ path = ORIGINAL, size = 10, sha256 = string.rep("b", 64) },
+	}
+	local function editRequest(edit: { file: string, original: string }?, files: any?): string
+		return A.request({
+			argv = { "kubectl", "edit", "widget/w1" },
+			files = files or FILES,
+			edit = edit or { file = FILE, original = ORIGINAL },
+		})
+	end
+
+	it("refuses an edit request whose files are not both fingerprinted", function()
+		local s = A.init(A.requestPath(), { request = editRequest(nil, { FILES[1] }) })
+		expect(s.phase).toBe("error")
+		expect(s.errors[1]).toContain("both be listed in files")
+	end)
+
+	it("refuses relative edit paths", function()
+		local s = A.init(A.requestPath(), {
+			request = editRequest({ file = "kubectl-edit-1.yaml", original = ORIGINAL }),
+		})
+		expect(s.phase).toBe("error")
+		expect(s.errors[1]).toContain("two absolute paths")
+	end)
+
+	it("previews the edit as server dry runs of its merge patch and approves without executing", function()
+		local live = Fixtures.read("kubectl/track1/get-widget-json.txt")
+		local after = string.gsub(live, '"size": 3', '"size": 4')
+		local w: A.World = {
+			files = FILES,
+			["step:convert-original"] = A.ok(Fixtures.read("kubectl/track1/convert-original.txt")),
+			["step:convert-edited"] = A.ok(Fixtures.read("kubectl/track1/convert-edited.txt")),
+			["step:targets"] = A.ok(live),
+			["step:after:lens.example.com.v1alpha1.Widget.tern-test-t1.w1"] = A.ok(after),
+		}
+		local s, effects = A.init(A.requestPath(), { request = editRequest() })
+		local d = A.drive(s, effects, A.cluster(w))
+		expect(s.phase).toBe("ready")
+		present(A.find(d.runs, "run", "step:after:lens.example.com.v1alpha1.Widget.tern-test-t1.w1"))
+		expect((s.diff :: any).modify).toBe(1)
+		expect((s.editFacts :: any).changed).toBe(1)
+		d = A.send(s, A.key("enter"), A.cluster(w))
+		local write = A.find(d.runs, "write", "respond") :: Effect
+		expect(write.text).toContain("decision=approve")
+		expect(A.find(d.runs, "run", "exec")).toBeNil()
+	end)
+
+	it("lets a server-rejected edit be approved: kubectl reopens the editor with the error", function()
+		local w: A.World = {
+			files = FILES,
+			["step:convert-original"] = A.ok(Fixtures.read("kubectl/track1/convert-original.txt")),
+			["step:convert-edited"] = A.failed(1, "error: error parsing edited.yaml: yaml: line 3\n"),
+			["step:targets"] = A.ok(Fixtures.read("kubectl/track1/get-widget-json.txt")),
+		}
+		local s, effects = A.init(A.requestPath(), { request = editRequest() })
+		A.drive(s, effects, A.cluster(w))
+		expect(s.phase).toBe("ready")
+		local a = s.assessment :: any
+		expect(a.tier).toBe("simple")
+		expect(a.reasons[1].id).toBe("edit-rejected")
+	end)
+end)
+
 return nil

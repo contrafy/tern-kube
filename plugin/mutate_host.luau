@@ -283,6 +283,10 @@ local function requestFile(arg: string?): { text: string?, error: string? }?
 	return { error = Shellenv.errorText(text) }
 end
 
+local function isList(t: { [any]: any }): boolean
+	return next(t) == nil and tern.json.encode(t) == "[]"
+end
+
 function M.register()
 	pcall(tern.fs.mkdir, M.SPOOL)
 	tern.block.define("approve", {
@@ -300,6 +304,7 @@ function M.register()
 				request = requestFile(args[1]),
 				panes = paneIds(),
 				decode = tern.json.decode,
+				json = { null = tern.json.null, isList = isList },
 			})
 			local h: Host = { s = s, cx = cx, stopped = false, warned = false }
 			log.info("tern-kube approve.init", s.mode, s.phase, args[1] or "")

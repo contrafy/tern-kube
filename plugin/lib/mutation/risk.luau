@@ -3,7 +3,10 @@
 -- argv and preview facts are certain; manifest scans are text heuristics and
 -- are marked advisory: tern-kube never claims policy conformance.
 local Diffseg = require("./diffseg")
+local Drain = require("./drain")
 local Kinds = require("../kubectl/kinds")
+local Objdiff = require("./objdiff")
+local Rollout = require("./rollout")
 local T = require("./types")
 local Types = require("../model/types")
 local Yaml = require("../parse/yaml")
@@ -12,15 +15,36 @@ type Plan = T.Plan
 type Reason = T.Reason
 type Tier = T.Tier
 
+export type EditFacts = {
+	-- Identities only one side of the edit has (kubectl refuses renames).
+	renamed: { string },
+	-- Objects whose live resourceVersion moved since kubectl read them.
+	liveChanged: { string },
+	-- First line of the server's rejection (edited file or a dry run).
+	rejected: string?,
+	-- Objects the edit changes.
+	changed: number,
+}
+
 export type Facts = {
 	-- nil while the preview is running; false once any step failed.
 	previewOk: boolean?,
 	failure: string?,
-	-- Objects resolved by the `targets` step (delete/scale/restart/debug).
+	-- Objects resolved by the `targets` step (delete/scale/restart/debug/...).
 	targets: { Types.ResourceRef }?,
-	-- -f contents (or `kubectl kustomize` output) as the host read them.
+	-- -f contents (or `kubectl kustomize` output) as the host read them;
+	-- for edit, the edited file.
 	manifests: { T.Manifest }?,
+	-- edit: the original file; heuristics it already matches are not reported.
+	baseline: { T.Manifest }?,
 	diff: Diffseg.Summary?,
+	-- Decoded `targets` objects (before state).
+	live: { any }?,
+	-- Before/after object diffs (families without kubectl diff).
+	objects: Objdiff.Result?,
+	drain: Drain.Facts?,
+	undo: { Rollout.UndoTarget }?,
+	edit: EditFacts?,
 }
 
 local M = {}
@@ -47,6 +71,16 @@ local VERB_WORD: { [T.Family]: string } = {
 	["debug-pod"] = "debug",
 	["debug-node"] = "debug",
 	["cronjob-run"] = "run",
+	undo = "undo",
+	pause = "pause",
+	resume = "resume",
+	patch = "patch",
+	label = "label",
+	annotate = "annotate",
+	cordon = "cordon",
+	uncordon = "uncordon",
+	drain = "drain",
+	edit = "edit",
 }
 
 type Builder = { list: { Reason }, byId: { [string]: Reason } }
@@ -309,7 +343,7 @@ local MANIFEST_RULES: { [string]: { severity: T.Severity, tier: Tier, text: stri
 	["missing-limits"] = { severity = "low", tier = "simple", text = "Workload without resource limits" },
 }
 
-local function manifestReasons(b: Builder, manifests: { T.Manifest })
+local function manifestHits(manifests: { T.Manifest }): (Hits, { string })
 	local hits: Hits = {}
 	local order: { string } = {}
 	for _, m in manifests do
@@ -359,17 +393,523 @@ local function manifestReasons(b: Builder, manifests: { T.Manifest })
 			end
 		end
 	end
+	return hits, order
+end
+
+-- `baseline`: heuristics the original already matches are not reported (edit).
+local function manifestReasons(b: Builder, manifests: { T.Manifest }, baseline: { T.Manifest }?)
+	local hits, order = manifestHits(manifests)
+	local before: Hits = if baseline then (manifestHits(baseline)) else {}
 	for _, id in order do
-		local rule = MANIFEST_RULES[id]
-		add(b, id, rule.severity, rule.tier, rule.text .. ": " .. table.concat(hits[id], ", "), true)
+		local fresh: { string } = {}
+		for _, what in hits[id] do
+			if not (before[id] and table.find(before[id], what)) then
+				table.insert(fresh, what)
+			end
+		end
+		if #fresh > 0 then
+			local rule = MANIFEST_RULES[id]
+			add(b, id, rule.severity, rule.tier, rule.text .. ": " .. table.concat(fresh, ", "), true)
+		end
 	end
+end
+
+-- Per-family facts ---------------------------------------------------------------
+
+local function field(obj: any, ...: string): any
+	local v = obj
+	for _, k in { ... } do
+		if type(v) ~= "table" then
+			return nil
+		end
+		v = v[k]
+	end
+	return v
+end
+
+local function liveObjects(facts: Facts): { any }
+	return facts.live or {}
+end
+
+local function objectLabel(obj: any): string
+	return label({
+		kind = field(obj, "kind"),
+		namespace = field(obj, "metadata", "namespace"),
+		name = field(obj, "metadata", "name"),
+	})
+end
+
+local function selectorReason(b: Builder, plan: Plan, facts: Facts, word: string)
+	local what: string? = nil
+	if plan.selector then
+		what = "-l " .. plan.selector
+	elseif plan.fieldSelector then
+		what = "--field-selector " .. (plan.fieldSelector :: string)
+	elseif plan.all then
+		what = "--all"
+	elseif plan.allNamespaces then
+		what = "-A"
+	end
+	if what then
+		add(b, "broad-selector", "high", "typed", word .. " every object matching " .. what)
+	elseif facts.targets and #facts.targets > 1 then
+		add(
+			b,
+			"multiple-objects",
+			"high",
+			"typed",
+			string.format("%s %d objects at once", word, #(facts.targets :: { Types.ResourceRef }))
+		)
+	end
+end
+
+local function clusterScoped(facts: Facts): { Types.ResourceRef }
+	local out: { Types.ResourceRef } = {}
+	for _, r in facts.targets or {} :: { Types.ResourceRef } do
+		if r.namespace == nil and namespaced(r.kind, r.group) ~= true then
+			table.insert(out, r)
+		end
+	end
+	return out
+end
+
+local function noChange(b: Builder, facts: Facts)
+	local o = facts.objects
+	if o and #o.pairs > 0 and #o.summary.segments == 0 then
+		add(b, "no-change", "info", "simple", "The server dry run changes nothing")
+	end
+end
+
+local function images(obj: any): string
+	local out: { string } = {}
+	for _, c in field(obj, "spec", "template", "spec", "containers") or {} do
+		if type(c) == "table" and type(c.image) == "string" then
+			table.insert(out, c.image)
+		end
+	end
+	return table.concat(out, ", ")
+end
+
+local function undoReasons(b: Builder, plan: Plan, facts: Facts)
+	local pairsByKey: { [string]: Objdiff.Pair } = {}
+	local pairs_: { Objdiff.Pair } = if facts.objects then facts.objects.pairs else {}
+	for _, p in pairs_ do
+		pairsByKey[p.key] = p
+	end
+	local unchanged: { [string]: boolean } = {}
+	local unchangedKeys: { string } = if facts.objects then facts.objects.unchanged else {}
+	for _, k in unchangedKeys do
+		unchanged[k] = true
+	end
+	local parts: { string } = {}
+	for _, u in facts.undo or {} :: { Rollout.UndoTarget } do
+		local text = string.format("%s back to revision %d", u.name, u.to)
+		local p = pairsByKey[u.key]
+		if p then
+			local from, to = images(p.before), images(p.after)
+			if from ~= to then
+				text ..= string.format(" (images %s -> %s)", from, to)
+			end
+		end
+		table.insert(parts, text)
+		if unchanged[u.key] then
+			add(
+				b,
+				"undo-noop",
+				"info",
+				"simple",
+				string.format(
+					"Revision %d of %s has the current template: kubectl reports it and nothing changes",
+					u.to,
+					u.name
+				)
+			)
+		end
+	end
+	add(
+		b,
+		"undo",
+		"high",
+		"typed",
+		"Rolls the pod template "
+			.. (if #parts > 0 then "of " .. table.concat(parts, "; ") else "back")
+			.. ": every pod is replaced"
+	)
+	selectorReason(b, plan, facts, "Rolls back")
+end
+
+local function pauseReasons(b: Builder, plan: Plan, facts: Facts)
+	local pause = plan.family == "pause"
+	for _, obj in liveObjects(facts) do
+		local paused = field(obj, "spec", "paused") == true
+		local name = objectLabel(obj)
+		if pause and paused then
+			add(
+				b,
+				"already-paused",
+				"info",
+				"simple",
+				name .. " is already paused: kubectl will exit 1 and change nothing"
+			)
+		elseif not pause and not paused then
+			add(b, "not-paused", "info", "simple", name .. " is not paused: kubectl will exit 1 and change nothing")
+		elseif not pause then
+			local gen, observed = field(obj, "metadata", "generation"), field(obj, "status", "observedGeneration")
+			if type(gen) == "number" and type(observed) == "number" and gen > observed then
+				add(
+					b,
+					"resume-pending",
+					"medium",
+					"simple",
+					"Resuming starts the rollout of changes made to " .. name .. " while paused"
+				)
+			end
+		end
+	end
+	selectorReason(b, plan, facts, if pause then "Pauses" else "Resumes")
+end
+
+local function patchReasons(b: Builder, plan: Plan, facts: Facts)
+	if plan.patchType == "json" then
+		add(b, "json-patch", "high", "typed", "JSON patch operations can remove or replace any path")
+	end
+	for _, r in clusterScoped(facts) do
+		add(b, "cluster-scoped", "high", "typed", r.kind .. " " .. r.name .. " is cluster-scoped")
+	end
+	if #plan.filenames > 0 or plan.kustomize then
+		add(b, "file-targets", "high", "typed", "Patches every object named in the -f/-k inputs")
+	end
+	selectorReason(b, plan, facts, "Patches")
+	local summary = if facts.objects then facts.objects.summary else nil
+	if summary and summary.removed > 0 and summary.added == 0 then
+		add(b, "removes-fields", "medium", "simple", "The patch only removes fields")
+	end
+	local sub = flag(plan, "subresource")
+	if sub == "status" or sub == "scale" then
+		add(b, "subresource", "info", "simple", "--subresource=" .. sub .. ": controllers overwrite status")
+	end
+	noChange(b, facts)
+end
+
+local SYSTEM_KEY = { "kubernetes%.io/", "k8s%.io/" }
+local POD_SECURITY = "pod-security.kubernetes.io/"
+local LAST_APPLIED = "kubectl.kubernetes.io/last-applied-configuration"
+
+local function labelReasons(b: Builder, plan: Plan, facts: Facts)
+	local word = if plan.family == "label" then "Labels" else "Annotates"
+	local field_ = if plan.family == "label" then "labels" else "annotations"
+	selectorReason(b, plan, facts, word)
+	local targetKinds: { [string]: boolean } = {}
+	for _, r in facts.targets or {} :: { Types.ResourceRef } do
+		targetKinds[r.kind] = true
+	end
+	for _, k in plan.kinds do
+		targetKinds[k.kind] = true
+	end
+	for _, r in clusterScoped(facts) do
+		local text = if r.kind == "Node"
+			then "Node " .. r.name .. ": node labels steer scheduling and topology"
+			elseif r.kind == "Namespace" then "Namespace " .. r.name .. ": namespace labels select policies"
+			else r.kind .. " " .. r.name .. " is cluster-scoped"
+		add(b, "cluster-scoped", "high", "typed", text)
+	end
+	local removals: { string } = {}
+	local system: { string } = {}
+	for _, e in plan.edits do
+		if e.remove then
+			table.insert(removals, e.key)
+		end
+		if plan.family == "label" and targetKinds.Namespace and string.sub(e.key, 1, #POD_SECURITY) == POD_SECURITY then
+			add(b, "pod-security", "high", "typed", e.key .. " changes Pod Security admission for every pod in it")
+		end
+		if plan.family == "annotate" and e.key == LAST_APPLIED then
+			add(
+				b,
+				"last-applied",
+				"high",
+				"typed",
+				"Rewrites the last-applied configuration kubectl apply diffs against"
+			)
+		end
+		for _, pattern in SYSTEM_KEY do
+			if string.find(e.key, pattern) and not table.find(system, e.key) then
+				table.insert(system, e.key)
+			end
+		end
+	end
+	if #system > 0 then
+		add(b, "system-keys", "medium", "simple", "System-managed keys: " .. table.concat(system, ", "))
+	end
+	local overwrites = 0
+	local ownedPodChange = false
+	local objectPairs: { Objdiff.Pair } = if facts.objects then facts.objects.pairs else {}
+	for _, p in objectPairs do
+		local before = field(p.before, "metadata", field_) or {}
+		local after = field(p.after, "metadata", field_) or {}
+		local changed = false
+		for k, v in before do
+			if after[k] ~= v then
+				changed = true
+				if after[k] ~= nil then
+					overwrites += 1
+				end
+			end
+		end
+		local owners = field(p.before, "metadata", "ownerReferences")
+		if changed and field(p.before, "kind") == "Pod" and type(owners) == "table" and #owners > 0 then
+			ownedPodChange = true
+		end
+	end
+	if overwrites > 0 then
+		add(b, "overwrites", "medium", "simple", string.format("%d existing value(s) change", overwrites))
+	end
+	if plan.family == "label" and ownedPodChange then
+		add(
+			b,
+			"pod-owner-labels",
+			"medium",
+			"simple",
+			"Changing labels of a pod with an owner may detach it from its ReplicaSet or Service selector; "
+				.. "the controller then creates a replacement",
+			true
+		)
+	end
+	if #removals > 0 then
+		add(b, "removals", "info", "simple", "Removes " .. table.concat(removals, ", "))
+	end
+	noChange(b, facts)
+end
+
+local CONTROL_PLANE = "node-role.kubernetes.io/control-plane"
+
+local function controlPlane(facts: Facts): { string }
+	local out: { string } = {}
+	for _, obj in liveObjects(facts) do
+		local labels = field(obj, "metadata", "labels")
+		if type(labels) == "table" and labels[CONTROL_PLANE] ~= nil then
+			table.insert(out, tostring(field(obj, "metadata", "name")))
+		end
+	end
+	return out
+end
+
+local function cordonReasons(b: Builder, plan: Plan, facts: Facts)
+	local cordon = plan.family == "cordon"
+	selectorReason(b, plan, facts, if cordon then "Cordons" else "Uncordons")
+	for _, obj in liveObjects(facts) do
+		local off = field(obj, "spec", "unschedulable") == true
+		local name = tostring(field(obj, "metadata", "name"))
+		if cordon and off then
+			add(b, "already-cordoned", "info", "simple", "Node " .. name .. " is already cordoned")
+		elseif not cordon and not off then
+			add(b, "already-uncordoned", "info", "simple", "Node " .. name .. " is already schedulable")
+		end
+	end
+	local cp = controlPlane(facts)
+	if #cp > 0 then
+		add(b, "control-plane", "medium", "simple", "Control-plane node: " .. table.concat(cp, ", "))
+	end
+end
+
+local PREFLIGHT_TEXT: { [Drain.Category]: string } = {
+	unmanaged = "pods that declare no controller",
+	daemonset = "DaemonSet-managed pods",
+	["local-storage"] = "pods with local storage",
+	other = "pods kubectl refuses to evict",
+}
+
+local function podCount(n: number): string
+	return string.format("%d pod%s", n, if n == 1 then "" else "s")
+end
+
+local function drainReasons(b: Builder, plan: Plan, facts: Facts)
+	local d = facts.drain
+	local opts = plan.drain
+	local nodes: { string } = {}
+	for _, r in facts.targets or {} :: { Types.ResourceRef } do
+		table.insert(nodes, r.name)
+	end
+	local nodeText = if #nodes > 0 then table.concat(nodes, ", ") else "the selected nodes"
+	if d then
+		local namespaces: { [string]: boolean } = {}
+		local nsCount = 0
+		for _, p in d.evictions do
+			if not namespaces[p.namespace] then
+				namespaces[p.namespace] = true
+				nsCount += 1
+			end
+		end
+		add(
+			b,
+			"drain",
+			"high",
+			"typed",
+			string.format(
+				"Evicts %s from node %s across %d namespace%s; the node stays cordoned",
+				podCount(#d.evictions),
+				nodeText,
+				nsCount,
+				if nsCount == 1 then "" else "s"
+			)
+		)
+		if #d.pdbBlocked > 0 then
+			add(
+				b,
+				"pdb-blocked",
+				"high",
+				"typed",
+				string.format(
+					"PodDisruptionBudget blocks eviction of %s now: drain cordons the node and retries until --timeout (%s)",
+					podCount(#d.pdbBlocked),
+					if opts and opts.timeout then opts.timeout :: string else "none: forever"
+				)
+			)
+		end
+		if opts and opts.force and #d.unmanaged > 0 then
+			add(
+				b,
+				"force-unmanaged",
+				"high",
+				"typed",
+				podCount(#d.unmanaged) .. " without a controller are deleted and never recreated"
+			)
+		end
+		if opts and opts.deleteEmptyDir then
+			add(b, "emptydir-loss", "high", "typed", "emptyDir data of evicted pods is lost (--delete-emptydir-data)")
+		end
+	else
+		add(b, "drain", "high", "typed", "Evicts the pods of node " .. nodeText .. "; the node stays cordoned")
+	end
+	if opts and opts.disableEviction then
+		add(b, "disable-eviction", "high", "typed", "Deletes pods directly, bypassing PodDisruptionBudgets")
+	end
+	if opts and opts.gracePeriod == 0 then
+		add(b, "grace-period-zero", "high", "typed", "--grace-period=0 skips graceful termination")
+	end
+	if opts and opts.timeout == nil then
+		add(b, "no-timeout", "medium", "simple", "No --timeout: a blocked eviction keeps drain retrying forever")
+	end
+	local cp = controlPlane(facts)
+	if #cp > 0 then
+		add(b, "control-plane", "high", "typed", "Control-plane node: " .. table.concat(cp, ", "))
+	end
+end
+
+local SENSITIVE_KINDS = {
+	Role = true,
+	ClusterRole = true,
+	RoleBinding = true,
+	ClusterRoleBinding = true,
+	MutatingWebhookConfiguration = true,
+	ValidatingWebhookConfiguration = true,
+	ValidatingAdmissionPolicy = true,
+	ValidatingAdmissionPolicyBinding = true,
+	CustomResourceDefinition = true,
+	Namespace = true,
+}
+
+local function editReasons(b: Builder, plan: Plan, facts: Facts)
+	local e = facts.edit
+	if e then
+		if #e.renamed > 0 then
+			add(
+				b,
+				"edit-renamed",
+				"high",
+				"blocked",
+				"The edit changes the apiVersion, kind or name of "
+					.. table.concat(e.renamed, ", ")
+					.. ": kubectl refuses that; deny and edit again"
+			)
+		end
+		if e.rejected then
+			add(
+				b,
+				"edit-rejected",
+				"high",
+				"simple",
+				"The server rejects this edit: "
+					.. (e.rejected :: string)
+					.. ". Approve to let kubectl reopen the editor with the error; deny discards it (a copy is saved)."
+			)
+		end
+		if #e.liveChanged > 0 then
+			add(
+				b,
+				"live-changed",
+				"medium",
+				"simple",
+				"Changed since kubectl read it: "
+					.. table.concat(e.liveChanged, ", ")
+					.. "; the diff is against the live object",
+				true
+			)
+		end
+		if e.changed > 1 then
+			add(b, "multiple-objects", "high", "typed", string.format("The edit changes %d objects", e.changed))
+		end
+	end
+	for _, r in facts.targets or {} :: { Types.ResourceRef } do
+		if SENSITIVE_KINDS[r.kind] then
+			add(b, "sensitive-kind", "high", "typed", r.kind .. " " .. r.name .. " controls access or the API itself")
+		end
+	end
+	for _, r in clusterScoped(facts) do
+		add(b, "cluster-scoped", "high", "typed", r.kind .. " " .. r.name .. " is cluster-scoped")
+	end
+	if truthy(plan, "save-config") then
+		add(b, "save-config", "info", "simple", "--save-config also rewrites last-applied, which is not previewed")
+	end
+	if facts.manifests then
+		manifestReasons(b, facts.manifests :: { T.Manifest }, facts.baseline or {})
+	end
+end
+
+local function familyReasons(b: Builder, plan: Plan, facts: Facts)
+	local f = plan.family
+	if f == "undo" then
+		undoReasons(b, plan, facts)
+	elseif f == "pause" or f == "resume" then
+		pauseReasons(b, plan, facts)
+	elseif f == "patch" then
+		patchReasons(b, plan, facts)
+	elseif f == "label" or f == "annotate" then
+		labelReasons(b, plan, facts)
+	elseif f == "cordon" or f == "uncordon" then
+		cordonReasons(b, plan, facts)
+	elseif f == "drain" then
+		drainReasons(b, plan, facts)
+	elseif f == "edit" then
+		editReasons(b, plan, facts)
+	end
+end
+
+local function preflightText(d: Drain.Facts): string?
+	local parts: { string } = {}
+	for _, p in d.preflight do
+		local text = PREFLIGHT_TEXT[p.category] .. " (" .. podCount(#p.pods) .. ")"
+		if p.flag then
+			text ..= " (use " .. (p.flag :: string) .. ")"
+		end
+		table.insert(parts, text)
+	end
+	return if #parts > 0 then table.concat(parts, "; ") else nil
 end
 
 local function factReasons(b: Builder, plan: Plan, facts: Facts)
 	if facts.previewOk == nil then
 		add(b, "preview-pending", "high", "blocked", "The preview has not finished")
 	elseif facts.previewOk == false then
-		add(b, "preview-failed", "high", "blocked", "The preview failed: " .. (facts.failure or "unknown error"))
+		local pre = if facts.drain then preflightText(facts.drain :: Drain.Facts) else nil
+		add(
+			b,
+			"preview-failed",
+			"high",
+			"blocked",
+			if pre
+				then "kubectl would cordon the node, then stop: " .. pre
+				else "The preview failed: " .. (facts.failure or "unknown error")
+		)
 	end
 	local diff = facts.diff
 	if plan.family == "apply" and diff and diff.delete > 0 then
@@ -436,7 +976,10 @@ function M.assess(plan: Plan, facts: Facts): T.Assessment
 	factReasons(b, plan, facts)
 	argvReasons(b, plan, facts)
 	if facts.manifests and (plan.family == "apply") then
-		manifestReasons(b, facts.manifests)
+		manifestReasons(b, facts.manifests :: { T.Manifest }, nil)
+	end
+	if facts.previewOk ~= nil then
+		familyReasons(b, plan, facts)
 	end
 	local tier: Tier = "simple"
 	for _, r in b.list do

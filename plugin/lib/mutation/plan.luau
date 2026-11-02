@@ -24,6 +24,16 @@ local OPERATION: { [T.Family]: string } = {
 	["debug-pod"] = "debug",
 	["debug-node"] = "debug node",
 	["cronjob-run"] = "create job",
+	undo = "rollout undo",
+	pause = "rollout pause",
+	resume = "rollout resume",
+	patch = "patch",
+	label = "label",
+	annotate = "annotate",
+	cordon = "cordon",
+	uncordon = "uncordon",
+	drain = "drain",
+	edit = "edit",
 }
 
 local FAMILIES: { [string]: T.Family } = {
@@ -34,7 +44,19 @@ local FAMILIES: { [string]: T.Family } = {
 	["debug-pod"] = "debug-pod",
 	["debug-node"] = "debug-node",
 	["cronjob-run"] = "cronjob-run",
+	undo = "undo",
+	pause = "pause",
+	resume = "resume",
+	patch = "patch",
+	label = "label",
+	annotate = "annotate",
+	cordon = "cordon",
+	uncordon = "uncordon",
+	drain = "drain",
+	edit = "edit",
 }
+
+local UNDOABLE = { Deployment = true, DaemonSet = true, StatefulSet = true }
 
 local DRY_RUN_NOOP = { client = true, server = true, unchanged = true, ["true"] = true }
 local DRY_RUN_REAL = { none = true, ["false"] = true }
@@ -55,7 +77,13 @@ local function nonEmpty(s: string?): string?
 	return if s ~= nil and s ~= "" then s else nil
 end
 
-local function familyOf(inv: Invocation): (T.Family?, Diagnostic?)
+local function truthy(list: { string }?): boolean
+	local v = last(list)
+	return v ~= nil and v ~= "false"
+end
+
+-- The family name (a FAMILIES key), or why the command needs no approval.
+local function familyOf(inv: Invocation, env: T.Env): (string?, Diagnostic?)
 	local verb = inv.verb
 	if inv.flags.help then
 		return nil, info("not-mutation", "--help only prints usage")
@@ -80,6 +108,28 @@ local function familyOf(inv: Invocation): (T.Family?, Diagnostic?)
 		return "scale", nil
 	elseif verb == "rollout" and inv.subverb == "restart" then
 		return "restart", nil
+	elseif verb == "rollout" and (inv.subverb == "undo" or inv.subverb == "pause" or inv.subverb == "resume") then
+		return inv.subverb, nil
+	elseif verb == "patch" then
+		if truthy(inv.flags["local"]) then
+			return nil, info("not-mutation", "--local patches a file without contacting the cluster")
+		end
+		return "patch", nil
+	elseif verb == "label" or verb == "annotate" then
+		if truthy(inv.flags["local"]) then
+			return nil, info("not-mutation", "--local changes a file without contacting the cluster")
+		elseif truthy(inv.flags.list) then
+			return nil,
+				info("not-mutation", "--list only prints the " .. (if verb == "label" then "labels" else "annotations"))
+		end
+		return verb :: string, nil
+	elseif verb == "cordon" or verb == "uncordon" or verb == "drain" then
+		return verb :: string, nil
+	elseif verb == "edit" then
+		if env.edit == nil then
+			return nil, err("unsupported", "kubectl edit is approved after you save: use the shell guard or Explore e")
+		end
+		return "edit", nil
 	elseif verb == "debug" then
 		local first = inv.positionals[1]
 		if first and string.match(string.lower(first), "^nodes?/") then
@@ -238,6 +288,92 @@ local function targetErrors(family: T.Family, inv: Invocation): { Diagnostic }
 		if #inv.positionals == 0 then
 			table.insert(out, err("missing-target", "create job --from=cronjob/NAME needs a job name"))
 		end
+	elseif family == "undo" or family == "pause" or family == "resume" then
+		local verb = "rollout " .. family
+		if not fileInputs and #inv.positionals == 0 then
+			table.insert(out, err("missing-target", verb .. " needs TYPE NAME, TYPE/NAME, -f or -k"))
+		elseif not fileInputs and hasTypeOnly(inv) and not selected then
+			table.insert(
+				out,
+				err("missing-target", string.format("%s %s needs a name or -l SELECTOR", verb, inv.positionals[1]))
+			)
+		end
+		for _, r in inv.resources do
+			if family == "undo" and not UNDOABLE[r.kind] then
+				table.insert(
+					out,
+					err("unsupported", "rollout undo applies to deployments, daemonsets and statefulsets")
+				)
+				break
+			elseif family ~= "undo" and r.kind ~= "Deployment" then
+				table.insert(out, err("unsupported", "rollout pause/resume supports deployments only"))
+				break
+			end
+		end
+		local to = last(inv.flags["to-revision"])
+		if to and not string.match(to, "^%d+$") then
+			table.insert(out, err("invalid", string.format("--to-revision=%s is not a revision number", to)))
+		end
+	elseif family == "patch" then
+		if inv.flags.patch == nil and inv.flags["patch-file"] == nil then
+			table.insert(out, err("invalid", "patch needs -p PATCH or --patch-file FILE"))
+		end
+		if not fileInputs and #inv.names == 0 then
+			table.insert(out, err("missing-target", "patch needs TYPE NAME, TYPE/NAME, -f or -k"))
+		end
+		for _, f in inv.flags["patch-file"] or {} :: { string } do
+			if f == "-" or f == "" or isRemote(f) then
+				table.insert(
+					out,
+					err(
+						"stdin",
+						string.format("--patch-file %s cannot be previewed and replayed; pass a local file", f)
+					)
+				)
+			end
+		end
+	elseif family == "label" or family == "annotate" then
+		local edits = 0
+		local targets = 0
+		for _, p in inv.positionals do
+			if Argv.isLabelEdit(p) then
+				edits += 1
+			else
+				targets += 1
+			end
+		end
+		if edits == 0 then
+			table.insert(out, err("invalid", family .. " needs at least one KEY=VALUE or KEY-"))
+		end
+		if not fileInputs and targets == 0 then
+			table.insert(out, err("missing-target", family .. " needs TYPE NAME, TYPE/NAME, -f or -k"))
+		elseif not fileInputs and hasTypeOnly(inv) and not selected then
+			table.insert(
+				out,
+				err(
+					"missing-target",
+					string.format(
+						"%s %s needs a name, -l SELECTOR, --field-selector or --all",
+						family,
+						inv.positionals[1]
+					)
+				)
+			)
+		end
+	elseif family == "cordon" or family == "uncordon" or family == "drain" then
+		if #inv.positionals == 0 and inv.selector == nil then
+			table.insert(out, err("missing-target", family .. " needs NODE or -l SELECTOR"))
+		end
+		for _, p in inv.positionals do
+			local typ = string.match(p, "^([^/]+)/")
+			if typ and typ ~= "node" and typ ~= "nodes" then
+				table.insert(out, err("invalid", family .. " takes node names, got " .. p))
+			end
+		end
+	elseif family == "edit" then
+		if not fileInputs and #inv.positionals == 0 then
+			table.insert(out, err("missing-target", "edit needs TYPE NAME, TYPE/NAME or -f"))
+		end
 	end
 	if family == "scale" then
 		local replicas = last(inv.flags.replicas)
@@ -263,6 +399,34 @@ local function ref(kind: string, group: string?, name: string, namespace: string
 	}
 end
 
+local function labelEdits(inv: Invocation): { T.LabelEdit }
+	local out: { T.LabelEdit } = {}
+	for _, p in inv.positionals do
+		if Argv.isLabelEdit(p) then
+			local key, value = string.match(p, "^([^=]*)=(.*)$")
+			if key then
+				table.insert(out, { key = key, value = value, remove = false })
+			else
+				table.insert(out, { key = string.sub(p, 1, -2), value = nil, remove = true })
+			end
+		end
+	end
+	return out
+end
+
+local function drainOpts(inv: Invocation): T.DrainOpts
+	local grace = last(inv.flags["grace-period"])
+	return {
+		ignoreDaemonsets = truthy(inv.flags["ignore-daemonsets"]),
+		deleteEmptyDir = truthy(inv.flags["delete-emptydir-data"]),
+		force = truthy(inv.flags.force),
+		disableEviction = truthy(inv.flags["disable-eviction"]),
+		gracePeriod = if grace then tonumber(grace) else nil,
+		timeout = last(inv.flags.timeout),
+		podSelector = last(inv.flags["pod-selector"]),
+	}
+end
+
 local function resourcesOf(family: T.Family, inv: Invocation, context: string, ns: string?): { Types.ResourceRef }
 	local out: { Types.ResourceRef } = {}
 	if family == "debug-node" then
@@ -276,6 +440,11 @@ local function resourcesOf(family: T.Family, inv: Invocation, context: string, n
 		return out
 	elseif family == "cronjob-run" then
 		table.insert(out, ref("Job", "batch", inv.positionals[1], ns, context))
+		return out
+	elseif Steps.NODE_FAMILIES[family] then
+		for _, p in inv.positionals do
+			table.insert(out, ref("Node", nil, Steps.nodeName(p), nil, context))
+		end
 		return out
 	end
 	for _, r in inv.resources do
@@ -300,7 +469,7 @@ function M.fromArgv(argv: { string }, env: T.Env): (Plan?, { Diagnostic })
 	end
 	local program = nonEmpty(env.program) or argv[1]
 	local inv = Argv.parse(argv[1], table.move(argv, 2, #argv, 1, {}))
-	local found, why = familyOf(inv)
+	local found, why = familyOf(inv, env)
 	if found == nil then
 		return nil, { why :: Diagnostic }
 	end
@@ -347,9 +516,14 @@ function M.fromArgv(argv: { string }, env: T.Env): (Plan?, { Diagnostic })
 	end
 
 	local explicitNamespace = nonEmpty(inv.namespace)
-	local targetNamespace = if inv.allNamespaces then nil else explicitNamespace or nonEmpty(env.namespace) or "default"
+	local nodes = Steps.NODE_FAMILIES[picked.family] == true
+	local targetNamespace = if inv.allNamespaces or nodes
+		then nil
+		else explicitNamespace or nonEmpty(env.namespace) or "default"
 	local ctx = context :: string
 	local replicas = last(inv.flags.replicas)
+	local toRevision = last(inv.flags["to-revision"])
+	local labels = picked.family == "label" or picked.family == "annotate"
 	local plan: Plan = {
 		family = picked.family,
 		operation = OPERATION[picked.family],
@@ -373,6 +547,13 @@ function M.fromArgv(argv: { string }, env: T.Env): (Plan?, { Diagnostic })
 		fieldSelector = inv.fieldSelector,
 		all = inv.flags.all ~= nil and last(inv.flags.all) ~= "false",
 		replicas = if replicas then tonumber(replicas) else nil,
+		patchFiles = table.clone(inv.flags["patch-file"] or {}),
+		edits = if labels then labelEdits(inv) else {},
+		overwrite = labels and truthy(inv.flags.overwrite),
+		patchType = if picked.family == "patch" then last(inv.flags.type) else nil,
+		toRevision = if toRevision then tonumber(toRevision) else nil,
+		drain = if picked.family == "drain" then drainOpts(inv) else nil,
+		edit = if picked.family == "edit" then env.edit else nil,
 		steps = {},
 		invocation = inv,
 		validation = {},

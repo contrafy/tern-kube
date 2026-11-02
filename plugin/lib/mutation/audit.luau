@@ -2,6 +2,7 @@
 -- One JSON line per decision for tern.plugin.data/audit.log. Built from an
 -- explicit whitelist: command output, environment values and credentials
 -- passed on the command line never reach the log (only the kubeconfig path).
+local Fingerprint = require("./fingerprint")
 local T = require("./types")
 
 type Plan = T.Plan
@@ -20,7 +21,13 @@ export type Event = {
 	decidedAt: number,
 	startedAt: number?,
 	finishedAt: number?,
+	-- `Kind ns/name` of the previewed objects.
+	objects: { string }?,
+	-- Digests of the fingerprinted input files (-f, --patch-file, edit files).
+	files: { Fingerprint.FileDigest }?,
 }
+
+export type FileEntry = { path: string, sha256: string }
 
 export type Record = {
 	v: number,
@@ -41,9 +48,14 @@ export type Record = {
 	decided_at: number,
 	started_at: number?,
 	finished_at: number?,
+	objects: { string }?,
+	objects_total: number?,
+	files: { FileEntry }?,
 }
 
 local M = {}
+
+M.MAX_OBJECTS = 50
 
 -- Flags whose values are credentials.
 local SECRET_FLAGS = { token = true, password = true }
@@ -83,6 +95,18 @@ function M.redactArgv(argv: { string }): { string }
 end
 
 function M.record(plan: Plan, event: Event): Record
+	local objects: { string }? = nil
+	if event.objects then
+		objects = table.move(event.objects, 1, math.min(#event.objects, M.MAX_OBJECTS), 1, {})
+	end
+	local files: { FileEntry }? = nil
+	if event.files and #event.files > 0 then
+		local list: { FileEntry } = {}
+		for _, f in event.files do
+			table.insert(list, { path = f.path, sha256 = f.sha256 })
+		end
+		files = list
+	end
 	return {
 		v = 1,
 		op = plan.operation,
@@ -102,6 +126,9 @@ function M.record(plan: Plan, event: Event): Record
 		decided_at = event.decidedAt,
 		started_at = event.startedAt,
 		finished_at = event.finishedAt,
+		objects = objects,
+		objects_total = if event.objects then #event.objects else nil,
+		files = files,
 	}
 end
 
@@ -124,6 +151,9 @@ local ORDER = {
 	"previewed_at",
 	"started_at",
 	"finished_at",
+	"objects",
+	"objects_total",
+	"files",
 }
 
 local function quote(s: string): string
@@ -158,7 +188,12 @@ local function value(v: any): string
 	end
 	local parts: { string } = {}
 	for _, item in v do
-		table.insert(parts, quote(item))
+		if type(item) == "table" then
+			-- File entries: fixed key order.
+			table.insert(parts, '{"path":' .. quote(item.path) .. ',"sha256":' .. quote(item.sha256) .. "}")
+		else
+			table.insert(parts, quote(item))
+		end
 	end
 	return "[" .. table.concat(parts, ",") .. "]"
 end
