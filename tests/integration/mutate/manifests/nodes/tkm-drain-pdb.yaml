@@ -1,0 +1,12 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: tkm-drain
+  namespace: tern-test-mutate
+  labels:
+    app.kubernetes.io/part-of: tern-kube-mutate-it
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: tkm-drain

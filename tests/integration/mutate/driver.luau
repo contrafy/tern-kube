@@ -218,6 +218,8 @@ if diff then
 	end
 end
 assign("segments", table.concat(segs, " "))
+local objs = s.objects
+assign("unchanged", if objs then table.concat(objs.unchanged, " ") else nil)
 assign(
 	"diff_text",
 	if diff

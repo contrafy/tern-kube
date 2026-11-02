@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: tkm-patch-cm
+  namespace: tern-test-mutate
+  labels:
+    app.kubernetes.io/part-of: tern-kube-mutate-it
+data:
+  k: v1

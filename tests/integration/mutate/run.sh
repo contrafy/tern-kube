@@ -360,6 +360,8 @@ guard_fake_tern() { # writes a fake `tern` whose `open --wait REQ` runs the head
 TK_FAILS=0
 . "$TK_REPO/tests/integration/mutate/harness.sh"
 TK_REQUEST=$3 TK_PANES="\"$TERN_PANE\"" tk_begin "$TK_GUARD_NAME" "$3" >>"$TK_REPO/.sandbox/mutate-it/guard.out"
+# The last driver pass prints only S_* assignments: the scenario sources them.
+cp "$TK_W/driver.out" "$TK_W/preview.state"
 [ -n "${TK_GUARD_EDIT:-}" ] && sh -c "$TK_GUARD_EDIT"
 case ${TK_GUARD_DECISION:-approve} in
 approve)
@@ -371,6 +373,7 @@ none) ;;
 *) tk_key escape >>"$TK_REPO/.sandbox/mutate-it/guard.out" ;;
 esac
 [ -n "${TK_GUARD_EDIT_AFTER:-}" ] && sh -c "$TK_GUARD_EDIT_AFTER"
+cp "$TK_W/driver.out" "$TK_W/final.state"
 exit 0
 EOF
 	chmod +x "$1"
@@ -431,9 +434,605 @@ scenario_guard_roundtrip() {
 	ls -la "$TK_SPOOL" >>"$TK_W/evidence.log"
 }
 
+# Track 1 guarded verbs ----------------------------------------------------------
+
+fresh() { # MANIFEST...: recreate the objects of manifests/MANIFEST (foreground deletion drops old ReplicaSets too)
+	for f in "$@"; do
+		k delete -f "$M/$f" --ignore-not-found --cascade=foreground --wait=true >/dev/null 2>&1
+		k apply -f "$M/$f" >/dev/null || tk_fail "cannot create $f"
+	done
+}
+
+gone() { # MANIFEST...
+	for f in "$@"; do
+		k delete -f "$M/$f" --ignore-not-found --wait=false >/dev/null 2>&1
+	done
+}
+
+live() { # RESOURCE JSONPATH
+	k -n "$NS" get "$1" -o jsonpath="$2" 2>&1
+}
+
+expect_live() { # DESCRIPTION WANT RESOURCE JSONPATH
+	got=$(live "$3" "$4")
+	if [ "$got" = "$2" ]; then tk_ok "$1"; else tk_fail "$1: want '$2', got '$got'"; fi
+}
+
+rs_count() { # APP
+	k -n "$NS" get rs -l "app=$1" -o name 2>/dev/null | wc -l | tr -d ' '
+}
+
+wait_until() { # SECONDS COMMAND...
+	n=$1
+	shift
+	while ! "$@" >/dev/null 2>&1; do
+		n=$((n - 1))
+		[ "$n" -le 0 ] && return 1
+		sleep 1
+	done
+}
+
+rs_at_least() { # APP N
+	[ "$(rs_count "$1")" -ge "$2" ]
+}
+
+revision_listed() { # DEPLOYMENT REVISION
+	k -n "$NS" rollout history "deployment/$1" | grep -q "^$2 "
+}
+
+# tkm-undo with revision 1 = pause:3.9 and revision 2 = pause:3.10 (live).
+undo_setup() {
+	fresh rollout/tkm-undo.yaml
+	wait_until 60 rs_at_least tkm-undo 1 &&
+		k -n "$NS" set image deployment/tkm-undo main=registry.k8s.io/pause:3.10 >/dev/null &&
+		wait_until 60 revision_listed tkm-undo 2 ||
+		tk_fail "tkm-undo did not reach two revisions"
+}
+
+GUARD_FAKE=$TK_REPO/.sandbox/mutate-it/bin/tern
+
+guard_scenario() { # NAME: evidence dir for a scenario that runs the real guard
+	mkdir -p "$(dirname "$GUARD_FAKE")"
+	guard_fake_tern "$GUARD_FAKE"
+	: >"$TK_REPO/.sandbox/mutate-it/guard.out"
+	printf '\n== %s\n' "$1"
+	TK_W=$TK_REPO/.sandbox/mutate-it/$1
+	rm -rf "$TK_W"
+	mkdir -p "$TK_W"
+	: >"$TK_W/evidence.log"
+}
+
+guard_kubectl() { # ARGS: `kubectl ARGS` through the real guard; the fake tern plays block $TK_GUARD_NAME
+	env TERM_PROGRAM=tern TERN_PANE=7 TKUBE_SPOOL="$TK_SPOOL" TERN_BIN="$GUARD_FAKE" TK_REPO="$TK_REPO" \
+		KUBECONFIG="$KC" TKUBE_GUARD_TIMEOUT=120 sh "$TK_REPO/shell/tern-kube-guard" kubectl "$@"
+}
+
+guard_log() { # WHAT STATUS OUTPUT
+	tk_log "$1: rc=$2 $3"
+	printf '    %s: guard rc=%s: %s\n' "$1" "$2" "$(printf '%s' "$3" | tr '\n' ' ')"
+}
+
+block_state() { # NAME preview|final: the S_* state the fake tern saved for block NAME
+	f=$TK_REPO/.sandbox/mutate-it/$1/$2.state
+	if [ -f "$f" ]; then
+		# shellcheck disable=SC1090
+		. "$f"
+		tk_log "block $1 $2: phase=$S_phase tier=$S_tier token=$S_token steps=[$S_steps] reasons=[$S_reasons] errors=[$S_errors] confirm_error=[$S_confirm_error]"
+	else
+		tk_fail "block $1 never ran ($2.state missing)"
+	fi
+}
+
+edit_editor() { # NAME SED_EXPR: prints the path of an editor script applying SED_EXPR (no ') in place
+	ed=$TK_REPO/.sandbox/mutate-it/bin/editor-$1
+	mkdir -p "$(dirname "$ed")"
+	printf '#!/bin/sh\nsed '\''%s'\'' "$1" >"$1.tk" && cat "$1.tk" >"$1" && rm -f "$1.tk"\n' "$2" >"$ed"
+	chmod +x "$ed"
+	printf '%s' "$ed"
+}
+
+NODE=
+
+uncordon_node() {
+	[ -n "$NODE" ] && k uncordon "$NODE" >/dev/null 2>&1
+	return 0
+}
+
+# Every node scenario leaves the kind node schedulable, even when interrupted.
+node_begin() {
+	NODE=$(k get nodes -o jsonpath='{.items[0].metadata.name}')
+	trap uncordon_node EXIT
+	trap 'uncordon_node; exit 130' INT TERM
+}
+
+node_link() { # op
+	printf 'tern-kube://mutate?op=%s&kind=node&name=%s&context=%s&source=chosen' "$1" "$NODE" "$CTX"
+}
+
+expect_schedulable() { # DESCRIPTION
+	expect_live "$1" "" "node/$NODE" '{.spec.unschedulable}'
+}
+
+scenario_label_one() {
+	fresh meta/tkm-label.yaml
+	tk_begin label-one "$(link label configmap tkm-label)"
+	tk_expect phase input
+	tk_effects_lacks run
+	tk_type tier=gold
+	tk_key enter
+	tk_expect phase ready
+	tk_expect tier simple
+	tk_expect_has steps "targets=ok"
+	tk_expect_has steps "after=ok"
+	tk_expect segments "modify:ConfigMap/tkm-label"
+	tk_expect_line + "tier: gold"
+	expect_live "the preview labelled nothing" "" configmap/tkm-label '{.metadata.labels.tier}'
+	tk_key enter
+	tk_expect phase done
+	tk_expect exec_status 0
+	expect_live "tier=gold after the label" gold configmap/tkm-label '{.metadata.labels.tier}'
+	gone meta/tkm-label.yaml
+}
+
+# Links name one object; a selector arrives through the shell guard.
+scenario_label_selector_typed() {
+	fresh meta/tkm-sel.yaml
+	guard_scenario label-selector-typed
+	out=$(TK_GUARD_NAME=label-selector-typed-block TK_GUARD_DECISION=approve \
+		guard_kubectl --context "$CTX" -n "$NS" label configmap -l tkm-sel=yes tier=gold 2>&1)
+	st=$?
+	guard_log "label -l" "$st" "$out"
+	block_state label-selector-typed-block preview
+	tk_expect phase ready
+	tk_expect tier typed
+	tk_expect token "label 2 resources"
+	tk_expect_has reasons "typed:broad-selector"
+	tk_expect_has segments "modify:ConfigMap/tkm-sel-1"
+	tk_expect_has segments "modify:ConfigMap/tkm-sel-2"
+	block_state label-selector-typed-block final
+	tk_expect phase closed
+	if [ "$st" = 0 ]; then tk_ok "guard executed after the typed approval"; else tk_fail "guard rc=$st"; fi
+	expect_live "tkm-sel-1 labelled" gold configmap/tkm-sel-1 '{.metadata.labels.tier}'
+	expect_live "tkm-sel-2 labelled" gold configmap/tkm-sel-2 '{.metadata.labels.tier}'
+	gone meta/tkm-sel.yaml
+}
+
+scenario_label_conflict_fails() {
+	fresh meta/tkm-label.yaml
+	k -n "$NS" label configmap tkm-label tier=gold >/dev/null
+	tk_begin label-conflict-fails "$(link label configmap tkm-label)"
+	tk_type tier=silver
+	tk_key enter
+	tk_expect phase ready
+	tk_expect tier blocked
+	tk_expect_has steps "after=failed"
+	tk_expect_has reasons "blocked:preview-failed"
+	tk_expect_has view "already has a value"
+	tk_key enter
+	tk_effects_lacks run "'exec'"
+	expect_live "tier still gold" gold configmap/tkm-label '{.metadata.labels.tier}'
+	gone meta/tkm-label.yaml
+}
+
+scenario_annotate_overwrite() {
+	fresh meta/tkm-annot.yaml
+	tk_begin annotate-overwrite "$(link annotate configmap tkm-annot)"
+	tk_expect phase input
+	tk_type "tkm-note=new --overwrite"
+	tk_key enter
+	tk_expect phase ready
+	tk_expect_has command "--overwrite"
+	tk_expect_has reasons "simple:overwrites"
+	tk_expect_line - "tkm-note: old"
+	tk_expect_line + "tkm-note: new"
+	expect_live "the preview kept the old value" old configmap/tkm-annot '{.metadata.annotations.tkm-note}'
+	tk_key enter
+	tk_expect phase done
+	tk_expect exec_status 0
+	expect_live "tkm-note=new" new configmap/tkm-annot '{.metadata.annotations.tkm-note}'
+	gone meta/tkm-annot.yaml
+}
+
+scenario_patch_merge() {
+	fresh patch/tkm-patch.yaml
+	tk_begin patch-merge "$(link patch deployment tkm-patch)"
+	tk_expect phase input
+	tk_keys backspace 40
+	tk_type '--type=merge {"spec":{"replicas":2}}'
+	tk_key enter
+	tk_expect phase ready
+	tk_expect_has command "--type=merge"
+	tk_expect tier simple
+	tk_expect_has steps "after=ok"
+	tk_expect segments "modify:Deployment/tkm-patch"
+	tk_expect_line - "replicas: 1"
+	tk_expect_line + "replicas: 2"
+	tk_expect_lacks diff_text "generation"
+	expect_live "the preview kept 1 replica" 1 deployment/tkm-patch '{.spec.replicas}'
+	tk_key enter
+	tk_expect phase done
+	tk_expect exec_status 0
+	expect_live "spec.replicas=2" 2 deployment/tkm-patch '{.spec.replicas}'
+	gone patch/tkm-patch.yaml
+}
+
+scenario_patch_cr_merge() {
+	fresh patch/tkm-widget.yaml
+	tk_begin patch-cr-merge "$(link patch widgets.lens.example.com tkm-widget)"
+	tk_expect phase input
+	tk_note "custom resources default to a JSON merge patch (prefilled)"
+	tk_type '{"spec":{"size":3}}'
+	tk_key enter
+	tk_expect phase ready
+	tk_expect_has command "--type=merge"
+	tk_expect segments "modify:Widget/tkm-widget"
+	tk_expect_line - "size: 1"
+	tk_expect_line + "size: 3"
+	tk_key enter
+	tk_expect phase done
+	tk_expect exec_status 0
+	expect_live "widget spec.size=3" 3 widgets.lens.example.com/tkm-widget '{.spec.size}'
+	gone patch/tkm-widget.yaml
+}
+
+scenario_patch_json_typed() {
+	fresh patch/tkm-patch-cm.yaml
+	tk_begin patch-json-typed "$(link patch configmap tkm-patch-cm)"
+	tk_keys backspace 40
+	tk_type '--type=json [{"op":"replace","path":"/data/k","value":"v2"}]'
+	tk_key enter
+	tk_expect phase ready
+	tk_expect tier typed
+	tk_expect token tkm-patch-cm
+	tk_expect_has reasons "typed:json-patch"
+	tk_expect_line - "k: v1"
+	tk_expect_line + "k: v2"
+	tk_key enter
+	tk_effects_lacks run "'exec'"
+	tk_type tkm-
+	tk_key enter
+	tk_effects_lacks run "'exec'"
+	expect_live "an inexact token patches nothing" v1 configmap/tkm-patch-cm '{.data.k}'
+	tk_type patch-cm
+	tk_key enter
+	tk_expect phase done
+	tk_expect exec_status 0
+	expect_live "data.k=v2" v2 configmap/tkm-patch-cm '{.data.k}'
+	gone patch/tkm-patch-cm.yaml
+}
+
+scenario_patch_file_changed_refused() {
+	fresh patch/tkm-patch-cm.yaml
+	work=$TK_REPO/.sandbox/mutate-it/files
+	mkdir -p "$work"
+	printf '{"data":{"k":"v2"}}\n' >"$work/tkm-patch.json"
+	printf '{"data":{"k":"v3"}}\n' >"$work/tkm-patch-v3.json"
+	guard_scenario patch-file-changed-refused
+	out=$(TK_GUARD_NAME=patch-file-changed-block TK_GUARD_DECISION=approve \
+		TK_GUARD_EDIT="cp '$work/tkm-patch-v3.json' '$work/tkm-patch.json'" \
+		guard_kubectl --context "$CTX" -n "$NS" patch configmap tkm-patch-cm --type=merge --patch-file "$work/tkm-patch.json" 2>&1)
+	st=$?
+	guard_log "patch --patch-file edited before approval" "$st" "$out"
+	block_state patch-file-changed-block preview
+	tk_expect_line + "k: v2"
+	block_state patch-file-changed-block final
+	tk_expect_has confirm_error "fingerprint mismatch"
+	if [ "$st" != 0 ]; then tk_ok "guard refused (rc=$st)"; else tk_fail "the edited patch file was applied"; fi
+	expect_live "data.k unchanged" v1 configmap/tkm-patch-cm '{.data.k}'
+	gone patch/tkm-patch-cm.yaml
+}
+
+scenario_undo_previous() {
+	undo_setup
+	tk_begin undo-previous "$(link undo deployment tkm-undo)"
+	tk_expect phase ready
+	tk_expect tier typed
+	tk_expect token tkm-undo
+	tk_expect_has reasons "typed:undo"
+	tk_expect_has steps "history=ok"
+	tk_expect_has steps "dry-run=ok"
+	tk_expect_has steps "revision:apps.v1.Deployment.$NS.tkm-undo=ok"
+	tk_expect segments "modify:Deployment/tkm-undo"
+	tk_expect_line - "image: registry.k8s.io/pause:3.10"
+	tk_expect_line + "image: registry.k8s.io/pause:3.9"
+	expect_live "the preview kept pause:3.10" registry.k8s.io/pause:3.10 deployment/tkm-undo '{.spec.template.spec.containers[0].image}'
+	tk_type tkm-undo
+	tk_key enter
+	tk_expect phase done
+	tk_expect exec_status 0
+	expect_live "rolled back to pause:3.9" registry.k8s.io/pause:3.9 deployment/tkm-undo '{.spec.template.spec.containers[0].image}'
+	gone rollout/tkm-undo.yaml
+}
+
+# Links carry no revision; --to-revision arrives through the shell guard.
+scenario_undo_to_revision() {
+	undo_setup
+	k -n "$NS" set image deployment/tkm-undo main=registry.k8s.io/pause:3.8 >/dev/null
+	wait_until 60 revision_listed tkm-undo 3 || tk_fail "tkm-undo did not reach revision 3"
+	guard_scenario undo-to-revision
+	out=$(TK_GUARD_NAME=undo-to-revision-block TK_GUARD_DECISION=approve \
+		guard_kubectl --context "$CTX" -n "$NS" rollout undo deployment/tkm-undo --to-revision=1 2>&1)
+	st=$?
+	guard_log "rollout undo --to-revision=1" "$st" "$out"
+	block_state undo-to-revision-block preview
+	tk_expect tier typed
+	tk_expect token tkm-undo
+	tk_expect_has steps "revision:apps.v1.Deployment.$NS.tkm-undo=ok"
+	tk_expect_line - "image: registry.k8s.io/pause:3.8"
+	tk_expect_line + "image: registry.k8s.io/pause:3.9"
+	if [ "$st" = 0 ]; then tk_ok "guard executed after approval"; else tk_fail "guard rc=$st"; fi
+	expect_live "revision 1's pause:3.9 (not the previous 3.10)" registry.k8s.io/pause:3.9 deployment/tkm-undo '{.spec.template.spec.containers[0].image}'
+	gone rollout/tkm-undo.yaml
+}
+
+scenario_undo_single_revision_fails() {
+	fresh rollout/tkm-single.yaml
+	wait_until 60 rs_at_least tkm-single 1 || tk_fail "tkm-single has no ReplicaSet"
+	tk_begin undo-single-revision-fails "$(link undo deployment tkm-single)"
+	tk_expect phase ready
+	tk_expect tier blocked
+	tk_expect_has reasons "blocked:preview-failed"
+	tk_expect_has view "no rollout history"
+	tk_key enter
+	tk_effects_lacks run "'exec'"
+	expect_live "image unchanged" registry.k8s.io/pause:3.10 deployment/tkm-single '{.spec.template.spec.containers[0].image}'
+	gone rollout/tkm-single.yaml
+}
+
+scenario_undo_verify_refuses() {
+	undo_setup
+	tk_begin undo-verify-refuses "$(link undo deployment tkm-undo)"
+	tk_expect phase ready
+	tk_note "someone rolls out between preview and confirm (revision 3)"
+	k -n "$NS" set image deployment/tkm-undo main=registry.k8s.io/pause:3.9 >/dev/null
+	wait_until 60 revision_listed tkm-undo 3 || tk_fail "tkm-undo did not reach revision 3"
+	tk_type tkm-undo
+	tk_key enter
+	tk_expect phase ready
+	tk_expect_has confirm_error "A rollout happened since the preview"
+	tk_effects_lacks run "'exec'"
+	expect_live "the new rollout's image stays" registry.k8s.io/pause:3.9 deployment/tkm-undo '{.spec.template.spec.containers[0].image}'
+	gone rollout/tkm-undo.yaml
+}
+
+scenario_pause_resume() {
+	fresh rollout/tkm-pause.yaml
+	tk_begin pause "$(link pause deployment tkm-pause)"
+	tk_expect phase ready
+	tk_expect tier simple
+	tk_expect segments "modify:Deployment/tkm-pause"
+	tk_expect_line + "paused: true"
+	tk_key enter
+	tk_expect phase done
+	tk_expect exec_status 0
+	expect_live "spec.paused=true" true deployment/tkm-pause '{.spec.paused}'
+	tk_begin pause-again "$(link pause deployment tkm-pause)"
+	tk_expect phase ready
+	tk_expect_has reasons "simple:already-paused"
+	tk_expect segments ""
+	tk_expect unchanged "apps.v1.Deployment.$NS.tkm-pause"
+	tk_key escape
+	tk_expect phase closed
+	tk_effects_lacks run "'exec'"
+	tk_begin resume "$(link resume deployment tkm-pause)"
+	tk_expect phase ready
+	tk_expect_line - "paused: true"
+	tk_key enter
+	tk_expect phase done
+	tk_expect exec_status 0
+	case $(live deployment/tkm-pause '{.spec.paused}') in
+	'' | false) tk_ok "resumed" ;;
+	*) tk_fail "still paused" ;;
+	esac
+	gone rollout/tkm-pause.yaml
+}
+
+scenario_cordon_uncordon() {
+	node_begin
+	tk_begin cordon "$(node_link cordon)"
+	tk_expect phase ready
+	tk_expect tier simple
+	tk_expect_has steps "targets=ok"
+	tk_expect_has steps "dry-run=ok"
+	tk_expect_has reasons "simple:control-plane"
+	tk_expect segments "modify:Node/$NODE"
+	tk_expect_line + "unschedulable: true"
+	expect_schedulable "the preview left the node schedulable"
+	tk_key enter
+	tk_expect phase done
+	tk_expect exec_status 0
+	expect_live "node cordoned" true "node/$NODE" '{.spec.unschedulable}'
+	tk_begin cordon-again "$(node_link cordon)"
+	tk_expect_has reasons "simple:already-cordoned"
+	tk_key escape
+	tk_begin uncordon "$(node_link uncordon)"
+	tk_expect phase ready
+	tk_expect_line - "unschedulable: true"
+	tk_key enter
+	tk_expect phase done
+	tk_expect exec_status 0
+	expect_schedulable "node uncordoned by the block"
+	uncordon_node
+}
+
+scenario_drain_preflight() {
+	node_begin
+	fresh nodes/tkm-drain-bare.yaml
+	k -n "$NS" wait --for=condition=PodScheduled pod/tkm-drain-bare --timeout=60s >/dev/null || tk_fail "tkm-drain-bare not scheduled"
+	tk_begin drain-timeout "$(node_link drain)"
+	tk_expect phase input
+	tk_note "the prefilled --timeout=4m is not below the 120s execute timeout"
+	tk_key enter
+	case "$S_errors $S_confirm_error $S_view" in
+	*"below mutations.execute_timeout_ms"*) tk_ok "native drain timeout refused before preview" ;;
+	*) tk_fail "no execute-timeout refusal: errors=[$S_errors] confirm_error=[$S_confirm_error]" ;;
+	esac
+	tk_check "no drain step ran (only context resolution)" sh -c "! grep -q ' drain ' '$TK_W/effects.log'"
+	tk_begin drain-preflight "$(node_link drain)"
+	tk_keys backspace 60
+	tk_type "--timeout=20s --pod-selector=app=tkm-drain-pre"
+	tk_key enter
+	tk_expect phase ready
+	tk_expect tier blocked
+	tk_expect_has reasons "blocked:preview-failed"
+	tk_note "kubectl stops at the first failing filter per pod: local storage before no controller"
+	tk_expect_has view "kubectl would cordon the node, then stop: pods with local storage (1 pod) (use --delete-emptydir-data)"
+	tk_key enter
+	tk_effects_lacks run "'exec'"
+	tk_begin drain-preflight-forced "$(node_link drain)"
+	tk_keys backspace 60
+	tk_type "--delete-emptydir-data --force --timeout=20s --pod-selector=app=tkm-drain-pre"
+	tk_key enter
+	tk_expect phase ready
+	tk_expect tier typed
+	tk_expect token "$NODE"
+	tk_expect_has reasons "typed:drain"
+	tk_expect_has reasons "typed:force-unmanaged"
+	tk_expect_has reasons "typed:emptydir-loss"
+	tk_expect_has reasons "typed:control-plane"
+	tk_key escape
+	tk_expect phase closed
+	tk_effects_lacks run "'exec'"
+	expect_schedulable "previews never cordon"
+	tk_check "tkm-drain-bare still exists" k -n "$NS" get pod tkm-drain-bare
+	gone nodes/tkm-drain-bare.yaml
+	uncordon_node
+}
+
+scenario_drain_pdb_blocked() {
+	node_begin
+	fresh nodes/tkm-drain.yaml nodes/tkm-drain-pdb.yaml
+	k -n "$NS" rollout status deployment/tkm-drain --timeout=120s >/dev/null || tk_fail "tkm-drain not ready"
+	pod=$(k -n "$NS" get pods -l app=tkm-drain -o jsonpath='{.items[*].metadata.name}')
+	tk_begin drain-pdb-blocked "$(node_link drain)"
+	tk_keys backspace 60
+	tk_type "--ignore-daemonsets --timeout=10s --pod-selector=app=tkm-drain"
+	tk_key enter
+	tk_expect phase ready
+	tk_expect tier typed
+	tk_expect token "$NODE"
+	tk_expect_has reasons "typed:pdb-blocked"
+	tk_expect_has steps "evict="
+	expect_schedulable "the preview left the node schedulable"
+	tk_type "$NODE"
+	tk_key enter
+	tk_expect phase done
+	if [ -n "$S_exec_status" ] && [ "$S_exec_status" != 0 ]; then tk_ok "drain gave up at its timeout (exit $S_exec_status)"; else tk_fail "drain exit '$S_exec_status', want non-zero"; fi
+	expect_live "the PDB kept $pod" "$pod" "pod/$pod" '{.metadata.name}'
+	expect_live "$pod is not terminating" "" "pod/$pod" '{.metadata.deletionTimestamp}'
+	tk_begin drain-pdb-uncordon "$(node_link uncordon)"
+	tk_expect phase ready
+	tk_key enter
+	tk_expect phase done
+	expect_schedulable "node schedulable again"
+	gone nodes/tkm-drain-pdb.yaml nodes/tkm-drain.yaml
+	uncordon_node
+}
+
+scenario_drain_ok() {
+	node_begin
+	gone nodes/tkm-drain-pdb.yaml
+	fresh nodes/tkm-drain.yaml
+	k -n "$NS" rollout status deployment/tkm-drain --timeout=120s >/dev/null || tk_fail "tkm-drain not ready"
+	pod=$(k -n "$NS" get pods -l app=tkm-drain -o jsonpath='{.items[*].metadata.name}')
+	tk_begin drain-ok "$(node_link drain)"
+	tk_keys backspace 60
+	tk_type "--ignore-daemonsets --timeout=60s --pod-selector=app=tkm-drain"
+	tk_key enter
+	tk_expect phase ready
+	tk_expect tier typed
+	tk_expect token "$NODE"
+	tk_expect_has reasons "typed:drain"
+	tk_expect_lacks reasons "pdb-blocked"
+	tk_expect_has steps "evict=ok"
+	tk_expect_has view "$pod"
+	tk_type "$NODE"
+	tk_key enter
+	tk_expect phase done
+	tk_expect exec_status 0
+	tk_check "$pod was evicted" sh -c "! kubectl --kubeconfig '$KC' --context $CTX -n $NS get pod '$pod'"
+	expect_live "drain leaves the node cordoned" true "node/$NODE" '{.spec.unschedulable}'
+	tk_begin drain-ok-uncordon "$(node_link uncordon)"
+	tk_key enter
+	tk_expect phase done
+	expect_schedulable "node schedulable again"
+	gone nodes/tkm-drain.yaml
+	uncordon_node
+}
+
+edit_scenario() { # NAME SED_EXPR DECISION: guarded `kubectl edit configmap/tkm-edit` with a scripted editor
+	fresh meta/tkm-edit.yaml
+	guard_scenario "$1"
+	ed=$(edit_editor "$1" "$2")
+	out=$(TK_GUARD_NAME=$1-block TK_GUARD_DECISION=$3 KUBE_EDITOR=$ed \
+		guard_kubectl --context "$CTX" -n "$NS" edit configmap/tkm-edit 2>&1)
+	st=$?
+	guard_log "edit" "$st" "$out"
+}
+
+scenario_edit_request() {
+	edit_scenario edit-request 's/LEVEL: info/LEVEL: debug/' approve
+	block_state edit-request-block preview
+	tk_expect phase ready
+	tk_expect tier simple
+	tk_expect_has steps "convert-original=ok"
+	tk_expect_has steps "convert-edited=ok"
+	tk_expect_has steps "targets=ok"
+	tk_expect_has steps "after:v1.ConfigMap.$NS.tkm-edit=ok"
+	tk_expect segments "modify:ConfigMap/tkm-edit"
+	tk_expect_line - "LEVEL: info"
+	tk_expect_line + "LEVEL: debug"
+	block_state edit-request-block final
+	tk_expect phase closed
+	tk_check "the block wrote an approve response" grep -q "^write .*resp-" "$TK_REPO/.sandbox/mutate-it/edit-request-block/effects.log"
+	if [ "$st" = 0 ]; then tk_ok "kubectl edit applied after approval"; else tk_fail "kubectl edit rc=$st"; fi
+	expect_live "LEVEL=debug" debug configmap/tkm-edit '{.data.LEVEL}'
+	gone meta/tkm-edit.yaml
+}
+
+scenario_edit_renamed_blocked() {
+	edit_scenario edit-renamed-blocked 's/^  name: tkm-edit$/  name: tkm-edit-renamed/' approve
+	block_state edit-renamed-blocked-block preview
+	tk_expect tier blocked
+	tk_expect_has reasons "blocked:edit-renamed"
+	block_state edit-renamed-blocked-block final
+	tk_expect phase ready
+	tk_check "the block wrote no response" sh -c "! grep -q '^write ' '$TK_REPO/.sandbox/mutate-it/edit-renamed-blocked-block/effects.log'"
+	if [ "$st" != 0 ]; then tk_ok "kubectl edit failed (rc=$st)"; else tk_fail "kubectl edit succeeded"; fi
+	case $out in
+	*"your edit is saved"*) tk_ok "the refused edit was saved" ;;
+	*) tk_fail "no saved-edit notice" ;;
+	esac
+	tk_check "no renamed object" sh -c "! kubectl --kubeconfig '$KC' --context $CTX -n $NS get configmap tkm-edit-renamed"
+	expect_live "tkm-edit unchanged" info configmap/tkm-edit '{.data.LEVEL}'
+	gone meta/tkm-edit.yaml
+}
+
+# The server rejects the edit; approving is harmless: kubectl reopens the
+# editor with the error, the unchanged second round cancels.
+scenario_edit_invalid_approvable() {
+	edit_scenario edit-invalid-approvable 's/tier: one/tier: "bad value!"/' approve
+	block_state edit-invalid-approvable-block preview
+	tk_expect phase ready
+	tk_expect tier simple
+	tk_expect_has reasons "simple:edit-rejected"
+	tk_expect_has steps "after:v1.ConfigMap.$NS.tkm-edit=failed"
+	block_state edit-invalid-approvable-block final
+	tk_expect phase closed
+	case $out in
+	*"no valid changes were saved"*) tk_ok "kubectl reported the rejected edit" ;;
+	*) tk_fail "kubectl did not report the rejection" ;;
+	esac
+	expect_live "label tier unchanged" one configmap/tkm-edit '{.metadata.labels.tier}'
+	gone meta/tkm-edit.yaml
+}
+
 ALL="apply_one apply_many diff_modify_cancel stale_file scale restart delete_typed delete_cancel nonexistent
 context_drift server_drift rbac_deny_dry_run tiny_timeout cronjob_quick guard_roundtrip secret_redaction apply_prompt
-guard_disabled"
+guard_disabled label_one label_selector_typed label_conflict_fails annotate_overwrite patch_merge patch_cr_merge
+patch_json_typed patch_file_changed_refused undo_previous undo_to_revision undo_single_revision_fails
+undo_verify_refuses pause_resume cordon_uncordon drain_preflight drain_pdb_blocked drain_ok edit_request
+edit_renamed_blocked edit_invalid_approvable"
 
 for s in ${*:-$ALL}; do
 	"scenario_$s"
