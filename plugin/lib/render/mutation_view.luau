@@ -244,13 +244,13 @@ local function resultsTable(capture: Capture, results: { MutationResult }): Snap
 	return { kind = nil, group = nil, headers = HEADERS, types = TYPES, rows = rows }
 end
 
-local function actionCell(col: string, columnType: Types.ColumnType, value: string): Node
+local function actionCell(col: string, columnType: Types.ColumnType, value: string, finished: boolean): Node
 	if col == "ACTION" then
 		local tone = TONES[category(value)]
 		local style = if tone == "info" then "accent strong" elseif tone == "neutral" then nil else tone .. " strong"
 		return ui.text({ if style then ui.span(value, style) else ui.span(value) })
 	end
-	return Cells.cell(col, columnType, value)
+	return Cells.cell(col, columnType, value, finished)
 end
 
 local function inspector(capture: Capture, results: { MutationResult }, rowKey: string): Node?

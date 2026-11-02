@@ -11,6 +11,7 @@ local PaneEnv = require("./lib/actions/pane_env")
 local Render = require("./lib/settings/render")
 local Shellenv = require("./lib/env/shellenv")
 local State = require("./lib/settings/state")
+local Textfield = require("./lib/textfield")
 
 local log = tern.log
 
@@ -274,6 +275,8 @@ function exec(h: Host, effects: { Effect })
 			end
 		elseif e.t == "focus" then
 			h.cx:frame({ { "focus", e.id or State.EDIT_INPUT } })
+		elseif e.t == "blur" then
+			h.cx:frame({ { "focus", tern.json.null } :: { any } })
 		elseif e.t == "exit" then
 			h.stopped = true
 			h.cx:exit(0)
@@ -334,6 +337,10 @@ function M.register()
 			h.cx = cx
 			if ev.ev == "focus" and ev.id == State.EDIT_INPUT then
 				dispatch(h, { t = "action", act = "edit-focus", value = "" })
+			elseif ev.ev == "edit" and type(ev.id) == "string" then
+				dispatch(h, { t = "edit", id = ev.id, edit = ev :: any })
+			elseif ev.ev == "undo" and type(ev.id) == "string" then
+				dispatch(h, { t = "undo", id = ev.id })
 			elseif ev.ev == "action" and type(ev.act) == "string" then
 				dispatch(h, {
 					t = "action",
@@ -342,6 +349,7 @@ function M.register()
 				})
 			end
 		end,
+		features = Textfield.FEATURES,
 		save = function(h: Host): any
 			return State.save(h.s)
 		end,

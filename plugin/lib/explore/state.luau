@@ -26,6 +26,7 @@ local Redact = require("../model/redact")
 local Relations = require("./relations")
 local Resource = require("../model/resource")
 local Shellenv = require("../env/shellenv")
+local Textfield = require("../textfield")
 local Types = require("../model/types")
 local Values = require("../model/values")
 
@@ -139,6 +140,9 @@ export type State = {
 	-- While editing: the GitOps text field ("dir", "branch", "message");
 	-- nil edits the filter.
 	field: string?,
+	-- Caret and undo history of the field being edited (its text is the
+	-- filter or the GitOps draft; a mismatch starts the field over).
+	input: Textfield.Field?,
 	dataDir: string?,
 	nonce: () -> string,
 	isList: ((t: { [any]: any }) -> boolean)?,
@@ -161,9 +165,11 @@ M.QUICK_TAG = "quick"
 -- window.luau routes it to the Settings block with the kubectl key selected.
 M.SETTINGS_URL = "tern-kube://settings?key=kubectl"
 M.MAX_RELATION_QUERIES = 60
--- Lines of a block that are not grid rows (header, crumbs, filter, count,
--- column heads, dock); a grid row is about 4/3 of a line tall.
-M.CHROME_LINES = 18
+-- Lines of a block that are not grid rows: header, target banner, crumbs,
+-- filter, count, column heads, both overflow lines and the dock. Measured on
+-- Tern 0.9.8 (`tern ctl dump`, lines of 16.2 px): 384 px of chrome, grid rows
+-- 21 px, so a row is about 4/3 of a line and the chrome 24 lines.
+M.CHROME_LINES = 24
 M.SCROLLOFF = 2
 M.SAVE_VERSION = 1
 
@@ -931,6 +937,7 @@ function M.init(args: { string }, saved: any, config: Config, env: Env): (State,
 		offset = {},
 		gitops = Gitops.new(cwd),
 		field = nil,
+		input = nil,
 		dataDir = env.dataDir,
 		nonce = env.nonce or function(): string
 			counter += 1
@@ -1509,9 +1516,31 @@ end
 
 local FIELD_ROUTES: { [string]: string } = { dir = "export", branch = "git", message = "git" }
 
-M.FIELD_INPUTS = { dir = "main.gitops-dir", branch = "main.gitops-branch", message = "main.gitops-message" }
+M.FIELD_INPUTS = {
+	dir = "main.gitops-dir",
+	branch = "main.gitops-branch",
+	message = "main.gitops-message",
+} :: { [string]: string }
+
+-- Drops the GitOps draft being edited, if any (escape, or another field).
+local function dropDraft(s: State)
+	local field = s.field
+	if field == nil then
+		return
+	end
+	s.field = nil
+	withGitops(s, function(g)
+		local fields = table.clone(g.fields)
+		fields[field] = nil
+		g.fields = fields
+		return nil
+	end)
+end
 
 local function startField(s: State, field: string, effects: { Effect }): boolean
+	if s.editing and s.field == field then
+		return false
+	end
 	if top(s).kind ~= FIELD_ROUTES[field] then
 		return false
 	end
@@ -1519,20 +1548,68 @@ local function startField(s: State, field: string, effects: { Effect }): boolean
 	if (field == "dir" and g.export == nil) or (field ~= "dir" and (g.git == nil or g.git.status ~= "ready")) then
 		return false
 	end
+	dropDraft(s)
+	local value = Gitops.fieldValue(g, field)
 	withGitops(s, function(g2)
-		Gitops.setField(g2, field, Gitops.fieldValue(g2, field))
+		Gitops.setField(g2, field, value)
 		return nil
 	end)
 	s.editing = true
 	s.field = field
+	s.input = Textfield.new(value)
 	table.insert(effects, { t = "focus", id = M.FIELD_INPUTS[field] })
 	return true
 end
 
-local function fieldKey(s: State, key: Key, ch: string?, effects: { Effect }): boolean
+local function setFilter(s: State, text: string)
+	local filter = table.clone(s.filter)
+	if text == "" then
+		filter[M.currentKey(s)] = nil
+	else
+		filter[M.currentKey(s)] = text
+	end
+	s.filter = filter
+	local sel = table.clone(s.sel)
+	sel[M.currentKey(s)] = nil
+	s.sel = sel
+end
+
+-- The text of the field being edited: the filter or the GitOps draft.
+local function fieldText(s: State): string
+	local field = s.field
+	if field then
+		return Gitops.fieldValue(s.gitops, field)
+	end
+	return s.filter[M.currentKey(s)] or ""
+end
+
+local function activeInput(s: State): Textfield.Field
+	return Textfield.sync(s.input, fieldText(s))
+end
+
+-- Takes the field `f` an edit produced (nil: the edit was not the field's).
+local function applyInput(s: State, f: Textfield.Field?): boolean
+	if f == nil then
+		return false
+	end
+	if f.text ~= fieldText(s) then
+		local field = s.field
+		if field then
+			withGitops(s, function(g)
+				Gitops.setField(g, field, f.text)
+				return nil
+			end)
+		else
+			setFilter(s, f.text)
+		end
+	end
+	s.input = f
+	return true
+end
+
+local function fieldKey(s: State, key: Key, effects: { Effect }): boolean
 	local field = s.field :: string
 	local name = key.name
-	local current = Gitops.fieldValue(s.gitops, field)
 	if name == "enter" or name == "return" then
 		s.editing = false
 		s.field = nil
@@ -1540,29 +1617,13 @@ local function fieldKey(s: State, key: Key, ch: string?, effects: { Effect }): b
 			Gitops.commitField(g, ctx, field, effects)
 			return nil
 		end)
+		return true
 	elseif name == "escape" then
 		s.editing = false
-		s.field = nil
-		withGitops(s, function(g)
-			local fields = table.clone(g.fields)
-			fields[field] = nil
-			g.fields = fields
-			return nil
-		end)
-	elseif name == "backspace" then
-		withGitops(s, function(g)
-			Gitops.setField(g, field, string.sub(current, 1, -2))
-			return nil
-		end)
-	elseif ch then
-		withGitops(s, function(g)
-			Gitops.setField(g, field, current .. ch)
-			return nil
-		end)
-	else
-		return false
+		dropDraft(s)
+		return true
 	end
-	return true
+	return applyInput(s, Textfield.key(activeInput(s), key))
 end
 
 -- Route-specific keys of the GitOps views; false lets the global keys run.
@@ -1591,71 +1652,71 @@ end
 local FILTERABLE: { [string]: boolean } =
 	{ list = true, contexts = true, namespaces = true, kinds = true, relations = true }
 
-local function setFilter(s: State, text: string)
-	local filter = table.clone(s.filter)
-	if text == "" then
-		filter[M.currentKey(s)] = nil
-	else
-		filter[M.currentKey(s)] = text
-	end
-	s.filter = filter
-	local sel = table.clone(s.sel)
-	sel[M.currentKey(s)] = nil
-	s.sel = sel
-end
-
-local function editKey(s: State, key: Key, ch: string?): boolean
+local function editKey(s: State, key: Key): boolean
 	local name = key.name
-	local current = s.filter[M.currentKey(s)] or ""
 	if name == "escape" or name == "enter" or name == "return" then
 		s.editing = false
-	elseif name == "backspace" then
-		setFilter(s, string.sub(current, 1, -2))
-	elseif ch then
-		setFilter(s, current .. ch)
 	elseif name == "down" then
 		move(s, 1)
 	elseif name == "up" then
 		move(s, -1)
 	else
-		return false
+		return applyInput(s, Textfield.key(activeInput(s), key))
 	end
 	return true
-end
-
-local function printable(key: Key): string?
-	if key.ctrl or key.meta or key.alt then
-		return nil
-	end
-	local text = key.text
-	if text and #text >= 1 and not string.find(text, "%c") then
-		return text
-	end
-	if #key.name == 1 then
-		return if key.shift then string.upper(key.name) else key.name
-	end
-	if key.name == "space" then
-		return " "
-	end
-	return nil
 end
 
 local function startEdit(s: State, effects: { Effect }): boolean
 	if not FILTERABLE[top(s).kind] then
 		return false
 	end
+	dropDraft(s)
 	s.editing = true
+	s.input = Textfield.new(s.filter[M.currentKey(s)] or "")
 	table.insert(effects, { t = "focus", id = M.FILTER_INPUT })
 	return true
 end
 
+-- An `edit` or `undo` event of field `id`: Tern reports one only for the
+-- focused field, so a field the state is not editing starts editing first.
+local function inputEvent(
+	s: State,
+	id: string,
+	effects: { Effect },
+	apply: (Textfield.Field) -> Textfield.Field?
+): boolean
+	local editingIt = s.editing
+		and (if id == M.FILTER_INPUT then s.field == nil else M.FIELD_INPUTS[s.field or ""] == id)
+	if not editingIt then
+		local started = false
+		if id == M.FILTER_INPUT then
+			started = startEdit(s, effects)
+		else
+			for field, input in M.FIELD_INPUTS do
+				if input == id then
+					started = startField(s, field, effects)
+				end
+			end
+		end
+		if not started then
+			return false
+		end
+	end
+	local before = activeInput(s)
+	local f = apply(before)
+	if f == nil or f == before then
+		return not editingIt
+	end
+	return applyInput(s, f)
+end
+
 local function onKey(s: State, key: Key, effects: { Effect }): boolean
-	local ch = printable(key)
+	local ch = Textfield.printable(key)
 	if s.editing then
 		if s.field then
-			return fieldKey(s, key, ch, effects)
+			return fieldKey(s, key, effects)
 		end
-		return editKey(s, key, ch)
+		return editKey(s, key)
 	end
 	local name = key.name
 	local wasG = s.pendingG
@@ -2128,9 +2189,21 @@ function M.update(state: State, msg: Msg): (State, { Effect })
 		local g = Gitops.clone(s.gitops)
 		changed = Gitops.onProgress(g, msg)
 		s.gitops = g
+	elseif msg.t == "edit" and msg.id and msg.edit then
+		local ev = msg.edit
+		changed = inputEvent(s, msg.id, effects, function(f)
+			return Textfield.edit(f, ev)
+		end)
+	elseif msg.t == "undo" and msg.id then
+		changed = inputEvent(s, msg.id, effects, Textfield.undo)
 	end
 	if not changed then
 		return state, {}
+	end
+	-- A field left focused would keep Tern's native editing keys (⇧-arrows,
+	-- Home/End, ⌘A) away from the list.
+	if state.editing and not s.editing then
+		table.insert(effects, { t = "blur" })
 	end
 	-- Keep the selection inside the visible window; a new filter starts the
 	-- window over.

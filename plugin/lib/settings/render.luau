@@ -5,6 +5,7 @@
 -- safety tiers, supported operations).
 
 local State = require("./state")
+local Textfield = require("../textfield")
 local ui = require("../ui")
 
 type State = State.State
@@ -121,13 +122,13 @@ end
 local function editInput(s: State): Node
 	local f = State.selected(s)
 	local editing = s.editing
-	local text = if editing then editing.text else State.editText(s, f)
+	local text = if editing then editing.field.text else State.editText(s, f)
 	return {
 		k = "input",
 		p = {
 			key = "edit",
 			text = text,
-			cursor = #text,
+			cursor = if editing then Textfield.caret(editing.field) else Textfield.utf16(text),
 			prompt = f.path .. " = ",
 			placeholder = if f.optional then "unset" else hintFor(f),
 			class = if editing then "tk-editing" else nil,

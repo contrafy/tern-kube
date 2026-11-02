@@ -132,16 +132,25 @@ reset_pane() {
 # restart_window [START ARGS...]: quit the sandbox window and start it again
 # (e.g. with --gui-path), relink the snapshot plugin, back at one clear shell
 # pane. The window keeps running after the calling scenario's subshell.
+# A window attaches to any daemon still holding the socket, environment and
+# all, so the restart fails unless the new window runs a new daemon.
 restart_window() {
 	reset_pane
-	dev stop >/dev/null 2>&1
-	gone() { ! ctl ready; }
-	E2E_WAIT=15 wait_for "the old window to quit" gone || return 1
+	old=$(daemon_pids)
+	dev stop >/dev/null || {
+		fail "the old window or daemon ($old) did not stop"
+		return 1
+	}
 	dev start "$@" >"$E2E_SB/window.out" 2>&1 &
 	E2E_WAIT=30 wait_for "the sandbox window" ctl ready || {
 		cat "$E2E_SB/window.out" >&2
 		return 1
 	}
+	new=$(daemon_pids)
+	if [ -z "$new" ] || [ "$new" = "$old" ]; then
+		fail "the restarted window has no new daemon (before: $old, after: $new)"
+		return 1
+	fi
 	dev link "$E2E_SB/pkg" >/dev/null 2>&1 || {
 		fail "cannot link the plugin"
 		return 1
@@ -150,6 +159,10 @@ restart_window() {
 	ctl resize 1280 800 >/dev/null
 	sleep 1
 	reset_pane
+}
+
+daemon_pids() {
+	dev pids daemon
 }
 
 # Text of the lens blocks, raw output included (raw text is not grid text).

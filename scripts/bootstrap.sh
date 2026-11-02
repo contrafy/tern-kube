@@ -20,8 +20,8 @@ OXIPNG_VERSION=10.2.1
 # pngquant.org publishes prebuilt binaries only under unversioned URLs; the
 # pinned checksum makes bootstrap fail closed if upstream replaces them.
 PNGQUANT_VERSION=3.0.3
-TERN_SDK_COMMIT=19658cb2a3205ce57c67ad8c5c1c54ed80fefa7e
-TERN_TYPES_SHA256=84682931deee44134bdd38502f81be37fd14ac1697618985228f5cab7e25c51f
+TERN_SDK_COMMIT=78ba204e19c6ee1eae5e102a83a551220180c69f
+TERN_TYPES_SHA256=f56084a35c5cdb24e33b7bacda8baa9a3d1504fd3e31a20d3a8c31f3e0c0a32b
 
 die() {
 	printf 'bootstrap: %s\n' "$*" >&2
@@ -179,14 +179,6 @@ else
 		"$WORK/tern.d.luau" "$TERN_TYPES_SHA256"
 	mv -f "$WORK/tern.d.luau" "$types_file"
 fi
-
-# Upstream tern.d.luau uses the `userdata` type (WindowCx:wait), which Luau
-# does not define, so luau-lsp rejects the whole file. Typecheck with a copy
-# that declares it as an opaque type; the pristine file stays untouched.
-{
-	printf 'declare extern type userdata with end\n'
-	cat "$types_file"
-} >"$TYPES/tern.lsp.d.luau"
 
 # The luau CLI has no --version flag; running a script proves it executes.
 printf 'return nil\n' >"$WORK/probe.luau"

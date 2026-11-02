@@ -27,9 +27,6 @@ local function columnIndex(tbl: SnapshotTable, name: string): number?
 	return nil
 end
 
--- Containers of a finished pod are meant to be not ready.
-local FINISHED: { [string]: boolean } = { Completed = true, Succeeded = true }
-
 -- A row is a problem when kubectl's own columns say so: a status-typed cell
 -- with a warning/error tone, a ratio short of its target (READY 0/1) unless
 -- the row's status says it finished, or restarts above zero.
@@ -43,7 +40,7 @@ function M.isProblem(tbl: SnapshotTable, row: ResourceRow): boolean
 			if tone == "error" or tone == "warning" then
 				return true
 			end
-			finished = finished or FINISHED[cell] == true
+			finished = finished or Values.finished(cell)
 		elseif t == "ratio" then
 			local num, den = Values.ratio(cell)
 			if num and den and num < den then

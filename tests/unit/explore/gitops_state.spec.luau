@@ -97,6 +97,28 @@ describe("explore gitops keys", function()
 		expect(saved.stack[1].kind).toBe("list")
 	end)
 
+	it("the directory field takes native edits and undo; esc drops the draft and the focus", function()
+		local w = world()
+		local s = press(w, open(w), "E")
+		local id = State.FIELD_INPUTS.dir
+		-- A click in the unfocused field asks for focus, then edits arrive.
+		s = X.action(w, s, "field-focus", "dir")
+		expect(s.field).toBe("dir")
+		local len = #"/repo/apps"
+		s = State.update(s, { t = "edit", id = id, edit = { from = 6, to = len, text = "out", cursor = 9, len = len } })
+		expect(Gitops.fieldValue(s.gitops, "dir")).toBe("/repo/out")
+		s = press(w, s, "left")
+		s = press(w, s, "x")
+		expect(Gitops.fieldValue(s.gitops, "dir")).toBe("/repo/ouxt")
+		s = State.update(s, { t = "undo", id = id })
+		expect(Gitops.fieldValue(s.gitops, "dir")).toBe("/repo/out")
+		local s2, effects = State.update(s, W.key("escape"))
+		expect(effects).toEqual({ { t = "blur" } })
+		expect(Gitops.fieldValue(s2.gitops, "dir")).toBe("/repo/apps")
+		s = press(w, s, "enter")
+		expect((s.gitops.export :: any).dir).toBe("/repo/out")
+	end)
+
 	it("E on a row's object view exports that object only", function()
 		local w = world()
 		local s = selectName(w, open(w), "web")

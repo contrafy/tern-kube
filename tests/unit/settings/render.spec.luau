@@ -85,6 +85,14 @@ describe("settings render: editor", function()
 		expect((input.p :: any).class).toBe("tk-editing")
 	end)
 
+	it("draws the caret where the user put it", function()
+		local s = select(open(nil), "gitops.gh")
+		s = State.update(s, { t = "key", key = { name = "e", text = "e" } })
+		s = State.update(s, { t = "key", key = { name = "left" } })
+		local input = nodes.find(main(s), nodes.kind("input")) :: nodes.Node
+		expect((input.p :: any).cursor).toBe(1)
+	end)
+
 	it("highlights the selected row and keeps it inside a short block", function()
 		local s = select(open(nil), "gitops.gh")
 		local m = main(s, 20)

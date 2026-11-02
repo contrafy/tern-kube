@@ -104,6 +104,20 @@ describe("render grid", function()
 		expect(nodes.class("tk-p3")(cells[9])).toBe(true)
 		expect(nodes.class("tk-num")(cells[4])).toBe(true)
 	end)
+
+	-- A Job's pod that finished shows READY 0/1 by design; drawing it in the
+	-- warning tone sent people hunting for a problem that is not there.
+	it("mutes the short READY of Completed/Succeeded rows only", function()
+		local s = spec()
+		s.rows[1].cells = { "job-x", "0/1", "Completed", "0", "5m", "10.0.0.1", "n1", "<none>", "<none>" }
+		local g = Grid.grid(s)
+		local rows = nodes.findAll(g, nodes.class("tk-r"))
+		local done = nodes.tones((nodes.findAll(rows[1], nodes.class("tk-c"))[2] :: any).c[1])
+		expect(table.find(done, "warning")).toBeNil()
+		expect(table.find(done, "muted") ~= nil).toBe(true)
+		local crash = nodes.tones((nodes.findAll(rows[2], nodes.class("tk-c"))[2] :: any).c[1])
+		expect(table.find(crash, "warning") ~= nil).toBe(true)
+	end)
 end)
 
 describe("render cells", function()
@@ -122,6 +136,13 @@ describe("render cells", function()
 		expect(table.find(tones("READY", "ratio", "1/1"), "success") ~= nil).toBe(true)
 		expect(table.find(tones("RESTARTS", "count", "3 (2m ago)"), "warning") ~= nil).toBe(true)
 		expect(table.find(tones("RESTARTS", "count", "0"), "warning")).toBeNil()
+	end)
+
+	it("mutes a short ratio on a finished row, keeps a full one green", function()
+		expect(nodes.tones(Cells.cell("READY", "ratio", "0/1", true))).toEqual({ "muted", "mono" })
+		expect(table.find(nodes.tones(Cells.cell("READY", "ratio", "1/1", true)), "success") ~= nil).toBe(true)
+		expect(Cells.rowFinished({ "text", "status" } :: any, { "a", "Succeeded" })).toBe(true)
+		expect(Cells.rowFinished({ "text", "status" } :: any, { "a", "Running" })).toBe(false)
 	end)
 
 	it("mutes placeholders and marks numbers", function()

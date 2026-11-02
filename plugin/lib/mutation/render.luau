@@ -9,6 +9,7 @@ local Diffseg = require("./diffseg")
 local MutationView = require("../render/mutation_view")
 local Session = require("./session")
 local T = require("./types")
+local Textfield = require("../textfield")
 local Viewstate = require("../lens/viewstate")
 local ui = require("../ui")
 
@@ -472,7 +473,7 @@ local function confirmNodes(s: State, out: { Node })
 			p = {
 				key = "typed",
 				text = s.typed,
-				cursor = #s.typed,
+				cursor = Textfield.caretFor(s.input, s.typed),
 				placeholder = if apply then "path" else "replicas",
 				prompt = if apply then ">" else "#",
 			},
@@ -536,7 +537,7 @@ local function confirmNodes(s: State, out: { Node })
 				p = {
 					key = "typed",
 					text = s.typed,
-					cursor = #s.typed,
+					cursor = Textfield.caretFor(s.input, s.typed),
 					placeholder = req.typed,
 					prompt = ">",
 					tone = if s.typed == req.typed then "success" else nil,

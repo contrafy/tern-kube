@@ -16,6 +16,7 @@ local Query = require("./query")
 local Quick = require("../actions/quick")
 local Redact = require("../model/redact")
 local State = require("./state")
+local Textfield = require("../textfield")
 local Types = require("../model/types")
 local Viewstate = require("../lens/viewstate")
 local ui = require("../ui")
@@ -63,9 +64,9 @@ function M.provenanceLabel(provenance: string): string
 	return if p then p.label else provenance
 end
 
-local function provenanceCell(col: string, columnType: Types.ColumnType, value: string): Node
+local function provenanceCell(col: string, columnType: Types.ColumnType, value: string, finished: boolean): Node
 	if col ~= "VIA" or value == "" then
-		return Cells.cell(col, columnType, value)
+		return Cells.cell(col, columnType, value, finished)
 	end
 	local p = BY_LABEL[value]
 	return ui.badge(value, if p then p.tone else "neutral", { title = if p then p.title else value })
@@ -335,7 +336,7 @@ local function pagedGrid(
 	rows: { GridRow },
 	selected: number,
 	s: State,
-	cell: ((string, Types.ColumnType, string) -> Node)?
+	cell: ((string, Types.ColumnType, string, boolean) -> Node)?
 ): { Node }
 	local size = State.viewport(s.rows, s.config.general.max_rendered_rows)
 	local first, last = State.window(selected, #rows, s.offset[State.currentKey(s)], size)
@@ -977,13 +978,14 @@ function M.view(s: State, _cols: number, _rows: number): View
 			p = {
 				key = "filter",
 				text = text,
-				cursor = #text,
+				cursor = Textfield.caretFor(if s.editing and s.field == nil then s.input else nil, text),
 				placeholder = "press / to filter",
 				prompt = "/",
 			},
 		})
 	end
-	for _, n in GitopsView.inputs(s.gitops, route, if s.editing then s.field else nil) do
+	local editing = if s.editing then s.field else nil
+	for _, n in GitopsView.inputs(s.gitops, route, editing, if editing then s.input else nil) do
 		table.insert(children, n)
 	end
 	table.insert(children, body(s))

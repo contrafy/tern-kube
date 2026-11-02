@@ -91,8 +91,10 @@ starts an isolated Tern window (sandbox `TK_E2E_SANDBOX`, default
 `tern ctl` (`plugins expect`, `click`, `key`, `tree`). Scenarios 01-17 are
 read-only; 18-22 mutate only `tk-e2e-*` objects in `tern-test-mutate` (and
 Jobs they create in `tern-test-batch`), 23 works in its own
-`tern-test-gitops-ui` namespace and a throwaway git repository, and 30 edits
-only the sandbox's config file; all clean up on exit. Scenarios that need
+`tern-test-gitops-ui` namespace and a throwaway git repository, 30 edits
+only the sandbox's config file, 31 restarts the window and its daemon with a
+Dock-like `PATH`, and 32 (native editing) edits the sandbox config and
+deletes its own `tk-e2e-web`; all clean up on exit. Scenarios that need
 output a read-only cluster cannot produce switch the pane to the fake
 `tests/bin/kubectl`. `--shots` regenerates `docs/screenshots/`
 (`E2E_SHOTS="m3b m4"` limits it to some groups) and then runs
@@ -100,6 +102,15 @@ output a read-only cluster cannot produce switch the pane to the fake
 idempotent, only `docs/screenshots/*.png`), `--perf`
 prints timings for [performance.md](performance.md). It exits 0 with
 "SKIPPED" when `tern` is not installed.
+
+Every `tern ctl` call through `scripts/dev-tern.sh ctl` is bounded: it is
+terminated after `TK_CTL_TIMEOUT` seconds (default 60) and says so, because
+a quitting window can accept a control connection and never answer.
+`plugin reload`/`list` are bounded at 30 s. `stop` quits the window, waits
+for it and for the sandbox daemon (which outlives its window on Tern 0.9),
+then sends TERM and finally KILL to whatever is left, and exits non-zero if a
+process survives. `start` writes `<sandbox>/cfg/omp/state.json` with Tern's
+omp management off, so a fresh sandbox never downloads or links omp.
 
 For manual work: `TK_TERN_SANDBOX=/tmp/tk-tern-<name> scripts/dev-tern.sh
 start` (in a long-lived terminal), then `link`, `reload`, `ctl ...`, `stop`.

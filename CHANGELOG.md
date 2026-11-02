@@ -7,6 +7,24 @@ versions may break).
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-11-02
+
+### Added
+
+- Native text editing in block fields (Tern 0.9 `features = { "edit", "undo" }`): the Explore filter, the GitOps directory, branch and message fields, Settings values and the approve block's replicas, path and typed-confirmation fields take a click to place the caret, shift-arrow and drag selection, paste over a selection or at the caret, and cmd+Z/ctrl+Z undo. Focus returns to the list when editing ends. A typed delete still needs the exact token: Enter with any other text never confirms.
+
+### Changed
+
+- Tern 0.9 or later is required; tern-kube is tested on Tern 0.9.8. Nothing documents how older Tern treats the new `features` key, and 0.9.8 is the only version we can test.
+- The plugin types are pinned to tern-sdk `78ba204` (the types Tern 0.9.8 ships); luau-lsp reads them without the earlier `userdata` patch.
+- The test sandbox bounds every `tern ctl` call (`TK_CTL_TIMEOUT`, default 60 s), waits for the window and its daemon to exit on `stop` (TERM, then KILL), and starts with Tern's omp management off, so tests never download or link omp.
+
+### Fixed
+
+- Completed and Succeeded pods no longer show READY `0/1` in the warning tone; the cell is muted, matching the Problems filter.
+- Explore sizes its list window to the rows that fit (the block chrome takes 24 lines on Tern 0.9.8, not 18), so `G` and `j` keep the selected row visible.
+- The Dock/Finder `PATH` end-to-end check (scenario 31) passes on Tern 0.9, whose daemon outlives its window: a restart now waits for the old daemon to exit and requires a new one.
+
 ## [0.1.2] - 2026-10-09
 
 ### Fixed
@@ -89,7 +107,8 @@ First public beta.
 - Docs: SDK capability matrix, configuration, performance, architecture,
   security model, testing, releasing.
 
-[Unreleased]: https://github.com/contrafy/tern-kube/compare/v0.1.2...HEAD
+[Unreleased]: https://github.com/contrafy/tern-kube/compare/v0.1.3...HEAD
+[0.1.3]: https://github.com/contrafy/tern-kube/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/contrafy/tern-kube/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/contrafy/tern-kube/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/contrafy/tern-kube/releases/tag/v0.1.0
