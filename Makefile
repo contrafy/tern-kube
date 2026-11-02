@@ -88,6 +88,11 @@ test-shell-drift:
 test-shell-login:
 	@LUAU=$(LUAU) sh tests/shell/login/run.sh
 
+.PHONY: test-integration-compare
+# Two kind clusters: scripts/cluster.sh create && scripts/cluster.sh create-peer.
+test-integration-compare: tools
+	@sh tests/integration/compare/run.sh
+
 .PHONY: shots-optimize
 OXIPNG = $(BIN)/oxipng
 PNGQUANT = $(BIN)/pngquant

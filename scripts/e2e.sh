@@ -16,7 +16,11 @@
 # the remote-host scenarios (60-67, 69) against the disposable Linux host of
 # scripts/remote-host.sh (`up` it first, any sandbox): the e2e sandbox
 # registers it again (`attach`), its `status` must pass, and the snapshot is
-# linked there (`install`); without --remote they are skipped.
+# linked there (`install`); without --remote they are skipped. E2E_MC=1
+# also runs the multi-cluster compare scenarios (70-79) against both kind
+# clusters through .sandbox/kubeconfig-mc (scripts/cluster.sh create-peer
+# first), after applying tests/integration/manifests/compare to each;
+# without E2E_MC they are skipped.
 #
 # The window runs in its own sandbox (TK_E2E_SANDBOX, default
 # /tmp/tk-tern-e2e) with a snapshot copy of plugin.toml and plugin/, so edits made while it
@@ -52,7 +56,7 @@ while [ $# -gt 0 ]; do
 	--keep) keep=1 ;;
 	--remote) remote=1 ;;
 	*)
-		sed -n '2,23p' "$0" | sed 's/^# \{0,1\}//'
+		sed -n '2,27p' "$0" | sed 's/^# \{0,1\}//'
 		exit 2
 		;;
 	esac
@@ -80,6 +84,19 @@ KUBECONFIG=$kubeconfig "$real_kubectl" --request-timeout=5s get --raw /readyz >/
 KUBECONFIG=$kubeconfig "$real_kubectl" --request-timeout=5s get pod crashloop -n tern-test-apps >/dev/null 2>&1 ||
 	need "the tern-test-* world is missing: sh scripts/fixtures/capture.sh --world-only"
 export E2E_REAL_KUBECTL="$real_kubectl" E2E_KUBECONFIG="$kubeconfig"
+
+mc=${E2E_MC:-0}
+if [ "$mc" = 1 ]; then
+	mc_kubeconfig=$(sh "$repo/scripts/cluster.sh" mc-kubeconfig-path) ||
+		need "E2E_MC=1 needs the peer cluster: scripts/cluster.sh create-peer"
+	for pair in "kind-tern-kube-dev a.yaml" "kind-tern-kube-dev2 b.yaml"; do
+		# shellcheck disable=SC2086 # "context file" pairs split on purpose
+		set -- $pair
+		KUBECONFIG=$mc_kubeconfig "$real_kubectl" --kubeconfig "$mc_kubeconfig" --context "$1" \
+			apply -f "$repo/tests/integration/manifests/compare/$2" >/dev/null ||
+			need "cannot apply the compare world to $1"
+	done
+fi
 
 cleanup() {
 	clip_restore
@@ -167,6 +184,12 @@ for f in "$repo"/tests/e2e/scenarios/*.sh; do
 	6[0-7]-* | 69-*)
 		if [ $remote = 0 ]; then
 			echo "skip $name (remote host: scripts/remote-host.sh up, then scripts/e2e.sh --remote)"
+			continue
+		fi
+		;;
+	7[0-9]-*)
+		if [ "$mc" != 1 ]; then
+			echo "skip $name (no peer cluster: scripts/cluster.sh create-peer, then E2E_MC=1 make e2e)"
 			continue
 		fi
 		;;
