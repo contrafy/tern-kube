@@ -143,6 +143,10 @@ export type ExploreState = {
 	-- history mark per release (ns/name)
 	marks: { [string]: number },
 	defaults: { [string]: Load<DefaultsChoice> },
+	-- Revision diffs, key ns/name#A..B (data: helm/revdiff.luau Result).
+	diffs: { [string]: Load<any> },
+	-- Running defaults fallbacks per ns/name#rev (shape owned by explore/helm.luau).
+	fallbacks: { [string]: any },
 }
 
 return nil

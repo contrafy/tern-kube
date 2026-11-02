@@ -144,6 +144,8 @@ local EXPLORE_FIELDS = {
 	"context",
 	"kubeconfig",
 	"route",
+	"release",
+	"revision",
 	"cwd",
 	"container",
 	"previous",
@@ -157,6 +159,11 @@ local EXPLORE_FIELDS = {
 
 export type ExploreExtra = {
 	route: string?,
+	-- helm-release / helm-history: the release, its revision and namespace
+	-- (the namespace replaces the object's or invocation's).
+	release: string?,
+	revision: number?,
+	namespace: string?,
 	cwd: string?,
 	container: string?,
 	previous: boolean?,
@@ -170,12 +177,17 @@ export type ExploreExtra = {
 }
 
 -- `route` opens a view on top of the object (`manifest`, `diff`, `logs`,
--- `events`); `cwd` is where the manifest index is built (the lensed shell's
--- directory). Without `ref` the route is scoped to the invocation's
+-- `events`) or a Helm view (`helm-releases`, `helm-release`, `helm-history`
+-- with `release`); `cwd` is where the manifest index is built (the lensed
+-- shell's directory). Without `ref` the route is scoped to the invocation's
 -- namespace (`*` for -A): a namespace events timeline or `logs -l`.
 function M.exploreUrl(inv: Invocation, ref: Ref?, extra: ExploreExtra?): string
 	local e: ExploreExtra = extra or {}
-	local namespace = if ref then ref.namespace elseif inv.allNamespaces then "*" else inv.namespace
+	local namespace = if e.namespace
+		then e.namespace
+		elseif ref then ref.namespace
+		elseif inv.allNamespaces then "*"
+		else inv.namespace
 	local values: { [string]: string? } = {
 		kind = ref and ref.kind,
 		group = ref and ref.group,
@@ -184,6 +196,8 @@ function M.exploreUrl(inv: Invocation, ref: Ref?, extra: ExploreExtra?): string
 		context = inv.context,
 		kubeconfig = inv.kubeconfig,
 		route = e.route,
+		release = e.release,
+		revision = if e.revision then string.format("%d", e.revision) else nil,
 		cwd = e.cwd,
 		container = e.container,
 		previous = if e.previous then "1" else nil,

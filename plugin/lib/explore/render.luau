@@ -11,6 +11,8 @@ local EventsModel = require("../events/model")
 local Gitops = require("./gitops")
 local GitopsView = require("../gitops/view")
 local Grid = require("../render/grid")
+local Helm = require("./helm")
+local HelmView = require("../helm/view")
 local ObjTree = require("../render/objtree")
 local Link = require("../mutation/link")
 local LogsStore = require("../logs/store")
@@ -206,6 +208,9 @@ local function crumbLabel(s: State, route: Route): string
 	end
 	if Gitops.isRoute(route.kind) then
 		return GitopsView.crumb(s.gitops, route)
+	end
+	if Helm.isRoute(route.kind) then
+		return HelmView.crumb(route)
 	end
 	local title = ROUTE_TITLE[route.kind] or route.kind
 	local ref = route.ref
@@ -468,6 +473,31 @@ local function gitopsView(s: State, route: Route, object: any?): GitopsView.Ctx
 		end,
 		chip = chip,
 		object = object,
+	}
+end
+
+local function isListFallback(t: any): boolean
+	return type(t) == "table" and (#t > 0 or next(t) == nil)
+end
+
+-- What the Helm views need: the sub-core's data, the shared paged grid and
+-- chip builders, and the masking policy.
+local function helmView(s: State, route: Route): HelmView.Ctx
+	local selected = State.selectedItem(s)
+	return {
+		h = s.helm,
+		hctx = State.helmCtx(s),
+		route = route,
+		config = s.config,
+		now = s.now,
+		selectedKey = if selected then selected.key else nil,
+		filter = string.lower(s.filter[State.currentKey(s)] or ""),
+		grid = function(key, headers, types, rows, sel, cell)
+			return pagedGrid(key, headers, types, rows :: any, sel, s, cell)
+		end,
+		chip = chip,
+		policy = Redact.fromConfig(s.config),
+		isList = s.isList or isListFallback,
 	}
 end
 
@@ -747,6 +777,10 @@ local function detailBody(s: State, route: Route, load: Load?): { Node }
 	if controller then
 		table.insert(out, controller)
 	end
+	local helmOwner = HelmView.ownerLine(helmView(s, route), obj)
+	if helmOwner then
+		table.insert(out, helmOwner)
+	end
 	if data and obj then
 		local sensitive = type(obj) == "table" and obj.kind == "Secret"
 		for _, n in noticeNodes(s, sensitive, data.masked) do
@@ -759,7 +793,7 @@ local function detailBody(s: State, route: Route, load: Load?): { Node }
 	return out
 end
 
-local function relationsBody(s: State, load: Load?): { Node }
+local function relationsBody(s: State, route: Route, load: Load?): { Node }
 	if load and load.status == "loading" then
 		local data = load.data :: State.RelationsData?
 		local asked = if data then data.asked else 0
@@ -807,6 +841,11 @@ local function relationsBody(s: State, load: Load?): { Node }
 			ui.span(string.format("%d objects, %d edges", #graph.nodes, #graph.edges), "muted"),
 		}, { key = "count" }),
 	}
+	local root = if route.ref then State.findObject(s, route.ref) else nil
+	local helmOwner = HelmView.ownerLine(helmView(s, route), root)
+	if helmOwner then
+		table.insert(out, helmOwner)
+	end
 	if graph.truncated then
 		table.insert(
 			out,
@@ -1403,7 +1442,7 @@ local function body(s: State): Node
 	elseif route.kind == "detail" then
 		children = detailBody(s, route, load)
 	elseif route.kind == "relations" then
-		children = relationsBody(s, load)
+		children = relationsBody(s, route, load)
 	elseif route.kind == "describe" then
 		children = describeBody(s, load)
 	elseif route.kind == "logs" then
@@ -1413,6 +1452,8 @@ local function body(s: State): Node
 	elseif Gitops.isRoute(route.kind) then
 		local ref = route.ref
 		children = GitopsView.body(gitopsView(s, route, if ref then State.findObject(s, ref) else nil))
+	elseif Helm.isRoute(route.kind) then
+		children = HelmView.body(helmView(s, route))
 	else
 		children = namesBody(s, route, load)
 	end
@@ -1422,8 +1463,8 @@ end
 -- Dock and help --------------------------------------------------------------
 
 local HINTS: { [string]: string } = {
-	list = "j/k move · enter open · / filter · d describe · y object · R relations · s shell · l logs · F port-forward · : kinds · ? help",
-	detail = "enter relations · d describe · L logs · s shell · l follow logs · F port-forward · e edit · ctrl+d delete · ctrl+r restart · S scale · ? more · esc back",
+	list = "j/k move · enter open · / filter · d describe · y object · R relations · s shell · l logs · F port-forward · : kinds · H helm · ? help",
+	detail = "enter relations · d describe · L logs · s shell · l follow logs · F port-forward · e edit · ctrl+d delete · ctrl+r restart · S scale · H helm release · ? more · esc back",
 	relations = "j/k move · enter open · / filter · r refresh · esc back",
 	describe = "y object · R relations · r refresh · esc back",
 	logs = "j/k move · enter inspect · / search · ] [ next/prev error · x level · w wrap · a container · o previous · l follow · esc back",
@@ -1456,7 +1497,10 @@ local function dock(s: State): Node
 		local first = string.match(load.error or "", "^[^\n]*") or ""
 		spans = { ui.span(first, "error"), ui.span("  · r retry · c contexts", "muted") }
 	else
-		local hint = if Gitops.isRoute(route.kind) then GitopsView.hint(route) else HINTS[route.kind]
+		local hint = if Gitops.isRoute(route.kind)
+			then GitopsView.hint(route)
+			elseif Helm.isRoute(route.kind) then HelmView.hint(route)
+			else HINTS[route.kind]
 		spans = { ui.span(hint or "? help", "muted") }
 	end
 	return ui.col(
@@ -1506,6 +1550,22 @@ M.KEYS = {
 	{ "f / a / A / X", "Drift: filter, apply the selected manifest / the source, export all shown", "" },
 	{ "t / w / b", "Export: change directory, write the files, branch and commit", "" },
 	{ "b e p P o", "Git: branch, message, push, pull request, only exported files (enter runs)", "" },
+	{ "H", "Helm releases; on an object managed by Helm: its release", "Helm release chip" },
+	{
+		"h / v / M / N / K / R",
+		"Helm: history, values (v again: next mode), manifest, notes, hooks, resources of the release",
+		"Release chips",
+	},
+	{ "enter", "Helm: open the release, the revision or the object", "Click a row" },
+	{ "space", "Helm: mark a history revision for =", "" },
+	{ "=", "Helm: diff the selected revision against the latest (or the marked one)", "Diff vs previous" },
+	{
+		"ctrl+r",
+		"Helm: roll back to the selected revision (release: the last good one); previews in the approve block",
+		"Rollback",
+	},
+	{ "ctrl+g", "Helm: drift of the auto-detected chart directory", "" },
+	{ "Y", "Helm: copy the pinned helm command of this view", "Copy command" },
 	{ "?", "This help", "?" },
 }
 

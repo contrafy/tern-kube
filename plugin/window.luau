@@ -239,6 +239,15 @@ tern.command({
 	end,
 })
 
+tern.command({
+	id = "helm",
+	title = "Tern Kube: Helm releases",
+	icon = "box",
+	run = function(cx: WindowCx)
+		openExplore(cx, "helm-releases")
+	end,
+})
+
 -- The approve block asks for the path; relative paths resolve against the
 -- focused pane's working directory, and its recorded KUBECONFIG is pinned.
 tern.command({

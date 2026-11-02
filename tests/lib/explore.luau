@@ -323,4 +323,202 @@ function M.action(s: State, act: string, value: string?, trace: Trace?): (State,
 	return M.settle(s2, effects, nil, trace)
 end
 
+-- Helm ----------------------------------------------------------------------
+-- A fake helm (and the kubectl reads of the helm-resources view) over the
+-- releases captured from the kind cluster (tests/fixtures/helm/captured,
+-- namespace tern-test-helm): list, history, status, get all --template
+-- (extras), get values --all. Anything else fails like helm would.
+
+M.HELM_NS = "tern-test-helm"
+M.HELM_DIR = "helm/captured/"
+
+local HELM_VALUE_FLAGS: { [string]: boolean } = {
+	["--kube-context"] = true,
+	["--kubeconfig"] = true,
+	["-n"] = true,
+	["-o"] = true,
+	["--time-format"] = true,
+	["--max"] = true,
+	["--revision"] = true,
+	["--template"] = true,
+	["--filter"] = true,
+	["--version"] = true,
+	["--timeout"] = true,
+	["-f"] = true,
+}
+
+local function helmWords(argv: { string }): { string }
+	local out: { string } = {}
+	local i = 2
+	while i <= #argv do
+		local a = argv[i]
+		if HELM_VALUE_FLAGS[a] then
+			i += 2
+		elseif string.sub(a, 1, 1) == "-" then
+			i += 1
+		else
+			table.insert(out, a)
+			i += 1
+		end
+	end
+	return out
+end
+
+local function listRows(): { any }
+	return json.decode(fixtures.read(M.HELM_DIR .. "list.json"))
+end
+
+local function latestRevision(name: string): number?
+	for _, row in listRows() do
+		if row.name == name then
+			return tonumber(row.revision)
+		end
+	end
+	return nil
+end
+
+local function tokenOf(label: string, value: any): string
+	local token = "@helm:" .. label
+	tokens[token] = value
+	return token
+end
+
+local function helmFile(path: string): (Result?, string?)
+	if fixtures.has(M.HELM_DIR .. path) then
+		return ok(fixtures.read(M.HELM_DIR .. path))
+	end
+	return M.fail(1, "Error: release: not found")
+end
+
+function M.helm(argv: { string }): (Result?, string?)
+	if flag(argv, "--kube-context") ~= M.CTX then
+		return M.fail(
+			1,
+			'Error: Kubernetes cluster unreachable: context "'
+				.. tostring(flag(argv, "--kube-context"))
+				.. '" does not exist'
+		)
+	end
+	local words = helmWords(argv)
+	local verb = words[1]
+	local ns = flag(argv, "-n")
+	if verb == "list" then
+		local filter = flag(argv, "--filter")
+		local only = if filter then string.gsub(string.match(filter, "^%^(.*)%$$") or filter, "\\", "") else nil
+		local rows: { any } = {}
+		for _, row in listRows() do
+			if (has(argv, "-A") or ns == nil or row.namespace == ns) and (only == nil or row.name == only) then
+				table.insert(rows, row)
+			end
+		end
+		return ok(tokenOf(table.concat(argv, " "), rows))
+	end
+	if ns ~= M.HELM_NS then
+		return M.fail(1, "Error: release: not found")
+	end
+	local name = if verb == "get" then words[3] else words[2]
+	local revision = tonumber(flag(argv, "--revision")) or latestRevision(name or "")
+	if name == nil or revision == nil then
+		return M.fail(1, "Error: release: not found")
+	end
+	if verb == "history" then
+		if flag(argv, "--max") == "1" and fixtures.has(M.HELM_DIR .. "history-" .. name .. "-max1.json") then
+			return helmFile("history-" .. name .. "-max1.json")
+		end
+		return helmFile("history-" .. name .. ".json")
+	elseif verb == "status" then
+		return helmFile(string.format("status-%s-r%d.json", name, revision))
+	elseif verb == "get" and words[2] == "all" and flag(argv, "--template") then
+		return helmFile(string.format("extras-%s-r%d.txt", name, revision))
+	elseif verb == "get" and words[2] == "values" and has(argv, "--all") then
+		return helmFile(string.format("values-all-%s-r%d.json", name, revision))
+	end
+	return M.fail(1, "fake helm: unhandled " .. table.concat(argv, " "))
+end
+
+local function helmObjects(argv: { string }): { any }
+	local resource = command(argv)[2] or ""
+	local kind = string.match(resource, "^([^.]+)") or resource
+	local out: { any } = {}
+	for _, item in json.decode(fixtures.read(M.HELM_DIR .. "objects.json")).items do
+		if string.lower(item.kind) == kind then
+			table.insert(out, item)
+		end
+	end
+	return out
+end
+
+-- helm, the helm-resources kubectl reads of tern-test-helm, else M.responder.
+function M.helmResponder(argv: { string }): (Result?, string?)
+	if argv[1] == "helm" then
+		return M.helm(argv)
+	end
+	if argv[1] == "kubectl" and flag(argv, "-n") == M.HELM_NS and command(argv)[1] == "get" then
+		local items = helmObjects(argv)
+		local single = command(argv)[3]
+		if single and flag(argv, "-o") == "json" then
+			for _, item in items do
+				if item.metadata.name == single then
+					return ok(tokenOf(table.concat(argv, " "), item))
+				end
+			end
+			if has(argv, "--ignore-not-found") then
+				return ok("")
+			end
+			return M.fail(1, "Error from server (NotFound): " .. command(argv)[2] .. ' "' .. single .. '" not found')
+		end
+		if flag(argv, "-o") == "name" then
+			local want: { [string]: boolean } = {}
+			for i = 3, #command(argv) do
+				want[command(argv)[i]] = true
+			end
+			local names: { string } = {}
+			for _, item in items do
+				if want[item.metadata.name] then
+					table.insert(names, command(argv)[2] .. "/" .. item.metadata.name)
+				end
+			end
+			return ok(table.concat(names, "\n") .. (if #names > 0 then "\n" else ""))
+		end
+		local selector = flag(argv, "-l")
+		local kept: { any } = {}
+		for _, item in items do
+			local labels = item.metadata.labels or {}
+			if selector == nil or labels["app.kubernetes.io/managed-by"] == "Helm" then
+				table.insert(kept, item)
+			end
+		end
+		return ok(tokenOf(table.concat(argv, " "), { apiVersion = "v1", kind = "List", items = kept }))
+	end
+	return M.responder(argv)
+end
+
+function M.helmEnv(): State.Env
+	local env = M.env()
+	env.helm = "helm"
+	return env
+end
+
+-- A settled block on the Helm releases (all namespaces) with helm found.
+function M.openHelm(params: { [string]: string }?, cfg: Config.Config?): (State, Trace)
+	local p = params or { context = M.CTX, namespace = "*", route = "helm-releases" }
+	local s, effects = State.init({ M.link(p) }, nil, cfg or M.config(nil), M.helmEnv())
+	return M.settle(s, effects, M.helmResponder)
+end
+
+function M.helmKeys(s: State, names: { string }, trace: Trace?): (State, Trace)
+	local tr: Trace = trace or { runs = {}, effects = {} }
+	for _, name in names do
+		local effects
+		s, effects = State.update(s, M.key(name))
+		s, tr = M.settle(s, effects, M.helmResponder, tr)
+	end
+	return s, tr
+end
+
+function M.helmAction(s: State, act: string, value: string?, trace: Trace?): (State, Trace)
+	local s2, effects = State.update(s, { t = "action", act = act, value = value })
+	return M.settle(s2, effects, M.helmResponder, trace)
+end
+
 return M

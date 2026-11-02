@@ -1,6 +1,6 @@
 --!strict
--- Types shared by the Explore core (state.luau), its GitOps routes
--- (gitops.luau) and the host glue. Pure: no `tern` global.
+-- Types shared by the Explore core (state.luau), its GitOps and Helm routes
+-- (gitops.luau, helm.luau) and the host glue. Pure: no `tern` global.
 
 local Textfield = require("../textfield")
 local Types = require("../model/types")
@@ -22,6 +22,15 @@ export type RouteKind =
 	| "drift"
 	| "export"
 	| "git"
+	| "helm-releases"
+	| "helm-release"
+	| "helm-history"
+	| "helm-values"
+	| "helm-manifest"
+	| "helm-notes"
+	| "helm-hooks"
+	| "helm-resources"
+	| "helm-diff"
 
 export type Route = {
 	kind: RouteKind,
@@ -61,6 +70,15 @@ export type Route = {
 	source: string?,
 	-- drift: the drilled-into report entry.
 	item: string?,
+	-- helm-*: the release (its namespace is `namespace`); helm-releases
+	-- scopes like a list.
+	release: string?,
+	-- helm-*: the revision shown (nil = latest); helm-diff: the older one.
+	revision: number?,
+	-- helm-diff: the newer revision.
+	against: number?,
+	-- helm-values: changed | user | computed | defaults | diff (nil = changed).
+	mode: string?,
 }
 
 export type Item = { key: string, ref: Ref?, value: string? }

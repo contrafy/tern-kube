@@ -260,19 +260,20 @@ describe("explore render: other views", function()
 		expect(view((W.open())).layer).toBeNil()
 	end)
 
-	-- One key, one meaning outside the GitOps views (whose rows say which
-	-- view they belong to; inside those views their keys win).
+	-- One key, one meaning outside the route-local views (whose rows say
+	-- which view they belong to; inside those views their keys win).
 	it("binds no global key twice", function()
 		local seen: { [string]: string } = {}
 		for _, k in Render.KEYS do
 			local desc = k[2]
-			-- Route-local rows (GitOps views, logs and events) may reuse keys:
-			-- inside their view they win.
+			-- Route-local rows (GitOps views, logs and events, Helm views) may
+			-- reuse keys: inside their view they win.
 			if
 				string.find(desc, "^Drift:")
 				or string.find(desc, "^Export:")
 				or string.find(desc, "^Git:")
 				or string.find(desc, "^Logs:")
+				or string.find(desc, "^Helm:")
 			then
 				continue
 			end
@@ -363,6 +364,219 @@ describe("explore render: performance", function()
 		end
 		expect(best < 60).toBe(true)
 		expect(nodes.text(main(s))).toContain("↓ 500 below")
+	end)
+end)
+
+-- Helm ------------------------------------------------------------------------
+
+-- Every string a view carries (texts, titles, actions, code and diff
+-- bodies), so a value leaking through any prop is caught.
+local function strings(node: any, out: { string })
+	if type(node) == "string" then
+		table.insert(out, node)
+	elseif type(node) == "table" then
+		for _, v in node do
+			strings(v, out)
+		end
+	end
+end
+
+local function allText(v: Render.View): string
+	local out: { string } = {}
+	strings(v.main, out)
+	strings(v.dock, out)
+	strings(v.layer, out)
+	return table.concat(out, "\n")
+end
+
+local function route(s: State): string
+	return s.stack[#s.stack].kind
+end
+
+local function openRelease(name: string, cfg: any?): State
+	local s = W.openHelm(nil, cfg)
+	s = W.helmAction(s, "sel", W.HELM_NS .. "/" .. name)
+	s = W.helmKeys(s, { "enter" })
+	expect(route(s)).toBe("helm-release")
+	return s
+end
+
+describe("explore render: helm", function()
+	it("lists releases with status, chart, version and app version", function()
+		local s = W.openHelm()
+		local m = main(s)
+		local text = nodes.text(m)
+		expect(text).toContain("NAME NAMESPACE REV STATUS CHART VERSION APP VERSION UPDATED")
+		for _, name in { "shop-a", "web-b", "broken-c", "stuck-d", "tricky-e" } do
+			expect(text).toContain(name)
+		end
+		expect(text).toContain("5 releases")
+		-- broken-c failed and stuck-d is pending: both need attention.
+		expect(text).toContain("2 need attention")
+		expect(#nodes.findAll(m, nodes.class("tk-helm-error"))).toBe(1)
+		expect(nodes.text(view(s).dock :: any)).toContain("enter open")
+		expect(Render.title(s)).toContain("Helm releases")
+	end)
+
+	-- F11: a SIGKILLed upgrade stays pending-upgrade forever; the age is the
+	-- only signal that nobody is still running it.
+	it("labels a release pending for more than 15 minutes as stuck", function()
+		local s = W.openHelm()
+		s.now = 1767225600 + 86400 -- 2026-01-02T00:00:00Z, a day after the capture
+		expect(nodes.text(main(s))).toContain("pending-upgrade (stuck?)")
+		s.now = 1767225600 + 16 * 60 -- stuck-d was updated at 00:15, one minute earlier
+		expect((string.find(nodes.text(main(s)), "(stuck?)", 1, true))).toBeNil()
+	end)
+
+	it("the release view shows status, revision of latest, chart and the release chips", function()
+		local s = openRelease("web-b")
+		local m = main(s)
+		local text = nodes.text(m)
+		expect(text).toContain("rev 3 of 3")
+		expect(text).toContain("web-0.2.0")
+		expect(text).toContain("Rollback to 1")
+		local status = nodes.find(m, nodes.role("tern-kube.helm-status")) :: nodes.Node
+		expect((status.p :: any).text).toBe("deployed")
+		local actions = nodes.actions(m)
+		for _, a in { "helm-nav=history", "helm-nav=values", "helm-nav=manifest", "helm-rollback", "copy=cmd" } do
+			expect(actions).toContain(a)
+		end
+		local crumbs = nodes.find(m, nodes.role("tern-kube.breadcrumb")) :: nodes.Node
+		expect(nodes.text(crumbs)).toContain("Helm releases")
+		expect(nodes.text(crumbs)).toContain("release tern-test-helm/web-b")
+	end)
+
+	it("hides the rollback chip when mutations are disabled", function()
+		local s = openRelease("web-b", W.config('{"mutations": {"enabled": false}}'))
+		expect(table.find(nodes.actions(main(s)), "helm-rollback")).toBeNil()
+	end)
+
+	it("history marks the latest and the running revision, newest first", function()
+		local s = W.helmKeys(openRelease("shop-a"), { "h" })
+		expect(route(s)).toBe("helm-history")
+		local text = nodes.text(main(s))
+		expect(text).toContain("3 revisions")
+		local first = string.find(text, "3 deployed", 1, true)
+		local last = string.find(text, "1 superseded", 1, true)
+		expect(first ~= nil and last ~= nil and (first :: number) < (last :: number)).toBe(true)
+		expect(text).toContain("latest running")
+		expect(nodes.text(view(s).dock :: any)).toContain("space mark")
+	end)
+
+	-- shop-a r3 was upgraded with --reuse-values, so its stored "defaults"
+	-- hold r2's values (F8): replicaCount must read as an override.
+	it("values compare against trustworthy defaults and cycle modes with v", function()
+		local s = W.helmKeys(openRelease("shop-a"), { "v" })
+		expect(route(s)).toBe("helm-values")
+		local m = main(s)
+		expect(nodes.text(m)).toContain("PATH STATE DEFAULT USER COMPUTED")
+		expect(nodes.text(m)).toContain("replicaCount override")
+		expect(nodes.actions(m)).toContain("helm-mode=diff")
+		s = W.helmKeys(s, { "v" })
+		expect(s.stack[#s.stack].mode).toBe("user")
+		expect(nodes.find(main(s), nodes.kind("code")) ~= nil).toBe(true)
+	end)
+
+	it("a history diff shows per-object segments with create/modify/delete counts", function()
+		local s = W.helmKeys(openRelease("shop-a"), { "h" })
+		s = W.helmAction(s, "sel", "1")
+		s = W.helmKeys(s, { "=" })
+		expect(route(s)).toBe("helm-diff")
+		local m = main(s)
+		local text = nodes.text(m)
+		expect(text).toContain("Revision 1 → 3")
+		expect(text).toContain("2 modify")
+		expect(#nodes.findAll(m, nodes.role("tern-kube.gitops-diff"))).toBe(2)
+	end)
+
+	it("resources list manifest objects with their live state and open them", function()
+		local s = W.helmKeys(openRelease("shop-a"), { "R" })
+		expect(route(s)).toBe("helm-resources")
+		local m = main(s)
+		expect(nodes.text(m)).toContain("KIND NAME NAMESPACE STATE SOURCE")
+		expect(nodes.text(m)).toContain("present")
+		expect(nodes.actions(m)).toContain("open=apps/Deployment/" .. W.HELM_NS .. "/shop-a-shop")
+	end)
+
+	it("an object managed by Helm names its release in the object and relations views", function()
+		local s = W.helmKeys(openRelease("shop-a"), { "R" })
+		s = W.helmAction(s, "sel", "apps/Deployment/" .. W.HELM_NS .. "/shop-a-shop")
+		s = W.helmKeys(s, { "enter" })
+		expect(route(s)).toBe("detail")
+		local line = nodes.find(main(s), nodes.role("tern-kube.helm-owner")) :: nodes.Node
+		expect(nodes.text(line)).toContain("Managed by Helm release " .. W.HELM_NS .. "/shop-a rev 3")
+		expect(nodes.actions(line)).toContain("helm-open=" .. W.HELM_NS .. "/shop-a")
+		s = W.helmKeys(s, { "R" })
+		expect(route(s)).toBe("relations")
+		expect(nodes.find(main(s), nodes.role("tern-kube.helm-owner")) ~= nil).toBe(true)
+	end)
+end)
+
+-- Plan §5 rule 9: the capture uses fake values ending in REDACTME; no Helm
+-- view may show one unless the user turned show_secret_values on.
+describe("explore render: helm masking sweep", function()
+	local MODES = 5
+
+	-- Every Helm route of every captured release: each values mode, manifest,
+	-- notes, hooks, resources, history, every revision and both diff kinds.
+	local function sweep(cfg: any?): { [string]: string }
+		local seen: { [string]: string } = {}
+		local function record(s: State, label: string)
+			seen[label] = allText(view(s))
+		end
+		local releases = W.openHelm(nil, cfg)
+		record(releases, "releases")
+		for _, name in { "shop-a", "web-b", "broken-c", "stuck-d", "tricky-e" } do
+			local s = W.helmAction(releases, "sel", W.HELM_NS .. "/" .. name)
+			s = W.helmKeys(s, { "enter" })
+			record(s, name .. " release")
+			local values = W.helmKeys(s, { "v" })
+			for i = 1, MODES do
+				record(values, name .. " values " .. (values.stack[#values.stack].mode or "changed"))
+				if i < MODES then
+					values = W.helmKeys(values, { "v" })
+				end
+			end
+			for _, k in { "M", "N", "K", "R", "=" } do
+				record(W.helmKeys(s, { k }), name .. " " .. k)
+			end
+			local history = W.helmKeys(s, { "h" })
+			record(history, name .. " history")
+			for _, item in State.items(history) do
+				local diff = W.helmKeys(W.helmAction(history, "sel", item.key), { "=" })
+				record(diff, name .. " diff " .. item.key)
+				local rev = W.helmKeys(W.helmAction(history, "sel", item.key), { "enter" })
+				record(rev, name .. " revision " .. item.key)
+				record(W.helmKeys(rev, { "M" }), name .. " manifest " .. item.key)
+				record(W.helmKeys(rev, { "N" }), name .. " notes " .. item.key)
+				record(W.helmKeys(rev, { "K" }), name .. " hooks " .. item.key)
+			end
+		end
+		return seen
+	end
+
+	it("no Helm view shows a REDACTME value by default", function()
+		local seen = sweep(nil)
+		local views = 0
+		for label, text in seen do
+			views += 1
+			if string.find(text, "REDACTME", 1, true) then
+				error("REDACTME visible in " .. label, 0)
+			end
+		end
+		-- Masked, not merely absent: the views did render web-b's values.
+		expect(seen["web-b values user"]).toContain("<redacted:")
+		expect(seen["web-b M"]).toContain("<redacted:")
+		expect(seen["web-b M"]).toContain("postgres://app:<redacted")
+		expect(views > 60).toBe(true)
+	end)
+
+	it("show_secret_values shows them, with the warning", function()
+		local seen = sweep(W.config('{"security": {"show_secret_values": true}}'))
+		for _, label in { "web-b values user", "web-b M", "web-b notes 2" } do
+			expect(seen[label]).toContain("REDACTME")
+			expect(seen[label]).toContain("Output contains Secret values")
+		end
 	end)
 end)
 

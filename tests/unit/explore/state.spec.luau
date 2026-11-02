@@ -662,4 +662,83 @@ describe("explore state: visible window", function()
 	end)
 end)
 
+-- Lens chips and the palette open Helm views through tern-kube://explore
+-- links; a mistyped or hostile link must not reach helm's argv, and the
+-- kinds picker is the keyboard way in when helm is installed.
+describe("explore state: helm links and picker", function()
+	local Command = require("../../../plugin/lib/kubectl/command")
+	local Argv = require("../../../plugin/lib/kubectl/argv")
+
+	local function kinds(s: State): { string }
+		local out: { string } = {}
+		for _, r in s.stack do
+			table.insert(out, r.kind)
+		end
+		return out
+	end
+
+	local function initHelm(url: string, saved: any?): State
+		local s, effects = State.init({ url }, saved, W.config(nil), W.helmEnv())
+		return (W.settle(s, effects, W.helmResponder))
+	end
+
+	it("a release link from exploreUrl opens releases > release > history, pinned to its context", function()
+		local inv = Argv.parse("kubectl", { "--context", W.CTX, "get", "pods", "-n", "other" })
+		local url = Command.exploreUrl(inv, nil, {
+			route = "helm-history",
+			release = "web-b",
+			namespace = W.HELM_NS,
+			revision = 2,
+		})
+		local s = initHelm(url)
+		expect(kinds(s)).toEqual({ "helm-releases", "helm-release", "helm-history" })
+		expect(s.stack[2].release).toBe("web-b")
+		expect(s.stack[2].namespace).toBe(W.HELM_NS)
+		expect(s.stack[2].revision).toBe(2)
+		expect(s.target.context).toBe(W.CTX)
+		expect(State.items(s)[1].key).toBe("3")
+	end)
+
+	it("invalid release names and revisions are dropped from links", function()
+		local bad =
+			initHelm(W.link({ context = W.CTX, route = "helm-release", release = "--all", namespace = W.HELM_NS }))
+		expect(kinds(bad)).toEqual({ "helm-releases" })
+		local rev = initHelm(
+			W.link({ context = W.CTX, route = "helm-release", release = "web-b", namespace = W.HELM_NS, revision = "0" })
+		)
+		expect(rev.stack[2].revision).toBeNil()
+	end)
+
+	it("helm routes survive save and restore", function()
+		local s =
+			initHelm(W.link({ context = W.CTX, route = "helm-release", release = "web-b", namespace = W.HELM_NS }))
+		s = W.helmKeys(s, { "v", "v" })
+		local restored = initHelm(W.link(), State.save(s))
+		expect(kinds(restored)).toEqual({ "helm-releases", "helm-release", "helm-values" })
+		expect(restored.stack[3].mode).toBe("user")
+		expect(restored.stack[3].release).toBe("web-b")
+	end)
+
+	it("the kinds picker lists `helm releases` first when helm was found; enter opens them", function()
+		local s = initHelm(W.link({ context = W.CTX, namespace = "*", kind = "Pod" }))
+		s = W.helmKeys(s, { ":" })
+		expect(State.items(s)[1].key).toBe(State.HELM_KIND_ROW)
+		s = W.helmAction(s, "sel", State.HELM_KIND_ROW)
+		local opened, trace = W.helmKeys(s, { "enter" })
+		expect(kinds(opened)).toEqual({ "helm-releases" })
+		expect(#State.items(opened)).toBe(5)
+		expect(#trace.runs).toBe(1)
+		local noHelm = W.keys(W.open(), { ":" })
+		for _, item in State.items(noHelm) do
+			expect(item.key == State.HELM_KIND_ROW).toBe(false)
+		end
+	end)
+
+	it("a filter `hr` still finds the picker row", function()
+		local s = initHelm(W.link({ context = W.CTX, namespace = "*", kind = "Pod" }))
+		s = W.helmKeys(s, { ":", "/", "h", "r", "escape" })
+		expect(State.items(s)[1].key).toBe(State.HELM_KIND_ROW)
+	end)
+end)
+
 return nil

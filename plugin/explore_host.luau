@@ -321,6 +321,7 @@ local function errorView(err: any): BlockView
 end
 
 local function stateEnv(cx: BlockCx, pending: boolean): State.Env
+	local helm = EnvHost.resolve("helm")
 	return {
 		kubeconfig = EnvHost.kubeconfig(),
 		home = tern.getenv("HOME"),
@@ -334,6 +335,8 @@ local function stateEnv(cx: BlockCx, pending: boolean): State.Env
 		nonce = nonce,
 		isList = isList,
 		null = tern.json.null,
+		-- Helm views only run helm when it was found.
+		helm = if helm.found then helm.program else nil,
 	}
 end
 

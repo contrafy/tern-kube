@@ -171,6 +171,15 @@ function M.valuesAll(program: string, target: Target, key: Key, revision: number
 	return append(verb(program, target, key, "get", "values"), "--revision", tostring(revision), "--all", "-o", "json")
 end
 
+-- User-supplied values only (no chart defaults); latest revision when nil.
+function M.values(program: string, target: Target, key: Key, revision: number?): { string }
+	local argv = verb(program, target, key, "get", "values")
+	if revision then
+		append(argv, "--revision", tostring(revision))
+	end
+	return append(argv, "-o", "json")
+end
+
 -- --timeout is always pinned: without --wait it still bounds the hooks.
 function M.rollback(
 	program: string,

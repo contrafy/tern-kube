@@ -126,6 +126,17 @@ describe("helm query verbs", function()
 		)
 	end)
 
+	-- Only what the user supplied: the drift render of a repo chart with the
+	-- deployed values must still take its defaults from the repo's values.yaml.
+	it("reads the user-supplied values without chart defaults", function()
+		expect(Query.values("helm", TARGET, KEY, nil)).toEqual(
+			pinned("get", "values", "shop-a", "-n", "apps", "-o", "json")
+		)
+		expect(Query.values("helm", TARGET, KEY, 3)).toEqual(
+			pinned("get", "values", "shop-a", "-n", "apps", "--revision", "3", "-o", "json")
+		)
+	end)
+
 	-- The parser checks this tag; a template change must bump it.
 	it("tags the extras template output with its format version", function()
 		expect(Query.EXTRAS_TEMPLATE).toContain('{"format":"tern-kube/helm-extras/v1"')

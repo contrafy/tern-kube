@@ -9,14 +9,20 @@
 -- object carries Argo CD / Flux tracking metadata or the drift chooser
 -- opens. Every cluster command pins the target like query.luau does.
 -- Temporary manifests (diff input, apply bundles) are written 0600 under
--- the plugin data directory; diff inputs are removed after the diff.
+-- the plugin data directory; diff inputs are removed after the diff, the
+-- deployed values of an auto-detected chart right after its render.
 
 local Config = require("../config")
 local Controllers = require("../gitops/controllers")
+local Detect = require("../helm/detect")
 local Diffseg = require("../mutation/diffseg")
 local Drift = require("../gitops/drift")
 local Export = require("../gitops/export")
+local HelmParse = require("../helm/parse")
+local HelmQuery = require("../helm/query")
+local HelmTypes = require("../helm/types")
 local Index = require("../gitops/index")
+local Jsonv = require("../parse/jsonv")
 local Link = require("../mutation/link")
 local Query = require("./query")
 local Resource = require("../model/resource")
@@ -45,6 +51,18 @@ export type Ctx = {
 	-- Export: tells `[]` from `{}` in decoded JSON (emit.luau).
 	isList: ((t: { [any]: any }) -> boolean)?,
 	null: any?,
+	-- The resolved helm executable; nil when helm is not found (no chart
+	-- auto-detect then).
+	helm: string?,
+}
+
+-- `helm list -a -A` for chart auto-detect, read once per index (scanGen).
+export type Releases = {
+	status: "idle" | "loading" | "ok" | "error",
+	gen: number,
+	scanGen: number,
+	rows: { HelmTypes.ReleaseRow },
+	error: string?,
 }
 
 export type ScanStatus = "idle" | "scanning" | "ok" | "error"
@@ -90,6 +108,8 @@ export type SourceEntry = {
 	namespaces: { string },
 	note: string?,
 	rank: number,
+	-- An auto-detected chart dir x release; rendered when compared.
+	auto: Detect.Candidate?,
 }
 
 export type Filter = "all" | "changed" | "missing" | "unmanaged"
@@ -110,6 +130,11 @@ export type DriftLoad = {
 	source: SourceEntry,
 	argv: { string }?,
 	tmp: string?,
+	-- Auto sources: the render step running ("values": reading the
+	-- deployed values, "template": helm template); nil once rendered.
+	render: ("values" | "template")?,
+	-- The helm template argv of an auto source's render.
+	renderArgv: { string }?,
 	diff: Diffseg.Summary?,
 	diffDone: boolean,
 	diffError: string?,
@@ -203,6 +228,10 @@ export type G = {
 	pendingOpen: Ref?,
 	-- Text inputs while they are edited: "dir", "branch", "message".
 	fields: { [string]: string },
+	releases: Releases,
+	-- Releases handed in by releaseSource (ns/name), for sources the chooser
+	-- never listed.
+	known: { [string]: HelmTypes.ReleaseRow },
 }
 
 export type Nav = { push: Route?, pop: boolean?, replace: Route? }
@@ -388,6 +417,8 @@ function M.new(cwd: string?): G
 		bundle = nil,
 		pendingOpen = nil,
 		fields = {},
+		releases = { status = "idle", gen = 0, scanGen = 0, rows = {} },
+		known = {},
 	}
 end
 
@@ -983,8 +1014,75 @@ end
 
 -- Drift -------------------------------------------------------------------------
 
+local function autoSpec(c: Detect.Candidate): Index.HelmSpec
+	return {
+		release = c.release.name,
+		namespace = c.release.namespace,
+		values = if c.values then table.clone(c.values :: { string }) else {},
+		deployedValues = if c.useDeployedValues then true else nil,
+		auto = true,
+	}
+end
+
 local function sourceId(s: Index.Source): string
-	return s.type .. ":" .. s.path .. (if s.helm then ":" .. s.helm.release else "")
+	local helm = s.helm
+	if helm and helm.auto then
+		local variant = if helm.deployedValues then "deployed" else "values=" .. table.concat(helm.values, ",")
+		return string.format("helm:%s:%s/%s:%s", s.path, helm.namespace or "", helm.release, variant)
+	end
+	return s.type .. ":" .. s.path .. (if helm then ":" .. helm.release else "")
+end
+
+local function autoEnabled(ctx: Ctx): boolean
+	return ctx.config.helm.auto_detect and ctx.helm ~= nil and ctx.resolved
+end
+
+-- Releases the chooser knows: the listing plus those handed in by
+-- releaseSource.
+local function knownReleases(g: G): { HelmTypes.ReleaseRow }
+	local out = table.clone(g.releases.rows)
+	local seen: { [string]: boolean } = {}
+	for _, r in out do
+		seen[r.namespace .. "/" .. r.name] = true
+	end
+	for key, r in g.known do
+		if not seen[key] then
+			table.insert(out, r)
+		end
+	end
+	return out
+end
+
+local function candidates(g: G, ctx: Ctx, releases: { HelmTypes.ReleaseRow }): { Detect.Candidate }
+	local index = g.index
+	if index == nil or not autoEnabled(ctx) or #index.chartDirs == 0 then
+		return {}
+	end
+	return Detect.candidates(index.chartDirs, releases, ctx.config.gitops.helm, index.root)
+end
+
+-- The source of an auto candidate: the interned one once it was rendered,
+-- else a detached one (no documents yet).
+local function autoSource(index: Index.Index, c: Detect.Candidate): Index.Source
+	local spec = autoSpec(c)
+	local found = Index.findSource(index, "helm", c.chart.path, spec)
+	if found then
+		return found
+	end
+	return { type = "helm", root = index.root, path = c.chart.path, helm = spec, label = "" }
+end
+
+local function autoLabel(index: Index.Index, c: Detect.Candidate): string
+	local with = if c.useDeployedValues
+		then "deployed values"
+		else Index.relative(index.root, (c.values :: { string })[1])
+	return string.format(
+		"%s as %s/%s with %s",
+		Index.relative(index.root, c.chart.path),
+		c.release.namespace,
+		c.release.name,
+		with
+	)
 end
 
 local function driftOpts(g: G, ctx: Ctx): Drift.Options
@@ -1070,7 +1168,9 @@ function M.sources(g: G, ctx: Ctx): { SourceEntry }
 	end
 	local tops: { [string]: boolean } = {}
 	for _, src in index.sources do
-		if src.type == "dir" then
+		if src.helm and src.helm.auto then
+			continue
+		elseif src.type == "dir" then
 			local relPath = Index.relative(index.root, src.path)
 			local first = string.match(relPath, "^([^/]+)/")
 			if first and not tops[first] then
@@ -1103,6 +1203,26 @@ function M.sources(g: G, ctx: Ctx): { SourceEntry }
 			end
 		end
 	end
+	for _, c in candidates(g, ctx, knownReleases(g)) do
+		local src = autoSource(index, c)
+		local id = sourceId(src)
+		if byId[id] == nil then
+			local scope = Drift.scope(src :: any, index :: any, opts)
+			byId[id] = {
+				id = id,
+				type = "helm",
+				path = c.chart.path,
+				label = autoLabel(index, c),
+				source = src,
+				docs = #scope.docs,
+				namespaces = { c.release.namespace },
+				note = Detect.note(c),
+				rank = if c.release.namespace == ctx.target.namespace then 2 else 0,
+				auto = c,
+			}
+			table.insert(order, id)
+		end
+	end
 	local out: { SourceEntry } = {}
 	for _, id in order do
 		table.insert(out, byId[id])
@@ -1126,6 +1246,119 @@ function M.findSource(g: G, ctx: Ctx, id: string): SourceEntry?
 		end
 	end
 	return nil
+end
+
+local function helmTarget(ctx: Ctx): HelmQuery.Target
+	return { kubeconfig = ctx.target.kubeconfig, context = ctx.target.context }
+end
+
+local function helmEnv(ctx: Ctx): { [string]: string }
+	return HelmQuery.env(ctx.config.helm.driver, ctx.target.kubeconfig)
+end
+
+-- Lists every release once per index (chart auto-detect). Never against
+-- an unpinned context.
+function M.loadReleases(g: G, ctx: Ctx, effects: { Effect })
+	local r = g.releases
+	local context = ctx.target.context
+	if not autoEnabled(ctx) or context == nil or context == "" then
+		return
+	end
+	if r.scanGen == g.scan.gen and r.status ~= "idle" and r.status ~= "error" then
+		return
+	end
+	local gen = nextGen(g)
+	g.releases = { status = "loading", gen = gen, scanGen = g.scan.gen, rows = r.rows, error = nil }
+	local argv =
+		HelmQuery.list(ctx.helm :: string, helmTarget(ctx), { namespace = nil, all = true }, ctx.config.helm.list_max)
+	table.insert(effects, runEffect(M.TAG .. "|releases", gen, argv, queryTimeout(ctx), { env = helmEnv(ctx) }))
+end
+
+local function onReleases(g: G, ctx: Ctx, msg: Msg)
+	local r = g.releases
+	if msg.gen ~= r.gen or r.status ~= "loading" then
+		return
+	end
+	local res = msg.result :: ProcessResult
+	local upd = table.clone(r)
+	if msg.spawnError or res.timed_out or res.status ~= 0 then
+		upd.status = "error"
+		upd.error = failText("helm list", msg.result, msg.spawnError)
+	else
+		local rows, err = HelmParse.list(res.stdout, ctx.decode)
+		if rows then
+			upd.status = "ok"
+			upd.rows = rows
+		else
+			upd.status = "error"
+			upd.error = err
+		end
+	end
+	g.releases = upd
+end
+
+-- Chart directories of the built index (empty before it exists).
+function M.chartDirs(g: G): { HelmTypes.ChartDir }
+	local index = g.index
+	return if index then index.chartDirs else {}
+end
+
+-- The best drift source for `row`: its configured gitops.helm render, else
+-- the best auto-detected candidate. Records the row so the source resolves
+-- without the chooser's listing. nil before the index exists or without a
+-- match.
+function M.releaseSource(g: G, ctx: Ctx, row: HelmTypes.ReleaseRow): string?
+	local index = g.index
+	if index == nil or not ready(g) then
+		return nil
+	end
+	for _, src in index.sources do
+		local helm = src.helm
+		if
+			src.type == "helm"
+			and helm
+			and not helm.auto
+			and helm.release == row.name
+			and (helm.namespace == nil or helm.namespace == row.namespace)
+		then
+			return sourceId(src)
+		end
+	end
+	local found = candidates(g, ctx, { row })[1]
+	if found == nil then
+		return nil
+	end
+	local known = table.clone(g.known)
+	known[row.namespace .. "/" .. row.name] = row
+	g.known = known
+	return sourceId(autoSource(index, found))
+end
+
+-- The config entry for an auto source (repo-relative paths), as JSON.
+function M.helmEntry(g: G, entry: SourceEntry): string?
+	local c = entry.auto
+	local index = g.index
+	if c == nil or index == nil then
+		return nil
+	end
+	local function str(v: string): Jsonv.Value
+		return { t = "str", v = v }
+	end
+	local values: { Jsonv.Value } = {}
+	local files: { string } = c.values or {}
+	for _, v in files do
+		table.insert(values, str(Index.relative(index.root, v)))
+	end
+	return Jsonv.encode({
+		t = "obj",
+		keys = { "chart", "release", "namespace", "values" },
+		map = {
+			chart = str(Index.relative(index.root, c.chart.path)),
+			release = str(c.release.name),
+			namespace = str(c.release.namespace),
+			values = { t = "arr", items = values },
+		},
+	})
 end
 
 local function setDrift(g: G, id: string, load: DriftLoad)
@@ -1187,21 +1420,50 @@ local function liveTag(ns: string): string
 	return M.TAG .. "|drift|live|" .. ns
 end
 
-function startDrift(g: G, ctx: Ctx, id: string, effects: { Effect })
-	local found = g.drifts[id]
-	local load = table.clone(found)
-	local entry = M.findSource(g, ctx, id) or load.source
-	load.source = entry
+-- `helm template` of an auto source; `valuesTmp` holds the deployed values.
+local function renderEffect(ctx: Ctx, load: DriftLoad, c: Detect.Candidate, valuesTmp: string?): Effect
+	local values = if valuesTmp then { valuesTmp } else c.values or {}
+	local argv = HelmQuery.template(ctx.helm :: string, c.release.name, c.chart.path, c.release.namespace, values)
+	load.render = "template"
+	load.argv = argv
+	load.renderArgv = argv
+	return runEffect(M.TAG .. "|drift|render|" .. (valuesTmp or ""), load.gen, argv, diffTimeout(ctx))
+end
+
+-- Auto sources are rendered first: with the deployed values (read, written
+-- 0600, removed after the render) or with the proposed values file.
+local function startRender(g: G, ctx: Ctx, id: string, load: DriftLoad, c: Detect.Candidate, effects: { Effect })
+	local fail: string? = nil
+	if ctx.helm == nil then
+		fail = "helm is not available: the chart cannot be rendered"
+	elseif c.useDeployedValues and ctx.dataDir == nil then
+		fail = "No plugin data directory for the deployed values"
+	end
+	if fail then
+		load.status = "error"
+		load.error = fail
+		setDrift(g, id, load)
+		return
+	end
+	if c.useDeployedValues then
+		local key = { name = c.release.name, namespace = c.release.namespace }
+		local argv = HelmQuery.values(ctx.helm :: string, helmTarget(ctx), key, nil)
+		load.render = "values"
+		load.argv = argv
+		table.insert(
+			effects,
+			runEffect(M.TAG .. "|drift|values", load.gen, argv, queryTimeout(ctx), { env = helmEnv(ctx) })
+		)
+	else
+		table.insert(effects, renderEffect(ctx, load, c, nil))
+	end
+	setDrift(g, id, load)
+end
+
+-- kubectl diff of the source plus the live listing of its kinds.
+local function compare(g: G, ctx: Ctx, id: string, load: DriftLoad, effects: { Effect })
+	local entry = load.source
 	local scope = Drift.scope(entry.source :: any, g.index :: any, driftOpts(g, ctx))
-	load.status = "running"
-	load.diff = nil
-	load.diffDone = false
-	load.diffError = nil
-	load.report = nil
-	load.error = nil
-	load.live = {}
-	load.liveErrors = {}
-	load.livePending = {}
 	local argv = push(base(ctx), "diff")
 	local helmText: string? = nil
 	if entry.type == "kustomize" then
@@ -1251,6 +1513,29 @@ function startDrift(g: G, ctx: Ctx, id: string, effects: { Effect })
 		table.insert(effects, runEffect(M.TAG .. "|drift|diff", load.gen, argv, diffTimeout(ctx), { env = diffEnv() }))
 	end
 	finishDrift(g, ctx, id, load)
+end
+
+function startDrift(g: G, ctx: Ctx, id: string, effects: { Effect })
+	local load = table.clone(g.drifts[id])
+	local entry = M.findSource(g, ctx, id) or load.source
+	load.source = entry
+	load.status = "running"
+	load.render = nil
+	load.renderArgv = nil
+	load.diff = nil
+	load.diffDone = false
+	load.diffError = nil
+	load.report = nil
+	load.error = nil
+	load.live = {}
+	load.liveErrors = {}
+	load.livePending = {}
+	local c = entry.auto
+	if c then
+		startRender(g, ctx, id, load, c, effects)
+	else
+		compare(g, ctx, id, load, effects)
+	end
 end
 
 -- Opens (or re-runs) the drift report of source `id`.
@@ -1313,14 +1598,79 @@ local function stripSecret(item: any): any
 	return copy
 end
 
+-- An auto source's render result: the values file goes first, whatever
+-- happened; a render becomes the source's documents, then the comparison.
+local function onRender(g: G, ctx: Ctx, id: string, load: DriftLoad, tmp: string?, msg: Msg, effects: { Effect })
+	if tmp then
+		table.insert(effects, removeTmp(M.TAG .. "|drift|rmvalues", load.gen, tmp))
+	end
+	local c = load.source.auto :: Detect.Candidate
+	local r = msg.result :: ProcessResult
+	local index = g.index
+	load.render = nil
+	load.at = msg.at
+	if msg.spawnError or r.timed_out or r.status ~= 0 or index == nil then
+		load.status = "error"
+		load.error = failText("helm template " .. c.release.name, msg.result, msg.spawnError)
+		setDrift(g, id, load)
+		return
+	end
+	local source = Index.source(index, "helm", c.chart.path, autoSpec(c))
+	Index.addRendered(index, source, r.stdout)
+	local entry = table.clone(load.source)
+	entry.source = source
+	load.source = entry
+	if renderedText(g, source) == "\n" then
+		load.status = "error"
+		load.error = "helm template " .. c.release.name .. " rendered no objects"
+		setDrift(g, id, load)
+		return
+	end
+	compare(g, ctx, id, load, effects)
+end
+
 local function onDrift(g: G, ctx: Ctx, part: string, msg: Msg, effects: { Effect })
 	local id, found = driftByGen(g, msg.gen)
+	local tmp = string.match(part, "^valueswrite|(.+)$") or string.match(part, "^render|(.+)$")
 	if id == nil or found == nil or found.status ~= "running" then
+		-- Superseded (r) or abandoned: its deployed values must not stay.
+		if tmp then
+			table.insert(effects, removeTmp(M.TAG .. "|drift|rmvalues", msg.gen or 0, tmp))
+		end
 		return
 	end
 	local load = table.clone(found)
 	local r = msg.result :: ProcessResult
 	local okRun = msg.spawnError == nil and r.status == 0
+	if part == "values" then
+		local c = load.source.auto :: Detect.Candidate
+		if not okRun then
+			load.status = "error"
+			load.render = nil
+			load.error = failText("helm get values " .. c.release.name, r, msg.spawnError)
+			setDrift(g, id, load)
+			return
+		end
+		local path = tmpPath(ctx, "values") :: string
+		table.insert(effects, writeTmp(M.TAG .. "|drift|valueswrite|" .. path, load.gen, path, r.stdout))
+		setDrift(g, id, load)
+		return
+	elseif string.sub(part, 1, 12) == "valueswrite|" then
+		if not okRun then
+			table.insert(effects, removeTmp(M.TAG .. "|drift|rmvalues", load.gen, tmp :: string))
+			load.status = "error"
+			load.render = nil
+			load.error = failText("Writing the deployed values", r, msg.spawnError)
+			setDrift(g, id, load)
+			return
+		end
+		table.insert(effects, renderEffect(ctx, load, load.source.auto :: Detect.Candidate, tmp))
+		setDrift(g, id, load)
+		return
+	elseif string.sub(part, 1, 7) == "render|" then
+		onRender(g, ctx, id, load, tmp, msg, effects)
+		return
+	end
 	local ns = string.match(part, "^live|(.*)$")
 	if ns then
 		if not load.livePending[ns] then
@@ -2067,6 +2417,7 @@ function M.enter(g: G, ctx: Ctx, route: Route, force: boolean, effects: { Effect
 				M.ensureIndex(g, ctx, effects)
 			end
 			M.loadControllers(g, ctx, effects)
+			M.loadReleases(g, ctx, effects)
 		elseif route.item == nil then
 			M.startDriftReport(g, ctx, route.source :: string, force, effects)
 		end
@@ -2377,6 +2728,19 @@ function M.onAction(g: G, ctx: Ctx, route: Route, act: string, value: string, ef
 	elseif act == "gitops-rescan" then
 		M.rescan(g, ctx, effects)
 		return true, nil
+	elseif act == "gitops-copyhelm" and route.kind == "drift" and route.source then
+		local entry = M.findSource(g, ctx, route.source :: string)
+		local text = if entry then M.helmEntry(g, entry) else nil
+		if text then
+			table.insert(effects, { t = "copy", text = text })
+			toast(
+				effects,
+				"success",
+				"Copied a gitops.helm entry",
+				"Add it to the config to make this source permanent"
+			)
+		end
+		return true, nil
 	elseif act == "gitops-toggle" and route.kind == "export" and g.export then
 		local ex = table.clone(g.export :: ExportState)
 		ex.expanded = table.clone(ex.expanded)
@@ -2398,6 +2762,8 @@ function M.onResult(g: G, ctx: Ctx, msg: Msg, effects: { Effect }): boolean
 	local what, part = string.match(rest, "^([^|]+)|?(.*)$")
 	if what == "scan" then
 		onScanDone(g, ctx, msg, effects)
+	elseif what == "releases" then
+		onReleases(g, ctx, msg)
 	elseif what == "remotes" then
 		onRemotes(g, msg, effects)
 	elseif what == "status" then
