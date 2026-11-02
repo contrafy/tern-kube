@@ -413,3 +413,67 @@ e2e_objects_delete() {
 	kc -n "$MNS" delete deploy/tk-e2e-web configmap/tk-e2e-cm configmap/tk-e2e-applied \
 		--ignore-not-found --wait=true >/dev/null 2>&1
 }
+
+# --- Logs and events lens (track 2) ---------------------------------------------
+# tern-test-logs holds the tk-logmix Deployment (tests/integration/manifests/
+# logs/logmix.yaml): 2 pods x containers app (mixed formats, then a tick a
+# second), side (a beat every 3 s) and crashy (panics, restarts).
+
+LNS=tern-test-logs
+LOGS="[data-role='tern-kube.logs']"
+
+# The first tk-logmix pod by name; prints nothing and fails when there is
+# none. Use as: pod=$(logmix_pod) || { fail "no tk-logmix pod"; return; }
+logmix_pod() {
+	pod=$(kc -n "$LNS" get pods -l app=tk-logmix -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
+	[ -n "$pod" ] && printf '%s' "$pod"
+}
+
+# The block shows the logs view (a native view, not the table pipeline).
+logs_native() {
+	native && { has "$LOGS" || fail "native view is not the logs view"; }
+}
+
+# ltext SEL: visible text under SEL on one line.
+ltext() {
+	alltext "$1" | tr '\n' ' '
+}
+
+# column_texts N COLUMNS: cell N of every visible grid row (JSON array).
+column_texts() {
+	texts '.tk-grid .tk-r .tk-c' | jq -c --argjson n "$1" --argjson w "$2" '[range($n - 1; length; $w) as $i | .[$i]]'
+}
+
+# start_line LINE [SECS]: type a long-running command (follow, watch) and let
+# it run SECS (default 3) seconds; the block stays at the top.
+start_line() {
+	sh_line clear
+	type_line "$1"
+	sleep "${2:-3}"
+	top
+}
+
+# stop_line: Ctrl-C the running command, wait for the prompt and the view.
+stop_line() {
+	ctl key ctrl+c >/dev/null
+	wait_for "the command to stop" idle
+	sleep 0.6
+	top
+}
+
+E2E_CFG=$E2E_SB/xdg/tern-kube/config.json
+
+# set_config JSON: the sandbox's tern-kube config, read at plugin load.
+set_config() {
+	printf '%s\n' "$1" >"$E2E_CFG"
+	dev reload >/dev/null 2>&1
+	sleep 1.5
+}
+
+# config_reset: back to the stub a plugin load writes for a missing file.
+config_reset() {
+	rm -f "$E2E_CFG"
+	dev reload >/dev/null 2>&1
+	E2E_WAIT=10 wait_for "the config stub" test -f "$E2E_CFG"
+	sleep 0.5
+}
