@@ -95,6 +95,9 @@ export type Report = {
 	unmanaged: { Unmanaged },
 	ignored: { Ignored },
 	counts: Counts,
+	-- Keys of declared objects with no diff segment and no absence: what
+	-- kubectl diff found equal to the manifest (sorted, unique).
+	inSync: { string },
 	notes: { string },
 }
 
@@ -467,9 +470,14 @@ function M.report(source: Source, index: Index, segments: { Segment }, live: { a
 	table.sort(ignored, byKey)
 
 	local inSync = 0
+	local inSyncKeys: { [string]: boolean } = {}
 	for _, doc in docs do
 		if not seen[doc] then
 			inSync += 1
+			local key = resolvedKey(doc, opts)
+			if key then
+				inSyncKeys[key] = true
+			end
 		end
 	end
 
@@ -487,6 +495,7 @@ function M.report(source: Source, index: Index, segments: { Segment }, live: { a
 			inSync = inSync,
 			docs = #docs,
 		},
+		inSync = sortedKeys(inSyncKeys),
 		notes = notes,
 	}
 end

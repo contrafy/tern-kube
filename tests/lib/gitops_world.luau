@@ -51,7 +51,14 @@ export type World = {
 	diffInputs: { string },
 	-- Temp files as they were when a helm template read them (`-f`).
 	helmInputs: { [string]: string },
+	-- Multi-context world: per-context kubectl answers (diff, live listing)
+	-- picked by --context; a context missing here is unknown to kubectl.
+	clusters: { [string]: Cluster }?,
+	-- `kubectl config view -o json` output.
+	configView: string?,
 }
+
+export type Cluster = { diff: Result, live: string }
 
 local function ok(stdout: string): Result
 	return { status = 0, stdout = stdout, stderr = "", timed_out = false }
@@ -226,7 +233,81 @@ local function only(stdout: string, text: string): string
 	return if #out > 0 then table.concat(out, "\n") .. "\n" else ""
 end
 
+-- The compare world (tests/fixtures/real/compare): the source app.yaml at
+-- ROOT/mc and the two kind clusters it was captured against.
+M.MC = "/repo/mc"
+M.MC_NS = "tern-test-mc"
+M.MC_SOURCE = "dir:/repo/mc"
+M.DEV = "kind-tern-kube-dev"
+M.DEV2 = "kind-tern-kube-dev2"
+M.DOWN = "kind-tern-kube-down"
+
+function M.mcCluster(side: string): Cluster
+	local stdout = fixtures.read("real/compare/" .. side .. "-diff-source.out")
+	return {
+		diff = { status = if stdout == "" then 0 else 1, stdout = stdout, stderr = "", timed_out = false },
+		live = fixtures.read("real/compare/" .. side .. "-mixed-list.json"),
+	}
+end
+
+-- `extra`: more contexts in the kubeconfig whose server refuses every
+-- connection (kubectl fails fast, like an unreachable cluster).
+function M.mcWorld(extra: { string }?): World
+	local w = M.new({ [M.MC .. "/app.yaml"] = fixtures.read("real/compare/source/app.yaml") })
+	w.clusters = { [M.DEV] = M.mcCluster("a"), [M.DEV2] = M.mcCluster("b") }
+	local text = fixtures.read("real/compare/config-view.json")
+	if extra and #extra > 0 then
+		local contexts: { string } = {}
+		local clusters: { string } = {}
+		for _, name in extra do
+			table.insert(
+				contexts,
+				string.format('{"name":"%s","context":{"cluster":"%s","user":"%s"}}', name, name, name)
+			)
+			table.insert(clusters, string.format('{"name":"%s","cluster":{"server":"https://127.0.0.1:1"}}', name))
+		end
+		text = string.gsub(text, '"contexts"%s*:%s*%[', function(m: string): string
+			return m .. table.concat(contexts, ",") .. ","
+		end, 1)
+		text = string.gsub(text, '"clusters"%s*:%s*%[', function(m: string): string
+			return m .. table.concat(clusters, ",") .. ","
+		end, 1)
+	end
+	w.configView = text
+	return w
+end
+
+local function clusterAnswer(w: World, argv: { string }): Result?
+	local clusters = w.clusters
+	if clusters == nil then
+		return nil
+	end
+	if has(argv, "config") and has(argv, "view") then
+		return ok(w.configView or "{}")
+	end
+	local context = flagValues(argv, "--context")[1]
+	if context == nil then
+		return nil
+	end
+	local c = clusters[context]
+	if c == nil then
+		return M.fail(
+			1,
+			"The connection to the server 127.0.0.1:1 was refused - did you specify the right host or port?"
+		)
+	elseif has(argv, "diff") then
+		return c.diff
+	elseif has(argv, "get") and has(argv, "-n") then
+		return ok(c.live)
+	end
+	return nil
+end
+
 local function kubectl(w: World, argv: { string }): Result
+	local mc = clusterAnswer(w, argv)
+	if mc then
+		return mc
+	end
 	if has(argv, "diff") then
 		local files = flagValues(argv, "-f")
 		local out: { string } = {}
