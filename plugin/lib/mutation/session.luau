@@ -2126,7 +2126,9 @@ function M.quickLabel(s: State): string
 		return "quick action"
 	end
 	local spec = Quick.spec(q.action)
-	return (if spec then spec.label else q.action) .. " " .. string.lower(q.ref.kind) .. "/" .. q.ref.name
+	local label = if spec then spec.label else q.action
+	local r = q.ref
+	return if r then label .. " " .. string.lower(r.kind) .. "/" .. r.name else label
 end
 
 return M

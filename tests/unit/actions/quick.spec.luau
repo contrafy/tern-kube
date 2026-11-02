@@ -109,7 +109,7 @@ describe("quick actions", function()
 			local url = Quick.encode("edit", PINNED, ref("Widget", "w", "ns", "lens.example.com")) :: string
 			expect(url).toContain("group=lens.example.com")
 			local req = Quick.decode(url) :: Quick.Request
-			expect(req.ref.group).toBe("lens.example.com")
+			expect((req.ref :: any).group).toBe("lens.example.com")
 			expect((Quick.encode("edit", PINNED, ref("ClusterRole", "system:view")) ~= nil)).toBe(true)
 			for _, bad in
 				{
@@ -189,10 +189,12 @@ describe("quick actions", function()
 			assert(req, "decodes")
 			expect(req.action).toBe("shell")
 			expect(req.target).toEqual(target)
-			expect(req.ref.kind).toBe("Deployment")
-			expect(req.ref.group).toBe("apps")
-			expect(req.ref.name).toBe("web")
-			expect(req.ref.namespace).toBe("apps")
+			local r = req.ref
+			assert(r, "names the object")
+			expect(r.kind).toBe("Deployment")
+			expect(r.group).toBe("apps")
+			expect(r.name).toBe("web")
+			expect(r.namespace).toBe("apps")
 			expect(req.opts.pod).toBe("web-5f6b8bff9b-djlsb")
 			expect(req.opts.container).toBe("app")
 		end)
@@ -448,6 +450,218 @@ describe("quick actions", function()
 			local rebuilt = Quick.command(req.action, req.target, req.ref, req.opts)
 			assert(direct and rebuilt, "builds")
 			expect(rebuilt.line).toBe(direct.line)
+		end)
+	end)
+
+	-- Explore's selector-only logs route and the lens's `-l` commands have no
+	-- object to name: the selector and namespace alone pick the pods.
+	describe("selector-only follow", function()
+		it("round-trips a link without kind or name", function()
+			local url = Quick.encode("logs-follow", PINNED, nil, { selector = "app=web", namespace = "apps" }) :: string
+			expect((string.find(url, "kind=", 1, true))).toBeNil()
+			expect(url).toContain("namespace=apps")
+			local req = Quick.decode(url) :: Quick.Request
+			expect(req.ref).toBeNil()
+			expect(req.opts.selector).toBe("app=web")
+			expect(req.opts.namespace).toBe("apps")
+		end)
+
+		it("follows every pod of the selector across containers, or the chosen one", function()
+			local all =
+				Quick.command("logs-follow", UNPINNED, nil, { selector = "app=web", namespace = "apps" }) :: Quick.Launch
+			expect(table.concat(all.argv, " ")).toBe(
+				"kubectl logs -f --tail=200 -n apps -l app=web --prefix --max-log-requests=10 --all-containers"
+			)
+			expect(all.title).toBe("tern-kube logs -l app=web -n apps @ current context")
+			local one = Quick.command(
+				"logs-follow",
+				PINNED,
+				nil,
+				{ selector = "app=web", namespace = "apps", container = "app" }
+			) :: Quick.Launch
+			expect(table.concat(one.argv, " ", 9)).toBe("-n apps -l app=web --prefix --max-log-requests=10 -c app")
+		end)
+
+		it("needs a selector when there is no object, and only logs go without one", function()
+			local _, e = Quick.encode("logs-follow", PINNED, nil, { namespace = "apps" })
+			expect(e).toBe("logs-follow needs kind and name, or a selector")
+			expect((Quick.decode("tern-kube://act/logs-follow?namespace=apps"))).toBeNil()
+			expect((Quick.decode("tern-kube://act/logs-follow?name=web&selector=app%3Dweb"))).toBeNil()
+			expect((Quick.decode("tern-kube://act/shell?selector=app%3Dweb"))).toBeNil()
+			expect((Quick.encode("port-forward", PINNED, nil, { selector = "app=web" }))).toBeNil()
+		end)
+	end)
+
+	-- "Run in split": a one-shot logs variant typed into a new interactive
+	-- split so the lens renders it (Tern only lenses commands typed at a
+	-- prompt). The line passes through the user's interactive shell, which
+	-- may be zsh, bash or fish: only words every one of them reads literally
+	-- inside single quotes are typed; anything else is copied instead.
+	describe("logs (typed split)", function()
+		local POD = ref("Pod", "web-0", "apps")
+
+		it("is the only typed action, never mutates and has no Explore key", function()
+			expect(Quick.typed("logs")).toBe(true)
+			expect(Quick.typed("logs-follow")).toBe(false)
+			expect(Quick.typed("shell")).toBe(false)
+			expect(Quick.gate("logs")).toBe("none")
+			local spec = Quick.spec("logs") :: Quick.Action
+			expect(spec.label).toBe("Run in split")
+			expect(spec.key).toBeNil()
+			expect(spec.mutates).toBe(false)
+			-- Lens variants offer it; resource chips and Explore keys do not.
+			expect(ids(Quick.available("Pod", POD, { allowMutations = true }))).toEqual({
+				"shell",
+				"logs-follow",
+				"port-forward",
+				"debug-pod",
+				"edit",
+			})
+		end)
+
+		it("round-trips every variant field, the lensed program included", function()
+			local opts = {
+				container = "side",
+				previous = true,
+				since = "1h30m",
+				tail = "-1",
+				timestamps = true,
+				prefix = true,
+				program = "kubecolor",
+			}
+			local url = Quick.encode("logs", PINNED, POD, opts) :: string
+			expect(url).toContain("previous=1")
+			expect(url).toContain("program=kubecolor")
+			local req = Quick.decode(url) :: Quick.Request
+			expect(req.action).toBe("logs")
+			expect(req.target).toEqual(PINNED)
+			expect(req.opts.container).toBe("side")
+			expect(req.opts.previous).toBe(true)
+			expect(req.opts.since).toBe("1h30m")
+			expect(req.opts.tail).toBe("-1")
+			expect(req.opts.timestamps).toBe(true)
+			expect(req.opts.prefix).toBe(true)
+			expect(req.opts.program).toBe("kubecolor")
+			local all = Quick.decode(
+				Quick.encode("logs", UNPINNED, nil, { selector = "app=web", namespace = "apps", allContainers = true }) :: string
+			) :: Quick.Request
+			expect(all.ref).toBeNil()
+			expect(all.opts.allContainers).toBe(true)
+		end)
+
+		it("rejects values a typed line could misread", function()
+			for _, bad in
+				{
+					"tern-kube://act/logs?kind=Pod&name=p&previous=yes",
+					"tern-kube://act/logs?kind=Pod&name=p&since=5m%3Brm",
+					"tern-kube://act/logs?kind=Pod&name=p&since=" .. string.rep("1", 17),
+					"tern-kube://act/logs?kind=Pod&name=p&tail=ten",
+					"tern-kube://act/logs?kind=Pod&name=p&tail=" .. string.rep("1", 11),
+					"tern-kube://act/logs?kind=Pod&name=p&program=sh",
+					"tern-kube://act/logs?kind=Pod&name=p&program=%2Fbin%2Fkubectl",
+					"tern-kube://act/logs?kind=Pod&name=p&container=a&allcontainers=1",
+					"tern-kube://act/logs?kind=Pod&name=p&selector=app%3Dx",
+					"tern-kube://act/logs?kind=Service&name=s",
+					"tern-kube://act/logs?kind=Pod&name=p&port=80",
+					"tern-kube://act/logs?kind=Pod&name=p&confirm=abc",
+					"tern-kube://act/logs?namespace=apps",
+				}
+			do
+				expect((Quick.decode(bad))).toBeNil()
+			end
+			-- program is a logs field; other actions keep using the window's.
+			expect((Quick.decode("tern-kube://act/logs-follow?kind=Pod&name=p&program=kubectl"))).toBeNil()
+		end)
+
+		it("types the verb first so the lens claims the line, flags after the source", function()
+			local l = Quick.typedLine(PINNED, POD, {
+				container = "side",
+				previous = true,
+				since = "5m",
+				tail = "100",
+				timestamps = true,
+				prefix = true,
+				program = "kubecolor",
+			}) :: Quick.TypedLaunch
+			expect(l.refusal).toBeNil()
+			expect(l.argv).toEqual({
+				"kubecolor",
+				"logs",
+				"--kubeconfig",
+				"/tmp/kube config",
+				"--context",
+				"kind-tern-kube-dev",
+				"-n",
+				"apps",
+				"web-0",
+				"-c",
+				"side",
+				"--previous",
+				"--since=5m",
+				"--tail=100",
+				"--timestamps",
+				"--prefix",
+			})
+			expect(l.line).toBe(
+				"kubecolor logs --kubeconfig '/tmp/kube config' --context kind-tern-kube-dev -n apps web-0 -c side"
+					.. " --previous --since=5m --tail=100 --timestamps --prefix"
+			)
+			expect(l.title).toBe("tern-kube logs apps/web-0:side @ kind-tern-kube-dev")
+		end)
+
+		it("names workloads by type and selectors by -l, all containers on request", function()
+			local d = Quick.typedLine(UNPINNED, ref("Deployment", "web", "apps", "apps"), {}) :: Quick.TypedLaunch
+			expect(d.line).toBe("kubectl logs -n apps deployment/web")
+			expect(d.title).toBe("tern-kube logs deployment apps/web @ current context")
+			local s = Quick.typedLine(
+				UNPINNED,
+				nil,
+				{ selector = "app=web,tier in (a, b),!canary", namespace = "apps", allContainers = true, prefix = true }
+			) :: Quick.TypedLaunch
+			expect(s.line).toBe("kubectl logs -n apps -l 'app=web,tier in (a, b),!canary' --all-containers --prefix")
+		end)
+
+		it("single-quotes words with shell syntax so no shell expands them", function()
+			local l = Quick.typedLine({ context = "ctx $(id) `x`; y", kubeconfig = "=cfg" }, POD, {}) :: Quick.TypedLaunch
+			expect(l.refusal).toBeNil()
+			-- zsh expands a leading `=word` to a command path.
+			expect(l.line).toBe("kubectl logs --kubeconfig '=cfg' --context 'ctx $(id) `x`; y' -n apps web-0")
+		end)
+
+		it("refuses to type a quote or backslash, offering a POSIX copy instead", function()
+			-- fish reads \' and \\ as escapes even inside single quotes, so no
+			-- quoting works in every shell: the line is copied, not typed.
+			local targets: { Quick.Target } = {
+				{ kubeconfig = "/tmp/it's/config" },
+				{ context = "dom\\user" },
+			}
+			for _, target in targets do
+				local l, e = Quick.typedLine(target, POD, {})
+				assert(l, "builds a copyable line")
+				expect(e).toBeNil()
+				expect(l.refusal).toContain("cannot be typed")
+				expect(l.line).toContain("kubectl logs")
+			end
+			local q = Quick.typedLine({ kubeconfig = "/tmp/it's/config" }, POD, {}) :: Quick.TypedLaunch
+			expect(q.line).toBe("kubectl logs --kubeconfig '/tmp/it'\\''s/config' -n apps web-0")
+		end)
+
+		it("never builds a line from control characters or invalid fields", function()
+			local targets: { Quick.Target } =
+				{ { context = "a\nb" }, { context = "a\tb" }, { kubeconfig = "/k\27]0;x" } }
+			for _, target in targets do
+				expect((Quick.typedLine(target, POD, {}))).toBeNil()
+			end
+			expect((Quick.typedLine(UNPINNED, ref("Pod", "p;rm", "ns"), {}))).toBeNil()
+			expect((Quick.typedLine(UNPINNED, POD, { since = "$(id)" }))).toBeNil()
+			expect((Quick.typedLine(UNPINNED, POD, { program = "bash" }))).toBeNil()
+			expect((Quick.typedLine(UNPINNED, nil, {}))).toBeNil()
+		end)
+
+		it("has no sh -c form: command() refuses and points to the typed launch", function()
+			local l, e = Quick.command("logs", PINNED, POD, {})
+			expect(l).toBeNil()
+			expect(e).toBe("logs is typed into an interactive split")
 		end)
 	end)
 
