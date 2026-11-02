@@ -94,17 +94,30 @@ upper bound), limit 64 MB.
 
 Measured 2026-11-02, same machine, standalone luau, 30 runs. The logs lens
 parses each line in its `line` callback (`plugin/lib/logs/store.luau`), so a
-`view` only filters and renders one page:
+`view` only filters and renders one page. The store also keeps what
+filtering derives (`plugin/lib/logs/query.luau`): the lowered search text of
+each kept record (built on first search, dropped with the record or when a
+continuation grows it), the order by kubelet time (built on first use,
+then only evicted records leave and new ones are merged in) and the last
+filter's hits (reused until the store changes, so paging and opening a row
+do not rescan). The apply cases below change the filter on every sample
+with those per-record caches built:
 
 | Case | p50 ms | p95 ms | Limit (p95) |
 | --- | --- | --- | --- |
-| 20 000 mixed lines (JSON, klog, logfmt, plain): push | 58.91 (2.95 us/line) | 66.46 | 300 |
-| 20 000 `--prefix --timestamps` lines: push | 74.60 (3.73 us/line) | 81.35 | 300 |
-| 20 000 lines: filter + newest page | 0.41 | 0.57 | 20 |
-| 20 000 lines: Errors + page | 0.38 | 0.39 | 20 |
-| 20 000 lines: warn+ and one source | 0.98 | 1.11 | 20 |
-| 20 000 lines: text filter + page | 6.00 | 7.52 | 20 |
-| 20 000 lines: By time merge | 6.47 | 7.96 | 20 |
+| 20 000 mixed lines (JSON, klog, logfmt, plain): push | 58.19 (2.91 us/line) | 65.71 | 300 |
+| 20 000 `--prefix --timestamps` lines: push | 74.20 (3.71 us/line) | 77.82 | 300 |
+| 20 000 lines: filter + newest page | 0.00 | 0.00 | 20 |
+| 20 000 lines: Errors + page | 0.32 | 0.33 | 20 |
+| 20 000 lines: warn+ and one source | 0.84 | 0.95 | 20 |
+| 20 000 lines: text filter + page | 1.63 | 1.73 | 20 |
+| 20 000 lines: By time merge | 0.00 | 0.00 | 20 |
+
+The first use on a store pays the build: about 5.3 ms p95 for the first By
+time merge and 5.9 ms for the first text search (20 000 lines, 16 570
+records). While a stream runs, 50 new lines then By time cost 0.16 ms; with
+a text filter as well, 2.9 ms (the filter rescans the kept records). The
+search text adds about 1.3 MB to those records' 3.0 MB.
 
 Past `general.max_rows` (20 000) the store keeps the newest records and
 counts the rest as only in Raw; it never falls back to raw for size. In the
