@@ -145,3 +145,32 @@ errors	delete_-f_mutate+app-v2.yaml	kubectl delete -n tern-test-mutate -f mutate
 errors	delete_pod_scratch	kubectl delete pod scratch -n tern-test-mutate	1	v1.34.1	v1.37.0
 errors	scale_deployment+api_--replicas=1	kubectl scale deployment/api --replicas=1 -n tern-test-mutate	1	v1.34.1	v1.37.0
 errors	rollout_restart_deployment+api	kubectl rollout restart deployment/api -n tern-test-mutate	1	v1.34.1	v1.37.0
+ns-apps	events	kubectl events -n tern-test-apps	0	v1.34.1	v1.37.0
+ns-apps	events_--for_pod+crashloop	kubectl events -n tern-test-apps --for pod/crashloop	0	v1.34.1	v1.37.0
+ns-apps	events_--types=Warning	kubectl events -n tern-test-apps --types=Warning	0	v1.34.1	v1.37.0
+ns-apps	events_-A	kubectl events -A	0	v1.34.1	v1.37.0
+ns-apps	events_-o_json	kubectl events -n tern-test-apps -o json	0	v1.34.1	v1.37.0
+ns-apps	get_events_-o_json	kubectl get events -n tern-test-apps -o json	0	v1.34.1	v1.37.0
+ns-apps	get_events_-o_wide	kubectl get events -n tern-test-apps -o wide	0	v1.34.1	v1.37.0
+ns-logs	logs_tk-logmix-6856789c59-kh4x5	kubectl logs -n tern-test-logs tk-logmix-6856789c59-kh4x5	0	v1.34.1	v1.37.0
+ns-logs	logs_tk-logmix-6856789c59-kh4x5_-c_app	kubectl logs -n tern-test-logs tk-logmix-6856789c59-kh4x5 -c app	0	v1.34.1	v1.37.0
+ns-logs	logs_tk-logmix-6856789c59-kh4x5_-c_app_--timestamps	kubectl logs -n tern-test-logs tk-logmix-6856789c59-kh4x5 -c app --timestamps	0	v1.34.1	v1.37.0
+ns-logs	logs_tk-logmix-6856789c59-kh4x5_-c_app_--limit-bytes=600	kubectl logs -n tern-test-logs tk-logmix-6856789c59-kh4x5 -c app --limit-bytes=600	0	v1.34.1	v1.37.0
+ns-logs	logs_tk-logmix-6856789c59-kh4x5_-c_side_--tail=5	kubectl logs -n tern-test-logs tk-logmix-6856789c59-kh4x5 -c side --tail=5	0	v1.34.1	v1.37.0
+ns-logs	logs_tk-logmix-6856789c59-kh4x5_--all-containers	kubectl logs -n tern-test-logs tk-logmix-6856789c59-kh4x5 --all-containers	0	v1.34.1	v1.37.0
+ns-logs	logs_tk-logmix-6856789c59-kh4x5_--all-containers_--prefix_--timestamps	kubectl logs -n tern-test-logs tk-logmix-6856789c59-kh4x5 --all-containers --prefix --timestamps	0	v1.34.1	v1.37.0
+ns-logs	logs_deploy+tk-logmix	kubectl logs -n tern-test-logs deploy/tk-logmix	0	v1.34.1	v1.37.0
+ns-logs	logs_deploy+tk-logmix_--all-pods_-c_app_--prefix	kubectl logs -n tern-test-logs deploy/tk-logmix --all-pods -c app --prefix	0	v1.34.1	v1.37.0
+ns-logs	logs_-l_app=tk-logmix	kubectl logs -n tern-test-logs -l app=tk-logmix	0	v1.34.1	v1.37.0
+ns-logs	logs_-l_app=tk-logmix_-c_app_--prefix	kubectl logs -n tern-test-logs -l app=tk-logmix -c app --prefix	0	v1.34.1	v1.37.0
+ns-logs	logs_-l_app=tk-logmix_--all-containers_--prefix_--timestamps	kubectl logs -n tern-test-logs -l app=tk-logmix --all-containers --prefix --timestamps	0	v1.34.1	v1.37.0
+ns-logs	logs_tk-logmix-6856789c59-kh4x5_-p_-c_crashy	kubectl logs -n tern-test-logs tk-logmix-6856789c59-kh4x5 -p -c crashy	0	v1.34.1	v1.37.0
+ns-logs	logs_tk-logmix-6856789c59-kh4x5_-p_-c_app	kubectl logs -n tern-test-logs tk-logmix-6856789c59-kh4x5 -p -c app	1	v1.34.1	v1.37.0
+ns-logs	logs_tk-logmix-6856789c59-kh4x5_-c_nope	kubectl logs -n tern-test-logs tk-logmix-6856789c59-kh4x5 -c nope	1	v1.34.1	v1.37.0
+ns-logs	logs_nopod	kubectl logs -n tern-test-logs nopod	1	v1.34.1	v1.37.0
+ns-logs	logs_-f_-l_app=tk-logmix_--all-containers_--prefix	kubectl logs -n tern-test-logs -f -l app=tk-logmix --all-containers --prefix	1	v1.34.1	v1.37.0
+ns-logs	get_events_-w_--request-timeout=8s	kubectl get events -n tern-test-logs -w --request-timeout=8s	0	v1.34.1	v1.37.0
+ns-logs	get_events_-w_--output-watch-events_--request-timeout=8s	kubectl get events -n tern-test-logs -w --output-watch-events --request-timeout=8s	0	v1.34.1	v1.37.0
+ns-logs	get_events_--watch-only_--request-timeout=8s	kubectl get events -n tern-test-logs --watch-only --request-timeout=8s	0	v1.34.1	v1.37.0
+ns-logs	events_-w_--request-timeout=8s	kubectl events -n tern-test-logs -w --request-timeout=8s	0	v1.34.1	v1.37.0
+ns-logs	get_events_-o_json	kubectl get events -n tern-test-logs -o json	0	v1.34.1	v1.37.0

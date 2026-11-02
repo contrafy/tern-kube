@@ -236,10 +236,11 @@ describe("explore render: other views", function()
 		expect(nodes.find(main(s), nodes.role("tern-kube.describe")) ~= nil).toBe(true)
 	end)
 
-	it("logs show the fetched lines", function()
+	it("logs show parsed records with a level badge, not a raw text dump", function()
 		local s = W.keys(W.open(), { "L" })
-		local code = nodes.find(main(s), nodes.kind("code")) :: nodes.Node
-		expect((code.p :: any).text).toBe("log line 1\nlog line 2")
+		local m = main(s)
+		expect(nodes.find(m, nodes.role("tern-kube.level")) ~= nil).toBe(true)
+		expect(nodes.find(m, nodes.kind("code"))).toBeNil()
 	end)
 
 	it("the context chooser marks the current target", function()
@@ -265,7 +266,14 @@ describe("explore render: other views", function()
 		local seen: { [string]: string } = {}
 		for _, k in Render.KEYS do
 			local desc = k[2]
-			if string.find(desc, "^Drift:") or string.find(desc, "^Export:") or string.find(desc, "^Git:") then
+			-- Route-local rows (GitOps views, logs and events) may reuse keys:
+			-- inside their view they win.
+			if
+				string.find(desc, "^Drift:")
+				or string.find(desc, "^Export:")
+				or string.find(desc, "^Git:")
+				or string.find(desc, "^Logs:")
+			then
 				continue
 			end
 			for key in string.gmatch(k[1], "[^%s,/]+") do

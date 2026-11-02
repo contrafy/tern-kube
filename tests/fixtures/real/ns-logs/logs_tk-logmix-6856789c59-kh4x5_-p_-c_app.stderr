@@ -1,0 +1,1 @@
+Error from server (BadRequest): previous terminated container "app" in pod "tk-logmix-6856789c59-kh4x5" not found

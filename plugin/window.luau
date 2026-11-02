@@ -69,6 +69,40 @@ local function launch(link: LinkRequest, req: Quick.Request, cx: WindowCx)
 	end
 end
 
+-- `logs` variants are typed at the prompt of a new interactive split, not
+-- run as its command: Tern lenses only typed commands, and the pane stays
+-- at a prompt afterwards. The line is rebuilt from the validated fields;
+-- one no shell would read literally is copied instead of typed.
+local function launchTyped(link: LinkRequest, req: Quick.Request, cx: WindowCx)
+	local typed, err = Quick.typedLine(req.target, req.ref, req.opts)
+	if typed == nil then
+		cx:toast("error", "Tern Kube: invalid quick action", err)
+		return
+	end
+	if typed.refusal then
+		cx:copy(typed.line)
+		cx:toast("error", "Tern Kube: not typed into a split", typed.refusal .. "; command copied to the clipboard")
+		return
+	end
+	-- A relative --kubeconfig resolves where the lensed command ran.
+	local info = cx.session:pane(link.pane)
+	local cwd = if info and info.cwd and string.sub(info.cwd, 1, 1) == "/" then info.cwd else nil
+	local place = Quick.placement(ConfigHost.load().config.quick_actions.placement)
+	local pane: number?
+	if place.how == "tab" then
+		pane = cx.layout:new_tab({ cwd = cwd })
+	else
+		pane = cx.layout:split(link.pane, place.dir, { cwd = cwd })
+	end
+	log.info("tern-kube typed quick action", req.action, typed.title, "pane=" .. tostring(pane))
+	if pane == nil then
+		cx:copy(typed.line)
+		cx:toast("error", "Tern Kube: could not open a pane", "Command copied to the clipboard")
+		return
+	end
+	cx:run(pane, typed.line .. "\r")
+end
+
 -- Quick actions open a new split (or tab) running a kubectl command rebuilt
 -- from the link's validated fields; the URL never supplies the command.
 -- Mutating ones go to the approve block first; it re-opens the link with a
@@ -97,6 +131,10 @@ local function quickAction(link: LinkRequest, cx: WindowCx): RouteDecision?
 		if kubeconfig then
 			req.target = { context = req.target.context, kubeconfig = kubeconfig }
 		end
+	end
+	if Quick.typed(req.action) then
+		launchTyped(link, req, cx)
+		return nil
 	end
 	local gate = Quick.gate(req.action)
 	if gate == "editor" then
@@ -166,18 +204,38 @@ end)
 
 -- The focused pane's directory goes along: the GitOps views index the
 -- repository that contains it.
+local function openExplore(cx: WindowCx, route: string?)
+	local focused = cx.session:focused()
+	local info = if focused then cx.session:pane(focused) else nil
+	local cwd = if info and info.cwd and string.sub(info.cwd, 1, 1) == "/" then info.cwd else nil
+	local params: { string } = {}
+	if cwd then
+		table.insert(params, "cwd=" .. Command.urlencode(cwd))
+	end
+	if route then
+		table.insert(params, "route=" .. route)
+	end
+	local arg = if #params > 0 then "tern-kube://explore?" .. table.concat(params, "&") else "palette"
+	if cx:new_block("tern-kube.explore", { arg }, "beside") == nil then
+		cx:toast("error", "Tern Kube is not loaded on this host")
+	end
+end
+
 tern.command({
 	id = "explore",
 	title = "Tern Kube: Explore",
 	icon = "box",
 	run = function(cx: WindowCx)
-		local focused = cx.session:focused()
-		local info = if focused then cx.session:pane(focused) else nil
-		local cwd = if info and info.cwd and string.sub(info.cwd, 1, 1) == "/" then info.cwd else nil
-		local arg = if cwd then "tern-kube://explore?cwd=" .. Command.urlencode(cwd) else "palette"
-		if cx:new_block("tern-kube.explore", { arg }, "beside") == nil then
-			cx:toast("error", "Tern Kube is not loaded on this host")
-		end
+		openExplore(cx, nil)
+	end,
+})
+
+tern.command({
+	id = "events",
+	title = "Tern Kube: Events",
+	icon = "box",
+	run = function(cx: WindowCx)
+		openExplore(cx, "events")
 	end,
 })
 

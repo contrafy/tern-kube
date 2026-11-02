@@ -1,0 +1,200 @@
+[pod/shop-api-7d9f8c6b5-x2k4p/sidecar] 2026-10-30T10:00:00.423128319Z [INFO] retrying upstream call
+[pod/shop-api-7d9f8c6b5-q9w7z/worker] 2026-10-30T10:00:00.729Z {"level":"warn","ts":"2026-10-30T10:00:00.445Z","msg":"cache miss","request_id":"02b3657543a0","path":"/api/orders","status":200,"dur_ms":288.6,"user":{"id":2186,"roles":["admin","dev"]}}
+[pod/shop-api-7d9f8c6b5-q9w7z/sidecar] 2026-10-30T10:00:00.459758703Z E1030 10:00:00.694740       1 sync.go:11] "retrying upstream call" key="ns/obj-32" attempt=1
+[pod/shop-api-7d9f8c6b5-x2k4p/app] 2026-10-30T10:00:00.657177319Z {"level":"info","ts":"2026-10-30T10:00:00.897Z","msg":"config reloaded","request_id":"68faabb570dc","path":"/api/checkout","status":201,"dur_ms":300.9,"user":{"id":3599,"roles":["admin","dev"]}}
+[pod/shop-api-7d9f8c6b5-q9w7z/worker] 2026-10-30T10:00:00.891570796Z {"level":"info","ts":"2026-10-30T10:00:01.097Z","msg":"cache miss","request_id":"fd2a698f1ed4","path":"/api/orders","status":500,"dur_ms":886.8}
+[pod/shop-api-7d9f8c6b5-q9w7z/worker] 2026-10-30T10:00:01.155862068Z 2026-10-30 10:00:01,184 INFO [main] connection pool resized
+[pod/shop-api-7d9f8c6b5-x2k4p/app] 2026-10-30T10:00:00.799935499Z {"level":"info","ts":"2026-10-30T10:00:01.248Z","msg":"cache miss","request_id":"51ffdb67dae8","path":"/api/cart","status":200,"dur_ms":612.8}
+[pod/shop-api-7d9f8c6b5-q9w7z/sidecar] 2026-10-30T10:00:00.701813667Z I1030 10:00:01.311297       1 sync.go:348] "order created" key="ns/obj-21" attempt=4
+[pod/shop-api-7d9f8c6b5-q9w7z/sidecar] 2026-10-30T10:00:01.067111263Z request served (ce919353)
+[pod/shop-api-7d9f8c6b5-q9w7z/sidecar] 2026-10-30T10:00:01.210628913Z order created in 680ms
+[pod/shop-api-7d9f8c6b5-x2k4p/worker] 2026-10-30T10:00:00.92573556Z {"level":"debug","ts":"2026-10-30T10:00:01.908Z","msg":"order created","request_id":"548ac3877d9d","path":"/api/cart","status":201,"dur_ms":681.1}
+[pod/shop-api-7d9f8c6b5-q9w7z/sidecar] 2026-10-30T10:00:01.566Z {"level":"info","ts":"2026-10-30T10:00:02.010Z","msg":"config reloaded","request_id":"a6763dfab53a","path":"/healthz","status":200,"dur_ms":798.5}
+[pod/shop-api-7d9f8c6b5-x2k4p/worker] 2026-10-30T10:00:01.136556341Z time=2026-10-30T10:00:02.156Z level=info msg="config reloaded" path=/healthz dur=0.6s
+[pod/shop-api-7d9f8c6b5-q9w7z/sidecar] 2026-10-30T10:00:01.600385999Z I1030 10:00:02.337090       1 sync.go:118] "order created" key="ns/obj-19" attempt=4
+[pod/shop-api-7d9f8c6b5-x2k4p/sidecar] 2026-10-30T10:00:00.731739858Z time=2026-10-30T10:00:02.476Z level=info msg="request served" path=/healthz dur=1.5s
+[pod/shop-api-7d9f8c6b5-q9w7z/app] 2026-10-30T10:00:00.430801204Z {"level":"info","ts":"2026-10-30T10:00:02.608Z","msg":"queue drained","request_id":"3a1190e01209","path":"/api/cart","status":200,"dur_ms":300.8}
+[pod/shop-api-7d9f8c6b5-q9w7z/app] 2026-10-30T10:00:00.819568011Z {"level":"info","ts":"2026-10-30T10:00:02.656Z","msg":"cache miss","request_id":"564c9b0f4de7","path":"/api/cart","status":200,"dur_ms":813.7}
+[pod/shop-api-7d9f8c6b5-q9w7z/worker] 2026-10-30T10:00:01.287206763Z time=2026-10-30T10:00:02.739Z level=warn msg="retrying upstream call" path=/api/users/me dur=0.4s
+[pod/shop-api-7d9f8c6b5-q9w7z/worker] 2026-10-30T10:00:01.369810906Z 2026-10-30 10:00:02,888 INFO [main] user signed in
+[pod/shop-api-7d9f8c6b5-q9w7z/worker] 2026-10-30T10:00:01.423306837Z [33mWARN[0m queue drained
+[pod/shop-api-7d9f8c6b5-x2k4p/app] 2026-10-30T10:00:01.039656146Z time=2026-10-30T10:00:02.950Z level=warn msg="payment authorised" path=/api/cart dur=2.2s
+[pod/shop-api-7d9f8c6b5-x2k4p/sidecar] 2026-10-30T10:00:01.00200298Z INFO slow query
+[pod/shop-api-7d9f8c6b5-q9w7z/sidecar] 2026-10-30T10:00:01.775961377Z {"level":"info","ts":"2026-10-30T10:00:03.231Z","msg":"queue drained","request_id":"7c2beef0c29d","path":"/api/users/me","status":200,"dur_ms":83.1}
+[pod/shop-api-7d9f8c6b5-x2k4p/app] 2026-10-30T10:00:01.438631464Z INFO request served
+[pod/shop-api-7d9f8c6b5-q9w7z/app] 2026-10-30T10:00:01.044Z {"level":"info","ts":"2026-10-30T10:00:03.543Z","msg":"connection pool resized","request_id":"493d45caea68","path":"/api/checkout","status":201,"dur_ms":276.5,"user":{"id":109,"roles":["admin","dev"]}}
+[pod/shop-api-7d9f8c6b5-x2k4p/worker] 2026-10-30T10:00:01.474894222Z {"level":"warn","ts":"2026-10-30T10:00:03.620Z","msg":"connection pool resized","request_id":"16503b0b8f3e","path":"/healthz","status":404,"dur_ms":674.5}
+[pod/shop-api-7d9f8c6b5-x2k4p/app] 2026-10-30T10:00:01.634497681Z Traceback (most recent call last):
+[pod/shop-api-7d9f8c6b5-x2k4p/app] 2026-10-30T10:00:01.854869084Z   File "/app/worker.py", line 192, in run
+[pod/shop-api-7d9f8c6b5-x2k4p/app] 2026-10-30T10:00:02.099656625Z     raise ValueError('bad payload')
+[pod/shop-api-7d9f8c6b5-x2k4p/app] 2026-10-30T10:00:02.235192638Z ValueError: bad payload
+[pod/shop-api-7d9f8c6b5-q9w7z/sidecar] 2026-10-30T10:00:02.093321732Z I1030 10:00:03.845372       1 sync.go:114] request served
+[pod/shop-api-7d9f8c6b5-x2k4p/app] 2026-10-30T10:00:02.54897669Z time=2026-10-30T10:00:03.892Z level=info msg="cache miss" path=/api/checkout dur=0.3s
+[pod/shop-api-7d9f8c6b5-q9w7z/sidecar] 2026-10-30T10:00:02.363779434Z 2026-10-30 10:00:04,083 ERROR [main] java.lang.IllegalStateException: order 36600 in bad state
+[pod/shop-api-7d9f8c6b5-q9w7z/sidecar] 2026-10-30T10:00:02.405428503Z 	at com.example.shop.Service.handle(Service.java:158)
+[pod/shop-api-7d9f8c6b5-q9w7z/sidecar] 2026-10-30T10:00:02.777012015Z 	at com.example.shop.Service.handle(Service.java:214)
+[pod/shop-api-7d9f8c6b5-q9w7z/sidecar] 2026-10-30T10:00:03.022347624Z 	at com.example.shop.Service.handle(Service.java:153)
+[pod/shop-api-7d9f8c6b5-q9w7z/sidecar] 2026-10-30T10:00:03.196400099Z 	at com.example.shop.Service.handle(Service.java:267)
+[pod/shop-api-7d9f8c6b5-q9w7z/sidecar] 2026-10-30T10:00:03.432Z 	at com.example.shop.Service.handle(Service.java:288)
+[pod/shop-api-7d9f8c6b5-q9w7z/sidecar] 2026-10-30T10:00:03.639327812Z Caused by: java.io.IOException: connection reset
+[pod/shop-api-7d9f8c6b5-q9w7z/sidecar] 2026-10-30T10:00:03.684182961Z 	... 3 more
+[pod/shop-api-7d9f8c6b5-x2k4p/worker] 2026-10-30T10:00:01.641849591Z long: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+[pod/shop-api-7d9f8c6b5-x2k4p/sidecar] 2026-10-30T10:00:01.230924381Z [33mWARN[0m user signed in
+[pod/shop-api-7d9f8c6b5-q9w7z/sidecar] 2026-10-30T10:00:03.961024831Z [INFO] retrying upstream call
+[pod/shop-api-7d9f8c6b5-x2k4p/app] 2026-10-30T10:00:02.754625579Z [INFO] config reloaded
+[pod/shop-api-7d9f8c6b5-q9w7z/worker] 2026-10-30T10:00:01.648Z E1030 10:00:04.693894       1 reflector.go:251] retrying upstream call
+[pod/shop-api-7d9f8c6b5-x2k4p/worker] 2026-10-30T10:00:01.923094031Z queue drained (d743c504)
+[pod/shop-api-7d9f8c6b5-q9w7z/worker] 2026-10-30T10:00:01.961228207Z [WARN] retrying upstream call
+[pod/shop-api-7d9f8c6b5-q9w7z/worker] 2026-10-30T10:00:02.198479606Z I1030 10:00:04.934772       1 sync.go:53] "retrying upstream call" key="ns/obj-9" attempt=3
+[pod/shop-api-7d9f8c6b5-x2k4p/sidecar] 2026-10-30T10:00:01.333172618Z I1030 10:00:05.019708       1 reflector.go:3] "cache miss" key="ns/obj-35" attempt=5
+[pod/shop-api-7d9f8c6b5-q9w7z/app] 2026-10-30T10:00:01.378853481Z {"level":"info","ts":"2026-10-30T10:00:05.315Z","msg":"order created","request_id":"dfe1c99d0fda","path":"/api/users/me","status":200,"dur_ms":575.9}
+[pod/shop-api-7d9f8c6b5-q9w7z/sidecar] 2026-10-30T10:00:04.272740774Z I1030 10:00:05.611929       1 leaderelection.go:33] "queue drained" key="ns/obj-8" attempt=5
+[pod/shop-api-7d9f8c6b5-x2k4p/sidecar] 2026-10-30T10:00:01.448997373Z {"level":"info","ts":"2026-10-30T10:00:05.824Z","msg":"queue drained","request_id":"bbfc87139122","path":"/api/cart","status":201,"dur_ms":851.6}
+[pod/shop-api-7d9f8c6b5-x2k4p/app] 2026-10-30T10:00:03.015076503Z time=2026-10-30T10:00:05.971Z level=warn msg="connection pool resized" path=/api/checkout dur=2.6s
+[pod/shop-api-7d9f8c6b5-q9w7z/sidecar] 2026-10-30T10:00:04.353039353Z time=2026-10-30T10:00:06.155Z level=info msg="connection pool resized" path=/api/users/me dur=1.1s
+[pod/shop-api-7d9f8c6b5-q9w7z/worker] 2026-10-30T10:00:02.471670908Z {"level":"info","ts":"2026-10-30T10:00:06.374Z","msg":"request served","request_id":"88a2a03551da","path":"/api/checkout","status":500,"dur_ms":654.4}
+[pod/shop-api-7d9f8c6b5-x2k4p/app] 2026-10-30T10:00:03.049Z config reloaded in 149ms
+[pod/shop-api-7d9f8c6b5-x2k4p/worker] 2026-10-30T10:00:01.932118424Z {"level":"info","ts":"2026-10-30T10:00:06.745Z","msg":"request served","request_id":"272acb62c325","path":"/api/cart","status":404,"dur_ms":155.5,"user":{"id":1248,"roles":["admin","dev"]}}
+[pod/shop-api-7d9f8c6b5-q9w7z/sidecar] 2026-10-30T10:00:04.693608304Z 2026-10-30 10:00:06,798 ERROR [main] java.lang.IllegalStateException: order 94303 in bad state
+[pod/shop-api-7d9f8c6b5-q9w7z/sidecar] 2026-10-30T10:00:04.793387114Z 	at com.example.shop.Service.handle(Service.java:113)
+[pod/shop-api-7d9f8c6b5-q9w7z/sidecar] 2026-10-30T10:00:05.072776799Z 	at com.example.shop.Service.handle(Service.java:256)
+[pod/shop-api-7d9f8c6b5-q9w7z/sidecar] 2026-10-30T10:00:05.234174889Z 	at com.example.shop.Service.handle(Service.java:99)
+[pod/shop-api-7d9f8c6b5-x2k4p/app] 2026-10-30T10:00:03.161919455Z {"level":"info","ts":"2026-10-30T10:00:07.071Z","msg":"config reloaded","request_id":"c99b3348d9d4","path":"/api/checkout","status":201,"dur_ms":363.3}
+[pod/shop-api-7d9f8c6b5-x2k4p/sidecar] 2026-10-30T10:00:01.571608479Z time=2026-10-30T10:00:07.273Z level=warn msg="request served" path=/healthz dur=0.1s
+[pod/shop-api-7d9f8c6b5-q9w7z/sidecar] 2026-10-30T10:00:05.48911382Z time=2026-10-30T10:00:07.487Z level=info msg="request served" path=/api/checkout dur=0.1s
+[pod/shop-api-7d9f8c6b5-x2k4p/worker] 2026-10-30T10:00:02.117228392Z {"level":"info","ts":"2026-10-30T10:00:07.711Z","msg":"order created","request_id":"e83b6d44ba08","path":"/api/cart","status":404,"dur_ms":432.7}
+[pod/shop-api-7d9f8c6b5-q9w7z/sidecar] 2026-10-30T10:00:05.799974847Z {"level":"info","ts":"2026-10-30T10:00:07.944Z","msg":"user signed in","request_id":"1e293e9a7806","path":"/healthz","status":404,"dur_ms":229.1,"user":{"id":6971,"roles":["admin","dev"]}}
+[pod/shop-api-7d9f8c6b5-q9w7z/worker] 2026-10-30T10:00:02.472672536Z {"level":"info","ts":"2026-10-30T10:00:08.147Z","msg":"config reloaded","request_id":"e08c831fab37","path":"/api/orders","status":500,"dur_ms":121.8}
+[pod/shop-api-7d9f8c6b5-x2k4p/sidecar] 2026-10-30T10:00:01.963372978Z {"level":"info","ts":"2026-10-30T10:00:08.442Z","msg":"config reloaded","request_id":"8e9db8b85454","path":"/healthz","status":404,"dur_ms":814.6,"user":{"id":6455,"roles":["admin","dev"]}}
+[pod/shop-api-7d9f8c6b5-x2k4p/app] 2026-10-30T10:00:03.539177949Z I1030 10:00:08.638481       1 server.go:312] config reloaded
+[pod/shop-api-7d9f8c6b5-x2k4p/sidecar] 2026-10-30T10:00:02.341598954Z E1030 10:00:08.833352       1 server.go:142] "payment authorised" key="ns/obj-73" attempt=2
+[pod/shop-api-7d9f8c6b5-q9w7z/sidecar] 2026-10-30T10:00:06.175Z {"level":"error","ts":"2026-10-30T10:00:09.103Z","msg":"payment authorised","request_id":"d52693630040","path":"/api/cart","status":201,"dur_ms":396.1}
+[pod/shop-api-7d9f8c6b5-x2k4p/worker] 2026-10-30T10:00:02.211009529Z I1030 10:00:09.242404       1 reflector.go:43] "config reloaded" key="ns/obj-38" attempt=1
+[pod/shop-api-7d9f8c6b5-x2k4p/worker] 2026-10-30T10:00:02.474490214Z I1030 10:00:09.286798       1 server.go:262] "user signed in" key="ns/obj-22" attempt=2
+[pod/shop-api-7d9f8c6b5-x2k4p/worker] 2026-10-30T10:00:02.755691143Z INFO cache miss
+[pod/shop-api-7d9f8c6b5-x2k4p/sidecar] 2026-10-30T10:00:02.570702812Z INFO connection pool resized
+[pod/shop-api-7d9f8c6b5-q9w7z/app] 2026-10-30T10:00:01.473898433Z time=2026-10-30T10:00:09.991Z level=info msg="request served" path=/healthz dur=2.6s
+[pod/shop-api-7d9f8c6b5-q9w7z/sidecar] 2026-10-30T10:00:06.417740609Z {"level":"debug","ts":"2026-10-30T10:00:10.077Z","msg":"config reloaded","request_id":"7072e1ad172e","path":"/healthz","status":404,"dur_ms":7.9}
+[pod/shop-api-7d9f8c6b5-x2k4p/worker] 2026-10-30T10:00:02.931627404Z {"level":"info","ts":"2026-10-30T10:00:10.172Z","msg":"payment authorised","request_id":"72a519210e12","path":"/api/orders","status":404,"dur_ms":641.4,"user":{"id":5393,"roles":["admin","dev"]}}
+[pod/shop-api-7d9f8c6b5-x2k4p/sidecar] 2026-10-30T10:00:02.823025156Z cache miss (5c6641f8)
+[pod/shop-api-7d9f8c6b5-x2k4p/app] 2026-10-30T10:00:03.909Z I1030 10:00:10.280839       1 server.go:71] "user signed in" key="ns/obj-48" attempt=2
+[pod/shop-api-7d9f8c6b5-q9w7z/app] 2026-10-30T10:00:01.794915058Z {"level":"info","ts":"2026-10-30T10:00:10.389Z","msg":"order created","request_id":"437fa401b59d","path":"/api/orders","status":200,"dur_ms":206.6}
+[pod/shop-api-7d9f8c6b5-q9w7z/worker] 2026-10-30T10:00:02.740099124Z {"level":"info","ts":"2026-10-30T10:00:10.414Z","msg":"retrying upstream call","request_id":"5b47984a62a7","path":"/api/users/me","status":404,"dur_ms":832.8}
+[pod/shop-api-7d9f8c6b5-q9w7z/sidecar] 2026-10-30T10:00:06.758607913Z 2026-10-30 10:00:10,690 INFO [main] slow query
+[pod/shop-api-7d9f8c6b5-x2k4p/worker] 2026-10-30T10:00:03.311868587Z {"level":"info","ts":"2026-10-30T10:00:10.957Z","msg":"user signed in","request_id":"f061b44dd27f","path":"/api/cart","status":404,"dur_ms":82.3}
+[pod/shop-api-7d9f8c6b5-x2k4p/app] 2026-10-30T10:00:04.063Z cache miss (e0132646)
+[pod/shop-api-7d9f8c6b5-q9w7z/app] 2026-10-30T10:00:02.146317675Z {"level":"warn","ts":"2026-10-30T10:00:11.446Z","msg":"config reloaded","request_id":"e988474663e3","path":"/api/cart","status":404,"dur_ms":787.3}
+[pod/shop-api-7d9f8c6b5-x2k4p/sidecar] 2026-10-30T10:00:02.868381081Z [DEBUG] request served
+[pod/shop-api-7d9f8c6b5-q9w7z/app] 2026-10-30T10:00:02.399Z 2026-10-30 10:00:11,524 ERROR [main] java.lang.IllegalStateException: order 96956 in bad state
+[pod/shop-api-7d9f8c6b5-q9w7z/app] 2026-10-30T10:00:02.610470272Z 	at com.example.shop.Service.handle(Service.java:203)
+[pod/shop-api-7d9f8c6b5-q9w7z/app] 2026-10-30T10:00:02.828072861Z 	at com.example.shop.Service.handle(Service.java:170)
+[pod/shop-api-7d9f8c6b5-q9w7z/app] 2026-10-30T10:00:02.978135159Z 	at com.example.shop.Service.handle(Service.java:228)
+[pod/shop-api-7d9f8c6b5-q9w7z/app] 2026-10-30T10:00:02.997703955Z 	at com.example.shop.Service.handle(Service.java:83)
+[pod/shop-api-7d9f8c6b5-q9w7z/app] 2026-10-30T10:00:03.287220839Z 	at com.example.shop.Service.handle(Service.java:66)
+[pod/shop-api-7d9f8c6b5-q9w7z/sidecar] 2026-10-30T10:00:06.786Z {"level":"info","ts":"2026-10-30T10:00:11.742Z","msg":"queue drained","request_id":"8297bf4edc40","path":"/api/cart","status":201,"dur_ms":727.6}
+[pod/shop-api-7d9f8c6b5-q9w7z/sidecar] 2026-10-30T10:00:06.810025579Z E1030 10:00:12.005060       1 leaderelection.go:118] "config reloaded" key="ns/obj-27" attempt=3
+[pod/shop-api-7d9f8c6b5-x2k4p/worker] 2026-10-30T10:00:03.571151257Z config reloaded (5f1c9aef)
+[pod/shop-api-7d9f8c6b5-q9w7z/sidecar] 2026-10-30T10:00:06.953229411Z {"level":"info","ts":"2026-10-30T10:00:12.478Z","msg":"config reloaded","request_id":"63735e465e2a","path":"/api/checkout","status":404,"dur_ms":584.1}
+[pod/shop-api-7d9f8c6b5-x2k4p/app] 2026-10-30T10:00:04.437274919Z retrying upstream call (59730b9b)
+[pod/shop-api-7d9f8c6b5-x2k4p/app] 2026-10-30T10:00:04.597143021Z cache miss in 2ms
+[pod/shop-api-7d9f8c6b5-x2k4p/worker] 2026-10-30T10:00:03.665190088Z WARN payment authorised
+[pod/shop-api-7d9f8c6b5-q9w7z/sidecar] 2026-10-30T10:00:07.159413216Z INFO order created
+[pod/shop-api-7d9f8c6b5-q9w7z/sidecar] 2026-10-30T10:00:07.262944344Z config reloaded in 82ms
+[pod/shop-api-7d9f8c6b5-q9w7z/worker] 2026-10-30T10:00:02.992905299Z time=2026-10-30T10:00:13.237Z level=info msg="order created" path=/api/users/me dur=2.2s
+[pod/shop-api-7d9f8c6b5-q9w7z/sidecar] 2026-10-30T10:00:07.647038039Z {"level":"info","ts":"2026-10-30T10:00:13.251Z","msg":"user signed in","request_id":"811caa301503","path":"/healthz","status":500,"dur_ms":768.2}
+[pod/shop-api-7d9f8c6b5-q9w7z/app] 2026-10-30T10:00:03.673Z time=2026-10-30T10:00:13.303Z level=info msg="retrying upstream call" path=/healthz dur=1.6s
+[pod/shop-api-7d9f8c6b5-q9w7z/app] 2026-10-30T10:00:03.829045604Z time=2026-10-30T10:00:13.309Z level=info msg="payment authorised" path=/healthz dur=2.1s
+[pod/shop-api-7d9f8c6b5-q9w7z/sidecar] 2026-10-30T10:00:07.988402481Z {"level":"info","ts":"2026-10-30T10:00:13.577Z","msg":"payment authorised","request_id":"c91459a952a9","path":"/api/orders","status":404,"dur_ms":111.7}
+[pod/shop-api-7d9f8c6b5-x2k4p/app] 2026-10-30T10:00:04.883650581Z INFO request served
+[pod/shop-api-7d9f8c6b5-x2k4p/sidecar] 2026-10-30T10:00:03.055392585Z {"level":"info","ts":"2026-10-30T10:00:13.880Z","msg":"retrying upstream call","request_id":"ff966fc1ffd6","path":"/healthz","status":404,"dur_ms":107.1}
+[pod/shop-api-7d9f8c6b5-x2k4p/app] 2026-10-30T10:00:05.09579297Z connection pool resized in 167ms
+[pod/shop-api-7d9f8c6b5-q9w7z/app] 2026-10-30T10:00:03.977546558Z time=2026-10-30T10:00:14.159Z level=info msg="order created" path=/api/users/me dur=2.7s
+[pod/shop-api-7d9f8c6b5-x2k4p/worker] 2026-10-30T10:00:03.704600151Z user signed in in 511ms
+[pod/shop-api-7d9f8c6b5-q9w7z/app] 2026-10-30T10:00:04.199540144Z time=2026-10-30T10:00:14.363Z level=info msg="slow query" path=/api/users/me dur=1.5s
+[pod/shop-api-7d9f8c6b5-q9w7z/worker] 2026-10-30T10:00:03.318986456Z {"level":"info","ts":"2026-10-30T10:00:14.622Z","msg":"user signed in","request_id":"c492cbaaee3f","path":"/api/users/me","status":500,"dur_ms":347.5}
+[pod/shop-api-7d9f8c6b5-x2k4p/worker] 2026-10-30T10:00:04.104373813Z {"level":"info","ts":"2026-10-30T10:00:14.832Z","msg":"user signed in","request_id":"40a3e428e698","path":"/api/orders","status":201,"dur_ms":133.2}
+[pod/shop-api-7d9f8c6b5-x2k4p/sidecar] 2026-10-30T10:00:03.436769565Z {"level":"warn","ts":"2026-10-30T10:00:15.048Z","msg":"queue drained","request_id":"324173571daa","path":"/healthz","status":201,"dur_ms":808.9}
+[pod/shop-api-7d9f8c6b5-x2k4p/worker] 2026-10-30T10:00:04.462811881Z [INFO] request served
+[pod/shop-api-7d9f8c6b5-x2k4p/worker] 2026-10-30T10:00:04.66996338Z 2026-10-30 10:00:15,343 INFO [main] cache miss
+[pod/shop-api-7d9f8c6b5-x2k4p/sidecar] 2026-10-30T10:00:03.647224235Z {"level":"info","ts":"2026-10-30T10:00:15.481Z","msg":"connection pool resized","request_id":"d415a651870d","path":"/api/users/me","status":404,"dur_ms":565.6}
+[pod/shop-api-7d9f8c6b5-x2k4p/sidecar] 2026-10-30T10:00:03.847Z {"level":"info","ts":"2026-10-30T10:00:15.710Z","msg":"slow query","request_id":"f04b74d295a9","path":"/api/checkout","status":500,"dur_ms":94.7,"user":{"id":6990,"roles":["admin","dev"]}}
+[pod/shop-api-7d9f8c6b5-x2k4p/sidecar] 2026-10-30T10:00:04.140310491Z I1030 10:00:15.807023       1 sync.go:223] "request served" key="ns/obj-53" attempt=4
+[pod/shop-api-7d9f8c6b5-q9w7z/app] 2026-10-30T10:00:04.477580161Z 2026-10-30 10:00:15,904 INFO [main] cache miss
+[pod/shop-api-7d9f8c6b5-x2k4p/sidecar] 2026-10-30T10:00:04.21278711Z 2026-10-30 10:00:15,923 ERROR [main] java.lang.IllegalStateException: order 99873 in bad state
+[pod/shop-api-7d9f8c6b5-x2k4p/sidecar] 2026-10-30T10:00:04.262083497Z 	at com.example.shop.Service.handle(Service.java:285)
+[pod/shop-api-7d9f8c6b5-x2k4p/sidecar] 2026-10-30T10:00:04.402967806Z 	at com.example.shop.Service.handle(Service.java:296)
+[pod/shop-api-7d9f8c6b5-x2k4p/sidecar] 2026-10-30T10:00:04.551169966Z 	at com.example.shop.Service.handle(Service.java:71)
+[pod/shop-api-7d9f8c6b5-x2k4p/sidecar] 2026-10-30T10:00:04.579797634Z 	at com.example.shop.Service.handle(Service.java:222)
+[pod/shop-api-7d9f8c6b5-x2k4p/sidecar] 2026-10-30T10:00:04.755823949Z 	at com.example.shop.Service.handle(Service.java:7)
+[pod/shop-api-7d9f8c6b5-x2k4p/worker] 2026-10-30T10:00:04.923899401Z I1030 10:00:15.961882       1 leaderelection.go:85] slow query
+[pod/shop-api-7d9f8c6b5-q9w7z/worker] 2026-10-30T10:00:03.664Z {"level":"info","ts":"2026-10-30T10:00:16.001Z","msg":"retrying upstream call","request_id":"b67073f7cb27","path":"/api/cart","status":200,"dur_ms":578.6}
+[pod/shop-api-7d9f8c6b5-x2k4p/worker] 2026-10-30T10:00:04.971671441Z I1030 10:00:16.272409       1 leaderelection.go:358] user signed in
+[pod/shop-api-7d9f8c6b5-x2k4p/worker] 2026-10-30T10:00:05.316761698Z time=2026-10-30T10:00:16.341Z level=info msg="request served" path=/api/cart dur=0.8s
+[pod/shop-api-7d9f8c6b5-x2k4p/worker] 2026-10-30T10:00:05.350692326Z [INFO] request served
+[pod/shop-api-7d9f8c6b5-q9w7z/app] 2026-10-30T10:00:04.48223569Z {"level":"info","ts":"2026-10-30T10:00:16.727Z","msg":"queue drained","request_id":"ba02bc36103e","path":"/healthz","status":201,"dur_ms":835.5}
+[pod/shop-api-7d9f8c6b5-q9w7z/sidecar] 2026-10-30T10:00:08.002902526Z INFO config reloaded
+[pod/shop-api-7d9f8c6b5-q9w7z/sidecar] 2026-10-30T10:00:08.150377139Z [ERROR] user signed in
+[pod/shop-api-7d9f8c6b5-q9w7z/app] 2026-10-30T10:00:04.722537929Z {"level":"info","ts":"2026-10-30T10:00:17.120Z","msg":"queue drained","request_id":"d9eaa7cc0d43","path":"/api/cart","status":200,"dur_ms":700.9,"user":{"id":1331,"roles":["admin","dev"]}}
+[pod/shop-api-7d9f8c6b5-x2k4p/worker] 2026-10-30T10:00:05.395508688Z {"level":"info","ts":"2026-10-30T10:00:17.393Z","msg":"user signed in","request_id":"c70079b2bba5","path":"/api/cart","status":200,"dur_ms":632.4}
+[pod/shop-api-7d9f8c6b5-q9w7z/app] 2026-10-30T10:00:04.739477888Z queue drained in 758ms
+[pod/shop-api-7d9f8c6b5-q9w7z/app] 2026-10-30T10:00:04.788039993Z [INFO] cache miss
+[pod/shop-api-7d9f8c6b5-q9w7z/app] 2026-10-30T10:00:04.902746625Z INFO queue drained
+[pod/shop-api-7d9f8c6b5-x2k4p/worker] 2026-10-30T10:00:05.698574047Z 2026-10-30 10:00:18,171 ERROR [main] java.lang.IllegalStateException: order 59263 in bad state
+[pod/shop-api-7d9f8c6b5-x2k4p/worker] 2026-10-30T10:00:05.997361627Z 	at com.example.shop.Service.handle(Service.java:180)
+[pod/shop-api-7d9f8c6b5-x2k4p/worker] 2026-10-30T10:00:06.079542328Z 	at com.example.shop.Service.handle(Service.java:226)
+[pod/shop-api-7d9f8c6b5-x2k4p/worker] 2026-10-30T10:00:06.252594578Z 	at com.example.shop.Service.handle(Service.java:38)
+[pod/shop-api-7d9f8c6b5-x2k4p/app] 2026-10-30T10:00:05.253388866Z I1030 10:00:18.203975       1 sync.go:235] payment authorised
+[pod/shop-api-7d9f8c6b5-q9w7z/app] 2026-10-30T10:00:05.196196865Z {"level":"info","ts":"2026-10-30T10:00:18.211Z","msg":"cache miss","request_id":"e4978162e47d","path":"/api/orders","status":200,"dur_ms":293.2}
+[pod/shop-api-7d9f8c6b5-x2k4p/sidecar] 2026-10-30T10:00:05.055145981Z {"level":"info","ts":"2026-10-30T10:00:18.438Z","msg":"order created","request_id":"59ceba413feb","path":"/api/users/me","status":500,"dur_ms":135.7}
+[pod/shop-api-7d9f8c6b5-x2k4p/worker] 2026-10-30T10:00:06.254500765Z {"level":"info","ts":"2026-10-30T10:00:18.682Z","msg":"payment authorised","request_id":"3b38d52197c9","path":"/api/orders","status":201,"dur_ms":828.4}
+[pod/shop-api-7d9f8c6b5-q9w7z/app] 2026-10-30T10:00:05.286828873Z {"level":"warn","ts":"2026-10-30T10:00:18.809Z","msg":"payment authorised","request_id":"e202d1dbfb98","path":"/api/cart","status":201,"dur_ms":360.6,"user":{"id":1392,"roles":["admin","dev"]}}
+[pod/shop-api-7d9f8c6b5-q9w7z/worker] 2026-10-30T10:00:03.780507527Z [INFO] config reloaded
+[pod/shop-api-7d9f8c6b5-x2k4p/worker] 2026-10-30T10:00:06.582690948Z [INFO] retrying upstream call
+[pod/shop-api-7d9f8c6b5-x2k4p/worker] 2026-10-30T10:00:06.732666121Z {"level":"error","ts":"2026-10-30T10:00:19.282Z","msg":"cache miss","request_id":"70f280cea686","path":"/api/cart","status":201,"dur_ms":117.1}
+[pod/shop-api-7d9f8c6b5-x2k4p/sidecar] 2026-10-30T10:00:05.411040561Z 2026-10-30 10:00:19,378 ERROR [main] java.lang.IllegalStateException: order 98664 in bad state
+[pod/shop-api-7d9f8c6b5-x2k4p/sidecar] 2026-10-30T10:00:05.464239503Z 	at com.example.shop.Service.handle(Service.java:276)
+[pod/shop-api-7d9f8c6b5-x2k4p/sidecar] 2026-10-30T10:00:05.622Z 	at com.example.shop.Service.handle(Service.java:273)
+[pod/shop-api-7d9f8c6b5-x2k4p/sidecar] 2026-10-30T10:00:05.905284911Z 	at com.example.shop.Service.handle(Service.java:69)
+[pod/shop-api-7d9f8c6b5-x2k4p/sidecar] 2026-10-30T10:00:06.225516923Z 	at com.example.shop.Service.handle(Service.java:97)
+[pod/shop-api-7d9f8c6b5-q9w7z/sidecar] 2026-10-30T10:00:08.187339638Z {"level":"info","ts":"2026-10-30T10:00:19.521Z","msg":"retrying upstream call","request_id":"f761e51020e8","path":"/api/orders","status":201,"dur_ms":48.1}
+[pod/shop-api-7d9f8c6b5-q9w7z/worker] 2026-10-30T10:00:03.898464986Z {"level":"info","ts":"2026-10-30T10:00:19.621Z","msg":"connection pool resized","request_id":"6a2de9d654ab","path":"/api/users/me","status":500,"dur_ms":738.7,"user":{"id":5665,"roles":["admin","dev"]}}
+[pod/shop-api-7d9f8c6b5-q9w7z/worker] 2026-10-30T10:00:03.933619842Z I1030 10:00:19.678478       1 server.go:113] slow query
+[pod/shop-api-7d9f8c6b5-q9w7z/sidecar] 2026-10-30T10:00:08.523640605Z {"level":"info","ts":"2026-10-30T10:00:19.732Z","msg":"payment authorised","request_id":"39d35464230d","path":"/api/checkout","status":404,"dur_ms":649.8}
+[pod/shop-api-7d9f8c6b5-q9w7z/worker] 2026-10-30T10:00:04.219602045Z {"level":"info","ts":"2026-10-30T10:00:19.806Z","msg":"connection pool resized","request_id":"b4ee2b1740e2","path":"/api/cart","status":500,"dur_ms":164.2}
+[pod/shop-api-7d9f8c6b5-q9w7z/sidecar] 2026-10-30T10:00:08.84Z I1030 10:00:19.912885       1 reflector.go:307] user signed in
+[pod/shop-api-7d9f8c6b5-q9w7z/worker] 2026-10-30T10:00:04.3415005Z order created (196f668c)
+[pod/shop-api-7d9f8c6b5-q9w7z/app] 2026-10-30T10:00:05.417641539Z time=2026-10-30T10:00:20.184Z level=debug msg="request served" path=/healthz dur=2.3s
+[pod/shop-api-7d9f8c6b5-q9w7z/worker] 2026-10-30T10:00:04.685695238Z {"level":"info","ts":"2026-10-30T10:00:20.276Z","msg":"retrying upstream call","request_id":"f609f729bd53","path":"/api/cart","status":200,"dur_ms":326.7}
+[pod/shop-api-7d9f8c6b5-x2k4p/sidecar] 2026-10-30T10:00:06.586333953Z request served (12926e71)
+[pod/shop-api-7d9f8c6b5-q9w7z/sidecar] 2026-10-30T10:00:09.031Z INFO request served
+[pod/shop-api-7d9f8c6b5-q9w7z/worker] 2026-10-30T10:00:04.686556187Z order created in 544ms
+[pod/shop-api-7d9f8c6b5-q9w7z/app] 2026-10-30T10:00:05.473700194Z [DEBUG] slow query
+[pod/shop-api-7d9f8c6b5-q9w7z/app] 2026-10-30T10:00:05.580090272Z 2026-10-30 10:00:20,477 ERROR [main] java.lang.IllegalStateException: order 95102 in bad state
+[pod/shop-api-7d9f8c6b5-q9w7z/app] 2026-10-30T10:00:05.973960606Z 	at com.example.shop.Service.handle(Service.java:247)
+[pod/shop-api-7d9f8c6b5-q9w7z/app] 2026-10-30T10:00:06.231498258Z 	at com.example.shop.Service.handle(Service.java:4)
+[pod/shop-api-7d9f8c6b5-q9w7z/app] 2026-10-30T10:00:06.34136231Z 	at com.example.shop.Service.handle(Service.java:100)
+[pod/shop-api-7d9f8c6b5-q9w7z/app] 2026-10-30T10:00:06.451522182Z 	at com.example.shop.Service.handle(Service.java:252)
+[pod/shop-api-7d9f8c6b5-q9w7z/app] 2026-10-30T10:00:06.766850914Z E1030 10:00:20.737771       1 sync.go:161] "slow query" key="ns/obj-9" attempt=3
+[pod/shop-api-7d9f8c6b5-x2k4p/worker] 2026-10-30T10:00:07.048127Z slow query (c2d45b8e)
+[pod/shop-api-7d9f8c6b5-x2k4p/app] 2026-10-30T10:00:05.610391894Z {"level":"info","ts":"2026-10-30T10:00:21.234Z","msg":"order created","request_id":"20c8b345fcc8","path":"/api/cart","status":500,"dur_ms":88.6}
+[pod/shop-api-7d9f8c6b5-q9w7z/sidecar] 2026-10-30T10:00:09.118952817Z time=2026-10-30T10:00:21.358Z level=debug msg="user signed in" path=/api/orders dur=0.6s
+[pod/shop-api-7d9f8c6b5-x2k4p/sidecar] 2026-10-30T10:00:06.612997768Z time=2026-10-30T10:00:21.472Z level=info msg="order created" path=/api/cart dur=1.6s
+[pod/shop-api-7d9f8c6b5-q9w7z/sidecar] 2026-10-30T10:00:09.127844538Z [INFO] user signed in
+[pod/shop-api-7d9f8c6b5-q9w7z/worker] 2026-10-30T10:00:05.029792885Z [INFO] slow query
+[pod/shop-api-7d9f8c6b5-q9w7z/worker] 2026-10-30T10:00:05.295989889Z [33mWARN[0m cache miss
+[pod/shop-api-7d9f8c6b5-x2k4p/app] 2026-10-30T10:00:05.942101353Z {"level":"info","ts":"2026-10-30T10:00:22.175Z","msg":"order created","request_id":"ced2d18e1bcc","path":"/api/cart","status":201,"dur_ms":440.6}
+[pod/shop-api-7d9f8c6b5-x2k4p/sidecar] 2026-10-30T10:00:06.925992587Z [INFO] payment authorised
+[pod/shop-api-7d9f8c6b5-q9w7z/sidecar] 2026-10-30T10:00:09.392207295Z {"level":"info","ts":"2026-10-30T10:00:22.582Z","msg":"retrying upstream call","request_id":"019b9d6e3db4","path":"/healthz","status":200,"dur_ms":681.9,"user":{"id":8147,"roles":["admin","dev"]}}
+[pod/shop-api-7d9f8c6b5-q9w7z/sidecar] 2026-10-30T10:00:09.717515878Z long: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+[pod/shop-api-7d9f8c6b5-q9w7z/worker] 2026-10-30T10:00:05.316033993Z I1030 10:00:22.659238       1 leaderelection.go:158] request served
+[pod/shop-api-7d9f8c6b5-q9w7z/app] 2026-10-30T10:00:07.13532483Z {"level":"info","ts":"2026-10-30T10:00:22.954Z","msg":"cache miss","request_id":"2a3e748b4cc9","path":"/api/users/me","status":201,"dur_ms":334.7}
+[pod/shop-api-7d9f8c6b5-x2k4p/app] 2026-10-30T10:00:06.05163275Z 2026-10-30 10:00:23,005 INFO [main] user signed in
+[pod/shop-api-7d9f8c6b5-q9w7z/worker] 2026-10-30T10:00:05.542714335Z {"level":"info","ts":"2026-10-30T10:00:23.154Z","msg":"connection pool resized","request_id":"deeb4e4d7e08","path":"/api/cart","status":500,"dur_ms":728.5}
+[pod/shop-api-7d9f8c6b5-q9w7z/app] 2026-10-30T10:00:07.394689155Z [INFO] cache miss
+[pod/shop-api-7d9f8c6b5-x2k4p/sidecar] 2026-10-30T10:00:07.041939728Z DEBUG request served
+[pod/shop-api-7d9f8c6b5-q9w7z/worker] 2026-10-30T10:00:05.830946494Z {"level":"error","ts":"2026-10-30T10:00:23.554Z","msg":"queue drained","request_id":"73fcace83a9e","path":"/api/users/me","status":500,"dur_ms":541.6}
+[pod/shop-api-7d9f8c6b5-x2k4p/app] 2026-10-30T10:00:06.081403092Z {"level":"info","ts":"2026-10-30T10:00:23.740Z","msg":"queue drained","request_id":"9c45bf5a6f35","path":"/healthz","status":500,"dur_ms":384.9}
+[pod/shop-api-7d9f8c6b5-x2k4p/app] 2026-10-30T10:00:06.402881409Z I1030 10:00:23.774742       1 sync.go:368] payment authorised
+[pod/shop-api-7d9f8c6b5-q9w7z/app] 2026-10-30T10:00:07.578536783Z Traceback (most recent call last):
+[pod/shop-api-7d9f8c6b5-q9w7z/app] 2026-10-30T10:00:07.845437565Z   File "/app/worker.py", line 4, in run
+[pod/shop-api-7d9f8c6b5-q9w7z/app] 2026-10-30T10:00:08.22031484Z     raise ValueError('bad payload')

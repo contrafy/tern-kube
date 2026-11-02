@@ -512,7 +512,6 @@ end
 export type LensSupport = { supported: boolean, reason: string? }
 
 local RAW_VERBS: { [string]: string } = {
-	logs = "Logs stream as plain text; showing raw output.",
 	exec = "exec runs an interactive command in a container; showing raw output.",
 	attach = "attach connects to a running container; showing raw output.",
 	["port-forward"] = "port-forward is a long-running tunnel; showing raw output.",
@@ -527,6 +526,8 @@ local NATIVE_VERBS = {
 	get = true,
 	describe = true,
 	top = true,
+	logs = true,
+	events = true,
 	apply = true,
 	delete = true,
 	scale = true,
@@ -536,6 +537,29 @@ local NATIVE_VERBS = {
 	cordon = true,
 	uncordon = true,
 }
+
+-- `kubectl events` or a `get` of Events only (`ev`, `event`, `events`,
+-- `events.events.k8s.io`): the lens reads these as an events timeline.
+function M.isEventsListing(inv: Invocation): boolean
+	if inv.verb == "events" then
+		return true
+	end
+	if inv.verb ~= "get" or #inv.resources == 0 then
+		return false
+	end
+	for _, r in inv.resources do
+		if r.kind ~= "Event" or r.name ~= nil then
+			return false
+		end
+	end
+	return true
+end
+
+-- Event watches append rows to one table, which the lens can read; other
+-- watches rewrite rows in place.
+local function nativeWatch(inv: Invocation): boolean
+	return M.isEventsListing(inv) and (inv.output == "table" or inv.output == "wide")
+end
 
 local NATIVE_ROLLOUTS = { restart = true, undo = true, pause = true, resume = true }
 
@@ -559,7 +583,7 @@ function M.lensSupport(inv: Invocation): LensSupport
 	if inv.flags.raw ~= nil then
 		return { supported = false, reason = "--raw prints the API response verbatim; showing raw output." }
 	end
-	if inv.watch then
+	if inv.watch and not nativeWatch(inv) then
 		return {
 			supported = false,
 			reason = "Watch mode streams changes; run without -w/--watch for a native view.",

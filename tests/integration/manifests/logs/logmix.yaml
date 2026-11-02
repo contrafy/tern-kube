@@ -1,0 +1,58 @@
+# Log formats the logs lens parses (JSON, klog, logfmt, Java stack, ANSI,
+# 3000-char line, plain level tokens) in three containers: `app` keeps
+# ticking once a second, `side` beats every 3 s, `crashy` exits 2 after 20 s
+# so `logs -p -c crashy` has a previous instance.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tk-logmix
+  namespace: tern-test-logs
+  labels:
+    app: tk-logmix
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: tk-logmix
+  template:
+    metadata:
+      labels:
+        app: tk-logmix
+    spec:
+      terminationGracePeriodSeconds: 1
+      containers:
+        - name: app
+          image: busybox:1.37
+          command:
+            - sh
+            - -c
+            - |
+              long=$(printf 'x%.0s' $(seq 1 3000))
+              echo '{"level":"info","ts":"2026-10-30T10:00:00Z","msg":"server started","port":8080}'
+              echo 'I1030 10:00:01.123456       1 controller.go:42] "Starting workers" count=2'
+              echo 'W1030 10:00:02.000001       1 reflector.go:7] watch closed'
+              echo 'E1030 10:00:03.000001       1 sync.go:99] "sync failed" err="boom"'
+              echo 'time=2026-10-30T10:00:04Z level=warn msg="slow request" path=/api dur=2.1s'
+              echo '2026-10-30 10:00:05,123 ERROR [main] java.lang.IllegalStateException: bad'
+              echo '	at com.example.Main.run(Main.java:10)'
+              echo '	at com.example.Main.main(Main.java:3)'
+              echo "long: $long"
+              echo '[WARNING] deprecated flag --foo'
+              printf '\033[31mred ansi error line\033[0m\n'
+              i=0
+              while true; do
+                i=$((i+1))
+                case $((i % 4)) in
+                  0) echo "{\"level\":\"error\",\"msg\":\"tick $i failed\",\"i\":$i}" ;;
+                  1) echo "{\"level\":\"info\",\"msg\":\"tick $i\",\"i\":$i}" ;;
+                  2) echo "level=debug msg=\"tick $i\"" ;;
+                  3) echo "WARN tick $i" ;;
+                esac
+                sleep 1
+              done
+        - name: side
+          image: busybox:1.37
+          command: ["sh", "-c", "i=0; while true; do i=$((i+1)); echo \"side: beat $i\"; sleep 3; done"]
+        - name: crashy
+          image: busybox:1.37
+          command: ["sh", "-c", "echo crashy: starting; echo 'panic: runtime error: index out of range'; sleep 20; exit 2"]

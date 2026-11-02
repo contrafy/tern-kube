@@ -56,7 +56,6 @@ describe("argv.lensSupport", function()
 			{ "get pods --template={{.kind}}", "-o json" },
 			{ "get pods -o custom-columns-file=c.txt", "custom-columns=" },
 			{ "get --raw /healthz", "--raw" },
-			{ "logs web-0", "raw" },
 			{ "exec web-0 -- ls", "raw" },
 			{ "port-forward svc/web 80", "raw" },
 			{ "edit deploy/web", "raw" },
@@ -74,6 +73,58 @@ describe("argv.lensSupport", function()
 			expect(s.supported).toBe(false)
 			expect(s.reason).toContain(c[2])
 		end
+	end)
+
+	-- Logs get the records view; event listings (including their watches,
+	-- which only append rows) the events table. Track 2 plan 4.1.
+	it("offers native views for logs and event listings, watches included", function()
+		for _, line in
+			{
+				"logs web-0",
+				"logs deploy/web -c app --prefix --timestamps",
+				"logs -f -l app=web --all-containers",
+				"-n x logs pod get y",
+				"events",
+				"events -A",
+				"events --for pod/x --types=Warning",
+				"events -w",
+				"get events",
+				"get ev -o wide",
+				"get events -w",
+				"get events --watch-only",
+				"get events -w --output-watch-events",
+				"get events.events.k8s.io -w",
+				"events -o json",
+			}
+		do
+			local s = support(line)
+			expect(s.supported).toBe(true)
+		end
+	end)
+
+	it("keeps other watches raw: their rows are rewritten in place", function()
+		for _, line in { "get pods -w", "get events,pods -w", "get event x -w", "get events -w -o json" } do
+			local s = support(line)
+			expect(s.supported).toBe(false)
+			expect(s.reason).toContain("watch")
+		end
+	end)
+
+	it("names an events listing whatever spelling the type uses", function()
+		local function listing(line: string): boolean
+			local args = {}
+			for word in string.gmatch(line, "%S+") do
+				table.insert(args, word)
+			end
+			return argv.isEventsListing(argv.parse("kubectl", args))
+		end
+		expect(listing("events -A")).toBe(true)
+		expect(listing("get ev")).toBe(true)
+		expect(listing("get event")).toBe(true)
+		expect(listing("get events.events.k8s.io")).toBe(true)
+		expect(listing("get events,pods")).toBe(false)
+		expect(listing("get pods")).toBe(false)
+		expect(listing("logs pod")).toBe(false)
 	end)
 end)
 

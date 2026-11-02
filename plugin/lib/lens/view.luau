@@ -2,19 +2,22 @@
 -- Lens view dispatch: header bar plus the body for the capture's mode. nil
 -- means "show raw": unsupported commands, empty output, nothing understood.
 
+local Argv = require("../kubectl/argv")
 local Capture = require("./capture")
 local DescribeView = require("../render/describe_view")
 local Header = require("../render/header")
 local MutationView = require("../render/mutation_view")
 local TableView = require("../render/table_view")
 local Viewstate = require("./viewstate")
+local Types = require("../model/types")
 local YamlView = require("../render/yaml_view")
 local ui = require("../ui")
 
 type Capture = Capture.Capture
 type Node = ui.Node
 type ViewState = Viewstate.ViewState
-export type Options = TableView.Options
+-- notes: muted header lines (a native view of a still-running watch).
+export type Options = { pageSize: number?, mutations: boolean?, notes: { string }? }
 
 local M = {}
 
@@ -31,12 +34,16 @@ function M.render(capture: Capture, vs: ViewState, opts: Options?): Node?
 	if mode == "raw" or capture.lineCount == 0 then
 		return nil
 	end
+	local notes = if opts then opts.notes else nil
 	if mode == "table" or mode == "name" or mode == "json" then
-		local body, counts = TableView.render(capture, vs, opts)
+		local tableOpts: TableView.Options? = if opts
+			then { pageSize = opts.pageSize, mutations = opts.mutations }
+			else nil
+		local body, counts = TableView.render(capture, vs, tableOpts)
 		if body == nil and #capture.diagnostics == 0 then
 			return nil
 		end
-		return wrap(capture, Header.render(capture, vs, if body then counts else nil), body)
+		return wrap(capture, Header.render(capture, vs, if body then counts else nil, notes), body)
 	end
 	local body: Node
 	if mode == "describe" then
@@ -46,7 +53,14 @@ function M.render(capture: Capture, vs: ViewState, opts: Options?): Node?
 	else
 		body = YamlView.render(capture, vs, Viewstate)
 	end
-	return wrap(capture, Header.render(capture, vs, nil), body)
+	return wrap(capture, Header.render(capture, vs, nil, notes), body)
+end
+
+-- Running policy (general.streaming_view): while an event watch runs, Raw
+-- is live and a plugin view trails it (Tern hands lens lines over late), so
+-- the lens stays raw until the watch stops unless the user opted in.
+function M.rawWhileRunning(inv: Types.Invocation, streamingView: "raw" | "native"): boolean
+	return inv.watch and Argv.isEventsListing(inv) and streamingView ~= "native"
 end
 
 return M

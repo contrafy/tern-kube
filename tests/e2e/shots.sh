@@ -1,10 +1,12 @@
 # Screenshots for docs/screenshots/m1-<view>-<theme>-<size>.png,
 # m2-<view>-<theme>-wide.png, m3-{result,guard,diff-expanded}-<theme>-wide.png,
-# m3b-<view>-<theme>-wide.png, m4-settings-<theme>-wide.png and
-# t1-{label-diff,drain-preview,undo-diff,edit-approve}-dark-wide.png (sourced
-# by scripts/e2e.sh --shots). E2E_SHOTS limits the groups (space-separated:
-# m1 m2 m3 m3b m4 t1; default all). Every shot is of the live sandbox window
-# with the plugin loaded; check each PNG by eye before committing.
+# m3b-<view>-<theme>-wide.png, m4-settings-<theme>-wide.png,
+# t1-{label-diff,drain-preview,undo-diff,edit-approve}-dark-wide.png and
+# t2-{logs,logs-multi,logs-context,events-lens,explore-events,explore-logs}-dark-wide.png
+# (sourced by scripts/e2e.sh --shots). E2E_SHOTS limits the groups
+# (space-separated: m1 m2 m3 m3b m4 t1 t2; default all). Every shot is of the
+# live sandbox window with the plugin loaded; check each PNG by eye before
+# committing.
 
 shots_dir="$E2E_REPO/docs/screenshots"
 
@@ -269,8 +271,84 @@ shots_t1() {
 	reset_pane
 }
 
+t2_shot() { # t2_shot VIEW
+	dev shot "t2-$1-$theme-wide" "$shots_dir/t2-$1-$theme-wide.png" >/dev/null || fail "shot t2 $1"
+}
+
+# The logs lens on tk-logmix (tern-test-logs), a 25 000-line fake log's
+# context jump and the events views of tern-test-apps, as scenarios 40, 41,
+# 44, 46, 47 and 49. Nothing mutates.
+shots_t2() {
+	reset_pane
+	pod=$(logmix_pod) || {
+		fail "no tk-logmix pod in $LNS"
+		return
+	}
+	lens "kubectl logs -n $LNS $pod -c app"
+	logs_native || return
+	if has '[data-role="tern-kube.pages"]'; then
+		click_text 1 '[data-role="tern-kube.pages"] .sf-act' || return
+	fi
+	click_text 'server started*' '.tk-grid .tk-c' || return
+	top
+	t2_shot logs
+
+	lens "kubectl logs -n $LNS -l app=tk-logmix --all-containers --prefix --timestamps --tail=6"
+	logs_native || return
+	click_text 'By time' '[data-role="tern-kube.chips"] .sf-act' || return
+	t2_shot logs-multi
+
+	# FAKE: no kind container logs 25 000 lines on demand (as scenario 44).
+	dir=$E2E_SB/fake-logs
+	mkdir -p "$dir"
+	awk 'BEGIN {
+		for (i = 1; i <= 25000; i++) {
+			if (i % 997 == 0) printf "{\"level\":\"error\",\"msg\":\"request %d failed\",\"code\":500}\n", i
+			else if (i % 13 == 0) printf "level=warn msg=\"slow request %d\" dur=2.1s\n", i
+			else printf "{\"level\":\"info\",\"msg\":\"request %d\",\"path\":\"/api\"}\n", i
+		}
+	}' >"$dir/logs_big-0.txt"
+	sh_line "tk_fake '$dir'"
+	E2E_WAIT=60 lens 'kubectl logs big-0'
+	logs_native || return
+	click_text 'First error' '[data-role="tern-kube.chips"] .sf-act' || return
+	E2E_WAIT=5 wait_for "the context view" has '[data-role="tern-kube.context"]' || return
+	top
+	t2_shot logs-context
+	real
+
+	lens "kubectl events -n tern-test-apps"
+	native || return
+	t2_shot events-lens
+
+	lens "kubectl --context kind-tern-kube-dev get pods -n tern-test-apps"
+	click_text crashloop '.tk-grid .tk-c'
+	click_text 'Explore live'
+	explore_open || return
+	xwait 'Object pod/crashloop'
+	xkey escape
+	xwait 'crashloop' '.tk-grid *'
+	xkey v
+	xwait "events · ns tern-test-apps"
+	t2_shot explore-events
+	explore_close
+
+	lens "kubectl --context kind-tern-kube-dev get pods -n $LNS -l app=tk-logmix"
+	click_text "$pod" '.tk-grid .tk-c'
+	click_text 'Explore live'
+	explore_open || return
+	xwait "Object pod/$pod"
+	xkey L
+	xwait "Logs pod/$pod"
+	xwait '--tail=500' '[data-role="tern-kube.logs-summary"] *'
+	xkey ]
+	t2_shot explore-logs
+	explore_close
+	reset_pane
+}
+
 wants() {
-	case " ${E2E_SHOTS:-m1 m2 m3 m3b m4 t1} " in *" $1 "*) true ;; *) false ;; esac
+	case " ${E2E_SHOTS:-m1 m2 m3 m3b m4 t1 t2} " in *" $1 "*) true ;; *) false ;; esac
 }
 
 echo "SHOTS -> $shots_dir"
@@ -292,6 +370,7 @@ for theme in light dark; do
 			wants m4 && shots_m4
 			if [ $theme = dark ]; then
 				wants t1 && shots_t1
+				wants t2 && shots_t2
 			fi
 		fi
 	done

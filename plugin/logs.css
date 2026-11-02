@@ -1,0 +1,42 @@
+/* Logs lens (lib/logs/render.luau) and Warning rows of the events table.
+   Error and warning lines are marked so they stand out in a long log; Wrap
+   lets long lines break instead of ending in an ellipsis. */
+
+/* --bad-fill is Tern's solid button fill; under it the red ERROR badge and
+   the error-toned cells are unreadable, so rows get a light tint and a bar. */
+.tk-grid .tk-lvl-error .tk-c {
+	background: color-mix(in srgb, var(--bad) 14%, transparent);
+}
+
+.tk-grid .tk-lvl-error .tk-c:first-child {
+	box-shadow: inset 3px 0 0 var(--bad);
+}
+
+.tk-grid .tk-lvl-warn .tk-c:first-child {
+	box-shadow: inset 3px 0 0 var(--warn);
+}
+
+.tk-logs.tk-lwrap .tk-c {
+	white-space: normal;
+}
+
+.tk-logs.tk-lwrap .tk-c .sf-text {
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+}
+
+.tk-grid .tk-divider {
+	grid-column: 1 / -1;
+	padding: 6px 6px 2px;
+	color: var(--t3);
+	border-top: 1px solid var(--l2);
+}
+
+[data-role="tern-kube.logs-actions"] .sf-act,
+[data-role="tern-kube.context"] .sf-act {
+	cursor: pointer;
+}
+
+[data-role="tern-kube.chip-off"] {
+	opacity: 0.6;
+}

@@ -130,7 +130,8 @@ local function helpNode(): Node
 	return ui.card({ "Tern Kube" }, { ui.kv(items) }, { key = "help", role = "tern-kube.help" })
 end
 
-function M.render(capture: Capture, vs: ViewState, counts: Counts?): Node
+-- `notes`: muted lines under the bar (a live view that trails the stream).
+function M.render(capture: Capture, vs: ViewState, counts: Counts?, notes: { string }?): Node
 	local inv = capture.invocation
 	local top: { Node } = {
 		ui.badge("Snapshot", "muted", { title = "Captured output of this command; not live" }),
@@ -145,7 +146,9 @@ function M.render(capture: Capture, vs: ViewState, counts: Counts?): Node
 	end
 	-- mutation_view shows the exit status and kubectl errors in its result.
 	local bodyReports = capture.mode == "mutation"
-	if capture.status ~= nil and capture.status ~= 0 and not bodyReports then
+	if capture.interrupted and capture.status ~= nil and capture.status ~= 0 then
+		table.insert(top, ui.badge("stopped (Ctrl-C)", "neutral", { role = "tern-kube.stopped" }))
+	elseif capture.status ~= nil and capture.status ~= 0 and not bodyReports then
 		table.insert(top, ui.badge("exit " .. capture.status, "error", { role = "tern-kube.exit" }))
 	end
 	if capture.unparsed > 0 then
@@ -166,6 +169,11 @@ function M.render(capture: Capture, vs: ViewState, counts: Counts?): Node
 		})
 	)
 	local children: { Node } = { ui.row(top, { key = "bar", wrap = true, role = "tern-kube.bar" }) }
+	if notes then
+		for i, note in notes do
+			table.insert(children, ui.text({ ui.span(note, "muted") }, { key = "note" .. i, role = "tern-kube.note" }))
+		end
+	end
 	-- yaml_view shows its own banner next to the masked YAML.
 	if capture.mode ~= "yaml" then
 		for i, notice in Redact.notices(capture.policy, capture.sensitive, capture.masked, M.SENSITIVE) do

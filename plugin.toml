@@ -1,15 +1,16 @@
 schema = 1
 id = "tern-kube"
 name = "Tern Kube"
-version = "0.2.0"
+version = "0.3.0"
 description = "Native views for kubectl output, with an explicit Explore block and an opt-in mutation guard."
 icon = "box"
 host = "plugin/host.luau"
 window = "plugin/window.luau"
-styles = ["plugin/tern-kube.css", "plugin/explore.css", "plugin/mutate.css", "plugin/settings.css"]
+styles = ["plugin/tern-kube.css", "plugin/explore.css", "plugin/mutate.css", "plugin/settings.css", "plugin/logs.css"]
 
 # Globs over-claim (`kubectl -* get *` also matches `kubectl -n x logs pod get`);
-# the lens re-derives the verb from argv and returns raw for anything else.
+# the lens re-derives the verb from argv (logs, events or the table/describe/
+# mutation pipeline) and returns raw for anything it cannot show.
 [[lenses]]
 id = "kubectl"
 match = [
@@ -29,6 +30,9 @@ match = [
 	"kubectl rollout undo *",
 	"kubectl rollout pause *",
 	"kubectl rollout resume *",
+	"kubectl logs *",
+	"kubectl events",
+	"kubectl events *",
 	"kubectl -* get",
 	"kubectl -* get *",
 	"kubectl -* describe *",
@@ -45,6 +49,9 @@ match = [
 	"kubectl -* rollout undo *",
 	"kubectl -* rollout pause *",
 	"kubectl -* rollout resume *",
+	"kubectl -* logs *",
+	"kubectl -* events",
+	"kubectl -* events *",
 	"kubecolor get",
 	"kubecolor get *",
 	"kubecolor describe *",
@@ -61,6 +68,9 @@ match = [
 	"kubecolor rollout undo *",
 	"kubecolor rollout pause *",
 	"kubecolor rollout resume *",
+	"kubecolor logs *",
+	"kubecolor events",
+	"kubecolor events *",
 	"kubecolor -* get",
 	"kubecolor -* get *",
 	"kubecolor -* describe *",
@@ -77,6 +87,9 @@ match = [
 	"kubecolor -* rollout undo *",
 	"kubecolor -* rollout pause *",
 	"kubecolor -* rollout resume *",
+	"kubecolor -* logs *",
+	"kubecolor -* events",
+	"kubecolor -* events *",
 	# BEGIN tern-kube aliases
 	# END tern-kube aliases
 ]

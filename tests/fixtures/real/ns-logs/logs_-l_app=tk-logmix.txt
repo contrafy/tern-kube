@@ -1,0 +1,20 @@
+{"level":"error","msg":"tick 1344 failed","i":1344}
+{"level":"info","msg":"tick 1345","i":1345}
+level=debug msg="tick 1346"
+WARN tick 1347
+{"level":"error","msg":"tick 1348 failed","i":1348}
+{"level":"info","msg":"tick 1349","i":1349}
+level=debug msg="tick 1350"
+WARN tick 1351
+{"level":"error","msg":"tick 1352 failed","i":1352}
+{"level":"info","msg":"tick 1353","i":1353}
+{"level":"error","msg":"tick 1336 failed","i":1336}
+{"level":"info","msg":"tick 1337","i":1337}
+level=debug msg="tick 1338"
+WARN tick 1339
+{"level":"error","msg":"tick 1340 failed","i":1340}
+{"level":"info","msg":"tick 1341","i":1341}
+level=debug msg="tick 1342"
+WARN tick 1343
+{"level":"error","msg":"tick 1344 failed","i":1344}
+{"level":"info","msg":"tick 1345","i":1345}

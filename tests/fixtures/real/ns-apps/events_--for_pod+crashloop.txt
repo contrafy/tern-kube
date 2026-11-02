@@ -1,0 +1,3 @@
+LAST SEEN                TYPE      REASON    OBJECT          MESSAGE
+3m46s (x54 over 2d19h)   Normal    Pulled    Pod/crashloop   Container image "busybox:1.37" already present on machine and can be accessed by the pod
+60s (x136 over 2d19h)    Warning   BackOff   Pod/crashloop   Back-off restarting failed container app in pod crashloop_tern-test-apps(612bd4fb-9419-49e0-b261-abadd277c0e8)

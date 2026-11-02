@@ -15,6 +15,11 @@
 -- behaves the same under zsh, bash and fish, sets the pane title to the
 -- target, echoes the effective context when it is not pinned, and execs
 -- kubectl so its exit status is the pane's.
+--
+-- `logs` ("Run in split") is the exception: Tern lenses only commands typed
+-- at a prompt, so typedLine() builds a plain kubectl line the window types
+-- into a new interactive split. That line meets the user's own shell (zsh,
+-- bash or fish), so it holds only words all three read literally.
 
 local Command = require("../kubectl/command")
 local Kinds = require("../kubectl/kinds")
@@ -22,7 +27,15 @@ local Types = require("../model/types")
 
 type Ref = Types.ResourceRef
 
-export type ActionId = "shell" | "logs-follow" | "port-forward" | "debug-pod" | "debug-node" | "cronjob-run" | "edit"
+export type ActionId =
+	"shell"
+	| "logs-follow"
+	| "port-forward"
+	| "debug-pod"
+	| "debug-node"
+	| "cronjob-run"
+	| "edit"
+	| "logs"
 
 -- How the window opens an action: directly, after the approve block's
 -- confirmation grant, or directly as an editor whose save the guard approves.
@@ -56,18 +69,29 @@ export type Opts = {
 	container: string?,
 	pod: string?,
 	selector: string?,
+	-- Namespace of a selector-only request (no ref); a ref carries its own.
+	namespace: string?,
 	port: number?,
 	localPort: number?,
 	image: string?,
 	suffix: string?,
 	confirm: string?,
+	-- `logs` variant flags; program is the lensed one (kubectl or kubecolor).
+	previous: boolean?,
+	since: string?,
+	tail: string?,
+	timestamps: boolean?,
+	prefix: boolean?,
+	allContainers: boolean?,
+	program: string?,
 }
 
 -- Local quick_actions config; nil or invalid fields keep the defaults.
 -- guardCore: absolute path of the plugin's shell/tern-kube-guard (edit).
 export type Settings = { shellCommand: { string }?, logsTail: number?, debugImage: string?, guardCore: string? }
 
-export type Request = { action: ActionId, target: Target, ref: Ref, opts: Opts }
+-- ref is nil only for selector-only logs (opts.selector, opts.namespace).
+export type Request = { action: ActionId, target: Target, ref: Ref?, opts: Opts }
 
 export type Launch = {
 	-- The kubectl invocation the line ends in (for display and copying).
@@ -77,6 +101,15 @@ export type Launch = {
 	-- What the split runs.
 	line: string,
 	title: string,
+}
+
+export type TypedLaunch = {
+	argv: { string },
+	-- What the window types (plus Enter). When `refusal` is set the line is
+	-- only for the clipboard: its POSIX-quoted form, never typed.
+	line: string,
+	title: string,
+	refusal: string?,
 }
 
 export type Placement = { how: "split", dir: "right" | "down" } | { how: "tab" }
@@ -170,8 +203,26 @@ local SPECS: { [string]: Spec } = {
 		anyKind = true,
 		params = set({ "group" }),
 	},
+	logs = {
+		label = "Run in split",
+		key = nil,
+		mutates = false,
+		kinds = set({ "Pod", "Deployment", "StatefulSet", "DaemonSet", "ReplicaSet", "Job" }),
+		params = set({
+			"container",
+			"selector",
+			"previous",
+			"since",
+			"tail",
+			"timestamps",
+			"prefix",
+			"allcontainers",
+			"program",
+		}),
+	},
 }
 
+-- `logs` is offered by the logs lens's variants only, never per resource.
 local ORDER: { ActionId } = { "shell", "logs-follow", "port-forward", "debug-pod", "debug-node", "cronjob-run", "edit" }
 M.ORDER = ORDER
 
@@ -184,15 +235,24 @@ local FIELDS = {
 	"container",
 	"pod",
 	"selector",
+	"previous",
+	"since",
+	"tail",
+	"timestamps",
+	"prefix",
+	"allcontainers",
 	"port",
 	"local",
 	"image",
 	"suffix",
+	"program",
 	"context",
 	"kubeconfig",
 	"confirm",
 }
 local COMMON = set({ "kind", "name", "namespace", "context", "kubeconfig" })
+-- Actions that may name pods by selector alone.
+local SELECTOR_ONLY = set({ "logs-follow", "logs" })
 
 -- Validation ------------------------------------------------------------------
 
@@ -289,9 +349,25 @@ local CHECKS: { [string]: (string) -> string? } = {
 	confirm = function(v)
 		return if #v <= 128 and string.find(v, "^[%w%-_]+$") ~= nil then nil else "confirm token is malformed"
 	end,
+	since = function(v)
+		return if #v <= 16 and string.find(v, "^[%d%.hms]+$") ~= nil
+			then nil
+			else "since must be a duration such as 5m or 1h30m"
+	end,
+	tail = function(v)
+		return if #v <= 10 and string.find(v, "^%-?%d+$") ~= nil then nil else "tail must be a line count"
+	end,
+	program = function(v)
+		return if v == "kubectl" or v == "kubecolor" then nil else "program must be kubectl or kubecolor"
+	end,
 }
+for _, k in { "previous", "timestamps", "prefix", "allcontainers" } do
+	CHECKS[k] = function(v)
+		return if v == "1" then nil else k .. " must be 1"
+	end
+end
 
-local function fieldsOf(action: string, target: Target, ref: Ref, opts: Opts): { [string]: string }
+local function fieldsOf(action: string, target: Target, ref: Ref?, opts: Opts): { [string]: string }
 	local f: { [string]: string } = {}
 	local function put(k: string, v: any)
 		if v ~= nil and v ~= "" then
@@ -302,20 +378,36 @@ local function fieldsOf(action: string, target: Target, ref: Ref, opts: Opts): {
 				else tostring(v)
 		end
 	end
-	put("kind", ref.kind)
-	local spec = SPECS[action :: ActionId]
-	if spec and spec.anyKind then
-		put("group", ref.group)
+	local function flag(k: string, v: boolean?)
+		if v == true then
+			f[k] = "1"
+		end
 	end
-	put("name", ref.name)
-	put("namespace", ref.namespace)
+	if ref then
+		put("kind", ref.kind)
+		local spec = SPECS[action :: ActionId]
+		if spec and spec.anyKind then
+			put("group", ref.group)
+		end
+		put("name", ref.name)
+		put("namespace", ref.namespace)
+	else
+		put("namespace", opts.namespace)
+	end
 	put("container", opts.container)
 	put("pod", opts.pod)
 	put("selector", opts.selector)
+	flag("previous", opts.previous)
+	put("since", opts.since)
+	put("tail", opts.tail)
+	flag("timestamps", opts.timestamps)
+	flag("prefix", opts.prefix)
+	flag("allcontainers", opts.allContainers)
 	put("port", opts.port)
 	put("local", opts.localPort)
 	put("image", opts.image)
 	put("suffix", opts.suffix)
+	put("program", opts.program)
 	put("context", target.context)
 	put("kubeconfig", target.kubeconfig)
 	put("confirm", opts.confirm)
@@ -352,6 +444,26 @@ local function validateAny(action: string, f: { [string]: string }): (Request?, 
 		nil
 end
 
+local function optsOf(f: { [string]: string }): Opts
+	return {
+		container = f.container,
+		pod = f.pod,
+		selector = f.selector,
+		port = if f.port then portNumber(f.port) else nil,
+		localPort = if f["local"] then portNumber(f["local"]) else nil,
+		image = f.image,
+		suffix = f.suffix,
+		confirm = f.confirm,
+		previous = if f.previous then true else nil,
+		since = f.since,
+		tail = f.tail,
+		timestamps = if f.timestamps then true else nil,
+		prefix = if f.prefix then true else nil,
+		allContainers = if f.allcontainers then true else nil,
+		program = f.program,
+	}
+end
+
 -- Checks a field set for `action`; returns the validated request or an error.
 local function validate(action: string, f: { [string]: string }, group: string?): (Request?, string?)
 	local spec = SPECS[action :: ActionId]
@@ -373,9 +485,23 @@ local function validate(action: string, f: { [string]: string }, group: string?)
 			end
 		end
 	end
+	if f.container and f.allcontainers then
+		return nil, "container and allcontainers exclude each other"
+	end
 	local kind = f.kind
+	if kind == nil and f.name == nil and f.selector and SELECTOR_ONLY[action] then
+		local opts = optsOf(f)
+		opts.namespace = f.namespace
+		return {
+			action = action :: ActionId,
+			target = { context = f.context, kubeconfig = f.kubeconfig },
+			ref = nil,
+			opts = opts,
+		},
+			nil
+	end
 	if kind == nil or f.name == nil then
-		return nil, action .. " needs kind and name"
+		return nil, action .. " needs kind and name" .. (if SELECTOR_ONLY[action] then ", or a selector" else "")
 	end
 	if spec.anyKind then
 		return validateAny(action, f)
@@ -396,7 +522,7 @@ local function validate(action: string, f: { [string]: string }, group: string?)
 		elseif kind ~= "Pod" and f.pod == nil then
 			return nil, "shell on a " .. kind .. " needs a ready pod"
 		end
-	elseif action == "logs-follow" and kind == "Pod" and f.selector then
+	elseif SELECTOR_ONLY[action] and kind == "Pod" and f.selector then
 		return nil, "logs of a Pod take no selector"
 	elseif action == "port-forward" and f["local"] and f.port == nil then
 		return nil, "a local port needs a port"
@@ -417,16 +543,7 @@ local function validate(action: string, f: { [string]: string }, group: string?)
 			namespace = f.namespace,
 			source = "live",
 		},
-		opts = {
-			container = f.container,
-			pod = f.pod,
-			selector = f.selector,
-			port = if f.port then portNumber(f.port) else nil,
-			localPort = if f["local"] then portNumber(f["local"]) else nil,
-			image = f.image,
-			suffix = f.suffix,
-			confirm = f.confirm,
-		},
+		opts = optsOf(f),
 	},
 		nil
 end
@@ -480,9 +597,9 @@ function M.available(kind: string, ref: Ref?, info: Info?): { Action }
 	return out
 end
 
-function M.encode(action: string, target: Target, ref: Ref, opts: Opts?): (string?, string?)
+function M.encode(action: string, target: Target, ref: Ref?, opts: Opts?): (string?, string?)
 	local f = fieldsOf(action, target, ref, opts or {})
-	local _, err = validate(action, f, ref.group)
+	local _, err = validate(action, f, if ref then ref.group else nil)
 	if err then
 		return nil, err
 	end
@@ -595,7 +712,7 @@ local function editCommand(req: Request, target: Target, s: Settings): (Launch?,
 	if core == nil or core == "" or string.sub(core, 1, 1) ~= "/" or not noControl(core) then
 		return nil, "shell/tern-kube-guard is missing from the plugin directory"
 	end
-	local r = req.ref
+	local r = req.ref :: Ref
 	local ctx = req.target.context
 	local argv: { string } = { "kubectl", "edit" }
 	if ctx then
@@ -621,14 +738,28 @@ local function editCommand(req: Request, target: Target, s: Settings): (Launch?,
 	return { argv = argv, line = "sh -c " .. Command.quote(table.concat(script, "; ")), title = title }, nil
 end
 
+-- Following by selector: every matching pod, attributed by --prefix.
+local function followSelector(o: Opts): { string }
+	local out = { "-l", o.selector :: string, "--prefix", "--max-log-requests=" .. M.MAX_LOG_REQUESTS }
+	if o.container then
+		append(out, { "-c", o.container })
+	else
+		table.insert(out, "--all-containers")
+	end
+	return out
+end
+
 -- The command a validated request runs. Validation is repeated so a caller
 -- cannot skip decode().
-function M.command(action: string, target: Target, ref: Ref, opts: Opts?, settings: Settings?): (Launch?, string?)
+function M.command(action: string, target: Target, ref: Ref?, opts: Opts?, settings: Settings?): (Launch?, string?)
 	local o: Opts = opts or {}
 	local s: Settings = settings or {}
-	local req, err = validate(action, fieldsOf(action, target, ref, o), ref.group)
+	local req, err = validate(action, fieldsOf(action, target, ref, o), if ref then ref.group else nil)
 	if req == nil then
 		return nil, err
+	end
+	if M.typed(action) then
+		return nil, action .. " is typed into an interactive split"
 	end
 	if action == "edit" then
 		return editCommand(req, target, s)
@@ -640,15 +771,23 @@ function M.command(action: string, target: Target, ref: Ref, opts: Opts?, settin
 	end
 	local program = if target.program and target.program ~= "" then target.program else "kubectl"
 	local conn = connection(req.target)
-	local ns: { string } = if r.namespace then { "-n", r.namespace } else {}
-	local typed = KINDS[r.kind].token .. "/" .. r.name
-	local where = (if r.namespace then r.namespace .. "/" else "") .. r.name
+	local nsName = if r then r.namespace else o.namespace
+	local ns: { string } = if nsName then { "-n", nsName } else {}
+	local typed = if r then KINDS[r.kind].token .. "/" .. r.name else ""
+	local where = if r then (if r.namespace then r.namespace .. "/" else "") .. r.name else ""
 	local argv: { string } = { program }
 	local pre: { string } = {}
 	local post: { string } = {}
 	local title: string
 
-	if action == "shell" then
+	if r == nil then
+		-- validate() admits no object only for a selector-only follow here.
+		append(argv, { "logs", "-f", "--tail=" .. tailOf(s.logsTail) })
+		append(argv, conn)
+		append(argv, ns)
+		append(argv, followSelector(o))
+		title = "logs -l " .. (o.selector :: string) .. (if nsName then " -n " .. nsName else "")
+	elseif action == "shell" then
 		append(argv, { "exec", "-it" })
 		append(argv, conn)
 		append(argv, ns)
@@ -675,12 +814,7 @@ function M.command(action: string, target: Target, ref: Ref, opts: Opts?, settin
 				append(argv, { "--all-containers", "--prefix" })
 			end
 		elseif o.selector then
-			append(argv, { "-l", o.selector, "--prefix", "--max-log-requests=" .. M.MAX_LOG_REQUESTS })
-			if o.container then
-				append(argv, { "-c", o.container })
-			else
-				table.insert(argv, "--all-containers")
-			end
+			append(argv, followSelector(o))
 		else
 			table.insert(argv, typed)
 			if o.container then
@@ -772,6 +906,94 @@ function M.placement(value: any): Placement
 		return { how = "tab" }
 	end
 	return { how = "split", dir = "right" }
+end
+
+function M.typed(action: string): boolean
+	return action == "logs"
+end
+
+-- Words every interactive shell reads literally; a leading `=` is zsh's
+-- command-path expansion.
+local function bare(w: string): boolean
+	return string.find(w, "^[%w%-%._/:=,@]+$") ~= nil and string.sub(w, 1, 1) ~= "="
+end
+
+-- Single quotes are literal in sh, bash and zsh, but fish still reads `\'`
+-- and `\\` inside them, and a quote cannot be escaped in all four alike.
+local function typable(w: string): boolean
+	return string.find(w, "['\\%c]") == nil
+end
+
+-- The `logs` variant as a plain kubectl line for an interactive prompt,
+-- rebuilt from validated fields only. A word no quoting keeps literal in
+-- every shell sets `refusal`; `line` is then a POSIX copy for the clipboard.
+function M.typedLine(target: Target, ref: Ref?, opts: Opts): (TypedLaunch?, string?)
+	local req, err = validate("logs", fieldsOf("logs", target, ref, opts), if ref then ref.group else nil)
+	if req == nil then
+		return nil, err
+	end
+	local o = req.opts
+	local r = req.ref
+	local argv: { string } = { o.program or "kubectl", "logs" }
+	append(argv, connection(req.target))
+	local nsName = if r then r.namespace else o.namespace
+	if nsName then
+		append(argv, { "-n", nsName })
+	end
+	local what: string
+	if r then
+		local where = (if r.namespace then r.namespace .. "/" else "") .. r.name
+		if r.kind == "Pod" then
+			table.insert(argv, r.name)
+			what = where
+		else
+			local token = KINDS[r.kind].token
+			table.insert(argv, token .. "/" .. r.name)
+			what = token .. " " .. where
+		end
+	else
+		append(argv, { "-l", o.selector :: string })
+		what = "-l " .. (o.selector :: string) .. (if nsName then " -n " .. nsName else "")
+	end
+	if o.container then
+		append(argv, { "-c", o.container })
+		what ..= if r then ":" .. o.container else " -c " .. o.container
+	elseif o.allContainers then
+		table.insert(argv, "--all-containers")
+	end
+	if o.previous then
+		table.insert(argv, "--previous")
+	end
+	if o.since then
+		table.insert(argv, "--since=" .. o.since)
+	end
+	if o.tail then
+		table.insert(argv, "--tail=" .. o.tail)
+	end
+	if o.timestamps then
+		table.insert(argv, "--timestamps")
+	end
+	if o.prefix then
+		table.insert(argv, "--prefix")
+	end
+	local title = "tern-kube logs " .. what .. " @ " .. (req.target.context or "current context")
+	local words: { string } = table.create(#argv)
+	for i, w in argv do
+		if bare(w) then
+			words[i] = w
+		elseif typable(w) then
+			words[i] = "'" .. w .. "'"
+		else
+			return {
+				argv = argv,
+				line = Command.format(argv),
+				title = title,
+				refusal = "a quote or backslash in the command cannot be typed safely into every shell",
+			},
+				nil
+		end
+	end
+	return { argv = argv, line = table.concat(words, " "), title = title }, nil
 end
 
 export type Chip = { label: string, url: string, title: string }

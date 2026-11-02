@@ -248,9 +248,10 @@ describe("table view quick-action chips", function()
 		expect(labels(chips)).toEqual({ "Logs", "Port-forward", "Shell" })
 		local shell = chips.Shell
 		expect(shell.action).toBe("shell")
-		expect(shell.ref.kind).toBe("Pod")
-		expect(shell.ref.name).toBe("db-0")
-		expect(shell.ref.namespace).toBe("tern-test-apps")
+		local r = assert(shell.ref, "shell chip has a ref")
+		expect(r.kind).toBe("Pod")
+		expect(r.name).toBe("db-0")
+		expect(r.namespace).toBe("tern-test-apps")
 		expect(chips.Logs.action).toBe("logs-follow")
 		expect(chips["Port-forward"].action).toBe("port-forward")
 	end)
@@ -272,7 +273,7 @@ describe("table view quick-action chips", function()
 	it("a deployment row offers Logs and Port-forward but no Shell (no ready pod is known)", function()
 		local chips = quick(build("ns-apps/get_deployments"), "apps/Deployment/tern-test-apps/web")
 		expect(labels(chips)).toEqual({ "Logs", "Port-forward" })
-		expect(chips.Logs.ref.group).toBe("apps")
+		expect(assert(chips.Logs.ref, "logs chip has a ref").group).toBe("apps")
 	end)
 
 	it("a service row forwards its first service port from PORT(S)", function()
@@ -433,6 +434,72 @@ describe("table view mutation chips", function()
 		local insp = inspector(build("ns-apps/get_pods"), "/Pod/tern-test-apps/db-0", false)
 		expect(#nodes.findAll(insp, nodes.role("tern-kube.mutate"))).toBe(0)
 		expect(quickLabels(insp)).toEqual({ "Logs", "Port-forward", "Shell" })
+	end)
+end)
+
+-- Track 2 plan 5: events tables split by TYPE and REASON, tint Warnings,
+-- and every row opens on its involved object.
+describe("table view events overlay", function()
+	local function facetValues(node: any, col: string): { string }
+		local row = nodes.find(node, nodes.key("facet-" .. col))
+		if row == nil then
+			return {}
+		end
+		local out: { string } = {}
+		for _, b in nodes.findAll(row, nodes.kind("badge")) do
+			table.insert(out, nodes.ownText(b))
+		end
+		return out
+	end
+
+	it("offers TYPE and REASON facets with counts", function()
+		local node = render(build("ns-apps/events"), vsm.default())
+		expect(#facetValues(node, "TYPE")).toBe(2)
+		local reasons = facetValues(node, "REASON")
+		expect(#reasons > 1).toBe(true)
+		expect(#reasons <= TableView.FACET_VALUES).toBe(true)
+		expect(string.find(reasons[1], "^%a+ %d+$") ~= nil).toBe(true)
+	end)
+
+	it("REASON filters keep only that reason", function()
+		local c = build("ns-apps/events")
+		local node = render(c, vsm.toggledFilter(vsm.default(), "REASON", "BackOff"))
+		for _, r in nodes.findAll(node, nodes.class("tk-r")) do
+			expect(nodes.text(nodes.findAll(r, nodes.class("tk-c"))[3])).toBe("BackOff")
+		end
+	end)
+
+	it("keeps the EVENT column of watch events as a facet", function()
+		local node = render(build("ns-logs/get_events_-w_--output-watch-events_--request-timeout=8s"), vsm.default())
+		local events = facetValues(node, "EVENT")
+		expect(#events).toBe(2)
+		expect(string.find(events[1], "^ADDED %d+$") ~= nil).toBe(true)
+		expect(string.find(events[2], "^MODIFIED %d+$") ~= nil).toBe(true)
+		expect(nodes.find(node, nodes.key("facet-REASON")) ~= nil).toBe(true)
+	end)
+
+	it("tints Warning rows and shows the LAST SEEN note in the cell", function()
+		local node = render(build("ns-apps/events"), vsm.default())
+		local rows = nodes.findAll(node, nodes.class("tk-r"))
+		local first = rows[1]
+		expect(string.find((first.p :: any).class, "tk-lvl-warn", 1, true) ~= nil).toBe(true)
+		expect(nodes.text(nodes.findAll(first, nodes.class("tk-c"))[1])).toBe("11m ×12 over 4h30m")
+		local normal = rows[2]
+		expect((string.find((normal.p :: any).class, "tk-lvl-warn", 1, true))).toBeNil()
+	end)
+
+	it("the inspector acts on the involved object and opens its events timeline", function()
+		local c = build("ns-apps/events")
+		local node = render(c, vsm.opened(vsm.default(), "/Pod/tern-test-apps/pending"))
+		local insp = nodes.find(node, nodes.role("tern-kube.inspector")) :: any
+		expect(chipAction(insp, "Events for pod/pending")).toBe("explore-route=events|/Pod/tern-test-apps/pending")
+		expect(chipAction(insp, "Explore live")).toBe("explore=/Pod/tern-test-apps/pending")
+		expect(nodes.text(insp)).toContain("×12 over 4h30m")
+	end)
+
+	it("non-event tables get no Events-for chip", function()
+		local node = render(build("ns-apps/get_pods"), vsm.opened(vsm.default(), "/Pod/tern-test-apps/db-0"))
+		expect(nodes.find(node, nodes.hasText("Events for"))).toBeNil()
 	end)
 end)
 

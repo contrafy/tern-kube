@@ -13,6 +13,7 @@ export type RouteKind =
 	| "relations"
 	| "describe"
 	| "logs"
+	| "events"
 	| "contexts"
 	| "namespaces"
 	| "kinds"
@@ -27,12 +28,33 @@ export type Route = {
 	-- list: resource token (`pods`, `deployments.apps`).
 	resource: string?,
 	-- list: explicit namespace; nil follows the target's namespace scope.
+	-- logs (selector-only): the pods' namespace. events (namespace scope):
+	-- nil follows the target, `*` = all namespaces.
 	namespace: string?,
-	-- detail/relations/describe/logs/manifest/diff.
+	-- detail/relations/describe/logs/manifest/diff; events: the scoped
+	-- object (nil = namespace scope).
 	ref: Ref?,
-	-- logs.
+	-- logs: nil = every container (--all-containers).
 	container: string?,
 	previous: boolean?,
+	-- logs without a ref: the `-l` selector.
+	selector: string?,
+	-- logs: --since and --tail from a lens link (tail nil = explore.logs_tail).
+	since: string?,
+	tail: number?,
+	-- logs: lowest level shown (x); nil = every level.
+	floor: ("warn" | "error")?,
+	-- logs: long messages wrap (w).
+	wrap: boolean?,
+	-- logs: the selected record's inspector is open (enter).
+	inspect: boolean?,
+	-- events: Warning events only (x).
+	warnings: boolean?,
+	-- events: also objects the scoped one owns; nil = on for workload kinds.
+	related: boolean?,
+	-- Filter text a link asked for; moved into the route's filter once the
+	-- target (part of the filter's key) is resolved.
+	q: string?,
 	-- diff: which matched manifest (1 = best match).
 	doc: number?,
 	-- drift: the chosen source id; nil shows the source chooser.

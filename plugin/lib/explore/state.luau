@@ -15,11 +15,16 @@
 local Capture = require("../lens/capture")
 local Command = require("../kubectl/command")
 local Config = require("../config")
+local EventsModel = require("../events/model")
 local ExploreTypes = require("./types")
 local Gitops = require("./gitops")
 local Json = require("../parse/json")
 local Kinds = require("../kubectl/kinds")
 local Link = require("../mutation/link")
+local LogsParse = require("../logs/parse")
+local LogsQuery = require("../logs/query")
+local LogsStore = require("../logs/store")
+local LogsTypes = require("../logs/types")
 local Query = require("./query")
 local Quick = require("../actions/quick")
 local Redact = require("../model/redact")
@@ -27,6 +32,7 @@ local Relations = require("./relations")
 local Resource = require("../model/resource")
 local Shellenv = require("../env/shellenv")
 local Textfield = require("../textfield")
+local Timeline = require("../events/timeline")
 local Types = require("../model/types")
 local Values = require("../model/values")
 
@@ -65,7 +71,22 @@ export type ListData = { kind: string?, headers: { string }, types: { ColumnType
 export type NamesData = { names: { string } }
 -- masked: the object view hides at least one value of the fetched object.
 export type DetailData = { object: any, masked: boolean }
-export type LogsData = { lines: { string } }
+-- memo: the last filtered view, so moving the selection does not re-filter.
+export type LogsData = {
+	store: LogsStore.Store,
+	memo: { key: string, indices: { number } }?,
+}
+-- events: newest first; root: the scoped object (nil = the whole
+-- namespace); scope: root and what it owns, once every query answered;
+-- pending: sub-queries still running.
+export type EventsData = {
+	events: { EventsModel.Event },
+	root: Ref?,
+	objects: { any }?,
+	scope: { Ref }?,
+	note: string?,
+	pending: { [string]: boolean },
+}
 export type RelationsData = {
 	root: any?,
 	results: Relations.Results,
@@ -147,6 +168,9 @@ export type State = {
 	nonce: () -> string,
 	isList: ((t: { [any]: any }) -> boolean)?,
 	null: any?,
+	-- A link asked for the filter field focused (lens "Search…"); done once
+	-- the target is resolved and the route is loading.
+	searchPending: boolean,
 }
 
 export type Effect = ExploreTypes.Effect
@@ -272,12 +296,52 @@ local function targetId(t: Target): string
 	return (t.kubeconfig or "") .. "@" .. (t.context or "?")
 end
 
--- Namespace scope of a list route under the current target.
+-- Namespace scope of a list or events route under the current target.
 function M.scope(s: State, route: Route): Query.Scope
-	if route.namespace then
+	if route.namespace == "*" then
+		return { namespace = nil, all = true }
+	elseif route.namespace then
 		return { namespace = route.namespace, all = false }
 	end
 	return { namespace = s.target.namespace, all = s.target.allNamespaces }
+end
+
+-- An events route reads its object's namespace, or its namespace scope.
+function M.eventsScope(s: State, route: Route): Query.Scope
+	local ref = route.ref
+	if ref then
+		return { namespace = ref.namespace, all = false }
+	end
+	return M.scope(s, route)
+end
+
+local RELATED_KINDS: { [string]: boolean } = {
+	Deployment = true,
+	StatefulSet = true,
+	DaemonSet = true,
+	ReplicaSet = true,
+	Job = true,
+	CronJob = true,
+}
+
+-- Whether an object-scoped events route includes what the object owns.
+function M.related(route: Route): boolean
+	local ref = route.ref
+	if ref == nil then
+		return false
+	end
+	if route.related ~= nil then
+		return route.related
+	end
+	return RELATED_KINDS[ref.kind] == true
+end
+
+local function scopeId(sc: Query.Scope): string
+	return if sc.all then "*" else (sc.namespace or "")
+end
+
+function M.logsTail(s: State, route: Route): number
+	return route.tail or s.config.explore.logs_tail
 end
 
 function M.routeKey(s: State, route: Route): string
@@ -301,12 +365,26 @@ function M.routeKey(s: State, route: Route): string
 		table.insert(parts, tostring(route.doc or ""))
 		return table.concat(parts, "|")
 	end
-	local ref = route.ref :: Ref
-	local key = kind .. "|" .. targetId(s.target) .. "|" .. Resource.key(ref)
-	if kind == "logs" then
-		key ..= "|" .. (route.container or "") .. "|" .. (if route.previous then "p" else "")
+	if kind == "events" then
+		local subject = if route.ref then Resource.key(route.ref) else "ns:" .. scopeId(M.eventsScope(s, route))
+		return "events|" .. targetId(s.target) .. "|" .. subject .. "|" .. (if M.related(route) then "r" else "")
 	end
-	return key
+	if kind == "logs" then
+		local subject = if route.ref
+			then Resource.key(route.ref)
+			else "-l " .. (route.selector or "") .. "@" .. scopeId(M.scope(s, route))
+		return table.concat({
+			"logs",
+			targetId(s.target),
+			subject,
+			route.container or "",
+			if route.previous then "p" else "",
+			route.since or "",
+			tostring(M.logsTail(s, route)),
+		}, "|")
+	end
+	local ref = route.ref :: Ref
+	return kind .. "|" .. targetId(s.target) .. "|" .. Resource.key(ref)
 end
 
 function M.currentKey(s: State): string
@@ -406,6 +484,15 @@ function M.failure(s: State, result: ProcessResult, spawnError: string?): (strin
 	end
 	if string.find(lower, "doesn't have a resource type", 1, true) then
 		return string.format("The cluster has no such resource type. Pick a kind (:).\n%s", first), "resource"
+	end
+	-- `logs --previous` of a container that never restarted reads like a
+	-- missing object; it is not one.
+	if string.find(lower, "previous terminated container", 1, true) then
+		return string.format(
+			"No previous instance: the container has not restarted. Press o for the current logs.\n%s",
+			first
+		),
+			"previous"
 	end
 	if string.find(lower, "notfound", 1, true) or string.find(lower, "not found", 1, true) then
 		return string.format("Not found (it may have been deleted). Press r to retry.\n%s", first), "notfound"
@@ -521,6 +608,30 @@ function M.gitopsCtx(s: State): Gitops.Ctx
 	}
 end
 
+-- Record indices of a logs load that pass the route's filter and level
+-- floor, in display order (merged by kubelet time).
+function M.logIndices(route: Route, data: LogsData, text: string): { number }
+	local memoKey = (route.floor or "") .. "\0" .. text
+	local memo = data.memo
+	if memo and memo.key == memoKey then
+		return memo.indices
+	end
+	local store = data.store
+	local indices = LogsQuery.apply(
+		store,
+		{ text = text, minLevel = route.floor, merge = true },
+		1,
+		math.max(1, LogsStore.size(store))
+	).indices
+	data.memo = { key = memoKey, indices = indices }
+	return indices
+end
+
+-- Events of an events load that pass the route's filters, newest first.
+function M.eventList(route: Route, data: EventsData, text: string): { EventsModel.Event }
+	return Timeline.filter(data.events, { warnings = route.warnings == true, text = text, scope = data.scope })
+end
+
 -- Selection over what the current route shows, after the filter.
 function M.items(s: State, route: Route?): { Item }
 	local r = route or top(s)
@@ -562,6 +673,14 @@ function M.items(s: State, route: Route?): { Item }
 				end
 			end
 		end
+	elseif r.kind == "logs" then
+		for _, i in M.logIndices(r, load.data :: LogsData, s.filter[key] or "") do
+			table.insert(out, { key = tostring(i) })
+		end
+	elseif r.kind == "events" then
+		for _, e in M.eventList(r, load.data :: EventsData, s.filter[key] or "") do
+			table.insert(out, { key = e.key, ref = e.object })
+		end
 	end
 	return out
 end
@@ -578,7 +697,8 @@ function M.selectedIndex(s: State, items: { Item }): number
 			end
 		end
 	end
-	return 1
+	-- Logs open on the newest line, like the tail they are.
+	return if top(s).kind == "logs" then #items else 1
 end
 
 function M.selectedItem(s: State): Item?
@@ -590,12 +710,12 @@ end
 -- The object the keys act on: the selected row, or the route's own object.
 function M.focusRef(s: State): Ref?
 	local r = top(s)
-	if r.kind == "list" or r.kind == "relations" then
+	if r.kind == "list" or r.kind == "relations" or r.kind == "events" then
 		local item = M.selectedItem(s)
 		if item and item.ref then
 			return item.ref
 		end
-		return if r.kind == "relations" then r.ref else nil
+		return if r.kind == "list" then nil else r.ref
 	end
 	if Gitops.isRoute(r.kind) then
 		return Gitops.focusRef(s.gitops, M.gitopsCtx(s), r, M.selectedItem(s))
@@ -624,6 +744,21 @@ local function argvFor(s: State, route: Route): { string }?
 		return Query.apiResources(p, t)
 	elseif kind == "list" then
 		return Query.list(p, t, route.resource or "pods", M.scope(s, route))
+	elseif kind == "events" then
+		return Query.events(p, t, M.eventsScope(s, route))
+	elseif kind == "logs" then
+		if route.ref == nil and route.selector == nil then
+			return nil
+		end
+		return Query.logs(p, t, {
+			ref = route.ref,
+			selector = route.selector,
+			namespace = M.scope(s, route).namespace,
+			container = route.container,
+			previous = route.previous == true,
+			since = route.since,
+			tail = M.logsTail(s, route),
+		})
 	end
 	local ref = route.ref
 	if ref == nil then
@@ -633,8 +768,6 @@ local function argvFor(s: State, route: Route): { string }?
 		return Query.get(p, t, ref)
 	elseif kind == "describe" then
 		return Query.describe(p, t, ref)
-	elseif kind == "logs" then
-		return Query.logs(p, t, ref, route.container, route.previous == true, Query.LOG_TAIL)
 	end
 	return nil
 end
@@ -695,6 +828,39 @@ local function startRelations(s: State, route: Route, key: string, gen: number, 
 	end
 end
 
+M.EVENTS_SUB = "events"
+M.OWNED_SUB = "owned"
+
+-- The events list, plus what the scoped workload owns when related events
+-- are on; the load completes when both answered.
+local function startEvents(s: State, route: Route, key: string, argv: { string }, gen: number, effects: { Effect })
+	local pending: { [string]: boolean } = { [M.EVENTS_SUB] = true }
+	local ref = route.ref
+	local related = ref ~= nil and M.related(route)
+	if related then
+		pending[M.OWNED_SUB] = true
+	end
+	local root: Ref? = nil
+	if ref then
+		-- With its uid, a recreated object's old events are not its own.
+		local obj = M.findObject(s, ref)
+		local md = if type(obj) == "table" then obj.metadata else nil
+		local uid = if type(md) == "table" then nonEmpty(md.uid) else nil
+		local scoped = table.clone(ref)
+		scoped.uid = uid
+		root = scoped
+	end
+	local data: EventsData = { events = {}, root = root, objects = nil, scope = nil, note = nil, pending = pending }
+	setLoad(s, key, { status = "loading", data = data, argv = argv, gen = gen })
+	table.insert(effects, runEffect(s, key .. SEP .. M.EVENTS_SUB, argv, gen))
+	if ref and related then
+		table.insert(
+			effects,
+			runEffect(s, key .. SEP .. M.OWNED_SUB, Query.owned(s.program, s.target, ref.namespace), gen)
+		)
+	end
+end
+
 -- Starts loading `route` (or reloads it when `force`).
 local function startLoad(s: State, route: Route, force: boolean, effects: { Effect })
 	local key = M.routeKey(s, route)
@@ -716,6 +882,9 @@ local function startLoad(s: State, route: Route, force: boolean, effects: { Effe
 	if route.kind == "relations" then
 		startRelations(s, route, key, s.gen, effects)
 		return
+	elseif route.kind == "events" then
+		startEvents(s, route, key, argv, s.gen, effects)
+		return
 	end
 	setLoad(s, key, { status = "loading", argv = argv, gen = s.gen })
 	table.insert(effects, runEffect(s, key, argv, s.gen))
@@ -736,13 +905,34 @@ local function enterGitops(s: State, route: Route, force: boolean, effects: { Ef
 	end)
 end
 
+local startEdit: (s: State, effects: { Effect }) -> boolean
+
+local function replaceTop(s: State, route: Route)
+	local stack = table.clone(s.stack)
+	stack[#stack] = route
+	s.stack = stack
+end
+
 local function ensure(s: State, effects: { Effect })
 	local route = top(s)
 	if Gitops.isRoute(route.kind) then
 		enterGitops(s, route, false, effects)
 		return
 	end
-	startLoad(s, route, false, effects)
+	local q = route.q
+	if q and M.resolved(s) then
+		local filter = table.clone(s.filter)
+		filter[M.routeKey(s, route)] = q
+		s.filter = filter
+		local upd = table.clone(route)
+		upd.q = nil
+		replaceTop(s, upd)
+	end
+	startLoad(s, top(s), false, effects)
+	if s.searchPending and M.resolved(s) then
+		s.searchPending = false
+		startEdit(s, effects)
+	end
 end
 
 local function pushRoute(s: State, route: Route, effects: { Effect })
@@ -790,10 +980,41 @@ local ROUTE_KINDS: { [string]: boolean } = {
 	relations = true,
 	describe = true,
 	logs = true,
+	events = true,
 	contexts = true,
 	namespaces = true,
 	kinds = true,
 }
+
+-- Link and saved-state values reach kubectl's argv: each must look like what
+-- it claims to be (same rules as actions/quick.luau).
+function M.validContainer(v: any): string?
+	return if type(v) == "string" and #v >= 1 and #v <= 63 and string.find(v, "^[a-z0-9][a-z0-9%-]*$") then v else nil
+end
+
+function M.validSelector(v: any): string?
+	return if type(v) == "string" and #v >= 1 and #v <= 1024 and string.find(v, "^[%w%-_%./=!, ()]+$") then v else nil
+end
+
+function M.validSince(v: any): string?
+	return if type(v) == "string" and #v >= 1 and #v <= 16 and string.find(v, "^[%d%.hms]+$") then v else nil
+end
+
+-- -1 is kubectl's "everything"; longer numbers are not line counts.
+function M.validTail(v: any): number?
+	if type(v) == "number" then
+		v = string.format("%d", v)
+	end
+	if type(v) ~= "string" or #v > 7 or not string.find(v, "^%-?%d+$") then
+		return nil
+	end
+	local n = tonumber(v) :: number
+	return if n >= -1 then n else nil
+end
+
+function M.validQuery(v: any): string?
+	return if type(v) == "string" and #v >= 1 and #v <= 256 and not string.find(v, "%c") then v else nil
+end
 
 local function restoreRoute(v: any): Route?
 	if type(v) ~= "table" or not ROUTE_KINDS[v.kind] then
@@ -812,11 +1033,11 @@ local function restoreRoute(v: any): Route?
 			}
 		end
 	end
-	local needsRef = v.kind == "detail" or v.kind == "relations" or v.kind == "describe" or v.kind == "logs"
+	local needsRef = v.kind == "detail" or v.kind == "relations" or v.kind == "describe"
 	if needsRef and ref == nil then
 		return nil
 	end
-	return {
+	local route: Route = {
 		kind = v.kind,
 		resource = nonEmpty(v.resource),
 		namespace = nonEmpty(v.namespace),
@@ -824,6 +1045,21 @@ local function restoreRoute(v: any): Route?
 		container = nonEmpty(v.container),
 		previous = if v.previous == true then true else nil,
 	}
+	if v.kind == "logs" then
+		route.container = M.validContainer(v.container)
+		route.selector = if ref then nil else M.validSelector(v.selector)
+		if ref == nil and route.selector == nil then
+			return nil
+		end
+		route.since = M.validSince(v.since)
+		route.tail = M.validTail(v.tail)
+		route.floor = if v.floor == "warn" then "warn" elseif v.floor == "error" then "error" else nil
+		route.wrap = if v.wrap == true then true else nil
+	elseif v.kind == "events" then
+		route.warnings = if v.warnings == true then true else nil
+		route.related = if type(v.related) == "boolean" then v.related else nil
+	end
+	return route
 end
 
 local function stringMap(v: any): { [string]: string }
@@ -838,29 +1074,58 @@ local function stringMap(v: any): { [string]: string }
 	return out
 end
 
+-- The route a link names on top of the object's list and detail views.
+-- Invalid parameters are dropped; the route still opens without them.
 local function linkRoutes(params: { { key: string, value: string } }): { Route }
 	local kind = param(params, "kind")
 	local group = param(params, "group")
 	local name = param(params, "name")
+	local namespace = param(params, "namespace")
+	if namespace == "*" then
+		namespace = nil
+	end
 	local resource = if kind then M.resourceToken(kind, group) else "pods"
 	local stack: { Route } = { { kind = "list", resource = resource } }
+	local route = param(params, "route")
+	local ref: Ref? = nil
 	if kind and name then
 		local info = Kinds.normalize(resource)
-		local ref: Ref = {
+		ref = {
 			kind = if info.known then info.kind else kind,
 			group = group or info.group,
 			name = name,
-			namespace = param(params, "namespace"),
+			namespace = namespace,
 			source = "live",
 		}
 		table.insert(stack, { kind = "detail", ref = ref })
-		-- Lens chips "Manifest" / "Diff vs manifest".
-		local route = param(params, "route")
-		if route == "manifest" then
-			table.insert(stack, { kind = "manifest", ref = ref })
-		elseif route == "diff" then
-			table.insert(stack, { kind = "diff", ref = ref, doc = 1 })
+	end
+	local q = M.validQuery(param(params, "q"))
+	if route == "logs" then
+		local selector = if ref then nil else M.validSelector(param(params, "selector"))
+		if ref or selector then
+			table.insert(stack, {
+				kind = "logs",
+				ref = ref,
+				selector = selector,
+				container = M.validContainer(param(params, "container")),
+				previous = if param(params, "previous") == "1" then true else nil,
+				since = M.validSince(param(params, "since")),
+				tail = M.validTail(param(params, "tail")),
+				q = q,
+			})
 		end
+	elseif route == "events" then
+		table.insert(stack, {
+			kind = "events",
+			ref = ref,
+			warnings = if param(params, "types") == "Warning" then true else nil,
+			q = q,
+		})
+	elseif ref and route == "manifest" then
+		-- Lens chips "Manifest" / "Diff vs manifest".
+		table.insert(stack, { kind = "manifest", ref = ref })
+	elseif ref and route == "diff" then
+		table.insert(stack, { kind = "diff", ref = ref, doc = 1 })
 	end
 	return stack
 end
@@ -873,8 +1138,8 @@ function M.init(args: { string }, saved: any, config: Config, env: Env): (State,
 		kubeconfig = kubeconfigPath(param(params, "kubeconfig"), config, env),
 		context = linkContext,
 		contextSource = if linkContext then "flag" else "unresolved",
-		namespace = param(params, "namespace"),
-		allNamespaces = false,
+		namespace = if param(params, "namespace") == "*" then nil else param(params, "namespace"),
+		allNamespaces = param(params, "namespace") == "*",
 		confirmed = linkContext ~= nil,
 		inferredAt = nil,
 	}
@@ -945,6 +1210,7 @@ function M.init(args: { string }, saved: any, config: Config, env: Env): (State,
 		end,
 		isList = env.isList,
 		null = env.null,
+		searchPending = param(params, "search") == "1",
 	}
 	local effects: { Effect } = {}
 	if s.envPending then
@@ -996,6 +1262,13 @@ function M.save(s: State): any
 			ref = savedRef(r.ref),
 			container = r.container,
 			previous = r.previous,
+			selector = r.selector,
+			since = r.since,
+			tail = r.tail,
+			floor = r.floor,
+			wrap = r.wrap,
+			warnings = r.warnings,
+			related = r.related,
 		}
 	end
 	local t = s.target
@@ -1121,6 +1394,24 @@ local function openRef(s: State, kind: RouteKind, ref: Ref?, effects: { Effect }
 		return
 	end
 	pushRoute(s, { kind = kind, ref = ref, previous = if kind == "logs" then false else nil }, effects)
+end
+
+-- v (ref nil): events of the namespace in view; V: events of `ref`.
+local function openEvents(s: State, ref: Ref?, effects: { Effect })
+	local r = top(s)
+	local route: Route
+	if ref then
+		route = { kind = "events", ref = ref }
+	elseif r.kind == "list" then
+		local sc = M.scope(s, r)
+		route = { kind = "events", namespace = if sc.all then "*" else sc.namespace }
+	else
+		route = { kind = "events", namespace = if r.ref then r.ref.namespace else r.namespace }
+	end
+	if r.kind == "events" and M.routeKey(s, r) == M.routeKey(s, route) then
+		return
+	end
+	pushRoute(s, route, effects)
 end
 
 local function drill(s: State, effects: { Effect })
@@ -1317,7 +1608,7 @@ function M.readyPod(items: { any }): string?
 	return nil
 end
 
-local function openQuick(s: State, action: string, ref: Ref, opts: { [string]: any }, effects: { Effect })
+local function openQuick(s: State, action: string, ref: Ref?, opts: { [string]: any }, effects: { Effect })
 	local url, err = Quick.encode(action :: any, s.target :: any, ref, opts :: any)
 	if url == nil then
 		table.insert(effects, toast("error", "Cannot " .. action, err))
@@ -1335,6 +1626,18 @@ local function quick(s: State, action: string, effects: { Effect })
 		table.insert(effects, toast("error", "No cluster target yet", "Pick a context first (c)"))
 		return
 	end
+	local r = top(s)
+	if action == "logs-follow" and r.kind == "logs" and r.ref == nil and r.selector then
+		-- A selector-only logs route follows the same pods.
+		openQuick(
+			s,
+			action,
+			nil,
+			{ selector = r.selector, namespace = M.scope(s, r).namespace, container = r.container },
+			effects
+		)
+		return
+	end
 	local ref = M.focusRef(s)
 	if ref == nil then
 		table.insert(effects, toast("error", "Select an object first"))
@@ -1344,7 +1647,6 @@ local function quick(s: State, action: string, effects: { Effect })
 	local selector = selectorOf(obj)
 	local ports = M.ports(obj)
 	local container: string? = nil
-	local r = top(s)
 	if r.kind == "logs" and r.ref and Resource.key(r.ref) == Resource.key(ref) then
 		container = r.container
 	end
@@ -1652,10 +1954,214 @@ local function gitopsRouteKey(s: State, key: Key, ch: string?, effects: { Effect
 	return handled
 end
 
+-- Logs and events routes ------------------------------------------------------
+
+local ERROR_RANK = LogsParse.rank("error")
+
+-- Replaces the route on top; a changed query starts loading and keeps the
+-- filter typed so far.
+local function updateRoute(s: State, upd: Route, effects: { Effect })
+	local before = M.currentKey(s)
+	replaceTop(s, upd)
+	local after = M.currentKey(s)
+	if after == before then
+		return
+	end
+	local text = s.filter[before]
+	if text then
+		local filter = table.clone(s.filter)
+		filter[after] = text
+		s.filter = filter
+	end
+	ensure(s, effects)
+end
+
+local function loaded(s: State, kind: RouteKind): any?
+	local load = M.currentLoad(s)
+	if top(s).kind == kind and load and load.status == "ok" then
+		return load.data
+	end
+	return nil
+end
+
+-- The kubectl line without its `--prefix` and `--timestamps` parts.
+function M.payload(raw: string): string
+	local _, _, rest = LogsParse.splitPrefix(raw)
+	local _, payload = LogsParse.splitTimestamp(rest)
+	return payload
+end
+
+-- Containers the `a` key cycles through: the object's pod template, else
+-- what an every-container read of the same source printed.
+function M.logContainers(s: State, route: Route): { string }
+	local ref = route.ref
+	if ref then
+		local names = M.containers(M.findObject(s, ref))
+		if #names > 0 then
+			return names
+		end
+	end
+	local all = table.clone(route)
+	all.container = nil
+	local load = s.cache[M.routeKey(s, all)] or s.cache[M.routeKey(s, route)]
+	local out: { string } = {}
+	if load and load.status == "ok" and load.data then
+		for _, src in (load.data :: LogsData).store.sources do
+			local c = src.container
+			if c and not table.find(out, c) then
+				table.insert(out, c)
+			end
+		end
+	end
+	return out
+end
+
+-- ] / [: the next / previous error (logs) or Warning (events) from the
+-- selection; before any selection ] starts at the top and [ at the bottom.
+local function jump(s: State, dir: number, effects: { Effect })
+	local r = top(s)
+	local items = M.items(s)
+	if #items == 0 then
+		return
+	end
+	local hit: (item: Item) -> boolean
+	if r.kind == "logs" then
+		local store = (loaded(s, "logs") :: LogsData).store
+		hit = function(item: Item): boolean
+			local rec = LogsStore.get(store, tonumber(item.key) or 0)
+			return rec ~= nil and LogsParse.rank(rec.level) >= ERROR_RANK
+		end
+	else
+		local warning: { [string]: boolean } = {}
+		for _, e in (loaded(s, "events") :: EventsData).events do
+			warning[e.key] = e.type == "Warning"
+		end
+		hit = function(item: Item): boolean
+			return warning[item.key] == true
+		end
+	end
+	local i = if s.sel[M.currentKey(s)] ~= nil then M.selectedIndex(s, items) + dir else (if dir > 0 then 1 else #items)
+	while i >= 1 and i <= #items do
+		if hit(items[i]) then
+			selectKey(s, items[i].key)
+			return
+		end
+		i += dir
+	end
+	local what = if r.kind == "logs" then "errors" else "Warning events"
+	table.insert(effects, toast("info", "No more " .. what .. (if dir > 0 then " below" else " above")))
+end
+
+local NEXT_FLOOR: { [string]: string } = { [""] = "warn", warn = "error", error = "" }
+
+local function setFloor(s: State, floor: string)
+	local upd = table.clone(top(s))
+	upd.floor = if floor == "warn" or floor == "error" then floor else nil
+	replaceTop(s, upd)
+end
+
+local function cycleContainer(s: State, effects: { Effect })
+	local r = top(s)
+	local list = M.logContainers(s, r)
+	if #list == 0 then
+		table.insert(effects, toast("info", "No containers known yet", "Load the logs first (r)"))
+		return
+	end
+	local at = if r.container then table.find(list, r.container) else 0
+	local upd = table.clone(r)
+	upd.container = if at then list[at + 1] else nil
+	upd.inspect = nil
+	updateRoute(s, upd, effects)
+end
+
+local function toggle(s: State, field: "wrap" | "inspect" | "previous" | "warnings", effects: { Effect })
+	local r = top(s)
+	local upd = table.clone(r)
+	local on = not (r :: any)[field];
+	(upd :: any)[field] = if on then true else nil
+	if field == "previous" then
+		upd.inspect = nil
+	end
+	updateRoute(s, upd, effects)
+end
+
+local function copyRecord(s: State, what: string, index: number, effects: { Effect }): boolean
+	local data = loaded(s, "logs") :: LogsData?
+	local rec = if data then LogsStore.get(data.store, index) else nil
+	if rec == nil then
+		return false
+	end
+	local text: string? = nil
+	if what == "line" then
+		text = if rec.extra then rec.raw .. "\n" .. table.concat(rec.extra, "\n") else rec.raw
+	elseif what == "msg" then
+		text = rec.message
+	elseif what == "json" and rec.format == "json" then
+		text = M.payload(rec.raw)
+	end
+	if text == nil then
+		return false
+	end
+	table.insert(effects, { t = "copy", text = text })
+	table.insert(effects, toast("success", "Copied", string.sub(text, 1, 80)))
+	return true
+end
+
+-- Keys of the logs and events views; false lets the global keys run.
+local function dataRouteKey(s: State, key: Key, ch: string?, effects: { Effect }): boolean
+	local r = top(s)
+	local name = key.name
+	if r.kind == "logs" then
+		if ch == "]" then
+			jump(s, 1, effects)
+		elseif ch == "[" then
+			jump(s, -1, effects)
+		elseif ch == "x" then
+			setFloor(s, NEXT_FLOOR[r.floor or ""])
+		elseif ch == "w" then
+			toggle(s, "wrap", effects)
+		elseif ch == "o" then
+			toggle(s, "previous", effects)
+		elseif ch == "a" then
+			cycleContainer(s, effects)
+		elseif name == "enter" or name == "return" then
+			if #M.items(s) == 0 then
+				return false
+			end
+			toggle(s, "inspect", effects)
+		elseif name == "escape" and r.inspect then
+			toggle(s, "inspect", effects)
+		else
+			return false
+		end
+		return true
+	elseif r.kind == "events" then
+		if ch == "]" then
+			jump(s, 1, effects)
+		elseif ch == "[" then
+			jump(s, -1, effects)
+		elseif ch == "x" then
+			toggle(s, "warnings", effects)
+		else
+			return false
+		end
+		return true
+	end
+	return false
+end
+
 -- Keys -----------------------------------------------------------------------
 
-local FILTERABLE: { [string]: boolean } =
-	{ list = true, contexts = true, namespaces = true, kinds = true, relations = true }
+local FILTERABLE: { [string]: boolean } = {
+	list = true,
+	contexts = true,
+	namespaces = true,
+	kinds = true,
+	relations = true,
+	logs = true,
+	events = true,
+}
+M.FILTERABLE = FILTERABLE
 
 local function editKey(s: State, key: Key): boolean
 	local name = key.name
@@ -1671,7 +2177,7 @@ local function editKey(s: State, key: Key): boolean
 	return true
 end
 
-local function startEdit(s: State, effects: { Effect }): boolean
+function startEdit(s: State, effects: { Effect }): boolean
 	if not FILTERABLE[top(s).kind] then
 		return false
 	end
@@ -1731,6 +2237,9 @@ local function onKey(s: State, key: Key, effects: { Effect }): boolean
 		return true
 	end
 	if not s.help and gitopsRouteKey(s, key, ch, effects) then
+		return true
+	end
+	if not s.help and dataRouteKey(s, key, ch, effects) then
 		return true
 	end
 	if ch == "g" then
@@ -1806,6 +2315,15 @@ local function onKey(s: State, key: Key, effects: { Effect }): boolean
 		openRef(s, "logs", M.focusRef(s), effects)
 	elseif ch == "R" then
 		openRef(s, "relations", M.focusRef(s), effects)
+	elseif ch == "V" or (name == "v" and key.shift) then
+		local ref = M.focusRef(s)
+		if ref == nil then
+			table.insert(effects, toast("error", "Select an object first"))
+		else
+			openEvents(s, ref, effects)
+		end
+	elseif ch == "v" then
+		openEvents(s, nil, effects)
 	elseif ch == "Y" then
 		copyCommand(s, effects)
 	elseif ch == "s" then
@@ -1858,6 +2376,14 @@ local function onAction(s: State, act: string, value: string, effects: { Effect 
 			pushPicker(s, value :: RouteKind, effects)
 		elseif value == "detail" or value == "describe" or value == "logs" or value == "relations" then
 			openRef(s, value :: RouteKind, M.focusRef(s), effects)
+		elseif value == "events" then
+			local ref = M.focusRef(s)
+			if ref == nil then
+				return false
+			end
+			openEvents(s, ref, effects)
+		elseif value == "events-ns" then
+			openEvents(s, nil, effects)
 		else
 			return false
 		end
@@ -1896,14 +2422,53 @@ local function onAction(s: State, act: string, value: string, effects: { Effect 
 		end
 		local upd = table.clone(r)
 		if act == "container" then
-			upd.container = if value == "" then nil else value
+			upd.container = M.validContainer(value)
 		else
-			upd.previous = not r.previous
+			upd.previous = if r.previous then nil else true
 		end
-		local stack = table.clone(s.stack)
-		stack[#stack] = upd
-		s.stack = stack
-		ensure(s, effects)
+		upd.inspect = nil
+		updateRoute(s, upd, effects)
+	elseif act == "logs-floor" or act == "logs-wrap" or act == "logs-jump" or act == "logs-inspect" then
+		if top(s).kind ~= "logs" then
+			return false
+		end
+		if act == "logs-floor" then
+			setFloor(s, value)
+		elseif act == "logs-wrap" then
+			toggle(s, "wrap", effects)
+		elseif act == "logs-jump" then
+			jump(s, if value == "prev" then -1 else 1, effects)
+		else
+			if value ~= "" then
+				selectKey(s, value)
+			end
+			local upd = table.clone(top(s))
+			upd.inspect = if value == "" then nil else true
+			replaceTop(s, upd)
+		end
+	elseif act == "lcopy" then
+		local what, index = string.match(value, "^(%a+):(%d+)$")
+		return what ~= nil and copyRecord(s, what, tonumber(index) or 0, effects)
+	elseif act == "events-warnings" or act == "events-related" or act == "events-scope" or act == "events-reason" then
+		local r = top(s)
+		if r.kind ~= "events" then
+			return false
+		end
+		if act == "events-warnings" then
+			toggle(s, "warnings", effects)
+		elseif act == "events-related" then
+			local upd = table.clone(r)
+			upd.related = not M.related(r)
+			updateRoute(s, upd, effects)
+		elseif act == "events-scope" then
+			local ref = r.ref
+			if ref == nil then
+				return false
+			end
+			updateRoute(s, { kind = "events", namespace = ref.namespace, warnings = r.warnings }, effects)
+		else
+			setFilter(s, if s.filter[M.currentKey(s)] == value then "" else value)
+		end
 	elseif act == "filter-focus" then
 		return startEdit(s, effects)
 	elseif act == "filter-clear" then
@@ -2087,6 +2652,74 @@ local function onRelationResult(s: State, key: string, sub: string, load: Load, 
 	end
 end
 
+-- Both answers of an events load: the list, and what the scoped workload
+-- owns. A failed ownership read still shows the object's own events.
+local function onEventsResult(s: State, key: string, sub: string, load: Load, msg: Msg)
+	local data = table.clone(load.data :: EventsData)
+	if not data.pending[sub] then
+		return
+	end
+	local result = msg.result :: ProcessResult
+	local failed = msg.spawnError ~= nil or result.status ~= 0
+	if sub == M.EVENTS_SUB and failed then
+		failLoad(s, key, load, msg)
+		return
+	end
+	local upd = table.clone(load)
+	upd.fetchedAt = msg.at
+	local ok = false
+	local doc: any = nil
+	if not failed then
+		ok, doc = decodeJson(s, result.stdout)
+		ok = ok and type(doc) == "table"
+	end
+	if sub == M.EVENTS_SUB then
+		if not ok then
+			upd.status = "error"
+			upd.error = "kubectl printed invalid JSON"
+			setLoad(s, key, upd)
+			return
+		end
+		data.events = Timeline.sort(EventsModel.fromList(doc))
+	elseif ok and type(doc.items) == "table" then
+		data.objects = doc.items
+	else
+		local text = if failed then M.failure(s, result, msg.spawnError) else "kubectl printed invalid JSON"
+		data.note = "Only the object's own events: its pods and jobs could not be read ("
+			.. (string.match(text, "^[^\n]*") or text)
+			.. ")"
+	end
+	local pending = table.clone(data.pending)
+	pending[sub] = nil
+	data.pending = pending
+	if next(pending) == nil then
+		local root = data.root
+		if root then
+			data.scope = if data.objects then Timeline.owned(root, data.objects) else { root }
+		end
+		upd.status = "ok"
+	end
+	upd.data = data
+	setLoad(s, key, upd)
+end
+
+-- A logs run as records; kubectl's stderr notes (Found N pods, Defaulted
+-- container, warnings) become notices.
+function M.logsData(stdout: string, stderr: string, decode: Decode, limits: LogsTypes.Limits): LogsData
+	local store = LogsStore.new({ prefix = true, timestamps = true, follow = false, decode = decode }, limits)
+	for _, line in splitLines(stdout) do
+		LogsStore.push(store, line)
+	end
+	LogsStore.finish(store, 0)
+	for _, line in splitLines(stderr) do
+		local n = LogsParse.diagnostic(line, "end")
+		if n then
+			table.insert(store.notices, n)
+		end
+	end
+	return { store = store, memo = nil }
+end
+
 local function onResult(s: State, msg: Msg, effects: { Effect }): boolean
 	local tag = msg.tag or ""
 	if tag == M.RESOLVE_TAG then
@@ -2107,7 +2740,10 @@ local function onResult(s: State, msg: Msg, effects: { Effect }): boolean
 	if load == nil or load.gen ~= msg.gen or load.status ~= "loading" then
 		return false
 	end
-	if sub then
+	if sub and string.sub(key :: string, 1, 7) == "events|" then
+		onEventsResult(s, key :: string, sub, load, msg)
+		return true
+	elseif sub then
 		onRelationResult(s, key :: string, sub, load, msg, effects)
 		return true
 	end
@@ -2142,7 +2778,11 @@ local function onResult(s: State, msg: Msg, effects: { Effect }): boolean
 			policy = policy(s),
 		})
 	elseif kind == "logs" then
-		data = { lines = splitLines(result.stdout) }
+		local general = s.config.general
+		ok, data = pcall(M.logsData, result.stdout, result.stderr or "", s.decode, {
+			maxLines = math.max(general.max_rows, s.config.explore.logs_tail),
+			maxBytes = general.max_capture_bytes,
+		})
 	else
 		data = namesData(result.stdout)
 	end

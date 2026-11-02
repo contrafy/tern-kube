@@ -1,0 +1,165 @@
+LAST SEEN   TYPE     REASON      OBJECT                           MESSAGE
+16s         Normal   Scheduled   Pod/tk-logmix-6856789c59-4td24   Successfully assigned tern-test-logs/tk-logmix-6856789c59-4td24 to tern-kube-dev-control-plane
+16s         Normal   Pulled      Pod/tk-logmix-6856789c59-4td24   Container image "busybox:1.37" already present on machine and can be accessed by the pod
+16s         Normal   Created     Pod/tk-logmix-6856789c59-4td24   Container created
+16s         Normal   Started     Pod/tk-logmix-6856789c59-4td24   Container started
+16s         Normal   Pulled      Pod/tk-logmix-6856789c59-4td24   Container image "busybox:1.37" already present on machine and can be accessed by the pod
+16s         Normal   Created     Pod/tk-logmix-6856789c59-4td24   Container created
+16s         Normal   Started     Pod/tk-logmix-6856789c59-4td24   Container started
+16s         Normal   Pulled      Pod/tk-logmix-6856789c59-4td24   Container image "busybox:1.37" already present on machine and can be accessed by the pod
+16s         Normal   Created     Pod/tk-logmix-6856789c59-4td24   Container created
+16s         Normal   Started     Pod/tk-logmix-6856789c59-4td24   Container started
+26s         Normal   Scheduled   Pod/tk-logmix-6856789c59-6h26h   Successfully assigned tern-test-logs/tk-logmix-6856789c59-6h26h to tern-kube-dev-control-plane
+26s         Normal   Pulled      Pod/tk-logmix-6856789c59-6h26h   Container image "busybox:1.37" already present on machine and can be accessed by the pod
+26s         Normal   Created     Pod/tk-logmix-6856789c59-6h26h   Container created
+26s         Normal   Started     Pod/tk-logmix-6856789c59-6h26h   Container started
+26s         Normal   Pulled      Pod/tk-logmix-6856789c59-6h26h   Container image "busybox:1.37" already present on machine and can be accessed by the pod
+26s         Normal   Created     Pod/tk-logmix-6856789c59-6h26h   Container created
+26s         Normal   Started     Pod/tk-logmix-6856789c59-6h26h   Container started
+6s (x2 over 26s)   Normal   Pulled      Pod/tk-logmix-6856789c59-6h26h   Container image "busybox:1.37" already present on machine and can be accessed by the pod
+6s (x2 over 26s)   Normal   Created     Pod/tk-logmix-6856789c59-6h26h   Container created
+6s (x2 over 26s)   Normal   Started     Pod/tk-logmix-6856789c59-6h26h   Container started
+5s                 Normal   Killing     Pod/tk-logmix-6856789c59-6h26h   Stopping container app
+5s                 Normal   Killing     Pod/tk-logmix-6856789c59-6h26h   Stopping container crashy
+5s                 Normal   Killing     Pod/tk-logmix-6856789c59-6h26h   Stopping container side
+26m                Normal   Scheduled   Pod/tk-logmix-6856789c59-7zd8g   Successfully assigned tern-test-logs/tk-logmix-6856789c59-7zd8g to tern-kube-dev-control-plane
+26m                Normal   Pulled      Pod/tk-logmix-6856789c59-7zd8g   Container image "busybox:1.37" already present on machine and can be accessed by the pod
+26m                Normal   Created     Pod/tk-logmix-6856789c59-7zd8g   Container created
+26m                Normal   Started     Pod/tk-logmix-6856789c59-7zd8g   Container started
+26m                Normal   Pulled      Pod/tk-logmix-6856789c59-7zd8g   Container image "busybox:1.37" already present on machine and can be accessed by the pod
+26m                Normal   Created     Pod/tk-logmix-6856789c59-7zd8g   Container created
+26m                Normal   Started     Pod/tk-logmix-6856789c59-7zd8g   Container started
+25m (x3 over 26m)   Normal   Pulled      Pod/tk-logmix-6856789c59-7zd8g   Container image "busybox:1.37" already present on machine and can be accessed by the pod
+25m (x3 over 26m)   Normal   Created     Pod/tk-logmix-6856789c59-7zd8g   Container created
+25m (x3 over 26m)   Normal   Started     Pod/tk-logmix-6856789c59-7zd8g   Container started
+24m (x2 over 25m)   Warning   BackOff     Pod/tk-logmix-6856789c59-7zd8g   Back-off restarting failed container crashy in pod tk-logmix-6856789c59-7zd8g_tern-test-logs(1f9ac24c-e8b5-498f-aa78-4eb57d590818)
+24m                 Normal    Killing     Pod/tk-logmix-6856789c59-7zd8g   Stopping container app
+24m                 Normal    Killing     Pod/tk-logmix-6856789c59-7zd8g   Stopping container side
+22m                 Normal    Scheduled   Pod/tk-logmix-6856789c59-jm56b   Successfully assigned tern-test-logs/tk-logmix-6856789c59-jm56b to tern-kube-dev-control-plane
+22m                 Normal    Pulled      Pod/tk-logmix-6856789c59-jm56b   Container image "busybox:1.37" already present on machine and can be accessed by the pod
+22m                 Normal    Created     Pod/tk-logmix-6856789c59-jm56b   Container created
+22m                 Normal    Started     Pod/tk-logmix-6856789c59-jm56b   Container started
+22m                 Normal    Pulled      Pod/tk-logmix-6856789c59-jm56b   Container image "busybox:1.37" already present on machine and can be accessed by the pod
+22m                 Normal    Created     Pod/tk-logmix-6856789c59-jm56b   Container created
+22m                 Normal    Started     Pod/tk-logmix-6856789c59-jm56b   Container started
+22m                 Normal    Pulled      Pod/tk-logmix-6856789c59-jm56b   Container image "busybox:1.37" already present on machine and can be accessed by the pod
+22m                 Normal    Created     Pod/tk-logmix-6856789c59-jm56b   Container created
+22m                 Normal    Started     Pod/tk-logmix-6856789c59-jm56b   Container started
+22m                 Normal    Killing     Pod/tk-logmix-6856789c59-jm56b   Stopping container app
+22m                 Normal    Killing     Pod/tk-logmix-6856789c59-jm56b   Stopping container crashy
+22m                 Normal    Killing     Pod/tk-logmix-6856789c59-jm56b   Stopping container side
+22m                 Normal    Scheduled   Pod/tk-logmix-6856789c59-kh4x5   Successfully assigned tern-test-logs/tk-logmix-6856789c59-kh4x5 to tern-kube-dev-control-plane
+22m                 Normal    Pulled      Pod/tk-logmix-6856789c59-kh4x5   Container image "busybox:1.37" already present on machine and can be accessed by the pod
+22m                 Normal    Created     Pod/tk-logmix-6856789c59-kh4x5   Container created
+22m                 Normal    Started     Pod/tk-logmix-6856789c59-kh4x5   Container started
+22m                 Normal    Pulled      Pod/tk-logmix-6856789c59-kh4x5   Container image "busybox:1.37" already present on machine and can be accessed by the pod
+22m                 Normal    Created     Pod/tk-logmix-6856789c59-kh4x5   Container created
+22m                 Normal    Started     Pod/tk-logmix-6856789c59-kh4x5   Container started
+4m32s (x9 over 22m)   Normal    Pulled      Pod/tk-logmix-6856789c59-kh4x5   Container image "busybox:1.37" already present on machine and can be accessed by the pod
+15m (x7 over 22m)     Normal    Created     Pod/tk-logmix-6856789c59-kh4x5   Container created
+18m (x6 over 22m)     Normal    Started     Pod/tk-logmix-6856789c59-kh4x5   Container started
+41s (x20 over 22m)    Warning   BackOff     Pod/tk-logmix-6856789c59-kh4x5   Back-off restarting failed container crashy in pod tk-logmix-6856789c59-kh4x5_tern-test-logs(7ada5e46-99ac-407d-9e94-ee54ea694f03)
+13s                   Normal    Killing     Pod/tk-logmix-6856789c59-kh4x5   Stopping container app
+22m                   Normal    Scheduled   Pod/tk-logmix-6856789c59-lzr9t   Successfully assigned tern-test-logs/tk-logmix-6856789c59-lzr9t to tern-kube-dev-control-plane
+22m                   Normal    Pulled      Pod/tk-logmix-6856789c59-lzr9t   Container image "busybox:1.37" already present on machine and can be accessed by the pod
+22m                   Normal    Created     Pod/tk-logmix-6856789c59-lzr9t   Container created
+22m                   Normal    Started     Pod/tk-logmix-6856789c59-lzr9t   Container started
+22m                   Normal    Pulled      Pod/tk-logmix-6856789c59-lzr9t   Container image "busybox:1.37" already present on machine and can be accessed by the pod
+22m                   Normal    Created     Pod/tk-logmix-6856789c59-lzr9t   Container created
+22m                   Normal    Started     Pod/tk-logmix-6856789c59-lzr9t   Container started
+22m                   Normal    Pulled      Pod/tk-logmix-6856789c59-lzr9t   Container image "busybox:1.37" already present on machine and can be accessed by the pod
+22m                   Normal    Created     Pod/tk-logmix-6856789c59-lzr9t   Container created
+22m                   Normal    Started     Pod/tk-logmix-6856789c59-lzr9t   Container started
+22m                   Normal    Killing     Pod/tk-logmix-6856789c59-lzr9t   Stopping container app
+22m                   Normal    Killing     Pod/tk-logmix-6856789c59-lzr9t   Stopping container crashy
+22m                   Normal    Killing     Pod/tk-logmix-6856789c59-lzr9t   Stopping container side
+26m                   Normal    Scheduled   Pod/tk-logmix-6856789c59-nthxv   Successfully assigned tern-test-logs/tk-logmix-6856789c59-nthxv to tern-kube-dev-control-plane
+26m                   Normal    Pulled      Pod/tk-logmix-6856789c59-nthxv   Container image "busybox:1.37" already present on machine and can be accessed by the pod
+26m                   Normal    Created     Pod/tk-logmix-6856789c59-nthxv   Container created
+26m                   Normal    Started     Pod/tk-logmix-6856789c59-nthxv   Container started
+26m                   Normal    Pulled      Pod/tk-logmix-6856789c59-nthxv   Container image "busybox:1.37" already present on machine and can be accessed by the pod
+26m                   Normal    Created     Pod/tk-logmix-6856789c59-nthxv   Container created
+26m                   Normal    Started     Pod/tk-logmix-6856789c59-nthxv   Container started
+23m (x5 over 26m)     Normal    Pulled      Pod/tk-logmix-6856789c59-nthxv   Container image "busybox:1.37" already present on machine and can be accessed by the pod
+23m (x5 over 26m)     Normal    Created     Pod/tk-logmix-6856789c59-nthxv   Container created
+23m (x5 over 26m)     Normal    Started     Pod/tk-logmix-6856789c59-nthxv   Container started
+23m (x4 over 25m)     Warning   BackOff     Pod/tk-logmix-6856789c59-nthxv   Back-off restarting failed container crashy in pod tk-logmix-6856789c59-nthxv_tern-test-logs(bfe61415-3b01-464d-b724-ee27cb5b6a53)
+23m                   Normal    Killing     Pod/tk-logmix-6856789c59-nthxv   Stopping container app
+23m                   Normal    Killing     Pod/tk-logmix-6856789c59-nthxv   Stopping container side
+24m                   Normal    Scheduled   Pod/tk-logmix-6856789c59-szgpg   Successfully assigned tern-test-logs/tk-logmix-6856789c59-szgpg to tern-kube-dev-control-plane
+24m                   Normal    Pulled      Pod/tk-logmix-6856789c59-szgpg   Container image "busybox:1.37" already present on machine and can be accessed by the pod
+24m                   Normal    Created     Pod/tk-logmix-6856789c59-szgpg   Container created
+24m                   Normal    Started     Pod/tk-logmix-6856789c59-szgpg   Container started
+24m                   Normal    Pulled      Pod/tk-logmix-6856789c59-szgpg   Container image "busybox:1.37" already present on machine and can be accessed by the pod
+24m                   Normal    Created     Pod/tk-logmix-6856789c59-szgpg   Container created
+24m                   Normal    Started     Pod/tk-logmix-6856789c59-szgpg   Container started
+22m (x4 over 24m)     Normal    Pulled      Pod/tk-logmix-6856789c59-szgpg   Container image "busybox:1.37" already present on machine and can be accessed by the pod
+22m (x4 over 24m)     Normal    Created     Pod/tk-logmix-6856789c59-szgpg   Container created
+22m (x4 over 24m)     Normal    Started     Pod/tk-logmix-6856789c59-szgpg   Container started
+23m (x2 over 23m)     Warning   BackOff     Pod/tk-logmix-6856789c59-szgpg   Back-off restarting failed container crashy in pod tk-logmix-6856789c59-szgpg_tern-test-logs(696ffc01-5dd7-448e-b2b5-9a371614f90c)
+22m                   Normal    Killing     Pod/tk-logmix-6856789c59-szgpg   Stopping container app
+22m                   Normal    Killing     Pod/tk-logmix-6856789c59-szgpg   Stopping container crashy
+22m                   Normal    Killing     Pod/tk-logmix-6856789c59-szgpg   Stopping container side
+23m                   Normal    Scheduled   Pod/tk-logmix-6856789c59-wpjsk   Successfully assigned tern-test-logs/tk-logmix-6856789c59-wpjsk to tern-kube-dev-control-plane
+23m                   Normal    Pulled      Pod/tk-logmix-6856789c59-wpjsk   Container image "busybox:1.37" already present on machine and can be accessed by the pod
+23m                   Normal    Created     Pod/tk-logmix-6856789c59-wpjsk   Container created
+23m                   Normal    Started     Pod/tk-logmix-6856789c59-wpjsk   Container started
+23m                   Normal    Pulled      Pod/tk-logmix-6856789c59-wpjsk   Container image "busybox:1.37" already present on machine and can be accessed by the pod
+23m                   Normal    Created     Pod/tk-logmix-6856789c59-wpjsk   Container created
+23m                   Normal    Started     Pod/tk-logmix-6856789c59-wpjsk   Container started
+4m30s (x9 over 23m)   Normal    Pulled      Pod/tk-logmix-6856789c59-wpjsk   Container image "busybox:1.37" already present on machine and can be accessed by the pod
+15m (x7 over 23m)     Normal    Created     Pod/tk-logmix-6856789c59-wpjsk   Container created
+18m (x6 over 23m)     Normal    Started     Pod/tk-logmix-6856789c59-wpjsk   Container started
+58s (x19 over 22m)    Warning   BackOff     Pod/tk-logmix-6856789c59-wpjsk   Back-off restarting failed container crashy in pod tk-logmix-6856789c59-wpjsk_tern-test-logs(166ce906-5296-4d75-8590-0378836d987f)
+24s                   Normal    Killing     Pod/tk-logmix-6856789c59-wpjsk   Stopping container app
+8s                    Normal    Scheduled   Pod/tk-logmix-6856789c59-xv4fg   Successfully assigned tern-test-logs/tk-logmix-6856789c59-xv4fg to tern-kube-dev-control-plane
+8s                    Normal    Pulled      Pod/tk-logmix-6856789c59-xv4fg   Container image "busybox:1.37" already present on machine and can be accessed by the pod
+8s                    Normal    Created     Pod/tk-logmix-6856789c59-xv4fg   Container created
+8s                    Normal    Started     Pod/tk-logmix-6856789c59-xv4fg   Container started
+8s                    Normal    Pulled      Pod/tk-logmix-6856789c59-xv4fg   Container image "busybox:1.37" already present on machine and can be accessed by the pod
+8s                    Normal    Created     Pod/tk-logmix-6856789c59-xv4fg   Container created
+8s                    Normal    Started     Pod/tk-logmix-6856789c59-xv4fg   Container started
+8s                    Normal    Pulled      Pod/tk-logmix-6856789c59-xv4fg   Container image "busybox:1.37" already present on machine and can be accessed by the pod
+8s                    Normal    Created     Pod/tk-logmix-6856789c59-xv4fg   Container created
+8s                    Normal    Started     Pod/tk-logmix-6856789c59-xv4fg   Container started
+26m                   Normal    SuccessfulCreate   ReplicaSet/tk-logmix-6856789c59   Created pod: tk-logmix-6856789c59-7zd8g
+26m                   Normal    SuccessfulCreate   ReplicaSet/tk-logmix-6856789c59   Created pod: tk-logmix-6856789c59-nthxv
+24m                   Normal    SuccessfulCreate   ReplicaSet/tk-logmix-6856789c59   Created pod: tk-logmix-6856789c59-szgpg
+24m                   Normal    SuccessfulDelete   ReplicaSet/tk-logmix-6856789c59   Deleted pod: tk-logmix-6856789c59-7zd8g
+23m                   Normal    SuccessfulCreate   ReplicaSet/tk-logmix-6856789c59   Created pod: tk-logmix-6856789c59-wpjsk
+23m                   Normal    SuccessfulDelete   ReplicaSet/tk-logmix-6856789c59   Deleted pod: tk-logmix-6856789c59-nthxv
+22m                   Normal    SuccessfulCreate   ReplicaSet/tk-logmix-6856789c59   Created pod: tk-logmix-6856789c59-kh4x5
+22m                   Normal    SuccessfulDelete   ReplicaSet/tk-logmix-6856789c59   Deleted pod: tk-logmix-6856789c59-szgpg
+22m                   Normal    SuccessfulCreate   ReplicaSet/tk-logmix-6856789c59   Created pod: tk-logmix-6856789c59-lzr9t
+22m                   Normal    SuccessfulDelete   ReplicaSet/tk-logmix-6856789c59   Deleted pod: tk-logmix-6856789c59-lzr9t
+22m                   Normal    SuccessfulCreate   ReplicaSet/tk-logmix-6856789c59   Created pod: tk-logmix-6856789c59-jm56b
+22m                   Normal    SuccessfulDelete   ReplicaSet/tk-logmix-6856789c59   Deleted pod: tk-logmix-6856789c59-jm56b
+27s                   Normal    SuccessfulCreate   ReplicaSet/tk-logmix-6856789c59   Created pod: tk-logmix-6856789c59-6h26h
+24s                   Normal    SuccessfulDelete   ReplicaSet/tk-logmix-6856789c59   Deleted pod: tk-logmix-6856789c59-wpjsk
+17s                   Normal    SuccessfulCreate   ReplicaSet/tk-logmix-6856789c59   Created pod: tk-logmix-6856789c59-4td24
+13s                   Normal    SuccessfulDelete   ReplicaSet/tk-logmix-6856789c59   Deleted pod: tk-logmix-6856789c59-kh4x5
+8s                    Normal    SuccessfulCreate   ReplicaSet/tk-logmix-6856789c59   Created pod: tk-logmix-6856789c59-xv4fg
+5s                    Normal    SuccessfulDelete   ReplicaSet/tk-logmix-6856789c59   Deleted pod: tk-logmix-6856789c59-6h26h
+26m                   Normal    ScalingReplicaSet   Deployment/tk-logmix              Scaled up replica set tk-logmix-6856789c59 from 0 to 2
+8s (x8 over 24m)      Normal    ScalingReplicaSet   Deployment/tk-logmix              Scaled up replica set tk-logmix-6856789c59 from 2 to 3
+5s (x8 over 24m)      Normal    ScalingReplicaSet   Deployment/tk-logmix              Scaled down replica set tk-logmix-6856789c59 from 3 to 2
+0s (x9 over 24m)      Normal    ScalingReplicaSet   Deployment/tk-logmix              Scaled up replica set tk-logmix-6856789c59 from 2 to 3
+0s                    Normal    SuccessfulCreate    ReplicaSet/tk-logmix-6856789c59   Created pod: tk-logmix-6856789c59-pjrmc
+0s                    Normal    Scheduled           Pod/tk-logmix-6856789c59-pjrmc    Successfully assigned tern-test-logs/tk-logmix-6856789c59-pjrmc to tern-kube-dev-control-plane
+0s                    Normal    Pulled              Pod/tk-logmix-6856789c59-pjrmc    Container image "busybox:1.37" already present on machine and can be accessed by the pod
+0s                    Normal    Created             Pod/tk-logmix-6856789c59-pjrmc    Container created
+0s                    Normal    Started             Pod/tk-logmix-6856789c59-pjrmc    Container started
+0s                    Normal    Pulled              Pod/tk-logmix-6856789c59-pjrmc    Container image "busybox:1.37" already present on machine and can be accessed by the pod
+0s                    Normal    Created             Pod/tk-logmix-6856789c59-pjrmc    Container created
+0s                    Normal    Started             Pod/tk-logmix-6856789c59-pjrmc    Container started
+0s                    Normal    Pulled              Pod/tk-logmix-6856789c59-pjrmc    Container image "busybox:1.37" already present on machine and can be accessed by the pod
+0s                    Normal    Created             Pod/tk-logmix-6856789c59-pjrmc    Container created
+0s                    Normal    Started             Pod/tk-logmix-6856789c59-pjrmc    Container started
+0s (x2 over 21s)      Normal    Pulled              Pod/tk-logmix-6856789c59-4td24    Container image "busybox:1.37" already present on machine and can be accessed by the pod
+0s (x2 over 21s)      Normal    Created             Pod/tk-logmix-6856789c59-4td24    Container created
+0s (x2 over 21s)      Normal    Started             Pod/tk-logmix-6856789c59-4td24    Container started
+0s (x9 over 24m)      Normal    ScalingReplicaSet   Deployment/tk-logmix              Scaled down replica set tk-logmix-6856789c59 from 3 to 2
+0s                    Normal    SuccessfulDelete    ReplicaSet/tk-logmix-6856789c59   Deleted pod: tk-logmix-6856789c59-4td24
+0s                    Normal    Killing             Pod/tk-logmix-6856789c59-4td24    Stopping container app
+0s                    Normal    Killing             Pod/tk-logmix-6856789c59-4td24    Stopping container crashy
+0s                    Normal    Killing             Pod/tk-logmix-6856789c59-4td24    Stopping container side

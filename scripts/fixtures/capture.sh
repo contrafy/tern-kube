@@ -7,6 +7,11 @@
 #   scripts/fixtures/capture.sh --world-only
 #                                        build the world (metrics-server, steady state, quick-action
 #                                        toolbox) for live tests; captures nothing, fixtures untouched
+#   scripts/fixtures/capture.sh --only GROUP[,GROUP...]
+#                                        keep the world and every other fixture; recapture only the
+#                                        named read-only groups (cluster apps batch crd edge empty
+#                                        all-namespaces read-errors events logs), replacing their
+#                                        files and MANIFEST.tsv rows
 #
 # Keys follow tests/bin/kubectl: argv minus connection flags (--context,
 # --kubeconfig, -n/--namespace, --cluster, --user), joined by "_", "/" -> "+".
@@ -29,6 +34,7 @@ BATCH=tern-test-batch
 CRDNS=tern-test-crd
 EDGE=tern-test-edge
 EMPTY=tern-test-empty
+LOGS=tern-test-logs
 MUTATE=tern-test-mutate
 WORLD_LABEL=lens.example.com/fixture-world=true
 
@@ -43,11 +49,17 @@ log() {
 
 reuse=0
 world_only=0
+only=""
 case ${1:-} in
 "") ;;
 --reuse) reuse=1 ;;
 --world-only) world_only=1 ;;
-*) die "usage: $0 [--reuse|--world-only]" ;;
+--only)
+	only=${2:-}
+	[ -n "$only" ] || die "--only needs a comma-separated list of groups"
+	reuse=1
+	;;
+*) die "usage: $0 [--reuse|--world-only|--only GROUP[,GROUP...]]" ;;
 esac
 
 KUBECONFIG=$("$ROOT/scripts/cluster.sh" kubeconfig-path) || die "sandbox cluster is not usable; run scripts/cluster.sh create"
@@ -172,12 +184,31 @@ metrics_ready() {
 		[ "$(k top pods -n kube-system --no-headers | grep -c '^metrics-server-')" -ge 1 ]
 }
 
+# Every tk-logmix pod runs app and side, and crashy has exited at least once
+# (so `logs -p -c crashy` has a previous instance) and app has printed its
+# format sampler plus a few ticks.
+logmix_ready() {
+	states=$(k get pods -n "$LOGS" -l app=tk-logmix -o jsonpath='{range .items[*]}{.metadata.deletionTimestamp}{"|"}{range .status.containerStatuses[*]}{.name}={.restartCount}:{.state.running.startedAt}{" "}{end}{"\n"}{end}')
+	[ "$(printf '%s\n' "$states" | grep -c .)" = 2 ] || return 1
+	printf '%s\n' "$states" | while IFS= read -r line; do
+		case $line in
+		"|"*) ;;
+		*) return 1 ;;
+		esac
+		case $line in *"app=0:2"*) ;; *) return 1 ;; esac
+		case $line in *"side=0:2"*) ;; *) return 1 ;; esac
+		case $line in *"crashy=0:"*) return 1 ;; esac
+	done || return 1
+	pod=$(k get pods -n "$LOGS" -l app=tk-logmix -o name | head -n 1)
+	[ "$(k logs -n "$LOGS" "$pod" -c app | grep -c '^WARN tick')" -ge 2 ]
+}
+
 build_world() {
 	log "applying fixture world"
 	k apply -f "$MANIFESTS/00-namespaces.yaml" >/dev/null
 	k apply -f "$MANIFESTS/crd/crd.yaml" >/dev/null
 	k wait --for=condition=Established crd/widgets.lens.example.com --timeout=60s >/dev/null
-	k apply -f "$MANIFESTS/apps" -f "$MANIFESTS/batch" -f "$MANIFESTS/edge" -f "$MANIFESTS/crd/widgets.yaml" >/dev/null
+	k apply -f "$MANIFESTS/apps" -f "$MANIFESTS/batch" -f "$MANIFESTS/edge" -f "$MANIFESTS/crd/widgets.yaml" -f "$MANIFESTS/logs" >/dev/null
 
 	log "waiting for steady state"
 	k rollout status deployment/web -n "$APPS" --timeout=180s >/dev/null
@@ -190,6 +221,7 @@ build_world() {
 	wait_until "broken-image in ImagePullBackOff" 180 image_pull_backoff
 	wait_until "crashloop in a back-off with ${CRASHLOOP_QUIET}s left" 420 crashloop_quiet
 	wait_until "metrics-server serving pod and node metrics" 300 metrics_ready
+	wait_until "tk-logmix running with a restarted crashy container" 300 logmix_ready
 }
 
 fixture_key() {
@@ -241,7 +273,14 @@ cap() {
 	dir=$OUT/$scenario
 	base=$dir/$key
 	mkdir -p "$dir"
-	[ ! -e "$base.txt" ] && [ ! -e "$base.stderr" ] || die "duplicate fixture key $scenario/$key"
+	if [ -n "$only" ]; then
+		! grep -qxF "$scenario/$key" "$SEEN" || die "duplicate fixture key $scenario/$key"
+		printf '%s/%s\n' "$scenario" "$key" >>"$SEEN"
+		rm -f "$base.txt" "$base.stderr" "$base.exit"
+		drop_manifest_rows "$scenario" "$key"
+	else
+		[ ! -e "$base.txt" ] && [ ! -e "$base.stderr" ] || die "duplicate fixture key $scenario/$key"
+	fi
 	set +e
 	(cd "$MANIFESTS" && "$KUBECTL" "$@") >"$base.txt" 2>"$base.stderr"
 	status=$?
@@ -259,6 +298,32 @@ cap() {
 		[ -f "$base.stderr" ] && sed 's/^/    /' "$base.stderr" >&2
 	fi
 	return 0
+}
+
+# drop_manifest_rows SCENARIO [KEY]: removes MANIFEST.tsv rows of a scenario
+# (or of one key in it) before an --only group recaptures them.
+drop_manifest_rows() {
+	awk -F '\t' -v s="$1" -v k="${2:-}" '!($1 == s && (k == "" || $2 == k))' "$MANIFEST" >"$MANIFEST.tmp"
+	mv "$MANIFEST.tmp" "$MANIFEST"
+}
+
+# Watches end on --request-timeout; while one runs, tk-logmix scales to 3 and
+# back so the stream appends real batches after the initial rows.
+cap_watch() {
+	(
+		sleep 2
+		k scale deployment/tk-logmix -n "$LOGS" --replicas=3 >/dev/null
+		sleep 3
+		k scale deployment/tk-logmix -n "$LOGS" --replicas=2 >/dev/null
+	) &
+	stimulus=$!
+	cap "$@"
+	wait "$stimulus"
+	wait_until "tk-logmix back at 2 pods" 120 logmix_two_pods
+}
+
+logmix_two_pods() {
+	[ "$(k get pods -n "$LOGS" -l app=tk-logmix --no-headers | grep -c .)" = 2 ]
 }
 
 capture_cluster() {
@@ -440,6 +505,82 @@ capture_read_errors() {
 	cap errors-context 1 --context does-not-exist get pods -n "$APPS"
 }
 
+# The lens and Explore events views: every `kubectl events` form and the
+# `get events` JSON/wide forms (EventList with series and legacy events).
+# All-namespace JSON is left out: it holds every event the long-lived cluster
+# kept (hundreds of KB) and ns-logs/get_events_-o_json covers the remaining
+# shape (scheduler events with eventTime, null count and no series).
+capture_events() {
+	s=ns-apps
+	n="-n $APPS"
+	wait_until "crashloop in a back-off with ${CRASHLOOP_QUIET}s left" 420 crashloop_quiet
+	# shellcheck disable=SC2086
+	{
+		cap $s 0 events $n
+		cap $s 0 events $n --for pod/crashloop
+		cap $s 0 events $n --types=Warning
+		cap $s 0 events -A
+		cap $s 0 events $n -o json
+		cap $s 0 get events $n -o json
+		cap $s 0 get events $n -o wide
+	}
+}
+
+# The logs lens parser against every kubectl logs form on tk-logmix, plus
+# event watches whose appended batches come from scaling tk-logmix, and the
+# events those scalings left (JSON).
+capture_logs() {
+	s=ns-logs
+	n="-n $LOGS"
+	rm -rf "${OUT:?}/$s"
+	drop_manifest_rows "$s"
+	wait_until "tk-logmix running with a restarted crashy container" 300 logmix_ready
+	pod=$(k get pods -n "$LOGS" -l app=tk-logmix -o name | LC_ALL=C sort | head -n 1)
+	pod=${pod#pod/}
+	# shellcheck disable=SC2086
+	{
+		cap $s 0 logs $n "$pod"
+		cap $s 0 logs $n "$pod" -c app
+		cap $s 0 logs $n "$pod" -c app --timestamps
+		cap $s 0 logs $n "$pod" -c app --limit-bytes=600
+		cap $s 0 logs $n "$pod" -c side --tail=5
+		cap $s 0 logs $n "$pod" --all-containers
+		cap $s 0 logs $n "$pod" --all-containers --prefix --timestamps
+		cap $s 0 logs $n deploy/tk-logmix
+		cap $s 0 logs $n deploy/tk-logmix --all-pods -c app --prefix
+		cap $s 0 logs $n -l app=tk-logmix
+		cap $s 0 logs $n -l app=tk-logmix -c app --prefix
+		cap $s 0 logs $n -l app=tk-logmix --all-containers --prefix --timestamps
+		cap $s 0 logs $n "$pod" -p -c crashy
+		cap $s 1 logs $n "$pod" -p -c app
+		cap $s 1 logs $n "$pod" -c nope
+		cap $s 1 logs $n nopod
+		cap $s 1 logs $n -f -l app=tk-logmix --all-containers --prefix
+		cap_watch $s 0 get events $n -w --request-timeout=8s
+		cap_watch $s 0 get events $n -w --output-watch-events --request-timeout=8s
+		cap_watch $s 0 get events $n --watch-only --request-timeout=8s
+		cap_watch $s 0 events $n -w --request-timeout=8s
+		cap $s 0 get events $n -o json
+	}
+}
+
+# run_group NAME: one read-only capture group (see --only).
+run_group() {
+	case $1 in
+	cluster) capture_cluster ;;
+	apps) capture_apps ;;
+	batch) capture_batch ;;
+	crd) capture_crd ;;
+	edge) capture_edge ;;
+	empty) capture_empty ;;
+	all-namespaces) capture_all_namespaces ;;
+	read-errors) capture_read_errors ;;
+	events) capture_events ;;
+	logs) capture_logs ;;
+	*) die "unknown capture group: $1" ;;
+	esac
+}
+
 capture_mutations() {
 	log "resetting $MUTATE"
 	delete_mutate_namespace
@@ -520,6 +661,20 @@ main() {
 		log "fixture world ready; nothing captured"
 		return 0
 	fi
+	if [ -n "$only" ]; then
+		build_world
+		[ -f "$MANIFEST" ] || die "no $MANIFEST to update; run a full capture first"
+		SEEN=$(mktemp)
+		for group in $(printf '%s' "$only" | tr ',' ' '); do
+			log "capturing group $group"
+			run_group "$group"
+		done
+		rm -f "$SEEN"
+		scan_for_credentials
+		log "recaptured groups $only (kubectl $CLIENT_VERSION, server $SERVER_VERSION)"
+		[ "$mismatches" = 0 ] || die "$mismatches capture(s) exited with an unexpected status"
+		return 0
+	fi
 	delete_mutate_namespace
 	build_world
 
@@ -530,11 +685,13 @@ main() {
 
 	capture_cluster
 	capture_apps
+	capture_events
 	capture_batch
 	capture_crd
 	capture_edge
 	capture_empty
 	capture_all_namespaces
+	capture_logs
 	capture_read_errors
 	capture_mutations
 	capture_mutation_errors

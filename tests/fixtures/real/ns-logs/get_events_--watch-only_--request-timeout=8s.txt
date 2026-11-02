@@ -1,0 +1,21 @@
+LAST SEEN   TYPE     REASON              OBJECT                 MESSAGE
+0s          Normal   ScalingReplicaSet   deployment/tk-logmix   Scaled up replica set tk-logmix-6856789c59 from 2 to 3
+0s          Normal   SuccessfulCreate    replicaset/tk-logmix-6856789c59   Created pod: tk-logmix-6856789c59-xv4fg
+0s          Normal   Scheduled           pod/tk-logmix-6856789c59-xv4fg    Successfully assigned tern-test-logs/tk-logmix-6856789c59-xv4fg to tern-kube-dev-control-plane
+0s          Normal   Pulled              pod/tk-logmix-6856789c59-xv4fg    Container image "busybox:1.37" already present on machine and can be accessed by the pod
+0s          Normal   Created             pod/tk-logmix-6856789c59-xv4fg    Container created
+0s          Normal   Started             pod/tk-logmix-6856789c59-xv4fg    Container started
+0s          Normal   Pulled              pod/tk-logmix-6856789c59-xv4fg    Container image "busybox:1.37" already present on machine and can be accessed by the pod
+0s          Normal   Created             pod/tk-logmix-6856789c59-xv4fg    Container created
+0s          Normal   Started             pod/tk-logmix-6856789c59-xv4fg    Container started
+0s          Normal   Pulled              pod/tk-logmix-6856789c59-xv4fg    Container image "busybox:1.37" already present on machine and can be accessed by the pod
+0s          Normal   Created             pod/tk-logmix-6856789c59-xv4fg    Container created
+0s          Normal   Started             pod/tk-logmix-6856789c59-xv4fg    Container started
+0s          Normal   Pulled              pod/tk-logmix-6856789c59-6h26h    Container image "busybox:1.37" already present on machine and can be accessed by the pod
+0s          Normal   Created             pod/tk-logmix-6856789c59-6h26h    Container created
+0s          Normal   Started             pod/tk-logmix-6856789c59-6h26h    Container started
+0s          Normal   ScalingReplicaSet   deployment/tk-logmix              Scaled down replica set tk-logmix-6856789c59 from 3 to 2
+0s          Normal   SuccessfulDelete    replicaset/tk-logmix-6856789c59   Deleted pod: tk-logmix-6856789c59-6h26h
+0s          Normal   Killing             pod/tk-logmix-6856789c59-6h26h    Stopping container app
+0s          Normal   Killing             pod/tk-logmix-6856789c59-6h26h    Stopping container crashy
+0s          Normal   Killing             pod/tk-logmix-6856789c59-6h26h    Stopping container side

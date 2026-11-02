@@ -7,6 +7,23 @@ versions may break).
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-02
+
+### Added
+
+- Native `kubectl logs` lens (also `kubecolor`, after global flags): records with level, source, time and message, parsed from JSON, klog, logfmt and plain lines, with `--prefix` and `--timestamps` honoured and stack traces folded into one record. Level and source chips with counts, **First error** with a small context view and Prev/Next error, Wrap, By time (merges per-pod blocks when `--timestamps` was given), a row inspector with Copy line, Copy message and Copy JSON, and pages with the newest first. `Found N pods` and `Defaulted container` lines are notices, not rows.
+- Logs lens actions: **Follow in split** (raw, live), **Open in Explore**, **Search…**, and **Run in split** variants (other container, `--previous`, `--all-containers --prefix`, `--timestamps --prefix`) typed into a new interactive split so the lens renders them there. A variant whose values would need shell quoting is copied instead, with a toast. The typed line lands in that shell's history.
+- `kubectl events` and `kubectl get events` render as native tables: each row stands for its involved object (inspector chips, Explore live, **Events for**), LAST SEEN sorts by age and shows `×N over D`, TYPE and REASON are facets, Warning rows are marked.
+- Explore events timeline: `v` opens the namespace's events, `V` the focused object's (workloads include the objects they own), grouped by recency with toned reasons; `x` Warnings only, `]` `[` next/previous Warning, `/` filter, `enter` opens the object. Palette command **Tern Kube: Events**.
+- Settings `general.streaming_view` (`raw` or `native`: what `logs -f` and event watches show while they run) and `explore.logs_tail`.
+
+### Changed
+
+- Explore `L` shows parsed records (level badges, sources, inspector) with `]` `[` errors, `x` level floor, `a` container, `o` previous instance, `w` wrap and `/` search; the tail is `explore.logs_tail` (default 500) instead of a fixed 500.
+- Follow in split works from a label selector (`logs -f -l ... --prefix`).
+- `kubectl logs -f`, `get events -w` and `kubectl events -w` show raw while they run and turn native after Ctrl-C or when they end.
+- End-to-end scenarios 40-49 and integration checks `tests/integration/logs/check.sh` and `tests/integration/events/check.sh` (run in CI) cover logs and events against kind.
+
 ## [0.2.0] - 2026-11-02
 
 ### Added
@@ -126,7 +143,8 @@ First public beta.
 - Docs: SDK capability matrix, configuration, performance, architecture,
   security model, testing, releasing.
 
-[Unreleased]: https://github.com/contrafy/tern-kube/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/contrafy/tern-kube/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/contrafy/tern-kube/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/contrafy/tern-kube/compare/v0.1.3...v0.2.0
 [0.1.3]: https://github.com/contrafy/tern-kube/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/contrafy/tern-kube/compare/v0.1.1...v0.1.2

@@ -90,6 +90,33 @@ describe("config defaults", function()
 		expect(find(bdiags, "general.shell_env").level).toBe("error")
 	end)
 
+	-- Plugin lenses receive streamed lines late (Tern 0.9.8), so a native
+	-- view of a running `logs -f` trails reality; raw stays the default and
+	-- native is an explicit opt-in.
+	it("keeps running streams raw unless native is chosen", function()
+		expect(parse(nil).general.streaming_view).toBe("raw")
+		local cfg, diags = parse([[{"general": {"streaming_view": "native"}}]])
+		expect(#diags).toBe(0)
+		expect(cfg.general.streaming_view).toBe("native")
+		local bad, bdiags = parse([[{"general": {"streaming_view": "live"}}]])
+		expect(bad.general.streaming_view).toBe("raw")
+		expect(contains(find(bdiags, "general.streaming_view").message, '"raw", "native"')).toBe(true)
+	end)
+
+	-- The Explore logs route fetches a bounded tail; the bound replaces a
+	-- hard-coded 500 and must stay within what a lens can hold.
+	it("bounds the Explore logs tail", function()
+		expect(parse(nil).explore.logs_tail).toBe(500)
+		local cfg, diags = parse([[{"explore": {"logs_tail": 2000}}]])
+		expect(#diags).toBe(0)
+		expect(cfg.explore.logs_tail).toBe(2000)
+		for _, v in { "0", "100001", "1.5", '"500"' } do
+			local bad, bdiags = parse('{"explore": {"logs_tail": ' .. v .. "}}")
+			expect(bad.explore.logs_tail).toBe(500)
+			expect(find(bdiags, "explore.logs_tail").level).toBe("error")
+		end
+	end)
+
 	it("treats an empty or blank file as missing", function()
 		for _, text in { "", "  \n\t" } do
 			local cfg, diags = parse(text)

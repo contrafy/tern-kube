@@ -1,0 +1,200 @@
+[INFO] retrying upstream call
+INFO user signed in
+order created in 799ms
+order created (a0ecba82)
+payment authorised in 263ms
+{"level":"warn","ts":"2026-10-30T10:00:00.887Z","msg":"order created","request_id":"b8ba6283768f","path":"/api/cart","status":404,"dur_ms":900.5}
+{"level":"info","ts":"2026-10-30T10:00:01.112Z","msg":"slow query","request_id":"dbf9fff9576b","path":"/api/cart","status":500,"dur_ms":174.8}
+I1030 10:00:01.134392       1 reflector.go:382] "request served" key="ns/obj-70" attempt=1
+[INFO] config reloaded
+time=2026-10-30T10:00:01.446Z level=info msg="connection pool resized" path=/api/users/me dur=0.3s
+{"level":"info","ts":"2026-10-30T10:00:01.510Z","msg":"cache miss","request_id":"51ffdb67dae8","path":"/api/cart","status":200,"dur_ms":612.8}
+I1030 10:00:01.627849       1 leaderelection.go:335] user signed in
+[DEBUG] cache miss
+WARN order created
+[INFO] config reloaded
+{"level":"info","ts":"2026-10-30T10:00:02.024Z","msg":"order created","request_id":"8ad4d397e7d0","path":"/api/checkout","status":200,"dur_ms":125.6}
+{"level":"info","ts":"2026-10-30T10:00:02.305Z","msg":"slow query","request_id":"877d9d498dce","path":"/api/checkout","status":201,"dur_ms":311.3,"user":{"id":4439,"roles":["admin","dev"]}}
+I1030 10:00:02.336154       1 leaderelection.go:334] user signed in
+{"level":"info","ts":"2026-10-30T10:00:02.554Z","msg":"config reloaded","request_id":"0d2b36cd9854","path":"/api/orders","status":200,"dur_ms":411.8}
+I1030 10:00:02.735090       1 sync.go:118] "order created" key="ns/obj-19" attempt=4
+Traceback (most recent call last):
+  File "/app/worker.py", line 39, in run
+    raise ValueError('bad payload')
+ValueError: bad payload
+request served in 8ms
+[33mWARN[0m retrying upstream call
+{"level":"info","ts":"2026-10-30T10:00:03.404Z","msg":"cache miss","request_id":"190e01209ec7","path":"/api/orders","status":404,"dur_ms":187.3}
+{"level":"info","ts":"2026-10-30T10:00:03.452Z","msg":"cache miss","request_id":"564c9b0f4de7","path":"/api/cart","status":200,"dur_ms":813.7}
+{"level":"error","ts":"2026-10-30T10:00:03.639Z","msg":"user signed in","request_id":"7edd4d31e5c6","path":"/api/cart","status":404,"dur_ms":703.4}
+time=2026-10-30T10:00:03.903Z level=info msg="connection pool resized" path=/api/cart dur=1.9s
+{"level":"info","ts":"2026-10-30T10:00:04.072Z","msg":"queue drained","request_id":"0f86f7fbda00","path":"/api/checkout","status":404,"dur_ms":510.1,"user":{"id":5819,"roles":["admin","dev"]}}
+connection pool resized (2beef0c2)
+2026-10-30 10:00:04,253 INFO [main] slow query
+user signed in (e6446e12)
+{"level":"info","ts":"2026-10-30T10:00:04.481Z","msg":"connection pool resized","request_id":"493d45caea68","path":"/api/checkout","status":201,"dur_ms":276.5,"user":{"id":109,"roles":["admin","dev"]}}
+I1030 10:00:04.772207       1 server.go:309] queue drained
+{"level":"warn","ts":"2026-10-30T10:00:04.953Z","msg":"request served","request_id":"b8f3ede93c1b","path":"/api/checkout","status":200,"dur_ms":803.8}
+time=2026-10-30T10:00:05.149Z level=info msg="slow query" path=/api/cart dur=1.5s
+E1030 10:00:05.338830       1 controller.go:122] "request served" key="ns/obj-39" attempt=3
+2026-10-30 10:00:05,362 WARN [main] payment authorised
+time=2026-10-30T10:00:05.409Z level=info msg="cache miss" path=/api/checkout dur=0.3s
+{"level":"info","ts":"2026-10-30T10:00:05.686Z","msg":"request served","request_id":"ddc7dd467ed9","path":"/api/users/me","status":201,"dur_ms":817.4}
+W1030 10:00:05.932971       1 leaderelection.go:222] "retrying upstream call" key="ns/obj-78" attempt=2
+I1030 10:00:06.105144       1 leaderelection.go:339] queue drained
+{"level":"debug","ts":"2026-10-30T10:00:06.372Z","msg":"cache miss","request_id":"2f083d34c479","path":"/api/orders","status":200,"dur_ms":436.9}
+[INFO] retrying upstream call
+payment authorised (93cab906)
+queue drained (d743c504)
+{"level":"info","ts":"2026-10-30T10:00:07.020Z","msg":"order created","request_id":"5c9d873510dc","path":"/healthz","status":200,"dur_ms":131.8}
+{"level":"debug","ts":"2026-10-30T10:00:07.157Z","msg":"retrying upstream call","request_id":"4c78828da968","path":"/api/users/me","status":500,"dur_ms":596.8}
+time=2026-10-30T10:00:07.427Z level=info msg="order created" path=/api/users/me dur=1.9s
+I1030 10:00:07.636356       1 leaderelection.go:165] "payment authorised" key="ns/obj-10" attempt=4
+2026-10-30 10:00:07,668 INFO [main] order created
+I1030 10:00:07.797336       1 server.go:165] "user signed in" key="ns/obj-56" attempt=3
+W1030 10:00:07.903060       1 reflector.go:144] "request served" key="ns/obj-65" attempt=3
+time=2026-10-30T10:00:07.937Z level=info msg="queue drained" path=/api/cart dur=0.5s
+{"level":"info","ts":"2026-10-30T10:00:08.104Z","msg":"order created","request_id":"e6e76e794312","path":"/api/users/me","status":404,"dur_ms":96.2}
+slow query in 519ms
+WARN connection pool resized
+[INFO] config reloaded
+Traceback (most recent call last):
+  File "/app/worker.py", line 116, in run
+    raise ValueError('bad payload')
+ValueError: bad payload
+2026-10-30 10:00:08,963 ERROR [main] java.lang.IllegalStateException: order 54492 in bad state
+	at com.example.shop.Service.handle(Service.java:7)
+	at com.example.shop.Service.handle(Service.java:176)
+	at com.example.shop.Service.handle(Service.java:284)
+Caused by: java.io.IOException: connection reset
+	... 3 more
+time=2026-10-30T10:00:09.011Z level=info msg="request served" path=/api/checkout dur=2.7s
+I1030 10:00:09.282130       1 server.go:285] request served
+{"level":"info","ts":"2026-10-30T10:00:09.479Z","msg":"retrying upstream call","request_id":"fe284d84fa4d","path":"/api/checkout","status":200,"dur_ms":486.8,"user":{"id":7029,"roles":["admin","dev"]}}
+{"level":"debug","ts":"2026-10-30T10:00:09.619Z","msg":"slow query","request_id":"796031878c5a","path":"/healthz","status":200,"dur_ms":386.1}
+[INFO] cache miss
+time=2026-10-30T10:00:09.924Z level=info msg="user signed in" path=/api/orders dur=0.8s
+{"level":"error","ts":"2026-10-30T10:00:10.209Z","msg":"config reloaded","request_id":"1ec39ae8e9c4","path":"/api/orders","status":404,"dur_ms":835.1}
+I1030 10:00:10.482043       1 leaderelection.go:54] "payment authorised" key="ns/obj-30" attempt=1
+payment authorised in 445ms
+[INFO] order created
+WARN cache miss
+2026-10-30 10:00:11,158 ERROR [main] java.lang.IllegalStateException: order 66714 in bad state
+	at com.example.shop.Service.handle(Service.java:12)
+	at com.example.shop.Service.handle(Service.java:231)
+	at com.example.shop.Service.handle(Service.java:86)
+Caused by: java.io.IOException: connection reset
+	... 3 more
+{"level":"debug","ts":"2026-10-30T10:00:11.339Z","msg":"config reloaded","request_id":"201635bdd288","path":"/healthz","status":404,"dur_ms":821.8}
+{"level":"debug","ts":"2026-10-30T10:00:11.479Z","msg":"connection pool resized","request_id":"b370f41b0501","path":"/api/checkout","status":404,"dur_ms":280.7,"user":{"id":2387,"roles":["admin","dev"]}}
+{"level":"info","ts":"2026-10-30T10:00:11.645Z","msg":"slow query","request_id":"854544ed9847","path":"/api/cart","status":500,"dur_ms":541.1,"user":{"id":190,"roles":["admin","dev"]}}
+{"level":"info","ts":"2026-10-30T10:00:11.750Z","msg":"config reloaded","request_id":"9debacdf3d62","path":"/api/cart","status":200,"dur_ms":178.9}
+{"level":"error","ts":"2026-10-30T10:00:12.020Z","msg":"payment authorised","request_id":"d52693630040","path":"/api/cart","status":201,"dur_ms":396.1}
+queue drained (117a679c)
+I1030 10:00:12.434236       1 server.go:94] payment authorised
+{"level":"warn","ts":"2026-10-30T10:00:12.671Z","msg":"cache miss","request_id":"6aeacaf8589f","path":"/api/orders","status":404,"dur_ms":676.3,"user":{"id":5355,"roles":["admin","dev"]}}
+{"level":"info","ts":"2026-10-30T10:00:12.968Z","msg":"user signed in","request_id":"dcceb3e3501d","path":"/healthz","status":500,"dur_ms":484.1}
+retrying upstream call (172e8a2a)
+time=2026-10-30T10:00:13.493Z level=warn msg="queue drained" path=/api/checkout dur=2.9s
+{"level":"error","ts":"2026-10-30T10:00:13.601Z","msg":"order created","request_id":"19210e12c203","path":"/api/orders","status":200,"dur_ms":176.7}
+cache miss (5c6641f8)
+[33mWARN[0m retrying upstream call
+long: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+time=2026-10-30T10:00:14.156Z level=info msg="slow query" path=/api/orders dur=0.7s
+I1030 10:00:14.445080       1 leaderelection.go:336] "queue drained" key="ns/obj-73" attempt=1
+Traceback (most recent call last):
+  File "/app/worker.py", line 126, in run
+    raise ValueError('bad payload')
+ValueError: bad payload
+Traceback (most recent call last):
+  File "/app/worker.py", line 121, in run
+    raise ValueError('bad payload')
+ValueError: bad payload
+I1030 10:00:15.066775       1 leaderelection.go:96] cache miss
+W1030 10:00:15.098456       1 sync.go:183] "request served" key="ns/obj-71" attempt=4
+{"level":"warn","ts":"2026-10-30T10:00:15.330Z","msg":"config reloaded","request_id":"772f89eb49c6","path":"/api/cart","status":200,"dur_ms":592.4}
+{"level":"info","ts":"2026-10-30T10:00:15.545Z","msg":"request served","request_id":"4dd27fee9c0b","path":"/api/users/me","status":500,"dur_ms":109.3}
+[DEBUG] config reloaded
+time=2026-10-30T10:00:15.748Z level=info msg="order created" path=/api/orders dur=0.3s
+order created (88474663)
+2026-10-30 10:00:15,967 DEBUG [main] order created
+I1030 10:00:16.119167       1 controller.go:380] "cache miss" key="ns/obj-76" attempt=5
+time=2026-10-30T10:00:16.317Z level=warn msg="connection pool resized" path=/api/checkout dur=1.6s
+{"level":"info","ts":"2026-10-30T10:00:16.487Z","msg":"retrying upstream call","request_id":"0ce2e2933542","path":"/api/users/me","status":200,"dur_ms":488.4}
+{"level":"debug","ts":"2026-10-30T10:00:16.528Z","msg":"order created","request_id":"a8297bf4edc4","path":"/api/checkout","status":500,"dur_ms":50.7}
+2026-10-30 10:00:16,756 INFO [main] request served
+W1030 10:00:16.921805       1 sync.go:208] order created
+[INFO] slow query
+2026-10-30 10:00:17,079 ERROR [main] java.lang.IllegalStateException: order 25219 in bad state
+	at com.example.shop.Service.handle(Service.java:7)
+	at com.example.shop.Service.handle(Service.java:243)
+	at com.example.shop.Service.handle(Service.java:112)
+time=2026-10-30T10:00:17.304Z level=warn msg="cache miss" path=/api/checkout dur=0.9s
+2026-10-30 10:00:17,592 DEBUG [main] request served
+request served (da33ae83)
+retrying upstream call (59730b9b)
+W1030 10:00:18.074473       1 controller.go:40] cache miss
+{"level":"error","ts":"2026-10-30T10:00:18.234Z","msg":"queue drained","request_id":"b4dcedac8891","path":"/api/users/me","status":201,"dur_ms":106.4}
+config reloaded in 82ms
+{"level":"info","ts":"2026-10-30T10:00:18.483Z","msg":"queue drained","request_id":"9a3f81b792d9","path":"/healthz","status":404,"dur_ms":681.2}
+I1030 10:00:18.726074       1 controller.go:70] "config reloaded" key="ns/obj-29" attempt=4
+{"level":"info","ts":"2026-10-30T10:00:18.878Z","msg":"config reloaded","request_id":"bdbb833dc1c7","path":"/api/orders","status":404,"dur_ms":868.3}
+time=2026-10-30T10:00:18.900Z level=info msg="payment authorised" path=/api/checkout dur=0.8s
+[INFO] connection pool resized
+[ERROR] payment authorised
+2026-10-30 10:00:19,347 INFO [main] retrying upstream call
+time=2026-10-30T10:00:19.488Z level=info msg="request served" path=/api/checkout dur=2.8s
+2026-10-30 10:00:19,519 ERROR [main] java.lang.IllegalStateException: order 68290 in bad state
+	at com.example.shop.Service.handle(Service.java:263)
+	at com.example.shop.Service.handle(Service.java:226)
+	at com.example.shop.Service.handle(Service.java:58)
+	at com.example.shop.Service.handle(Service.java:116)
+	at com.example.shop.Service.handle(Service.java:28)
+Caused by: java.io.IOException: connection reset
+	... 3 more
+INFO cache miss
+Traceback (most recent call last):
+  File "/app/worker.py", line 13, in run
+    raise ValueError('bad payload')
+ValueError: bad payload
+W1030 10:00:19.817576       1 controller.go:93] "user signed in" key="ns/obj-46" attempt=4
+WARN payment authorised
+time=2026-10-30T10:00:19.942Z level=info msg="order created" path=/api/users/me dur=2.7s
+2026-10-30 10:00:20,208 DEBUG [main] user signed in
+2026-10-30 10:00:20,240 WARN [main] connection pool resized
+{"level":"info","ts":"2026-10-30T10:00:20.394Z","msg":"cache miss","request_id":"16f2df076046","path":"/healthz","status":200,"dur_ms":450.5}
+I1030 10:00:20.601640       1 server.go:368] "cache miss" key="ns/obj-95" attempt=2
+I1030 10:00:20.827435       1 server.go:211] "user signed in" key="ns/obj-22" attempt=1
+[33mWARN[0m request served
+{"level":"info","ts":"2026-10-30T10:00:21.206Z","msg":"queue drained","request_id":"3107df717fa8","path":"/api/cart","status":500,"dur_ms":387.9}
+{"level":"info","ts":"2026-10-30T10:00:21.338Z","msg":"cache miss","request_id":"daa89f52cb90","path":"/api/users/me","status":201,"dur_ms":749.5,"user":{"id":521,"roles":["admin","dev"]}}
+I1030 10:00:21.344830       1 reflector.go:3] queue drained
+INFO slow query
+time=2026-10-30T10:00:21.880Z level=debug msg="config reloaded" path=/api/users/me dur=0.1s
+I1030 10:00:21.957780       1 leaderelection.go:39] "user signed in" key="ns/obj-46" attempt=1
+cache miss in 250ms
+queue drained in 58ms
+[INFO] slow query
+2026-10-30 10:00:22,513 ERROR [main] slow query
+retrying upstream call (b0ec8c64)
+INFO order created
+INFO slow query
+payment authorised in 296ms
+{"level":"info","ts":"2026-10-30T10:00:23.509Z","msg":"cache miss","request_id":"99198bca4a3b","path":"/api/cart","status":201,"dur_ms":476.1}
+I1030 10:00:23.547882       1 leaderelection.go:85] slow query
+config reloaded in 79ms
+{"level":"error","ts":"2026-10-30T10:00:23.710Z","msg":"connection pool resized","request_id":"73f7cb270811","path":"/api/checkout","status":201,"dur_ms":191.3,"user":{"id":3719,"roles":["admin","dev"]}}
+{"level":"info","ts":"2026-10-30T10:00:23.819Z","msg":"order created","request_id":"0fb180280ce3","path":"/api/checkout","status":404,"dur_ms":694.9}
+I1030 10:00:24.082082       1 sync.go:160] request served
+{"level":"info","ts":"2026-10-30T10:00:24.252Z","msg":"payment authorised","request_id":"02bc36103e2d","path":"/api/checkout","status":500,"dur_ms":692.5}
+{"level":"info","ts":"2026-10-30T10:00:24.269Z","msg":"cache miss","request_id":"85d408a92523","path":"/api/users/me","status":200,"dur_ms":112.9}
+2026-10-30 10:00:24,446 DEBUG [main] user signed in
+{"level":"warn","ts":"2026-10-30T10:00:24.630Z","msg":"connection pool resized","request_id":"d43e4b0c5f0f","path":"/api/cart","status":200,"dur_ms":102.3}
+retrying upstream call in 580ms
+{"level":"debug","ts":"2026-10-30T10:00:25.050Z","msg":"cache miss","request_id":"44bf4cb01e60","path":"/api/users/me","status":404,"dur_ms":758.3}
+time=2026-10-30T10:00:25.198Z level=info msg="retrying upstream call" path=/healthz dur=1.2s
+[33mWARN[0m payment authorised
+connection pool resized (a488e217)
+[33mWARN[0m queue drained
+I1030 10:00:26.000279       1 leaderelection.go:81] "config reloaded" key="ns/obj-83" attempt=1
+I1030 10:00:26.141775       1 server.go:154] "config reloaded" key="ns/obj-75" attempt=2

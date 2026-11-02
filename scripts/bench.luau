@@ -5,29 +5,41 @@
 -- fails on gross regressions only; docs/performance.md has the measured
 -- numbers and the in-window ones.
 local Capture = require("../plugin/lib/lens/capture")
+local LogsQuery = require("../plugin/lib/logs/query")
+local LogsStore = require("../plugin/lib/logs/store")
+local LogsTypes = require("../plugin/lib/logs/types")
 local Query = require("../plugin/lib/lens/query")
 local View = require("../plugin/lib/lens/view")
 local json = require("../tests/lib/json")
 local runs = require("../tests/lib/runs")
+local synth = require("./fixtures/synth")
 local vsm = require("../plugin/lib/lens/viewstate")
 
 local RUNS = 30
 local WARMUP = 3
 
 type Stats = { p50: number, p95: number, max: number }
-type Case = { name: string, run: () -> (), p95Limit: number }
+-- `items`: also report the p50 per item (logs: microseconds per line).
+-- `setup`: runs untimed before every sample.
+type Case = { name: string, run: () -> (), p95Limit: number, items: number?, setup: (() -> ())? }
 
 local function percentile(sorted: { number }, p: number): number
 	local rank = math.max(1, math.ceil(p / 100 * #sorted))
 	return sorted[rank]
 end
 
-local function measure(fn: () -> ()): Stats
+local function measure(fn: () -> (), setup: (() -> ())?): Stats
 	for _ = 1, WARMUP do
+		if setup then
+			setup()
+		end
 		fn()
 	end
 	local samples: { number } = table.create(RUNS)
 	for i = 1, RUNS do
+		if setup then
+			setup()
+		end
 		local t0 = os.clock()
 		fn()
 		samples[i] = (os.clock() - t0) * 1000
@@ -59,6 +71,41 @@ local filtered =
 local c1000 = build(T1000)
 local t1000 = (c1000.snapshot :: any).tables[1]
 local firstKey: string = t1000.rows[1].key
+
+local LOG_LINES = 20000
+local mixedLines = synth.logLines(LOG_LINES, 20261102, false)
+local prefixedLines = synth.logLines(LOG_LINES, 20261102, true)
+
+local function logStore(lines: { string }, prefixed: boolean): LogsStore.Store
+	local opts: LogsTypes.Options = { prefix = prefixed, timestamps = prefixed, follow = false, decode = json.decode }
+	local s = LogsStore.new(opts, { maxLines = 100000, maxBytes = 64 * 1024 * 1024 })
+	for _, l in lines do
+		LogsStore.push(s, l)
+	end
+	LogsStore.finish(s, 0)
+	return s
+end
+
+local prefixedStore = logStore(prefixedLines, true)
+local PAGE = 500
+
+-- Each sample follows an apply of another filter, so the store's last result
+-- does not answer it: the cost of a click that changes the filter, with the
+-- per-record search text and the merged order already built.
+local OTHER_FILTER: LogsQuery.Filter = { merge = false, levels = {} }
+
+local function applyCase(name: string, filter: LogsQuery.Filter): Case
+	return {
+		name = name,
+		setup = function()
+			LogsQuery.apply(prefixedStore, OTHER_FILTER, nil, PAGE)
+		end,
+		run = function()
+			LogsQuery.apply(prefixedStore, filter, nil, PAGE)
+		end,
+		p95Limit = 20,
+	}
+end
 
 local cases: { Case } = {
 	{ name = "100 rows: build + render", run = buildAndRender(T100, vsm.default()), p95Limit = 50 },
@@ -111,12 +158,33 @@ local cases: { Case } = {
 		run = buildAndRender("ns-apps/describe_pods", vsm.default()),
 		p95Limit = 100,
 	},
+	{
+		name = "20 000 mixed lines: push",
+		run = function()
+			logStore(mixedLines, false)
+		end,
+		p95Limit = 300,
+		items = LOG_LINES,
+	},
+	{
+		name = "20 000 prefixed+ts lines: push",
+		run = function()
+			logStore(prefixedLines, true)
+		end,
+		p95Limit = 300,
+		items = LOG_LINES,
+	},
+	applyCase("20 000 lines: apply + page", { merge = false }),
+	applyCase("20 000 lines: apply errors + page", { merge = false, levels = { error = true, fatal = true } }),
+	applyCase("20 000 lines: apply warn+ 1 source", { merge = false, minLevel = "warn", sources = { [1] = true } }),
+	applyCase("20 000 lines: apply text + page", { merge = false, text = "Checkout" }),
+	applyCase("20 000 lines: apply merge by time", { merge = true }),
 }
 
 local failures: { string } = {}
 print(string.format("%-40s %9s %9s %9s %9s", "case (" .. RUNS .. " runs)", "p50 ms", "p95 ms", "max ms", "limit"))
 for _, case in cases do
-	local s = measure(case.run)
+	local s = measure(case.run, case.setup)
 	local ok = s.p95 < case.p95Limit
 	print(
 		string.format(
@@ -129,6 +197,9 @@ for _, case in cases do
 			if ok then "" else "  FAIL"
 		)
 	)
+	if case.items then
+		print(string.format("%-40s %9.2f us per item (p50)", "", s.p50 * 1000 / case.items))
+	end
 	if not ok then
 		table.insert(failures, case.name)
 	end

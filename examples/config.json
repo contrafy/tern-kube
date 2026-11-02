@@ -6,7 +6,8 @@
     "max_rows": 20000,
     "max_rendered_rows": 500,
     "max_capture_bytes": 16777216,
-    "shell_env": true
+    "shell_env": true,
+    "streaming_view": "raw"
   },
   "aliases": {
     "additional": []
@@ -15,7 +16,8 @@
     "allow_live_queries": true,
     "auto_refresh": false,
     "query_timeout_ms": 10000,
-    "relationship_max_nodes": 250
+    "relationship_max_nodes": 250,
+    "logs_tail": 500
   },
   "mutations": {
     "enabled": true,

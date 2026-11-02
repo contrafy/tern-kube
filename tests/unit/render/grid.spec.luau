@@ -118,6 +118,46 @@ describe("render grid", function()
 		local crash = nodes.tones((nodes.findAll(rows[2], nodes.class("tk-c"))[2] :: any).c[1])
 		expect(table.find(crash, "warning") ~= nil).toBe(true)
 	end)
+
+	-- A log keeps arrival order: its headers are labels, not sort buttons.
+	it("unsortable grids draw plain headers", function()
+		local s = spec()
+		s.sortable = false
+		local heads = nodes.findAll(Grid.grid(s), nodes.class("tk-h"))
+		expect(nodes.action(heads[1])).toBeNil()
+		expect(nodes.find(Grid.grid(s), nodes.class("tk-sorted"))).toBeNil()
+		expect(nodes.text(heads[5])).toBe("AGE")
+	end)
+
+	it("rows carry extra classes, prebuilt cells, muted notes and dividers", function()
+		local s = spec()
+		s.class = "tk-logs"
+		s.rows[1].class = "tk-lvl-warn"
+		s.rows[1].notes = { [5] = "×3 over 1h" }
+		s.rows[2].nodes = { [3] = ui.badge("ERROR", "error") }
+		s.rows[2].divider = "2026-11-02"
+		local g = Grid.grid(s)
+		expect(classesOf(nodes.find(g, nodes.class("tk-grid")))).toContain("tk-logs")
+		local rows = nodes.findAll(g, nodes.class("tk-r"))
+		expect(classesOf(rows[1])).toBe("tk-r tk-lvl-warn")
+		local age = nodes.findAll(rows[1], nodes.class("tk-c"))[5]
+		expect(nodes.text(age)).toBe("5m ×3 over 1h")
+		expect(table.find(nodes.tones((age :: any).c[1]), "muted") ~= nil).toBe(true)
+		local status = nodes.findAll(rows[2], nodes.class("tk-c"))[3] :: any
+		expect(status.c[1].k).toBe("badge")
+		local divider = nodes.find(g, nodes.class("tk-divider")) :: any
+		expect(divider.p.text).toBe("2026-11-02")
+	end)
+
+	it("kept columns never hide, whatever their priority", function()
+		local s = spec()
+		s.keep = { IP = true }
+		local heads = nodes.findAll(Grid.grid(s), nodes.class("tk-h"))
+		expect(nodes.class("tk-p0")(heads[6])).toBe(true)
+		expect(classesOf(nodes.find(Grid.grid(s), nodes.class("tk-grid")))).toBe(
+			"tk-grid tk-cols-9 tk-a-7 tk-b-6 tk-c-4"
+		)
+	end)
 end)
 
 describe("render cells", function()

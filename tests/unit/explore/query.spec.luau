@@ -86,8 +86,16 @@ describe("explore query", function()
 		})
 	end)
 
-	it("logs of a pod name the pod; of a workload the type/name; tail is bounded", function()
-		expect(Query.logs("k", bare(), POD, "app", true, 500)).toEqual({
+	-- Records need the exact kubelet time and the pod/container of every
+	-- line, so Explore always asks for both; no container means all of them.
+	it("logs of a pod ask for timestamps, prefixes and every container, bounded by tail", function()
+		expect(Query.logs("k", bare(), {
+			ref = POD,
+			container = nil,
+			previous = false,
+			since = nil,
+			tail = 500,
+		})).toEqual({
 			"k",
 			"--context",
 			"kind-dev",
@@ -95,14 +103,89 @@ describe("explore query", function()
 			"web-0",
 			"-n",
 			"apps",
-			"-c",
-			"app",
-			"--previous",
+			"--all-containers",
+			"--timestamps",
+			"--prefix",
 			"--tail=500",
 		})
-		local argv = Query.logs("k", target(), DEPLOY, nil, false, nil)
+	end)
+
+	it("logs of one container add -c, --previous and --since; a workload is TYPE/NAME", function()
+		local argv = Query.logs("k", bare(), {
+			ref = DEPLOY,
+			container = "app",
+			previous = true,
+			since = "1h",
+			tail = 42,
+		})
 		expect(argv).toContain("deployment.apps/web")
-		expect(argv).toContain("--tail=500")
+		expect(argv).toContain("-c")
+		expect(argv).toContain("--previous")
+		expect(argv).toContain("--since=1h")
+		expect(argv).toContain("--tail=42")
+		expect(table.find(argv, "--all-containers")).toBeNil()
+		expect(table.find(argv, "--max-log-requests=10")).toBeNil()
+	end)
+
+	-- kubectl refuses more than 5 concurrent pod streams by default; a
+	-- selector over a larger workload would fail without the raised limit.
+	it("selector-only logs use -l in the given namespace and raise the request limit", function()
+		expect(Query.logs("k", bare(), {
+			ref = nil,
+			selector = "app=web",
+			namespace = "apps",
+			container = nil,
+			previous = false,
+			since = nil,
+			tail = 100,
+		})).toEqual({
+			"k",
+			"--context",
+			"kind-dev",
+			"logs",
+			"-l",
+			"app=web",
+			"-n",
+			"apps",
+			"--all-containers",
+			"--timestamps",
+			"--prefix",
+			"--tail=100",
+			"--max-log-requests=10",
+		})
+	end)
+
+	-- `kubectl events` needs kubectl >= 1.26; `get events` returns the same
+	-- EventList from any version.
+	it("events read get events as JSON in one namespace or across all of them", function()
+		expect(Query.events("k", bare(), { namespace = "apps", all = false })).toEqual({
+			"k",
+			"--context",
+			"kind-dev",
+			"get",
+			"events",
+			"-n",
+			"apps",
+			"-o",
+			"json",
+		})
+		local all = Query.events("k", target(), { namespace = nil, all = true })
+		expect(all).toContain("-A")
+		expect(table.find(all, "-n")).toBeNil()
+	end)
+
+	it("related events read what can own pods in the object's namespace", function()
+		expect(Query.owned("k", bare(), "apps")).toEqual({
+			"k",
+			"--context",
+			"kind-dev",
+			"get",
+			"replicasets,pods,jobs",
+			"-n",
+			"apps",
+			"-o",
+			"json",
+		})
 	end)
 
 	it("kubeconfig queries need no context", function()
