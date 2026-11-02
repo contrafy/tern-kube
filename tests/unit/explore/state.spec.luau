@@ -197,6 +197,58 @@ describe("explore state: keys", function()
 		expect(s2.filter[State.currentKey(s2)]).toBe("web")
 	end)
 
+	it("the filter edits at the caret, with native edits and undo", function()
+		local s = W.keys(W.open(), { "/", "w", "b" })
+		s = W.keys(s, { "left" })
+		s = W.keys(s, { "e" })
+		expect(s.filter[State.currentKey(s)]).toBe("web")
+		expect((s.input :: any).cursor).toBe(2)
+		-- Tern replaced a selection (all of it) and put the caret at the end.
+		s = State.update(s, {
+			t = "edit",
+			id = State.FILTER_INPUT,
+			edit = { from = 0, to = 3, text = "db", cursor = 2, len = 3 },
+		})
+		expect(s.filter[State.currentKey(s)]).toBe("db")
+		for _, item in State.items(s) do
+			expect((item.ref :: any).name).toContain("db")
+		end
+		-- One sent with an older text is dropped, not misapplied.
+		local stale = State.update(s, {
+			t = "edit",
+			id = State.FILTER_INPUT,
+			edit = { from = 0, to = 3, text = "", cursor = 0, len = 3 },
+		})
+		expect(stale).toBe(s)
+		s = State.update(s, { t = "undo", id = State.FILTER_INPUT })
+		expect(s.filter[State.currentKey(s)]).toBe("web")
+		s = State.update(s, { t = "undo", id = State.FILTER_INPUT })
+		s = State.update(s, { t = "undo", id = State.FILTER_INPUT })
+		expect(s.filter[State.currentKey(s)]).toBeNil()
+		expect(s.editing).toBe(true)
+	end)
+
+	it("leaving the filter gives up its focus, so list keys stay Explore's", function()
+		local s = W.keys(W.open(), { "/", "w" })
+		local _, effects = State.update(s, W.key("enter"))
+		expect(effects).toEqual({ { t = "blur" } })
+		local _, cancelled = State.update(s, W.key("escape"))
+		expect(cancelled).toEqual({ { t = "blur" } })
+	end)
+
+	it("an edit in the filter while the list has the keys starts editing it", function()
+		local s = W.keys(W.open(), { "/", "w", "e", "b", "enter" })
+		expect(s.editing).toBe(false)
+		local s2, effects = State.update(s, {
+			t = "edit",
+			id = State.FILTER_INPUT,
+			edit = { from = 0, to = 0, text = "", cursor = 0, len = 3 },
+		})
+		expect(s2.editing).toBe(true)
+		expect((s2.input :: any).cursor).toBe(0)
+		expect(effects).toEqual({ { t = "focus", id = "main.filter" } })
+	end)
+
 	it("enter drills in, escape walks back to the root, then clears the filter, then closes", function()
 		local s = W.open()
 		s = W.keys(s, { "/", "w", "e", "b", "enter", "enter" })
@@ -487,6 +539,18 @@ describe("explore state: visible window", function()
 		expect(State.viewport(22, 500)).toBe(3)
 		expect(State.viewport(nil, 500)).toBe(500)
 		expect(State.viewport(200, 50)).toBe(50)
+	end)
+
+	-- Measured on Tern 0.9.8 with `tern ctl dump` at window heights 600, 800
+	-- and 1000 px: blocks of 33, 45 and 58 lines fit 7, 16 and 26 grid rows
+	-- under the chrome. With 18 chrome lines the window held 11, 20 and 30,
+	-- so G and j put the selected row below the visible area.
+	it("never sizes the window past the rows that fit (measured)", function()
+		for _, m in { { 33, 7 }, { 45, 16 }, { 58, 26 } } do
+			local size = State.viewport(m[1], 500)
+			expect(size <= m[2]).toBe(true)
+			expect(size >= m[2] - 1).toBe(true)
+		end
 	end)
 
 	it("G puts the last row in the window", function()

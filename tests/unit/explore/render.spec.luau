@@ -123,6 +123,17 @@ describe("explore render: list", function()
 		expect(nodes.text(m)).toContain("7 pods")
 	end)
 
+	-- Tern draws the caret where the `cursor` prop says, in UTF-16 units.
+	it("draws the filter caret where the user put it", function()
+		local s = W.keys(W.open(), { "/", "w", "b", "left" })
+		local filter = nodes.find(main(s), nodes.key("filter")) :: nodes.Node
+		expect((filter.p :: any).text).toBe("wb")
+		expect((filter.p :: any).cursor).toBe(1)
+		s = W.keys(s, { "enter" })
+		filter = nodes.find(main(s), nodes.key("filter")) :: nodes.Node
+		expect((filter.p :: any).cursor).toBe(2)
+	end)
+
 	it("caps rendered rows and offers clickable rows above and below", function()
 		local s = W.open(nil, W.config('{"general":{"max_rendered_rows":3}}'))
 		local m = main(s)

@@ -13,6 +13,7 @@ local Link = require("./lib/mutation/link")
 local Render = require("./lib/mutation/render")
 local Shellenv = require("./lib/env/shellenv")
 local Session = require("./lib/mutation/session")
+local Textfield = require("./lib/textfield")
 
 local log = tern.log
 
@@ -334,8 +335,13 @@ function M.register()
 				dispatch(h, { t = "toggle", id = ev.id })
 			elseif ev.ev == "focus" and ev.id == Session.TYPED_INPUT then
 				dispatch(h, { t = "action", act = "typed-focus" })
+			elseif ev.ev == "edit" and type(ev.id) == "string" then
+				dispatch(h, { t = "edit", id = ev.id, edit = ev :: any })
+			elseif ev.ev == "undo" and type(ev.id) == "string" then
+				dispatch(h, { t = "undo", id = ev.id })
 			end
 		end,
+		features = Textfield.FEATURES,
 	})
 end
 

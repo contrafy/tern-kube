@@ -363,7 +363,7 @@ describe("settings state: editing and validation", function()
 		local effects
 		s, effects = key(s, "e")
 		expect(effects[1]).toEqual({ t = "focus", id = State.EDIT_INPUT })
-		expect((s.editing :: any).text).toBe("100")
+		expect((s.editing :: any).field.text).toBe("100")
 		s = key(s, "backspace")
 		s = key(s, "backspace")
 		s = key(s, "backspace")
@@ -377,7 +377,7 @@ describe("settings state: editing and validation", function()
 	it("starts an edit from the effective value when the key is not in the file", function()
 		local s = select(open(nil), "quick_actions.logs_tail")
 		s = key(s, "e")
-		expect((s.editing :: any).text).toBe("200")
+		expect((s.editing :: any).field.text).toBe("200")
 	end)
 
 	it("rejects a number outside the loader's range with the loader's message", function()
@@ -431,7 +431,7 @@ describe("settings state: editing and validation", function()
 	it("edits lists as JSON and validates their entries", function()
 		local s = select(open(nil), "aliases.additional")
 		s = key(s, "e")
-		expect((s.editing :: any).text).toBe("[]")
+		expect((s.editing :: any).field.text).toBe("[]")
 		s = key(s, "u", { ctrl = true })
 		s = step(s, { t = "key", key = { name = "paste", text = '["k", "kc"]' } })
 		local _, effects = key(s, "enter")
@@ -461,7 +461,7 @@ describe("settings state: editing and validation", function()
 		s = typeText(s, "x")
 		local s2, effects = key(s, "escape")
 		expect(s2.editing).toBeNil()
-		expect(#effects).toBe(0)
+		expect(effects).toEqual({ { t = "blur" } })
 	end)
 
 	it("treats j and k as text while editing", function()
@@ -469,8 +469,50 @@ describe("settings state: editing and validation", function()
 		s = key(s, "e")
 		s = key(s, "u", { ctrl = true })
 		s = typeText(s, "jk")
-		expect((s.editing :: any).text).toBe("jk")
+		expect((s.editing :: any).field.text).toBe("jk")
 		expect(State.selected(s).path).toBe("gitops.gh")
+	end)
+
+	it("edits at the caret and takes Tern's native edits and undo", function()
+		local s = select(open('{"gitops": {"gh": "gh"}}'), "gitops.gh")
+		s = key(s, "e")
+		s = key(s, "left")
+		s = key(s, "left")
+		s = typeText(s, "/bin/")
+		expect((s.editing :: any).field.text).toBe("/bin/gh")
+		-- The user selected "bin" and typed over it.
+		s = step(s, {
+			t = "edit",
+			id = State.EDIT_INPUT,
+			edit = { from = 1, to = 4, text = "opt", cursor = 4, len = 7 },
+		})
+		expect((s.editing :: any).field.text).toBe("/opt/gh")
+		local stale = step(s, {
+			t = "edit",
+			id = State.EDIT_INPUT,
+			edit = { from = 0, to = 7, text = "", cursor = 0, len = 7 + 1 },
+		})
+		expect(stale).toBe(s)
+		s = step(s, { t = "undo", id = State.EDIT_INPUT })
+		expect((s.editing :: any).field.text).toBe("/bin/gh")
+		local _, effects = key(s, "enter")
+		expect(written(effects).gitops.gh).toBe("/bin/gh")
+		expect(effects[#effects]).toEqual({ t = "blur" })
+	end)
+
+	it("an edit in the input while browsing starts editing the selected key", function()
+		local s = select(open(nil), "gitops.gh")
+		local s2, effects = step(s, {
+			t = "edit",
+			id = State.EDIT_INPUT,
+			edit = { from = 0, to = 0, text = "", cursor = 0, len = 2 },
+		})
+		expect((s2.editing :: any).path).toBe("gitops.gh")
+		expect((s2.editing :: any).field.cursor).toBe(0)
+		expect(effects).toEqual({ { t = "focus", id = State.EDIT_INPUT } })
+		local b = select(open(nil), "general.native_default")
+		local b2 = step(b, { t = "undo", id = State.EDIT_INPUT })
+		expect(b2).toBe(b)
 	end)
 end)
 

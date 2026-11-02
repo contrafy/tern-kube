@@ -3,24 +3,19 @@
 `tern.d.luau` is not vendored. `make bootstrap` (`scripts/bootstrap.sh`) downloads it from the MIT-licensed
 [stencil-hq/tern-sdk](https://github.com/stencil-hq/tern-sdk) at a pinned commit and verifies its SHA-256:
 
-- source: `https://raw.githubusercontent.com/stencil-hq/tern-sdk/19658cb2a3205ce57c67ad8c5c1c54ed80fefa7e/plugins/tern.d.luau`
-- sha256: `84682931deee44134bdd38502f81be37fd14ac1697618985228f5cab7e25c51f`
+- source: `https://raw.githubusercontent.com/stencil-hq/tern-sdk/78ba204e19c6ee1eae5e102a83a551220180c69f/plugins/tern.d.luau`
+- sha256: `f56084a35c5cdb24e33b7bacda8baa9a3d1504fd3e31a20d3a8c31f3e0c0a32b`
 - installed to: `.tools/types/tern.d.luau` (gitignored)
 
-The same file is what `tern plugin types DIR` writes for the installed Tern.
+The same file is what `tern plugin types DIR` writes for Tern 0.9.8.
 
-## luau-lsp copy
-
-The upstream file uses the type `userdata` (`WindowCx:wait`), which Luau does not define; luau-lsp then rejects
-the whole definitions file and reports `tern` as an unknown global. Bootstrap therefore also writes
-`.tools/types/tern.lsp.d.luau`: the pristine file prefixed with `declare extern type userdata with end`.
-`make typecheck` and editor setups should point at that copy:
+`make typecheck` and editor setups use that file as is:
 
 ```
-luau-lsp analyze --platform=standard --definitions=@tern=.tools/types/tern.lsp.d.luau plugin tests
+luau-lsp analyze --platform=standard --definitions=@tern=.tools/types/tern.d.luau plugin tests
 ```
 
-For VS Code, set `luau-lsp.types.definitionFiles` to `{"@tern": ".tools/types/tern.lsp.d.luau"}` and
+For VS Code, set `luau-lsp.types.definitionFiles` to `{"@tern": ".tools/types/tern.d.luau"}` and
 `luau-lsp.platform.type` to `standard`.
 
 Use the `tern` global in plugin code. luau-lsp does not resolve `require("tern")`.

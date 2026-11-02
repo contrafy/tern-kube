@@ -5,7 +5,7 @@ LUAU = $(BIN)/luau
 LUAU_LSP = $(BIN)/luau-lsp
 STYLUA = $(BIN)/stylua
 SELENE = $(BIN)/selene
-TERN_DEFS = .tools/types/tern.lsp.d.luau
+TERN_DEFS = .tools/types/tern.d.luau
 
 LUAU_DIRS = $(wildcard plugin tests) scripts/bench.luau scripts/gen-config-schema.luau
 FILTER =

@@ -27,7 +27,7 @@ export type Spec = {
 	desc: boolean,
 	sortAction: (col: string) -> string,
 	inspector: ((rowKey: string) -> Node?)?,
-	cell: ((col: string, columnType: ColumnType, value: string) -> Node)?,
+	cell: ((col: string, columnType: ColumnType, value: string, finished: boolean) -> Node)?,
 }
 
 local M = {}
@@ -115,7 +115,7 @@ function M.grid(spec: Spec): Node
 	local types = spec.types
 	local ncol = math.min(#headers, M.MAX_COLUMNS)
 	local classes, gridClass = columnClasses(headers)
-	local cellFn: (string, ColumnType, string) -> Node = spec.cell or Cells.cell
+	local cellFn: (string, ColumnType, string, boolean) -> Node = spec.cell or Cells.cell
 	local numeric = Cells.NUMERIC
 	local cellClass: { string } = table.create(ncol)
 	for i = 1, ncol do
@@ -144,12 +144,13 @@ function M.grid(spec: Spec): Node
 	for _, row in spec.rows do
 		local cells: { Node } = table.create(ncol)
 		local values = row.cells
+		local finished = Cells.rowFinished(types, values)
 		for i = 1, ncol do
 			local v = values[i] or ""
 			cells[i] = {
 				k = "el",
 				p = { tag = "div", class = cellClass[i], title = v },
-				c = { cellFn(headers[i], types[i] or "text", v) },
+				c = { cellFn(headers[i], types[i] or "text", v, finished) },
 			}
 		end
 		table.insert(children, {
