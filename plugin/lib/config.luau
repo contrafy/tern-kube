@@ -13,6 +13,7 @@ M.SCHEMA_URL = "https://raw.githubusercontent.com/contrafy/tern-kube/master/sche
 M.DEFAULT_SHELL_COMMAND = table.freeze({ "sh", "-c", "command -v bash >/dev/null 2>&1 && exec bash || exec sh" })
 
 export type Placement = "right" | "down" | "tab"
+export type StreamingView = "raw" | "native"
 
 -- `helm template <release> <chart> [-n namespace] [-f values]...`; paths are
 -- absolute or relative to the repository root.
@@ -26,6 +27,7 @@ export type Config = {
 		max_rendered_rows: number,
 		max_capture_bytes: number,
 		shell_env: boolean,
+		streaming_view: StreamingView,
 	},
 	aliases: { additional: { string } },
 	explore: {
@@ -33,6 +35,7 @@ export type Config = {
 		auto_refresh: boolean,
 		query_timeout_ms: number,
 		relationship_max_nodes: number,
+		logs_tail: number,
 	},
 	mutations: {
 		enabled: boolean,
@@ -124,6 +127,7 @@ function M.defaults(): Config
 			max_rendered_rows = 500,
 			max_capture_bytes = 16777216,
 			shell_env = true,
+			streaming_view = "raw",
 		},
 		aliases = { additional = {} },
 		explore = {
@@ -131,6 +135,7 @@ function M.defaults(): Config
 			auto_refresh = false,
 			query_timeout_ms = 10000,
 			relationship_max_nodes = 250,
+			logs_tail = 500,
 		},
 		mutations = {
 			enabled = true,
@@ -615,6 +620,7 @@ local function sectionSpec(key: string, doc: string, fields: { Spec }): Spec
 end
 
 local PLACEMENTS = { "right", "down", "tab" }
+local STREAMING_VIEWS = { "raw", "native" }
 
 -- Every key of the file in its documented order (the order Settings lists
 -- and writes them).
@@ -645,6 +651,14 @@ M.CATALOG = freezeDeep({
 			"Read PATH and KUBECONFIG from your login shell (once per Tern daemon) so kubectl, helm, gh and "
 				.. "credential plugins are found when Tern starts from the Dock or Finder"
 		),
+		spec(
+			"streaming_view",
+			"enum",
+			"What the lens shows while logs -f or an events watch still runs; native trails the stream",
+			enum(STREAMING_VIEWS),
+			{ type = "string", enum = STREAMING_VIEWS },
+			{ values = STREAMING_VIEWS }
+		),
 	}),
 	sectionSpec("aliases", "Command aliases for kubectl", {
 		spec(
@@ -669,6 +683,7 @@ M.CATALOG = freezeDeep({
 		),
 		intSpec("query_timeout_ms", 500, 600000, "Each Explore kubectl call is killed after this many ms"),
 		intSpec("relationship_max_nodes", 1, 5000, "Objects in a relations graph before it is truncated"),
+		intSpec("logs_tail", 1, 100000, "Lines the Explore logs view fetches (--tail)"),
 	}),
 	sectionSpec("mutations", "Previews and confirmations for every guarded change", {
 		boolSpec("enabled", "Off hides every mutating action; the approve block refuses"),

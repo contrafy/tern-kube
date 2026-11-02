@@ -185,6 +185,7 @@ when known) on every command it runs.
 | `max_rendered_rows` | integer 1-10000 | `500` | Rows drawn at once. Lens tables page by this many rows (page chips switch pages); Explore lists draw the page that holds the selection and count the rest in an overflow note. |
 | `max_capture_bytes` | integer 65536-268435456 | `16777216` | Output bytes a lens captures from one command; beyond it the block falls back to Tern's raw output. |
 | `shell_env` | boolean | `true` | Read `PATH` and `KUBECONFIG` from your login shell once per Tern daemon, so `kubectl`, `helm`, `gh` and kubectl's exec credential plugins (`aws`, `gke-gcloud-auth-plugin`, `kubelogin`) are found when Tern starts from the Dock or Finder with the system's minimal `PATH`. See [Programs and `PATH`](#programs-and-path). `false` skips the shell; the well-known install directories are still searched. |
+| `streaming_view` | `"raw"` or `"native"` | `"raw"` | What the lens shows while `logs -f`, `get events -w` or `events -w` still runs. `"native"` updates live but trails the stream by about six lines (Tern hands lines to plugins late); Raw is always live. The native view appears when the command ends either way. |
 
 ### `aliases`
 
@@ -200,6 +201,7 @@ when known) on every command it runs.
 | `auto_refresh` | boolean | `false` | Only `false` is supported. Explore never polls the cluster; refresh with `r` or the Refresh chip. `true` is kept `false` with a warning. |
 | `query_timeout_ms` | integer 500-600000 | `10000` | Each Explore `kubectl` call is killed after this many milliseconds and shown as an error. |
 | `relationship_max_nodes` | integer 1-5000 | `250` | Maximum objects in a relations graph; larger graphs are truncated with a note. |
+| `logs_tail` | integer 1-100000 | `500` | Lines the Explore logs view fetches (`kubectl logs --tail=<n>`). |
 
 ### `mutations`
 
@@ -265,7 +267,8 @@ you do not change; missing keys keep their defaults.
     "max_rows": 20000,
     "max_rendered_rows": 500,
     "max_capture_bytes": 16777216,
-    "shell_env": true
+    "shell_env": true,
+    "streaming_view": "raw"
   },
   "aliases": {
     "additional": []
@@ -274,7 +277,8 @@ you do not change; missing keys keep their defaults.
     "allow_live_queries": true,
     "auto_refresh": false,
     "query_timeout_ms": 10000,
-    "relationship_max_nodes": 250
+    "relationship_max_nodes": 250,
+    "logs_tail": 500
   },
   "mutations": {
     "enabled": true,
