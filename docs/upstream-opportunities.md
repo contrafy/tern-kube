@@ -2,7 +2,8 @@
 
 SDK gaps observed while building tern-kube against Tern 0.6.2 (4b3ed42),
 each checked again against Tern 0.9.8 (pinned types `78ba204` and the 0.9
-docs, 2026-11-02): all ten are still open.
+docs, 2026-11-02): all ten are still open. Items 11-13 come from the logs
+lens and events timeline (0.3.0, Tern 0.9.8).
 Evidence is in `docs/sdk-capability-matrix.md`; each item lists the impact,
 the current workaround and a minimal reproduction. Anything not directly
 observed is marked `[not observed]`.
@@ -126,3 +127,45 @@ observed is marked `[not observed]`.
 
   `ps` shows `/bin/zsh -l -c ...`; it prints `569Xl FOO=` (login, not interactive).
   The exact `echo` probe is `[not observed]`; the observed probe printed `$-` and env markers.
+
+## 11. Deliver plugin lens lines on newline (U1)
+
+- Impact: a plugin lens's live view trails a slow stream. `line` fires only
+  when a row scrolls off an 8-row scratch screen: `kubectl logs -f` at 1
+  line/s reached the plugin about 6 lines (4.45 s) late, and lines 3 s apart
+  arrived only at `finish`. Tern's built-in `lens.docker.logs` shows the same
+  stream with no lag, so a plugin cannot match a built-in while following.
+- Workaround: a running `logs -f` (and `get events -w`, `events -w`) shows
+  raw by default (`general.streaming_view = "raw"`) and turns native when it
+  stops; `native` shows the live view with a "trails the stream" note.
+- Ask: call `line` when a newline arrives (or after a short flush interval),
+  not when the scratch screen scrolls.
+- Reproduction: a lens claiming `kubectl logs *` that logs `tern.now()` in
+  `open` and `line`; run `kubectl logs -f --tail=3` on a container printing a
+  line per second: the first `line` comes about 4.5 s after `open`.
+
+## 12. Re-render or message a lens from the window half (U2)
+
+- Impact: no in-place search in a lens. A lens cannot take text input
+  (item 2) and the window half can prompt (`cx:prompt` resolved the typed
+  text, matrix F8), but nothing lets a window callback update a lens's view
+  state or ask it to re-render.
+- Workaround: **Search…** opens Explore logs on the same source with the
+  filter focused.
+- Ask: a window call delivering an event to a lens's `event` handler,
+  followed by `view`.
+- Reproduction: lens chip -> `cx:open("tk-probe://prompt")` -> window
+  `route.link` -> `cx:prompt(...)` returns the text; no API takes it back to
+  the lens.
+
+## 13. Scroll a lens node into view (U3)
+
+- Impact: "jump to first error" cannot move the pane to the row, and a
+  pointer click cannot scroll the terminal pane.
+- Workaround: **First error** and **Show in context** render a small context
+  view (20 records either side of the target, the record open) so the target
+  is on screen wherever the pane is scrolled.
+- Ask: a node prop or lens-side call that scrolls a keyed node into view
+  after `view`.
+- Reproduction `[not observed]`: no node prop or call in the 0.9.8 types
+  scrolls a pane; a lens re-render keeps the pane's scroll position.

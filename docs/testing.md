@@ -66,6 +66,8 @@ sh tests/integration/mutate/rbac.sh create
 sh tests/integration/mutate/run.sh [SCENARIO...]
 sh tests/integration/drift-rbac/run.sh [--keep]
 sh tests/integration/gitops/roundtrip.sh
+sh tests/integration/logs/check.sh
+sh tests/integration/events/check.sh
 sh scripts/cluster.sh delete
 ```
 
@@ -80,6 +82,18 @@ sh scripts/cluster.sh delete
   sufficient and cannot mutate.
 - `gitops/roundtrip.sh` emits every real JSON fixture as YAML and checks
   `kubectl create --dry-run=client` reads back the same object.
+- `logs/check.sh` applies the `tk-logmix` Deployment (`tern-test-logs`, 2
+  pods x `app`/`side`/`crashy`), runs the real `kubectl logs` forms (pod,
+  `deploy/x`, `-l --prefix --timestamps`, `--all-containers`, `-p`, a bad
+  `-c`) and feeds each output through the lens parser
+  (`tests/integration/logs/check.luau`): no kubectl diagnostic becomes a
+  record, sources are the expected pods and containers, JSON error lines are
+  `error`, failed forms give notices only. It guards against kubectl format
+  drift.
+- `events/check.sh` applies the apps world, waits for events in
+  `tern-test-apps`, and decodes the real `get events -o json` and
+  `kubectl events -o json` with `lib/events/model`: every event names its
+  involved object and has a parseable last-seen time.
 
 In CI each script runs only when it exists on the branch; on failure the
 evidence (without kubeconfigs) and `kind export logs` are uploaded.
@@ -104,11 +118,19 @@ new verbs (29). Every pane and split runs `kubectl edit` with
 the `<sandbox>/edit-script` a scenario writes and fails without one. 30
 edits only the sandbox's config file, 31 restarts the window and its daemon
 with a Dock-like `PATH`, and 32 (native editing) edits the sandbox config
-and deletes its own `tk-e2e-web`; all clean up on exit. Scenarios that need
+and deletes its own `tk-e2e-web`; all clean up on exit. 40-49 cover the
+logs lens and events (0.3.0), read-only: the logs lens on `tk-logmix` (40),
+multi-source `-l --prefix --timestamps` and `deploy/x` notices (41), `logs -f`
+raw while running and native after Ctrl-C (42), Follow in split, Run in split
+typed into an interactive split and the refusal of a kubeconfig path with a
+quote (43), a 25 000-line fake log with the ring, pages and the First error
+context view (44), kubectl errors staying raw (45), the Explore events
+timeline `v`/`V` (46), `kubectl events`/`get events` tables (47), event
+watches (48) and Explore logs `L` (49). Scenarios that need
 output a read-only cluster cannot produce switch the pane to the fake
 `tests/bin/kubectl`. `--shots` regenerates `docs/screenshots/`
-(`E2E_SHOTS="m3b m4"` limits it to some groups; `t1` is the 0.2.0 verbs,
-dark only) and then runs
+(`E2E_SHOTS="m3b m4"` limits it to some groups; `t1` is the 0.2.0 verbs and
+`t2` the 0.3.0 logs and events views, both dark only) and then runs
 `make shots-optimize` (pngquant quality floor 95, then lossless oxipng;
 idempotent, only `docs/screenshots/*.png`), `--perf`
 prints timings for [performance.md](performance.md). It exits 0 with
@@ -143,6 +165,7 @@ files).
 | `tests/fixtures/drift/` | `scripts/fixtures/capture-drift.sh` | recreates `tern-test-drift`, `tern-test-gitops` |
 | `tests/fixtures/gitops/captured/` | `scripts/fixtures/capture-gitops.sh` | none (kustomize/helm render) |
 | `tests/fixtures/synthetic/` | `scripts/fixtures/synth.sh` | none (deterministic seed) |
+| `tests/fixtures/logs/` | `.tools/bin/luau scripts/fixtures/synth.luau -a logs 200 20261102 [prefix]` (see its header) | none (deterministic seed) |
 | `plugin/lib/kubectl/{flags,kinds_data}.luau` | `KUBECONFIG=.sandbox/kubeconfig python3 scripts/kubectl/gen_tables.py`, then StyLua | none |
 
 `scripts/fixtures/capture.sh --world-only` builds the same world (plus
