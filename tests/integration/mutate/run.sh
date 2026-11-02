@@ -656,7 +656,16 @@ scenario_patch_merge() {
 	gone patch/tkm-patch.yaml
 }
 
+# A freshly created cluster (CI) has no fixture world, so the suite installs
+# the Widget CRD itself; applying an unchanged CRD is a no-op.
+widget_crd() {
+	k apply -f "$TK_REPO/tests/integration/manifests/crd/crd.yaml" >/dev/null &&
+		k wait --for=condition=Established --timeout=60s crd/widgets.lens.example.com >/dev/null ||
+		tk_fail "cannot install the Widget CRD"
+}
+
 scenario_patch_cr_merge() {
+	widget_crd
 	fresh patch/tkm-widget.yaml
 	tk_begin patch-cr-merge "$(link patch widgets.lens.example.com tkm-widget)"
 	tk_expect phase input
