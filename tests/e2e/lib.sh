@@ -477,3 +477,75 @@ config_reset() {
 	E2E_WAIT=10 wait_for "the config stub" test -f "$E2E_CFG"
 	sleep 0.5
 }
+
+# --- Remote host (track 4, scripts/e2e.sh --remote) ------------------------------
+# The window shows one host's session at a time; each host keeps its panes.
+# TK_REMOTE_NAME is the host scripts/remote-host.sh registered.
+
+# host_shown NAME: the window shows NAME's session, focused at an idle prompt.
+host_shown() {
+	ctl state | jq -e --arg n "$1" '.hosts.current == $n and .focused.prompt == true and .focused.running == null' >/dev/null
+}
+
+host_current() {
+	[ "$(ctl state | jq -r '.hosts.current')" = "$1" ]
+}
+
+# remote_settled: the remote session is at an idle prompt within 3 s
+# (no failure recorded otherwise).
+remote_settled() {
+	_st=0
+	until host_shown "$TK_REMOTE_NAME"; do
+		_st=$((_st + 1))
+		[ $_st -ge 12 ] && return 1
+		sleep 0.25
+	done
+}
+
+# remote_switch: show the remote host's session, back at one clear pane.
+# The host keeps its session across windows, so splits a failed scenario
+# or an earlier window left there (running, or exited and showing "Shell
+# exited") are interrupted or closed first.
+remote_switch() {
+	ctl remote switch "$TK_REMOTE_NAME" >/dev/null
+	E2E_WAIT=30 wait_for "the remote host's session" host_current "$TK_REMOTE_NAME" || return 1
+	_rs=0
+	while [ $_rs -lt 8 ]; do
+		if [ "$(pane_count)" -gt 1 ]; then
+			ctl focus right >/dev/null
+			ctl close >/dev/null
+		elif remote_settled; then
+			break
+		elif [ "$(ctl state | jq -r '.focused.exited // empty')" = "" ]; then
+			ctl key ctrl+c >/dev/null
+		else
+			ctl close >/dev/null
+		fi
+		sleep 0.4
+		_rs=$((_rs + 1))
+	done
+	[ $_rs -gt 0 ] && ctl click 30 600 >/dev/null
+	E2E_WAIT=15 wait_for "the remote host's prompt" host_shown "$TK_REMOTE_NAME" || return 1
+	sh_line clear
+}
+
+# local_switch: show this machine's session again.
+local_switch() {
+	_ls=$(ctl state | jq -r '[.hosts.hosts[]? | select(.address == "")][0].name // empty')
+	[ -n "$_ls" ] || {
+		fail "no local host in the window's host list"
+		return 1
+	}
+	ctl remote switch "$_ls" >/dev/null
+	E2E_WAIT=15 wait_for "the local prompt" host_shown "$_ls"
+}
+
+# rsh [SCRIPT]: run SCRIPT (the arguments, else stdin) with `sh -s` on the
+# remote host as its user, whatever the login shell.
+rsh() {
+	if [ $# -gt 0 ]; then
+		printf '%s\n' "$*" | sh "$E2E_REPO/scripts/remote-host.sh" run
+	else
+		sh "$E2E_REPO/scripts/remote-host.sh" run
+	fi
+}

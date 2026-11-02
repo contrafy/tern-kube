@@ -4,7 +4,7 @@
 # tern-kube-dev (scripts/cluster.sh create); skipped with a message when
 # `tern` is not installed.
 #
-#   scripts/e2e.sh [--only GLOB] [--shots] [--perf] [--keep]
+#   scripts/e2e.sh [--only GLOB] [--shots] [--perf] [--keep] [--remote]
 #
 # Scenarios (tests/e2e/scenarios/*.sh) run the real kubectl, read-only, with
 # KUBECONFIG=.sandbox/kubeconfig against the tern-test-* world. The few cases
@@ -12,7 +12,11 @@
 # 16 MiB output) switch the pane to the fake kubectl serving recorded
 # fixtures and say so in the scenario. --shots writes
 # docs/screenshots/m1-*.png, --perf prints in-window timings for
-# docs/performance.md, --keep leaves the window running.
+# docs/performance.md, --keep leaves the window running. --remote also runs
+# the remote-host scenarios (60-67, 69) against the disposable Linux host of
+# scripts/remote-host.sh (`up` it first, any sandbox): the e2e sandbox
+# registers it again (`attach`), its `status` must pass, and the snapshot is
+# linked there (`install`); without --remote they are skipped.
 #
 # The window runs in its own sandbox (TK_E2E_SANDBOX, default
 # /tmp/tk-tern-e2e) with a snapshot copy of plugin.toml and plugin/, so edits made while it
@@ -36,6 +40,7 @@ only="*"
 shots=0
 perf=0
 keep=0
+remote=0
 while [ $# -gt 0 ]; do
 	case $1 in
 	--only)
@@ -45,8 +50,9 @@ while [ $# -gt 0 ]; do
 	--shots) shots=1 ;;
 	--perf) perf=1 ;;
 	--keep) keep=1 ;;
+	--remote) remote=1 ;;
 	*)
-		sed -n '2,19p' "$0" | sed 's/^# \{0,1\}//'
+		sed -n '2,23p' "$0" | sed 's/^# \{0,1\}//'
 		exit 2
 		;;
 	esac
@@ -100,6 +106,23 @@ cp "$repo/plugin.toml" "$E2E_SB/pkg/plugin.toml"
 cp -R "$repo/plugin" "$E2E_SB/pkg/plugin"
 # Installed packages ship shell/: native edit runs shell/tern-kube-guard.
 cp -R "$repo/shell" "$E2E_SB/pkg/shell"
+if [ $remote = 1 ]; then
+	rh="$repo/scripts/remote-host.sh"
+	eval "$(sh "$rh" env)"
+	export TK_REMOTE_NAME TK_REMOTE_SHELL
+	sh "$rh" attach >"$E2E_SB/remote-attach.out" 2>&1 || {
+		cat "$E2E_SB/remote-attach.out" >&2
+		need "the remote host does not attach (scripts/remote-host.sh up)"
+	}
+	sh "$rh" status >"$E2E_SB/remote-status.out" 2>&1 || {
+		cat "$E2E_SB/remote-status.out" >&2
+		need "scripts/remote-host.sh status failed"
+	}
+	sh "$rh" install "$E2E_SB/pkg" >/dev/null || need "cannot link the snapshot on the remote host"
+	# The window reaches the host with the harness's ssh, never ~/.ssh's.
+	PATH="$TK_REMOTE_PATH:$PATH"
+	unset SSH_AUTH_SOCK
+fi
 # KUBE_EDITOR of every pane and split: runs the script a scenario writes to
 # <sandbox>/edit-script; without one an edit fails instead of opening vi.
 cat >"$E2E_SB/kube-editor" <<EOF
@@ -140,8 +163,17 @@ for f in "$repo"/tests/e2e/scenarios/*.sh; do
 	$only) ;;
 	*) continue ;;
 	esac
+	case $name in
+	6[0-7]-* | 69-*)
+		if [ $remote = 0 ]; then
+			echo "skip $name (remote host: scripts/remote-host.sh up, then scripts/e2e.sh --remote)"
+			continue
+		fi
+		;;
+	esac
 	echo "RUN  $name"
 	if (
+		[ $remote = 1 ] && local_switch
 		reset_pane
 		. "$f"
 		exit $E2E_FAILED
