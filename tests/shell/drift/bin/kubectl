@@ -2,9 +2,12 @@
 # Fake kubectl for tests/shell/drift. Appends its argv (one `[arg]` per word)
 # to $FAKE_DIR/argv and replays canned output from $FAKE_DIR:
 #   context            `config current-context` (absent: exit 1)
+#   contexts           `config get-contexts -o name` (absent: exit 1)
 #   diff, diff.exit, diff.err   `diff` stdout, exit status, stderr
 #   manifest.tsv       `apply --dry-run=client -o go-template=...` output
 #   get/KIND.NS        `get KIND -n NS -o go-template=...` (NS `_` without -n)
+# When $FAKE_DIR/ctx exists, `--context C` replays $FAKE_DIR/ctx/C/ instead
+# (same file names) and an unknown C fails like kubectl does.
 # Any verb that could mutate exits 99 and leaves a MUTATION line in argv.
 d=${FAKE_DIR:?FAKE_DIR not set}
 {
@@ -18,12 +21,30 @@ d=${FAKE_DIR:?FAKE_DIR not set}
 	fi
 } >>"$d/argv"
 
+ctx=
 while [ $# -gt 0 ]; do
 	case $1 in
-	--kubeconfig | --context) shift 2 ;;
+	--kubeconfig) shift 2 ;;
+	--context)
+		ctx=$2
+		shift 2
+		;;
 	*) break ;;
 	esac
 done
+
+if [ "${1:-}" = config ] && [ "${2:-}" = get-contexts ]; then
+	[ -f "$d/contexts" ] || exit 1
+	cat "$d/contexts"
+	exit 0
+fi
+if [ -n "$ctx" ] && [ -d "$d/ctx" ]; then
+	[ -d "$d/ctx/$ctx" ] || {
+		echo "error: context \"$ctx\" does not exist" >&2
+		exit 1
+	}
+	d=$d/ctx/$ctx
+fi
 
 case ${1:-} in
 config)

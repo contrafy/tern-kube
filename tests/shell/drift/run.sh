@@ -114,14 +114,70 @@ expect_read_only() {
 	fi
 }
 
-compare() { # DIFF_FILE: CLI JSON segmentation == diffseg.parse
-	if (cd "$here" && "$luau" compare.luau -a "$(cat "$1"; printf '\n#END')" "$(cat "$root/out")") >"$root/cmp" 2>&1; then
+compare() { # DIFF_FILE [N]: CLI JSON segmentation == diffseg.parse (N: contexts[N] of a v2 report)
+	if (cd "$here" && "$luau" compare.luau -a "$(cat "$1"; printf '\n#END')" "$(cat "$root/out")" ${2:+"$2"}) >"$root/cmp" 2>&1; then
 		ok
 	else
 		bad "segmentation differs from diffseg.luau on $1"
 		sed 's/^/    cmp| /' "$root/cmp"
 	fi
 }
+
+# golden NAME: stdout equals golden/NAME byte for byte. TKD_UPDATE_GOLDEN=1
+# writes missing goldens (delete one to regenerate it).
+golden() {
+	g=$here/golden/$1
+	if [ "${TKD_UPDATE_GOLDEN:-}" = 1 ] && [ ! -f "$g" ]; then
+		cp "$root/out" "$g"
+	fi
+	if cmp -s "$g" "$root/out"; then
+		ok
+	else
+		bad "stdout differs from golden/$1"
+		diff -u "$g" "$root/out" | head -n 40 | sed 's/^/    golden| /'
+	fi
+}
+
+ext() {
+	case $1 in
+	text) echo txt ;;
+	markdown) echo md ;;
+	*) echo "$1" ;;
+	esac
+}
+
+# Two contexts replayed by the fake: kind-tern-kube-dev drifted only in
+# ConfigMap app-config and has an undeclared Secret; kind-tern-kube-dev2
+# drifted in all three declared objects.
+mc_setup() {
+	t=$(printf '\t')
+	for c in kind-tern-kube-dev kind-tern-kube-dev2; do
+		mkdir -p "$FAKE_DIR/ctx/$c/get"
+		cat >"$FAKE_DIR/ctx/$c/manifest.tsv" <<EOF
+apps/v1${t}Deployment${t}tern-test-apps${t}web
+v1${t}ConfigMap${t}tern-test-apps${t}app-config
+v1${t}ConfigMap${t}tern-test-apps${t}preview-extra
+EOF
+		echo 1 >"$FAKE_DIR/ctx/$c/diff.exit"
+	done
+	cp "$here/cases/mc-dev.diff" "$FAKE_DIR/ctx/kind-tern-kube-dev/diff"
+	cp "$mix" "$FAKE_DIR/ctx/kind-tern-kube-dev2/diff"
+	cat >"$FAKE_DIR/ctx/kind-tern-kube-dev/get/secrets.tern-test-apps" <<EOF
+v1${t}Secret${t}tern-test-apps${t}stray${t}-${t}Opaque${t}
+EOF
+	: >"$FAKE_DIR/ctx/kind-tern-kube-dev2/get/secrets.tern-test-apps"
+	printf 'kind-tern-kube-dev\nkind-tern-kube-dev2\n' >"$FAKE_DIR/contexts"
+}
+
+# mc_down NAME: a context whose API server is unreachable.
+mc_down() {
+	mkdir -p "$FAKE_DIR/ctx/$1"
+	: >"$FAKE_DIR/ctx/$1/diff"
+	echo 1 >"$FAKE_DIR/ctx/$1/diff.exit"
+	echo 'Unable to connect to the server: dial tcp 127.0.0.1:1: connect: connection refused' >"$FAKE_DIR/ctx/$1/diff.err"
+}
+
+mc_args="-f a.yaml --context kind-tern-kube-dev --context kind-tern-kube-dev2 -n tern-test-apps --unmanaged secrets"
 
 golden_inputs() {
 	for f in "$repo"/tests/fixtures/real/mutate-preview/diff_*.txt; do
@@ -231,12 +287,75 @@ for s in $shells; do
 	run "$s" --helm ./chart --release rel
 	expect_rc 2
 	expect_err "helm template failed"
+
+	fresh "$s: two contexts: one kubectl run per context, in --context order"
+	mc_setup
+	# shellcheck disable=SC2086
+	run "$s" $mc_args --format text
+	expect_rc 1
+	golden multi.txt
+	grep '\[diff\]' "$FAKE_DIR/argv" >"$root/diffs"
+	printf '%s\n' "kubectl [--context] [kind-tern-kube-dev] [diff] [-n] [tern-test-apps] [-f] [a.yaml]" \
+		"kubectl [--context] [kind-tern-kube-dev2] [diff] [-n] [tern-test-apps] [-f] [a.yaml]" >"$root/want"
+	cmp -s "$root/want" "$root/diffs" && ok || bad "diff calls: $(cat "$root/diffs")"
+	# Per context: diff, the declared listing, then the unmanaged listing.
+	awk '{ sub(/ \[-o\].*/, ""); print }' "$FAKE_DIR/argv" >"$root/calls"
+	printf '%s\n' "kubectl [--context] [kind-tern-kube-dev] [diff] [-n] [tern-test-apps] [-f] [a.yaml]" \
+		"kubectl [--context] [kind-tern-kube-dev] [apply] [--dry-run=client] [-n] [tern-test-apps] [-f] [a.yaml]" \
+		"kubectl [--context] [kind-tern-kube-dev] [get] [secrets] [-n] [tern-test-apps]" \
+		"kubectl [--context] [kind-tern-kube-dev2] [diff] [-n] [tern-test-apps] [-f] [a.yaml]" \
+		"kubectl [--context] [kind-tern-kube-dev2] [apply] [--dry-run=client] [-n] [tern-test-apps] [-f] [a.yaml]" \
+		"kubectl [--context] [kind-tern-kube-dev2] [get] [secrets] [-n] [tern-test-apps]" >"$root/want"
+	cmp -s "$root/want" "$root/calls" && ok || bad "kubectl calls: $(cat "$root/calls")"
+	expect_read_only
+
+	fresh "$s: --all-contexts reads the kubeconfig's contexts"
+	mc_setup
+	run "$s" -f a.yaml --all-contexts --kubeconfig /k/config -n tern-test-apps --unmanaged secrets --format text
+	expect_rc 1
+	golden multi.txt
+	expect_argv "kubectl [--kubeconfig] [/k/config] [config] [get-contexts] [-o] [name]"
+	grep -c '^kubectl \[--kubeconfig\] \[/k/config\] \[--context\] \[kind-tern-kube-dev2\{0,1\}\] \[diff\]' "$FAKE_DIR/argv" |
+		grep -qx 2 && ok || bad "want one diff per listed context: $(cat "$FAKE_DIR/argv")"
+
+	fresh "$s: a failing context is an error column, the others still run"
+	mc_setup
+	mc_down kind-tern-kube-down
+	run "$s" -f a.yaml --context kind-tern-kube-dev --context kind-tern-kube-down --context kind-tern-kube-dev2 \
+		-n tern-test-apps --format text
+	expect_rc 2
+	expect_out 'Drift: a.yaml across 3 contexts (namespace tern-test-apps)'
+	expect_out 'kind-tern-kube-down: error: kubectl diff exited 1 without a diff: Unable to connect to the server: dial tcp 127.0.0.1:1: connect: connection refused'
+	expect_out 'kind-tern-kube-dev2: 3 resources drifted (1 create, 2 modify, 0 delete; +14 -3).'
+	expect_out '=== [kind-tern-kube-dev2] modify Deployment.apps tern-test-apps/web (+2 -2)'
+	expect_err '[kind-tern-kube-down] Unable to connect to the server'
+	expect_err 'tern-kube-drift: [kind-tern-kube-down] kubectl diff exited 1 without a diff'
+
+	fresh "$s: two contexts in sync: exit 0"
+	mc_setup
+	for c in kind-tern-kube-dev kind-tern-kube-dev2; do
+		: >"$FAKE_DIR/ctx/$c/diff"
+		echo 0 >"$FAKE_DIR/ctx/$c/diff.exit"
+	done
+	run "$s" -f a.yaml --context kind-tern-kube-dev --context kind-tern-kube-dev2 --format json
+	expect_rc 0
+	expect_out '"drift":false,"summary":{"contexts":2,"drifted":0,"errors":0}'
+	expect_out '{"key":"apps.v1.Deployment.tern-test-apps.web","group":"apps","version":"v1","kind":"Deployment","namespace":"tern-test-apps","name":"web","cells":[{"context":"kind-tern-kube-dev","state":"insync","added":null,"removed":null},{"context":"kind-tern-kube-dev2","state":"insync","added":null,"removed":null}]}'
+
+	fresh "$s: duplicate --context is a usage error"
+	mc_setup
+	run "$s" -f a.yaml --context kind-tern-kube-dev --context=kind-tern-kube-dev
+	expect_rc 2
+	expect_err '--context kind-tern-kube-dev given twice'
+	[ -s "$FAKE_DIR/argv" ] && bad "kubectl ran: $(cat "$FAKE_DIR/argv")" || ok
 done
 
 # --- Usage errors are exit 2 and never reach kubectl -----------------------
 
 for args in "" "-f a -k b" "-k a -k b" "--helm c" "--helm c --release r -k d" "-f a --release r" \
-	"-f a --format html" "-f a --max-diff-lines x" "-f a --max-bytes -1" "-f a --bogus" "-k a -R" "-f"; do
+	"-f a --format html" "-f a --max-diff-lines x" "-f a --max-bytes -1" "-f a --bogus" "-k a -R" "-f" \
+	"-f a --context x --context x" "-f a --all-contexts --context x" "-f a --context x --all-contexts" \
+	"-f a --context x --context="; do
 	fresh "usage: '$args'"
 	# shellcheck disable=SC2086
 	run sh $args
@@ -250,7 +369,7 @@ expect_rc 0
 expect_out "usage: tern-kube-drift"
 run sh --version
 expect_rc 0
-expect_out "tern-kube-drift "
+expect_out "tern-kube-drift 0.2.0"
 
 # --- Markdown is safe to post as a PR comment ------------------------------
 
@@ -381,6 +500,124 @@ diff_from "$mix"
 run sh -f a.yaml --unmanaged widgets
 expect_rc 2
 expect_err "cannot list widgets in namespace apps"
+
+# --- One context: the 0.1.0 report, byte for byte --------------------------
+# golden/single-* were written by tern-kube-drift 0.1.0, before contexts
+# became repeatable: one context must keep producing exactly that report.
+
+for fmt in text markdown json; do
+	fresh "golden single $fmt: pinned context and namespace"
+	diff_from "$mix"
+	run sh -f a.yaml --context kind-tern-kube-dev -n tern-test-apps --format "$fmt"
+	expect_rc 1
+	golden "single-mix.$(ext "$fmt")"
+
+	fresh "golden single $fmt: current context, unmanaged"
+	unmanaged_setup
+	diff_from "$mix"
+	run sh -f a.yaml --unmanaged secrets,serviceaccounts --format "$fmt"
+	expect_rc 1
+	golden "single-unmanaged.$(ext "$fmt")"
+
+	fresh "golden single $fmt: notes, truncation, size budget"
+	diff_from "$here/cases/stray-truncated.diff"
+	run sh -f a.yaml -n apps --max-diff-lines 3 --max-bytes 520 --format "$fmt"
+	expect_rc 1
+	golden "single-notes.$(ext "$fmt")"
+
+	fresh "$fmt: --all-contexts with one context is the one-context report"
+	mc_setup
+	echo kind-tern-kube-dev >"$FAKE_DIR/contexts"
+	run sh -f a.yaml --context kind-tern-kube-dev --unmanaged secrets --format "$fmt"
+	expect_rc 1
+	cp "$root/out" "$root/one"
+	run sh -f a.yaml --all-contexts --unmanaged secrets --format "$fmt"
+	expect_rc 1
+	cmp -s "$root/one" "$root/out" && ok || bad "--all-contexts (one context) differs from --context"
+done
+
+# --- Two or more contexts --------------------------------------------------
+
+for fmt in markdown json; do
+	fresh "golden two contexts $fmt"
+	mc_setup
+	# shellcheck disable=SC2086
+	run sh $mc_args --format "$fmt"
+	expect_rc 1
+	golden "multi.$(ext "$fmt")"
+done
+
+fresh "two contexts json: each context's segmentation equals diffseg.luau"
+mc_setup
+run sh -f a.yaml --context kind-tern-kube-dev --context kind-tern-kube-dev2 --format json
+expect_rc 1
+expect_out '{"version":2,'
+compare "$here/cases/mc-dev.diff" 1
+compare "$mix" 2
+
+fresh "two contexts markdown: --max-bytes drops diffs from the last context backwards"
+mc_setup
+# shellcheck disable=SC2086
+run sh $mc_args --format markdown --max-bytes 2000
+expect_rc 1
+size=$(wc -c <"$root/out" | tr -d ' ')
+[ "$size" -le 2000 ] && ok || bad "markdown is $size bytes, limit 2000"
+expect_out '| Deployment.apps/web | tern-test-apps | in sync | modify +2 -2 |'
+expect_out '| kind-tern-kube-dev2 | **3 resources drifted** (1 create, 2 modify, 0 delete; +14 -3), 0 unmanaged |'
+expect_out '<summary>[kind-tern-kube-dev] modify ConfigMap tern-test-apps/app-config (+1 -1)</summary>'
+expect_no_out '<summary>[kind-tern-kube-dev2]'
+expect_out '_3 diffs omitted to stay under --max-bytes._'
+[ "$(grep -c '^<details>$' "$root/out")" = "$(grep -c '^</details>$' "$root/out")" ] && ok || bad "unbalanced <details>"
+
+fresh "two contexts markdown: the matrix and summary survive any --max-bytes"
+mc_setup
+# shellcheck disable=SC2086
+run sh $mc_args --format markdown --max-bytes 100
+expect_rc 1
+expect_out '| ConfigMap/preview-extra | tern-test-apps | in sync | create |'
+expect_out '| Secret/stray | tern-test-apps | unmanaged | - |'
+expect_out '| kind-tern-kube-dev | **1 resource drifted** (0 create, 1 modify, 0 delete; +1 -1), 1 unmanaged |'
+expect_no_out '<details>'
+
+for fmt in text markdown json; do
+	fresh "two contexts $fmt: Secret values never reach the report"
+	mc_setup
+	cp "$here/cases/secret-last-applied.diff" "$FAKE_DIR/ctx/kind-tern-kube-dev2/diff"
+	run sh -f a.yaml --context kind-tern-kube-dev --context kind-tern-kube-dev2 --format "$fmt"
+	expect_rc 1
+	expect_no_out 'tern-kube-test-not-a-secret'
+	expect_out '*** (last-applied-configuration redacted by tern-kube-drift)'
+done
+
+fresh "two contexts json: an unknown context is an error entry"
+mc_setup
+run sh -f a.yaml --context kind-tern-kube-dev --context nope --format json
+expect_rc 2
+expect_out '"summary":{"contexts":2,"drifted":1,"errors":1}'
+expect_out '{"context":"nope","status":"error","error":"kubectl diff exited 1 without a diff: error: context \"nope\" does not exist","drift":null,"summary":null,"resources":[],"unmanaged":null,"notes":[]}'
+expect_out '{"context":"nope","state":"error","added":null,"removed":null}'
+
+fresh "two contexts: notes are tagged with their context"
+mc_setup
+cp "$here/cases/stray-truncated.diff" "$FAKE_DIR/ctx/kind-tern-kube-dev2/diff"
+run sh -f a.yaml --context kind-tern-kube-dev --context kind-tern-kube-dev2 --format text
+expect_rc 1
+expect_out '  [kind-tern-kube-dev2] Warning: something odd'
+run sh -f a.yaml --context kind-tern-kube-dev --context kind-tern-kube-dev2 --format markdown
+expect_rc 1
+expect_out '<summary>[kind-tern-kube-dev2] 4 notes</summary>'
+
+fresh "two contexts markdown: context names are escaped"
+mc_setup
+mkdir -p "$FAKE_DIR/ctx/x<b>|y"
+cp "$FAKE_DIR/ctx/kind-tern-kube-dev/diff" "$FAKE_DIR/ctx/kind-tern-kube-dev/diff.exit" \
+	"$FAKE_DIR/ctx/kind-tern-kube-dev/manifest.tsv" "$FAKE_DIR/ctx/x<b>|y/"
+run sh -f a.yaml --context kind-tern-kube-dev --context 'x<b>|y' --format markdown
+expect_rc 1
+expect_no_out '<b>'
+expect_out '| Resource | Namespace | kind-tern-kube-dev | x&#60;b&#62;&#124;y |'
+expect_out '| x&#60;b&#62;&#124;y | **1 resource drifted** (0 create, 1 modify, 0 delete; +1 -1) |'
+expect_out '<summary>[x&#60;b&#62;&#124;y] modify ConfigMap tern-test-apps/app-config (+1 -1)</summary>'
 
 printf '\n%d passed, %d failed\n' "$pass" "$failed"
 [ "$failed" = 0 ]

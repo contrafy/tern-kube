@@ -4,7 +4,9 @@
 # Runs `kubectl diff` (server-side dry run, never mutates) for one source and
 # reports per-resource changes as text, Markdown (PR comments, CI summaries)
 # or JSON. Segmentation follows plugin/lib/mutation/diffseg.luau in
-# github.com/contrafy/tern-kube so the CLI and the Tern plugin agree.
+# github.com/contrafy/tern-kube so the CLI and the Tern plugin agree. With
+# several contexts the same source is diffed against each in turn and the
+# report gains a resource-by-context matrix.
 #
 # Requires only a POSIX shell, awk, sed, sort, mktemp and kubectl (helm for
 # --helm). Exit status: 0 no drift, 1 drift, 2 error.
@@ -12,7 +14,7 @@
 set -u
 if [ -n "${ZSH_VERSION-}" ]; then emulate sh; fi
 
-VERSION=0.1.0
+VERSION=0.2.0
 prog=tern-kube-drift
 
 usage() {
@@ -27,7 +29,9 @@ SOURCE (exactly one):
                              -f/--values FILE are values files (repeatable)
 
 Options:
-  --context C                kubeconfig context (default: current context)
+  --context C                kubeconfig context (default: current context);
+                             repeatable: one report across several contexts
+  --all-contexts             every context in the kubeconfig
   --kubeconfig K             kubeconfig file (default: kubectl's)
   -n, --namespace NS         namespace for objects without one
   --format text|markdown|json  output format (default text)
@@ -42,7 +46,8 @@ Options:
   --version                  print the version
 
 Environment: KUBECTL (default kubectl), HELM (default helm).
-Exit status: 0 no drift, 1 drift, 2 error.
+Exit status: 0 no drift, 1 drift, 2 error (with several contexts: 2 if any
+context failed, its error is part of the report).
 EOF
 }
 
@@ -67,6 +72,9 @@ kdir=
 chart=
 release=
 values=
+contexts=
+ncontexts=0
+all_contexts=0
 context=
 kubeconfig=
 namespace=
@@ -74,6 +82,16 @@ format=text
 max_lines=0
 max_bytes=0
 unmanaged=
+
+add_context() {
+	new=$1
+	eval "set -- $contexts"
+	for c in "$@"; do
+		[ "$c" != "$new" ] || die "--context $new given twice"
+	done
+	contexts="$contexts $(q "$new")"
+	ncontexts=$((ncontexts + 1))
+}
 
 while [ $# -gt 0 ]; do
 	case $1 in
@@ -132,11 +150,15 @@ while [ $# -gt 0 ]; do
 		;;
 	--context)
 		need "$@"
-		context=$2
+		add_context "$2"
 		shift 2
 		;;
 	--context=*)
-		context=${1#*=}
+		add_context "${1#*=}"
+		shift
+		;;
+	--all-contexts)
+		all_contexts=1
 		shift
 		;;
 	--kubeconfig)
@@ -219,6 +241,15 @@ esac
 case $max_bytes in
 '' | *[!0-9]*) die "--max-bytes must be a non-negative integer" ;;
 esac
+if [ "$all_contexts" = 1 ] && [ "$ncontexts" -gt 0 ]; then
+	die "--all-contexts and --context are mutually exclusive"
+fi
+if [ "$ncontexts" -gt 1 ]; then
+	eval "set -- $contexts"
+	for c in "$@"; do
+		[ -n "$c" ] || die "--context needs a name when given more than once"
+	done
+fi
 if [ -n "$chart" ]; then
 	[ -z "$kdir" ] || die "--helm and -k are mutually exclusive"
 	[ -n "$release" ] || die "--helm needs --release"
@@ -236,7 +267,7 @@ elif [ -n "$kdir" ]; then
 else
 	[ "$nfiles" -gt 0 ] || die "no source: give -f PATH, -k DIR or --helm CHART"
 	[ -z "$release$values" ] || die "--release/--values need --helm"
-	src_type=file
+	src_type='file'
 	eval "set -- $files"
 	label=$*
 fi
@@ -255,6 +286,28 @@ trap 'exit 2' HUP INT TERM
 kc() {
 	"$kubectl_bin" ${kubeconfig:+--kubeconfig "$kubeconfig"} ${context:+--context "$context"} "$@"
 }
+
+if [ "$all_contexts" = 1 ]; then
+	kc config get-contexts -o name >"$tmp/contexts" 2>"$tmp/contexts.err" || {
+		cat "$tmp/contexts.err" >&2
+		die "cannot list contexts (kubectl config get-contexts)"
+	}
+	while IFS= read -r c || [ -n "$c" ]; do
+		[ -n "$c" ] || continue
+		contexts="$contexts $(q "$c")"
+		ncontexts=$((ncontexts + 1))
+	done <"$tmp/contexts"
+	[ "$ncontexts" -gt 0 ] || die "no contexts in the kubeconfig"
+fi
+# One context keeps the single-context report (JSON version 1); two or more
+# give the combined report (JSON version 2).
+multi=0
+if [ "$ncontexts" -gt 1 ]; then
+	multi=1
+else
+	eval "set -- $contexts"
+	context=${1-}
+fi
 
 if [ "$src_type" = helm ]; then
 	command -v "$helm_bin" >/dev/null 2>&1 || die "helm not found (set HELM)"
@@ -289,48 +342,78 @@ source_args() {
 }
 src=$(source_args)
 
-ctx_name=$context
-if [ -z "$ctx_name" ]; then
-	ctx_name=$(kc config current-context 2>/dev/null) || ctx_name=
-fi
+# show_err FILE: kubectl's stderr, tagged with the context when there are several.
+show_err() {
+	[ -s "$1" ] || return 0
+	if [ "$multi" = 0 ]; then
+		cat "$1" >&2
+		return 0
+	fi
+	while IFS= read -r line || [ -n "$line" ]; do
+		printf '[%s] %s\n' "$context" "$line" >&2
+	done <"$1"
+}
 
-eval "set -- $src"
-kc diff ${namespace:+-n "$namespace"} "$@" >"$tmp/diff" 2>"$tmp/diff.err"
-rc=$?
-if [ -s "$tmp/diff.err" ]; then
-	cat "$tmp/diff.err" >&2
-fi
-case $rc in
-0 | 1) ;;
-*) die "kubectl diff failed (exit $rc)" ;;
-esac
-if [ "$rc" = 1 ] && ! grep -Eq '^(@@ |Binary files )' "$tmp/diff"; then
-	die "kubectl diff exited 1 without a diff"
-fi
+# fail MSG [STDERR_FILE]: with one context, exit 2 as always. With several,
+# record MSG (plus kubectl's last stderr line) as this context's error and
+# let the caller move on to the next context.
+fail() {
+	[ "$multi" = 1 ] || die "$1"
+	printf '%s: [%s] %s\n' "$prog" "$context" "$1" >&2
+	msg=$1
+	if [ -n "${2-}" ] && [ -s "$2" ]; then
+		last=$(LC_ALL=C awk 'NF { l = $0 } END { gsub(/[\t\r]/, " ", l); print l }' "$2")
+		[ -z "$last" ] || msg="$msg: $last"
+	fi
+	printf '%s\n' "$msg" >"$cdir/error"
+}
 
-: >"$tmp/unmanaged.tsv"
-if [ -n "$unmanaged" ]; then
+# collect DIR: runs the read-only kubectl calls for $context into DIR: diff,
+# the source's objects (manifest.tsv: with --unmanaged or several contexts)
+# and unmanaged.tsv. Returns 1 after fail.
+collect() {
+	cdir=$1
+	eval "set -- $src"
+	kc diff ${namespace:+-n "$namespace"} "$@" >"$cdir/diff" 2>"$cdir/diff.err"
+	rc=$?
+	show_err "$cdir/diff.err"
+	case $rc in
+	0 | 1) ;;
+	*)
+		fail "kubectl diff failed (exit $rc)" "$cdir/diff.err"
+		return 1
+		;;
+	esac
+	if [ "$rc" = 1 ] && ! grep -Eq '^(@@ |Binary files )' "$cdir/diff"; then
+		fail "kubectl diff exited 1 without a diff" "$cdir/diff.err"
+		return 1
+	fi
+
+	: >"$cdir/unmanaged.tsv"
+	[ -n "$unmanaged" ] || [ "$multi" = 1 ] || return 0
 	tpl='{{define "o"}}{{.apiVersion}}{{"\t"}}{{.kind}}{{"\t"}}{{.metadata.namespace}}{{"\t"}}{{.metadata.name}}{{"\n"}}{{end}}{{if eq .kind "List"}}{{range .items}}{{template "o" .}}{{end}}{{else}}{{template "o" .}}{{end}}'
 	if ! kc apply --dry-run=client ${namespace:+-n "$namespace"} "$@" -o go-template="$tpl" \
-		>"$tmp/manifest.tsv" 2>"$tmp/apply.err"; then
-		cat "$tmp/apply.err" >&2
-		die "cannot list the source's objects (kubectl apply --dry-run=client)"
+		>"$cdir/manifest.tsv" 2>"$cdir/apply.err"; then
+		show_err "$cdir/apply.err"
+		fail "cannot list the source's objects (kubectl apply --dry-run=client)" "$cdir/apply.err"
+		return 1
 	fi
+	[ -n "$unmanaged" ] || return 0
 	if [ "$unmanaged" = auto ]; then
 		kinds=$(LC_ALL=C awk -F '\t' '
 			{ g = $1; if (index(g, "/")) sub(/\/.*/, "", g); else g = ""
 			  k = $2; if (g != "") k = k "." g
 			  if (!(k in seen)) { seen[k] = 1; out = out (out == "" ? "" : ",") k } }
-			END { print out }' "$tmp/manifest.tsv")
+			END { print out }' "$cdir/manifest.tsv")
 	else
 		kinds=$unmanaged
 	fi
-	namespaces=$(LC_ALL=C awk -F '\t' '$3 != "" && $3 != "<no value>" { print $3 }' "$tmp/manifest.tsv" | LC_ALL=C sort -u)
+	namespaces=$(LC_ALL=C awk -F '\t' '$3 != "" && $3 != "<no value>" { print $3 }' "$cdir/manifest.tsv" | LC_ALL=C sort -u)
 	if [ -n "$namespace" ]; then
 		namespaces=$(printf '%s\n%s\n' "$namespaces" "$namespace" | LC_ALL=C sort -u)
 	fi
 	ltpl='{{range .items}}{{.apiVersion}}{{"\t"}}{{.kind}}{{"\t"}}{{.metadata.namespace}}{{"\t"}}{{.metadata.name}}{{"\t"}}{{if .metadata.ownerReferences}}owned{{else}}-{{end}}{{"\t"}}{{if .type}}{{.type}}{{else}}-{{end}}{{"\t"}}{{with .metadata.labels}}{{index . "kubernetes.io/bootstrapping"}}{{end}}{{"\n"}}{{end}}'
-	: >"$tmp/live.tsv"
+	: >"$cdir/live.tsv"
 	old_ifs=$IFS
 	set -f
 	IFS=,
@@ -339,17 +422,25 @@ if [ -n "$unmanaged" ]; then
 		[ -n "$kind" ] || continue
 		if [ -n "$namespaces" ]; then
 			for ns in $namespaces; do
-				kc get "$kind" -n "$ns" -o go-template="$ltpl" >>"$tmp/live.tsv" 2>"$tmp/get.err" ||
-					{ cat "$tmp/get.err" >&2; die "cannot list $kind in namespace $ns"; }
+				kc get "$kind" -n "$ns" -o go-template="$ltpl" >>"$cdir/live.tsv" 2>"$cdir/get.err" || {
+					show_err "$cdir/get.err"
+					set +f
+					fail "cannot list $kind in namespace $ns" "$cdir/get.err"
+					return 1
+				}
 			done
 		else
-			kc get "$kind" -o go-template="$ltpl" >>"$tmp/live.tsv" 2>"$tmp/get.err" ||
-				{ cat "$tmp/get.err" >&2; die "cannot list $kind"; }
+			kc get "$kind" -o go-template="$ltpl" >>"$cdir/live.tsv" 2>"$cdir/get.err" || {
+				show_err "$cdir/get.err"
+				set +f
+				fail "cannot list $kind" "$cdir/get.err"
+				return 1
+			}
 		fi
 	done
 	IFS=$old_ifs
 	set +f
-	printf '%s\n' "$namespaces" >"$tmp/namespaces"
+	printf '%s\n' "$namespaces" >"$cdir/namespaces"
 	LC_ALL=C awk -F '\t' -v OFS='\t' '
 		function nv(s) { return s == "<no value>" ? "" : s }
 		function grp(av) { return index(av, "/") ? substr(av, 1, index(av, "/") - 1) : "" }
@@ -370,13 +461,33 @@ if [ -n "$unmanaged" ]; then
 			if (id in declared || id in seen) next
 			seen[id] = 1
 			print grp($1), ver($1), kind, ns, name
-		}' "$tmp/namespaces" "$tmp/manifest.tsv" "$tmp/live.tsv" |
-		LC_ALL=C sort -t "$(printf '\t')" -k3,3 -k4,4 -k5,5 >"$tmp/unmanaged.tsv"
+		}' "$cdir/namespaces" "$cdir/manifest.tsv" "$cdir/live.tsv" |
+		LC_ALL=C sort -t "$(printf '\t')" -k3,3 -k4,4 -k5,5 >"$cdir/unmanaged.tsv"
+}
+
+errors=0
+if [ "$multi" = 0 ]; then
+	ctx_name=$context
+	if [ -z "$ctx_name" ]; then
+		ctx_name=$(kc config current-context 2>/dev/null) || ctx_name=
+	fi
+	mkdir "$tmp/1" || die "cannot create a temp dir"
+	collect "$tmp/1"
+else
+	ctx_name=
+	i=0
+	eval "set -- $contexts"
+	for context in "$@"; do
+		i=$((i + 1))
+		mkdir "$tmp/$i" || die "cannot create a temp dir"
+		printf '%s\n' "$context" >"$tmp/$i/name"
+		collect "$tmp/$i" || errors=$((errors + 1))
+	done
 fi
 
 TKD_FORMAT=$format TKD_MAX_LINES=$max_lines TKD_MAX_BYTES=$max_bytes TKD_LABEL=$label \
 	TKD_SOURCE_TYPE=$src_type TKD_CONTEXT=$ctx_name TKD_NAMESPACE=$namespace \
-	TKD_UNMANAGED=$tmp/unmanaged.tsv TKD_UNMANAGED_ON=${unmanaged:+1} \
+	TKD_DIR=$tmp TKD_N=$((ncontexts > 1 ? ncontexts : 1)) TKD_MULTI=$multi TKD_UNMANAGED_ON=${unmanaged:+1} \
 	LC_ALL=C awk '
 # Port of plugin/lib/mutation/diffseg.luau M.parse; keep the two in step
 # (tests/shell/drift checks them against the same golden inputs).
@@ -455,8 +566,8 @@ function finish(   s, a) {
 	else if (nE && !nS && oS) S_act[s] = "delete"
 	else if (oS || nS) S_act[s] = "modify"
 	a = S_act[s]
-	CNT[a]++
-	TADD += S_add[s]; TREM += S_rem[s]
+	CC[CUR, a]++
+	CADD[CUR] += S_add[s]; CREM[CUR] += S_rem[s]
 	cur = 0; hk = 0
 }
 function parse(   i, line, c, key, merged) {
@@ -501,6 +612,50 @@ function parse(   i, line, c, key, merged) {
 		i++
 	}
 	finish()
+}
+
+function nv(s) { return s == "<no value>" ? "" : s }
+function grp(av) { return index(av, "/") ? substr(av, 1, index(av, "/") - 1) : "" }
+function ver(av) { return index(av, "/") ? substr(av, index(av, "/") + 1) : av }
+# load(c): context c from TKD_DIR/c. Segments, notes, unmanaged and declared
+# objects are numbered across contexts; C_*0[c] is the offset of c.
+function load(c,   d, f, line, n, x) {
+	d = DIR "/" c
+	f = d "/name"
+	C_name[c] = (getline line < f) > 0 ? line : CTX
+	close(f)
+	f = d "/error"
+	C_ok[c] = 1
+	if ((getline line < f) > 0) { C_ok[c] = 0; C_err[c] = line }
+	close(f)
+	C_s0[c] = NSEG; C_n0[c] = NN; C_u0[c] = NU; C_d0[c] = ND
+	if (C_ok[c]) {
+		split("", L); NL = 0
+		f = d "/diff"
+		while ((getline line < f) > 0) { sub(/\r$/, "", line); L[++NL] = line }
+		close(f)
+		CUR = c
+		parse()
+		if (UON) {
+			f = d "/unmanaged.tsv"
+			while ((getline line < f) > 0) {
+				n = split(line, x, "\t")
+				if (n < 5) continue
+				NU++; U_g[NU] = x[1]; U_v[NU] = x[2]; U_k[NU] = x[3]; U_ns[NU] = x[4]; U_nm[NU] = x[5]
+			}
+			close(f)
+		}
+		if (MULTI) {
+			f = d "/manifest.tsv"
+			while ((getline line < f) > 0) {
+				n = split(line, x, "\t")
+				if (n < 4 || x[2] == "" || x[4] == "") continue
+				ND++; D_g[ND] = grp(x[1]); D_v[ND] = ver(x[1]); D_k[ND] = x[2]; D_ns[ND] = nv(x[3]); D_nm[ND] = x[4]
+			}
+			close(f)
+		}
+	}
+	C_ns[c] = NSEG - C_s0[c]; C_nn[c] = NN - C_n0[c]; C_nu[c] = NU - C_u0[c]; C_nd[c] = ND - C_d0[c]
 }
 
 function jstr(s,   o, i, c) {
@@ -575,26 +730,56 @@ function fence(s,   j, x, mx, f) {
 	return f
 }
 function plural(n, w) { return n " " w (n == 1 ? "" : "s") }
-function drifted() { return NSEG + NU }
-function countsLine() {
-	return CNT["create"] + 0 " create, " CNT["modify"] + 0 " modify, " CNT["delete"] + 0 " delete" \
-		(CNT["unknown"] ? ", " CNT["unknown"] " unknown" : "") "; +" TADD + 0 " -" TREM + 0
+function drifted(c) { return C_ns[c] + C_nu[c] }
+function countsLine(c) {
+	return CC[c, "create"] + 0 " create, " CC[c, "modify"] + 0 " modify, " CC[c, "delete"] + 0 " delete" \
+		(CC[c, "unknown"] ? ", " CC[c, "unknown"] " unknown" : "") "; +" CADD[c] + 0 " -" CREM[c] + 0
 }
 function emit(t) { OUT = OUT t "\n" }
 function fits(t) { return MAXB == 0 || length(OUT) + length(t) + RESERVE <= MAXB }
+function uName(j) { return U_k[j] (U_g[j] != "" ? "." U_g[j] : "") "/" U_nm[j] }
 
-function renderJSON(   s, j, to, total) {
-	printf "{\"version\":1,\"source\":{\"type\":%s,\"label\":%s},", jstr(ENVIRON["TKD_SOURCE_TYPE"]), jstr(LABEL)
-	printf "\"context\":%s,\"namespace\":%s,", jopt(CTX != "", CTX), jopt(NSP != "", NSP)
-	printf "\"drift\":%s,", drifted() ? "true" : "false"
+# Text section for one resource: "=== PREFIXaction Kind ns/name (+a -r)" and
+# its (possibly truncated) hunks.
+function textSection(s, prefix,   t, j) {
+	shown(s)
+	t = "\n=== " prefix S_act[s] " " resFull(s) " (+" S_add[s] " -" S_rem[s] ")"
+	for (j = BODY_FROM; j <= BODY_TO; j++) t = t "\n" SL[s, j]
+	if (BODY_TO - BODY_FROM + 1 < BODY_TOTAL)
+		t = t "\n... truncated: " (BODY_TO - BODY_FROM + 1) " of " BODY_TOTAL " lines shown (--max-diff-lines)"
+	return t
+}
+function mdDetails(s, prefix,   t, f, j) {
+	shown(s)
+	f = fence(s)
+	t = "\n<details>\n<summary>" prefix S_act[s] " " md(resFull(s)) " (+" S_add[s] " -" S_rem[s] ")</summary>\n\n" f "diff\n"
+	for (j = BODY_FROM; j <= BODY_TO; j++) t = t SL[s, j] "\n"
+	t = t f "\n"
+	if (BODY_TO - BODY_FROM + 1 < BODY_TOTAL)
+		t = t "\n_Truncated: " (BODY_TO - BODY_FROM + 1) " of " BODY_TOTAL " lines shown (--max-diff-lines)._\n"
+	return t "\n</details>"
+}
+function mdNotes(c, prefix,   t, f, j, x) {
+	t = "\n<details>\n<summary>" prefix plural(C_nn[c], "note") "</summary>\n\n"
+	f = "```"
+	for (j = C_n0[c] + 1; j <= C_n0[c] + C_nn[c]; j++) { x = NOTE[j]; while (match(x, /`+/)) { if (RLENGTH >= length(f)) f = f "`"; x = substr(x, RSTART + RLENGTH) } }
+	t = t f "text\n"
+	for (j = C_n0[c] + 1; j <= C_n0[c] + C_nn[c]; j++) t = t NOTE[j] "\n"
+	return t f "\n\n</details>"
+}
+
+# One context in JSON, from "drift" through "notes" (the version 1 fields).
+function jsonCtx(c,   s, s0, j, to, total) {
+	s0 = C_s0[c]
+	printf "\"drift\":%s,", drifted(c) ? "true" : "false"
 	printf "\"summary\":{\"resources\":%d,\"create\":%d,\"modify\":%d,\"delete\":%d,\"unknown\":%d,\"added\":%d,\"removed\":%d,\"unmanaged\":%s},", \
-		NSEG, CNT["create"], CNT["modify"], CNT["delete"], CNT["unknown"], TADD, TREM, UON ? NU : "null"
+		C_ns[c], CC[c, "create"], CC[c, "modify"], CC[c, "delete"], CC[c, "unknown"], CADD[c], CREM[c], UON ? C_nu[c] : "null"
 	printf "\"resources\":["
-	for (s = 1; s <= NSEG; s++) {
+	for (s = s0 + 1; s <= s0 + C_ns[c]; s++) {
 		total = S_n[s]
 		to = (MAXL > 0 && total > MAXL) ? MAXL : total
 		printf "%s{\"key\":%s,\"group\":%s,\"version\":%s,\"kind\":%s,\"namespace\":%s,\"name\":%s,", \
-			(s > 1 ? "," : ""), jstr(S_key[s]), jopt(S_id[s] && S_hg[s], S_g[s]), jopt(S_id[s], S_v[s]), \
+			(s > s0 + 1 ? "," : ""), jstr(S_key[s]), jopt(S_id[s] && S_hg[s], S_g[s]), jopt(S_id[s], S_v[s]), \
 			jopt(S_id[s], S_k[s]), jopt(S_id[s] && S_ns[s] != "", S_ns[s]), jopt(S_id[s], S_nm[s])
 		printf "\"action\":%s,\"added\":%d,\"removed\":%d,\"binary\":%s,\"lineCount\":%d,\"truncated\":%s,\"lines\":[", \
 			jstr(S_act[s]), S_add[s], S_rem[s], (S_bin[s] ? "true" : "false"), total, (to < total ? "true" : "false")
@@ -605,19 +790,24 @@ function renderJSON(   s, j, to, total) {
 	if (!UON) printf "null"
 	else {
 		printf "["
-		for (j = 1; j <= NU; j++)
-			printf "%s{\"group\":%s,\"version\":%s,\"kind\":%s,\"namespace\":%s,\"name\":%s}", (j > 1 ? "," : ""), \
+		for (j = C_u0[c] + 1; j <= C_u0[c] + C_nu[c]; j++)
+			printf "%s{\"group\":%s,\"version\":%s,\"kind\":%s,\"namespace\":%s,\"name\":%s}", (j > C_u0[c] + 1 ? "," : ""), \
 				jopt(U_g[j] != "", U_g[j]), jstr(U_v[j]), jstr(U_k[j]), jopt(U_ns[j] != "", U_ns[j]), jstr(U_nm[j])
 		printf "]"
 	}
 	printf ",\"notes\":["
-	for (j = 1; j <= NN; j++) printf "%s%s", (j > 1 ? "," : ""), jstr(NOTE[j])
-	printf "]}\n"
+	for (j = C_n0[c] + 1; j <= C_n0[c] + C_nn[c]; j++) printf "%s%s", (j > C_n0[c] + 1 ? "," : ""), jstr(NOTE[j])
+	printf "]"
 }
 
-function uName(j) { return U_k[j] (U_g[j] != "" ? "." U_g[j] : "") "/" U_nm[j] }
+function renderJSON() {
+	printf "{\"version\":1,\"source\":{\"type\":%s,\"label\":%s},", jstr(ENVIRON["TKD_SOURCE_TYPE"]), jstr(LABEL)
+	printf "\"context\":%s,\"namespace\":%s,", jopt(CTX != "", CTX), jopt(NSP != "", NSP)
+	jsonCtx(1)
+	printf "}\n"
+}
 
-function renderMarkdown(   s, j, t, f, x, rows, omitted) {
+function renderMarkdown(   s, j, t, rows, omitted) {
 	RESERVE = 400
 	t = "### Drift: " md(LABEL)
 	emit(t)
@@ -626,62 +816,50 @@ function renderMarkdown(   s, j, t, f, x, rows, omitted) {
 	if (NSP != "") t = t (t != "" ? ", namespace " : "Namespace ") md(NSP)
 	if (t != "") { emit(""); emit(t) }
 	emit("")
-	if (!drifted()) {
+	if (!drifted(1)) {
 		emit("No drift: the cluster matches the manifests.")
 	} else {
-		t = "**" plural(NSEG, "resource") " drifted** (" countsLine() ")"
-		if (UON) t = t ", **" NU " unmanaged** in the cluster"
+		t = "**" plural(C_ns[1], "resource") " drifted** (" countsLine(1) ")"
+		if (UON) t = t ", **" C_nu[1] " unmanaged** in the cluster"
 		emit(t ".")
 	}
-	if (NSEG) {
+	if (C_ns[1]) {
 		emit("")
 		emit("| Change | Resource | Namespace | + | - |")
 		emit("| --- | --- | --- | ---: | ---: |")
 		rows = 0
-		for (s = 1; s <= NSEG; s++) {
+		for (s = 1; s <= C_ns[1]; s++) {
 			t = "| " S_act[s] " | " md(resName(s)) " | " md(S_ns[s]) " | " S_add[s] " | " S_rem[s] " |"
 			if (!fits(t "\n")) break
 			emit(t); rows++
 		}
-		if (rows < NSEG) emit("| ... | " (NSEG - rows) " more rows omitted (--max-bytes) | | | |")
-		if (CNT["create"]) { emit(""); emit("_create: declared in the manifests, missing from the cluster._") }
+		if (rows < C_ns[1]) emit("| ... | " (C_ns[1] - rows) " more rows omitted (--max-bytes) | | | |")
+		if (CC[1, "create"]) { emit(""); emit("_create: declared in the manifests, missing from the cluster._") }
 		omitted = 0
 		for (s = 1; s <= rows; s++) {
-			shown(s)
-			f = fence(s)
-			t = "\n<details>\n<summary>" S_act[s] " " md(resFull(s)) " (+" S_add[s] " -" S_rem[s] ")</summary>\n\n" f "diff\n"
-			for (j = BODY_FROM; j <= BODY_TO; j++) t = t SL[s, j] "\n"
-			t = t f "\n"
-			if (BODY_TO - BODY_FROM + 1 < BODY_TOTAL)
-				t = t "\n_Truncated: " (BODY_TO - BODY_FROM + 1) " of " BODY_TOTAL " lines shown (--max-diff-lines)._\n"
-			t = t "\n</details>"
+			t = mdDetails(s, "")
 			if (!fits(t "\n")) { omitted++; continue }
 			emit(t)
 		}
-		omitted += NSEG - rows
+		omitted += C_ns[1] - rows
 		if (omitted) { emit(""); emit("_" plural(omitted, "diff") " omitted to stay under --max-bytes._") }
 	}
-	if (UON && NU) {
+	if (UON && C_nu[1]) {
 		emit("")
 		emit("#### Unmanaged in the cluster")
 		emit("")
 		emit("| Resource | Namespace |")
 		emit("| --- | --- |")
-		for (j = 1; j <= NU; j++) {
+		for (j = 1; j <= C_nu[1]; j++) {
 			t = "| " md(uName(j)) " | " md(U_ns[j]) " |"
-			if (!fits(t "\n")) { emit("| ... " (NU - j + 1) " more omitted (--max-bytes) | |"); break }
+			if (!fits(t "\n")) { emit("| ... " (C_nu[1] - j + 1) " more omitted (--max-bytes) | |"); break }
 			emit(t)
 		}
 	}
-	if (NN) {
-		t = "\n<details>\n<summary>" plural(NN, "note") "</summary>\n\n"
-		f = "```"
-		for (j = 1; j <= NN; j++) { x = NOTE[j]; while (match(x, /`+/)) { if (RLENGTH >= length(f)) f = f "`"; x = substr(x, RSTART + RLENGTH) } }
-		t = t f "text\n"
-		for (j = 1; j <= NN; j++) t = t NOTE[j] "\n"
-		t = t f "\n\n</details>"
+	if (C_nn[1]) {
+		t = mdNotes(1, "")
 		if (fits(t "\n")) emit(t)
-		else emit("\n_" plural(NN, "note") " omitted (--max-bytes)._")
+		else emit("\n_" plural(C_nn[1], "note") " omitted (--max-bytes)._")
 	}
 	printf "%s", OUT
 }
@@ -692,40 +870,246 @@ function renderText(   s, j, t, w1, w2, w3, omitted) {
 	if (CTX != "") t = t " (context " CTX (NSP != "" ? ", namespace " NSP : "") ")"
 	else if (NSP != "") t = t " (namespace " NSP ")"
 	emit(t)
-	if (NSEG) {
+	if (C_ns[1]) {
 		w1 = 6; w2 = 8; w3 = 9
-		for (s = 1; s <= NSEG; s++) {
+		for (s = 1; s <= C_ns[1]; s++) {
 			if (length(resName(s)) > w2) w2 = length(resName(s))
 			if (length(S_ns[s]) > w3) w3 = length(S_ns[s])
 		}
 		emit("")
 		emit(pad("CHANGE", w1) "  " pad("RESOURCE", w2) "  " pad("NAMESPACE", w3) "  +/-")
-		for (s = 1; s <= NSEG; s++)
+		for (s = 1; s <= C_ns[1]; s++)
 			emit(pad(S_act[s], w1) "  " pad(resName(s), w2) "  " pad(S_ns[s] != "" ? S_ns[s] : "-", w3) "  +" S_add[s] " -" S_rem[s])
 	}
-	if (UON && NU) {
+	if (UON && C_nu[1]) {
 		emit("")
 		emit("Unmanaged in the cluster:")
-		for (j = 1; j <= NU; j++) emit("  " uName(j) (U_ns[j] != "" ? " (namespace " U_ns[j] ")" : ""))
+		for (j = 1; j <= C_nu[1]; j++) emit("  " uName(j) (U_ns[j] != "" ? " (namespace " U_ns[j] ")" : ""))
 	}
 	emit("")
-	if (!drifted()) emit("No drift.")
-	else emit(plural(NSEG, "resource") " drifted (" countsLine() ")" (UON ? ", " NU " unmanaged" : "") ".")
-	if (NN) {
+	if (!drifted(1)) emit("No drift.")
+	else emit(plural(C_ns[1], "resource") " drifted (" countsLine(1) ")" (UON ? ", " C_nu[1] " unmanaged" : "") ".")
+	if (C_nn[1]) {
 		emit("")
 		emit("Notes:")
-		for (j = 1; j <= NN; j++) emit("  " NOTE[j])
+		for (j = 1; j <= C_nn[1]; j++) emit("  " NOTE[j])
 	}
 	RESERVE = 100
 	omitted = 0
-	for (s = 1; s <= NSEG; s++) {
-		shown(s)
-		t = "\n=== " S_act[s] " " resFull(s) " (+" S_add[s] " -" S_rem[s] ")"
-		for (j = BODY_FROM; j <= BODY_TO; j++) t = t "\n" SL[s, j]
-		if (BODY_TO - BODY_FROM + 1 < BODY_TOTAL)
-			t = t "\n... truncated: " (BODY_TO - BODY_FROM + 1) " of " BODY_TOTAL " lines shown (--max-diff-lines)"
+	for (s = 1; s <= C_ns[1]; s++) {
+		t = textSection(s, "")
 		if (!fits(t "\n")) { omitted++; continue }
 		emit(t)
+	}
+	if (omitted) emit("\n" plural(omitted, "diff") " omitted to stay under --max-bytes.")
+	printf "%s", OUT
+}
+
+# --- Several contexts: one row per object over all contexts ----------------
+
+function rowFor(id, key, g, v, k, ns, nm, ident,   r) {
+	if (id in ROW) return ROW[id]
+	r = ++NROW
+	ROW[id] = r
+	R_key[r] = key; R_g[r] = g; R_v[r] = v; R_k[r] = k; R_ns[r] = ns; R_nm[r] = nm; R_id[r] = ident
+	return r
+}
+function objKey(g, v, k, ns, nm) { return (g != "" ? g "." : "") v "." k "." ns "." nm }
+function setCell(r, c, state, a, d) {
+	if ((r, c) in CELL) return
+	CELL[r, c] = state; CA[r, c] = a; CR[r, c] = d
+}
+# Rows: diffed objects, then unmanaged, then declared ones the diff did not
+# mention (in sync); sorted by namespace, kind and name.
+function buildMatrix(   c, s, j, r, i, k, x) {
+	NROW = 0
+	for (c = 1; c <= N; c++) {
+		if (!C_ok[c]) continue
+		for (s = C_s0[c] + 1; s <= C_s0[c] + C_ns[c]; s++) {
+			if (S_id[s]) r = rowFor(S_g[s] SUBSEP S_k[s] SUBSEP S_ns[s] SUBSEP S_nm[s], S_key[s], S_g[s], S_v[s], S_k[s], S_ns[s], S_nm[s], 1)
+			else r = rowFor("?" SUBSEP S_key[s], S_key[s], "", "", "", "", "", 0)
+			setCell(r, c, S_act[s], S_add[s], S_rem[s])
+		}
+		for (j = C_u0[c] + 1; j <= C_u0[c] + C_nu[c]; j++) {
+			r = rowFor(U_g[j] SUBSEP U_k[j] SUBSEP U_ns[j] SUBSEP U_nm[j], objKey(U_g[j], U_v[j], U_k[j], U_ns[j], U_nm[j]), \
+				U_g[j], U_v[j], U_k[j], U_ns[j], U_nm[j], 1)
+			setCell(r, c, "unmanaged")
+		}
+		for (j = C_d0[c] + 1; j <= C_d0[c] + C_nd[c]; j++) {
+			r = rowFor(D_g[j] SUBSEP D_k[j] SUBSEP D_ns[j] SUBSEP D_nm[j], objKey(D_g[j], D_v[j], D_k[j], D_ns[j], D_nm[j]), \
+				D_g[j], D_v[j], D_k[j], D_ns[j], D_nm[j], 1)
+			setCell(r, c, "insync")
+		}
+	}
+	for (r = 1; r <= NROW; r++) {
+		RK[r] = (R_id[r] ? "0" : "1") "\001" R_ns[r] "\001" rowKind(r) "\001" R_nm[r] "\001" R_key[r]
+		ORDER[r] = r
+	}
+	for (i = 2; i <= NROW; i++) {
+		x = ORDER[i]
+		for (k = i - 1; k >= 1 && RK[ORDER[k]] > RK[x]; k--) ORDER[k + 1] = ORDER[k]
+		ORDER[k + 1] = x
+	}
+}
+function rowKind(r) { return R_k[r] (R_g[r] != "" ? "." R_g[r] : "") }
+function rowName(r) { return R_id[r] ? rowKind(r) "/" R_nm[r] : R_key[r] }
+function cellState(r, c) {
+	if (!C_ok[c]) return "error"
+	return ((r, c) in CELL) ? CELL[r, c] : "absent"
+}
+function cellText(r, c,   st) {
+	st = cellState(r, c)
+	if (st == "insync") return "in sync"
+	if (st == "absent") return "-"
+	if (st == "modify") return "modify +" CA[r, c] " -" CR[r, c]
+	return st
+}
+function hasCounts(st) { return st == "create" || st == "modify" || st == "delete" || st == "unknown" }
+function anyCreate(   r, c) {
+	for (r = 1; r <= NROW; r++)
+		for (c = 1; c <= N; c++)
+			if (cellState(r, c) == "create") return 1
+	return 0
+}
+function tally(   c) {
+	NDRIFT = 0; NERR = 0
+	for (c = 1; c <= N; c++) {
+		if (!C_ok[c]) NERR++
+		else if (drifted(c)) NDRIFT++
+	}
+}
+
+function renderMultiJSON(   c, r, i, st) {
+	printf "{\"version\":2,\"source\":{\"type\":%s,\"label\":%s},", jstr(ENVIRON["TKD_SOURCE_TYPE"]), jstr(LABEL)
+	printf "\"namespace\":%s,\"drift\":%s,", jopt(NSP != "", NSP), NDRIFT ? "true" : "false"
+	printf "\"summary\":{\"contexts\":%d,\"drifted\":%d,\"errors\":%d},\"contexts\":[", N, NDRIFT, NERR
+	for (c = 1; c <= N; c++) {
+		printf "%s{\"context\":%s,\"status\":%s,\"error\":%s,", (c > 1 ? "," : ""), jstr(C_name[c]), \
+			jstr(C_ok[c] ? "ok" : "error"), jopt(!C_ok[c], C_err[c])
+		if (C_ok[c]) jsonCtx(c)
+		else printf "\"drift\":null,\"summary\":null,\"resources\":[],\"unmanaged\":null,\"notes\":[]"
+		printf "}"
+	}
+	printf "],\"matrix\":["
+	for (i = 1; i <= NROW; i++) {
+		r = ORDER[i]
+		printf "%s{\"key\":%s,\"group\":%s,\"version\":%s,\"kind\":%s,\"namespace\":%s,\"name\":%s,\"cells\":[", \
+			(i > 1 ? "," : ""), jstr(R_key[r]), jopt(R_id[r] && R_g[r] != "", R_g[r]), jopt(R_id[r], R_v[r]), \
+			jopt(R_id[r], R_k[r]), jopt(R_id[r] && R_ns[r] != "", R_ns[r]), jopt(R_id[r], R_nm[r])
+		for (c = 1; c <= N; c++) {
+			st = cellState(r, c)
+			printf "%s{\"context\":%s,\"state\":%s,\"added\":%s,\"removed\":%s}", (c > 1 ? "," : ""), jstr(C_name[c]), \
+				jstr(st), hasCounts(st) ? CA[r, c] + 0 : "null", hasCounts(st) ? CR[r, c] + 0 : "null"
+		}
+		printf "]}"
+	}
+	printf "]}\n"
+}
+
+function ctxResult(c, markdown) {
+	if (!C_ok[c]) return markdown ? "**error**: " md(C_err[c]) : "error: " C_err[c]
+	if (!drifted(c)) return markdown ? "no drift" : "no drift."
+	if (markdown) return "**" plural(C_ns[c], "resource") " drifted** (" countsLine(c) ")" (UON ? ", " C_nu[c] " unmanaged" : "")
+	return plural(C_ns[c], "resource") " drifted (" countsLine(c) ")" (UON ? ", " C_nu[c] " unmanaged" : "") "."
+}
+
+# --max-bytes: the matrix and the per-context results are always printed;
+# whole diffs are then added in context order until one does not fit, so
+# diffs are dropped from the last context backwards.
+function renderMultiMarkdown(   c, r, i, s, t, hdr, sep, omitted, stop) {
+	RESERVE = 400
+	emit("### Drift: " md(LABEL) " across " N " contexts")
+	if (NSP != "") { emit(""); emit("Namespace " md(NSP)) }
+	emit("")
+	if (!NDRIFT && !NERR) emit("No drift: every cluster matches the manifests.")
+	else emit("**" NDRIFT " of " N " contexts drifted**" (NERR ? ", **" NERR " failed**" : "") ".")
+	if (NROW) {
+		hdr = "| Resource | Namespace |"; sep = "| --- | --- |"
+		for (c = 1; c <= N; c++) { hdr = hdr " " md(C_name[c]) " |"; sep = sep " --- |" }
+		emit("")
+		emit(hdr)
+		emit(sep)
+		for (i = 1; i <= NROW; i++) {
+			r = ORDER[i]
+			t = "| " md(rowName(r)) " | " md(R_ns[r]) " |"
+			for (c = 1; c <= N; c++) t = t " " cellText(r, c) " |"
+			emit(t)
+		}
+		if (anyCreate()) { emit(""); emit("_create: declared in the manifests, missing from the cluster._") }
+	}
+	emit("")
+	emit("| Context | Result |")
+	emit("| --- | --- |")
+	for (c = 1; c <= N; c++) emit("| " md(C_name[c]) " | " ctxResult(c, 1) " |")
+	for (c = 1; c <= N; c++) {
+		if (!C_ok[c] || !C_nn[c]) continue
+		t = mdNotes(c, "[" md(C_name[c]) "] ")
+		if (fits(t "\n")) emit(t)
+		else emit("\n_[" md(C_name[c]) "] " plural(C_nn[c], "note") " omitted (--max-bytes)._")
+	}
+	omitted = 0; stop = 0
+	for (c = 1; c <= N; c++) {
+		if (!C_ok[c]) continue
+		for (s = C_s0[c] + 1; s <= C_s0[c] + C_ns[c]; s++) {
+			if (!stop) {
+				t = mdDetails(s, "[" md(C_name[c]) "] ")
+				if (fits(t "\n")) { emit(t); continue }
+				stop = 1
+			}
+			omitted++
+		}
+	}
+	if (omitted) { emit(""); emit("_" plural(omitted, "diff") " omitted to stay under --max-bytes._") }
+	printf "%s", OUT
+}
+
+function renderMultiText(   c, r, i, s, t, w1, w2, w, omitted, stop, anyNotes, j) {
+	t = "Drift: " LABEL " across " N " contexts"
+	if (NSP != "") t = t " (namespace " NSP ")"
+	emit(t)
+	if (NROW) {
+		w1 = 8; w2 = 9
+		for (c = 1; c <= N; c++) w[c] = length(C_name[c])
+		for (i = 1; i <= NROW; i++) {
+			r = ORDER[i]
+			if (length(rowName(r)) > w1) w1 = length(rowName(r))
+			if (length(R_ns[r]) > w2) w2 = length(R_ns[r])
+			for (c = 1; c <= N; c++) if (length(cellText(r, c)) > w[c]) w[c] = length(cellText(r, c))
+		}
+		emit("")
+		t = pad("RESOURCE", w1) "  " pad("NAMESPACE", w2)
+		for (c = 1; c <= N; c++) t = t "  " (c < N ? pad(C_name[c], w[c]) : C_name[c])
+		emit(t)
+		for (i = 1; i <= NROW; i++) {
+			r = ORDER[i]
+			t = pad(rowName(r), w1) "  " pad(R_ns[r] != "" ? R_ns[r] : "-", w2)
+			for (c = 1; c <= N; c++) t = t "  " (c < N ? pad(cellText(r, c), w[c]) : cellText(r, c))
+			emit(t)
+		}
+	}
+	emit("")
+	for (c = 1; c <= N; c++) emit(C_name[c] ": " ctxResult(c, 0))
+	anyNotes = 0
+	for (c = 1; c <= N; c++) if (C_ok[c] && C_nn[c]) anyNotes = 1
+	if (anyNotes) {
+		emit("")
+		emit("Notes:")
+		for (c = 1; c <= N; c++)
+			if (C_ok[c])
+				for (j = C_n0[c] + 1; j <= C_n0[c] + C_nn[c]; j++) emit("  [" C_name[c] "] " NOTE[j])
+	}
+	RESERVE = 100
+	omitted = 0; stop = 0
+	for (c = 1; c <= N; c++) {
+		if (!C_ok[c]) continue
+		for (s = C_s0[c] + 1; s <= C_s0[c] + C_ns[c]; s++) {
+			if (!stop) {
+				t = textSection(s, "[" C_name[c] "] ")
+				if (fits(t "\n")) { emit(t); continue }
+				stop = 1
+			}
+			omitted++
+		}
 	}
 	if (omitted) emit("\n" plural(omitted, "diff") " omitted to stay under --max-bytes.")
 	printf "%s", OUT
@@ -745,28 +1129,29 @@ BEGIN {
 	FMT = ENVIRON["TKD_FORMAT"]; MAXL = ENVIRON["TKD_MAX_LINES"] + 0; MAXB = ENVIRON["TKD_MAX_BYTES"] + 0
 	LABEL = ENVIRON["TKD_LABEL"]; CTX = ENVIRON["TKD_CONTEXT"]; NSP = ENVIRON["TKD_NAMESPACE"]
 	UON = ENVIRON["TKD_UNMANAGED_ON"] != ""
-	NL = 0; NSEG = 0; NN = 0; NU = 0; OUT = ""
+	DIR = ENVIRON["TKD_DIR"]; N = ENVIRON["TKD_N"] + 0; MULTI = ENVIRON["TKD_MULTI"] == "1"
+	NL = 0; NSEG = 0; NN = 0; NU = 0; ND = 0; OUT = ""
 }
-{ sub(/\r$/, ""); L[++NL] = $0 }
 END {
-	parse()
+	for (c = 1; c <= N; c++) load(c)
 	redactSecrets()
-	if (UON) {
-		uf = ENVIRON["TKD_UNMANAGED"]
-		while ((getline line < uf) > 0) {
-			n = split(line, f, "\t")
-			if (n < 5) continue
-			NU++; U_g[NU] = f[1]; U_v[NU] = f[2]; U_k[NU] = f[3]; U_ns[NU] = f[4]; U_nm[NU] = f[5]
-		}
-		close(uf)
+	if (!MULTI) {
+		if (FMT == "json") renderJSON()
+		else if (FMT == "markdown") renderMarkdown()
+		else renderText()
+		exit (drifted(1) ? 1 : 0)
 	}
-	if (FMT == "json") renderJSON()
-	else if (FMT == "markdown") renderMarkdown()
-	else renderText()
-	exit (drifted() ? 1 : 0)
-}' "$tmp/diff"
+	buildMatrix()
+	tally()
+	if (FMT == "json") renderMultiJSON()
+	else if (FMT == "markdown") renderMultiMarkdown()
+	else renderMultiText()
+	exit (NDRIFT ? 1 : 0)
+}' /dev/null
 report_rc=$?
 case $report_rc in
-0 | 1) exit "$report_rc" ;;
+0 | 1) ;;
 *) die "report failed (awk exit $report_rc)" ;;
 esac
+[ "$errors" = 0 ] || exit 2
+exit "$report_rc"

@@ -1,0 +1,99 @@
+### Drift: a.yaml across 2 contexts
+
+Namespace tern-test-apps
+
+**2 of 2 contexts drifted**.
+
+| Resource | Namespace | kind-tern-kube-dev | kind-tern-kube-dev2 |
+| --- | --- | --- | --- |
+| ConfigMap/app-config | tern-test-apps | modify +1 -1 | modify +1 -1 |
+| ConfigMap/preview-extra | tern-test-apps | in sync | create |
+| Deployment.apps/web | tern-test-apps | in sync | modify +2 -2 |
+| Secret/stray | tern-test-apps | unmanaged | - |
+
+_create: declared in the manifests, missing from the cluster._
+
+| Context | Result |
+| --- | --- |
+| kind-tern-kube-dev | **1 resource drifted** (0 create, 1 modify, 0 delete; +1 -1), 1 unmanaged |
+| kind-tern-kube-dev2 | **3 resources drifted** (1 create, 2 modify, 0 delete; +14 -3), 0 unmanaged |
+
+<details>
+<summary>[kind-tern-kube-dev] modify ConfigMap tern-test-apps/app-config (+1 -1)</summary>
+
+```diff
+@@ -1,7 +1,7 @@
+ apiVersion: v1
+ data:
+   FEATURE_FLAGS: search,sort,filter
+-  LOG_LEVEL: info
++  LOG_LEVEL: debug
+   app.properties: |
+     server.port=8080
+     cache.ttl=30s
+```
+
+</details>
+
+<details>
+<summary>[kind-tern-kube-dev2] modify Deployment.apps tern-test-apps/web (+2 -2)</summary>
+
+```diff
+@@ -6,7 +6,7 @@
+     kubectl.kubernetes.io/last-applied-configuration: |
+       {"apiVersion":"apps/v1","kind":"Deployment","metadata":{"annotations":{},"labels":{"app":"web","tier":"frontend"},"name":"web","namespace":"tern-test-apps"},"spec":{"replicas":2,"selector":{"matchLabels":{"app":"web"}},"template":{"metadata":{"labels":{"app":"web","tier":"frontend"}},"spec":{"containers":[{"image":"registry.k8s.io/pause:3.10","imagePullPolicy":"IfNotPresent","name":"web","ports":[{"containerPort":8080,"name":"http"}],"resources":{"requests":{"cpu":"5m","memory":"8Mi"}}}],"terminationGracePeriodSeconds":1}}}}
+   creationTimestamp: "2026-10-08T08:10:24Z"
+-  generation: 1
++  generation: 2
+   labels:
+     app: web
+     tier: frontend
+@@ -16,7 +16,7 @@
+   uid: 8352ff74-5659-43df-987c-45ef74621d25
+ spec:
+   progressDeadlineSeconds: 600
+-  replicas: 2
++  replicas: 3
+   revisionHistoryLimit: 10
+   selector:
+     matchLabels:
+```
+
+</details>
+
+<details>
+<summary>[kind-tern-kube-dev2] modify ConfigMap tern-test-apps/app-config (+1 -1)</summary>
+
+```diff
+@@ -1,7 +1,7 @@
+ apiVersion: v1
+ data:
+   FEATURE_FLAGS: search,sort,filter
+-  LOG_LEVEL: info
++  LOG_LEVEL: debug
+   app.properties: |
+     server.port=8080
+     cache.ttl=30s
+```
+
+</details>
+
+<details>
+<summary>[kind-tern-kube-dev2] create ConfigMap tern-test-apps/preview-extra (+11 -0)</summary>
+
+```diff
+@@ -0,0 +1,11 @@
++apiVersion: v1
++data:
++  MODE: preview
++kind: ConfigMap
++metadata:
++  creationTimestamp: "2026-10-08T16:18:54Z"
++  labels:
++    app: web
++  name: preview-extra
++  namespace: tern-test-apps
++  uid: d6cb540e-f719-4e97-b9aa-66bc6a927d25
+```
+
+</details>

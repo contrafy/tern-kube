@@ -126,7 +126,7 @@ repository for CI.
 
 ```sh
 tern-kube-drift (-f PATH [-R] | -k DIR | --helm CHART --release R [-f VALUES]...)
-                [--context C] [--kubeconfig K] [-n NS]
+                [--context C... | --all-contexts] [--kubeconfig K] [-n NS]
                 [--format text|markdown|json] [--max-diff-lines N] [--max-bytes N]
                 [--unmanaged KINDS|auto]
 ```
@@ -139,7 +139,9 @@ tern-kube-drift (-f PATH [-R] | -k DIR | --helm CHART --release R [-f VALUES]...
 
 With `--helm`, `-f` and `--values` name values files, as in Helm.
 `--context`, `--kubeconfig` and `-n` are passed to every kubectl call. The
-`KUBECTL` and `HELM` environment variables select the binaries.
+`KUBECTL` and `HELM` environment variables select the binaries. Give
+`--context` more than once, or `--all-contexts`, to compare one source
+against several clusters (see [Several contexts](#several-contexts)).
 
 `kubectl diff` sends each manifest to the API server as a server-side dry
 run, so admission webhooks and defaulting apply and nothing is written.
@@ -194,13 +196,63 @@ service-account token and Helm release Secrets, events, endpoints,
 endpoint slices, leases, `default` and `kube-*` namespaces and built-in
 `system:` / bootstrap RBAC objects.
 
+### Several contexts
+
+`--context` is repeatable: `--context prod-eu --context prod-us` diffs the
+same source against each context in that order, one after the other.
+`--all-contexts` takes every context of the kubeconfig
+(`kubectl config get-contexts -o name`) and cannot be combined with
+`--context`; there is no cap. Naming a context twice is a usage error. The
+mode follows the number of contexts: exactly one (also a kubeconfig with a
+single context under `--all-contexts`) gives the report above, byte for
+byte, JSON `version: 1`; two or more give a combined report.
+
+Per context the CLI runs the same `kubectl diff`, the declared-object
+listing `kubectl apply --dry-run=client` (always, so objects the diff does
+not mention can be shown as in sync) and, with `--unmanaged`, the
+unmanaged listing. Helm charts are rendered once. A context that fails
+(unreachable, unknown, Forbidden) becomes an error entry with kubectl's
+last stderr line; the other contexts still run. kubectl's stderr is
+printed with a `[context]` prefix. Secret last-applied lines are redacted
+in every context.
+
+The combined report has one row per object over all contexts and one
+column per context. Cells: `in sync` (declared, no diff), `modify +A -R`,
+`create`, `delete`, `unknown`, `unmanaged`, `-` (not in that context's
+source or live listing) and `error`.
+
+- text: `Drift: LABEL across N contexts (namespace NS)`, the matrix
+  (`RESOURCE  NAMESPACE  ctx1  ctx2 ...`), one result line per context
+  (`ctx: 3 resources drifted (...)`, `ctx: no drift.`, `ctx: error: ...`),
+  notes tagged `[ctx]`, then the diffs as
+  `=== [ctx] modify Deployment.apps shop/web (+4 -3)`.
+- markdown: heading, `**D of N contexts drifted**`, the matrix table, a
+  `Context | Result` table, then one `<details>` block per context and
+  resource (`[ctx] modify ...`). Escaping and fences as above.
+- json, `version: 2`: `version`, `source`, `namespace`, `drift` (any
+  context drifted), `summary` (`contexts`, `drifted`, `errors`),
+  `contexts` (in order: `context`, `status` `"ok"` or `"error"`, `error`,
+  then the version 1 fields `drift`, `summary`, `resources`, `unmanaged`,
+  `notes`; an error entry has `null` for `drift`, `summary`, `unmanaged`
+  and empty `resources` and `notes`) and `matrix` (`key`, `group`,
+  `version`, `kind`, `namespace`, `name`, `cells`: one
+  `{context, state, added, removed}` per context in the same order, `state`
+  one of `insync`, `create`, `modify`, `delete`, `unknown`, `unmanaged`,
+  `absent`, `error`; `added`/`removed` are `null` except for diffed
+  states).
+
+With `--max-bytes`, the matrix and the per-context results are always
+kept; whole diffs are added in context order until one does not fit, so
+they are dropped from the last context backwards. Budget for N contexts
+when posting a comment.
+
 ### Exit status
 
 | Status | Meaning |
 | --- | --- |
 | 0 | no drift |
-| 1 | drift: at least one resource differs, or an unmanaged object was found |
-| 2 | error: bad arguments, kubectl or helm failed (their message is on stderr) |
+| 1 | drift: at least one resource differs, or an unmanaged object was found (several contexts: in any context) |
+| 2 | error: bad arguments, kubectl or helm failed (their message is on stderr); several contexts: any context failed, the report is still printed |
 
 ## CI
 
@@ -217,7 +269,8 @@ a weekday schedule and on demand:
   at the end; fork pull requests receive no secrets and skip the check.
 
 Set `DRIFT_SOURCES` (one CLI source per line, for example
-`-k deploy/overlays/production` or `-R -f k8s -n web`) and copy
+`-k deploy/overlays/production` or `-R -f k8s -n web`; a line may add
+several `--context C` to report on several clusters at once) and copy
 `bin/tern-kube-drift` to `.github/tern-kube-drift`. The workflow pins
 `kubectl` by version and SHA-256 and `actions/checkout` by commit.
 
