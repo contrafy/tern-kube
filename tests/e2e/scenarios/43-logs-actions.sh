@@ -44,7 +44,8 @@ E2E_WAIT=20 wait_for "the typed command lensed in the new split" has "$LOGS" 2 |
 E2E_WAIT=20 wait_for "the typed split back at its prompt" idle || return
 grep -q "tern-kube typed quick action.*logs.*$lns/$pod:side" "$(window_log)" ||
 	fail "no typed logs launch logged for $pod:side"
-contains "typed split shows the side container" "$(blocktext)" "side: beat"
+# Block text in the tree is truncated; the grid cells hold the records.
+contains "typed split shows the side container" "$(ltext "$LOGS .tk-grid *")" "side: beat"
 eq "typed split stays open at its prompt" "$(pane_count)" $((before + 1))
 ctl close >/dev/null
 E2E_WAIT=5 wait_for "the typed split to close" panes_are "$before"
@@ -55,7 +56,9 @@ qdir="$E2E_SB/kube'q"
 mkdir -p "$qdir"
 cp "$E2E_REPO/.sandbox/kubeconfig" "$qdir/config"
 typed_before=$(grep -c 'tern-kube typed quick action' "$(window_log)")
-lens "kubectl --kubeconfig \"$qdir/config\" logs -n $lns $pod"
+# Scenario strings cannot hold double quotes; `tern ctl` unescapes the `\\`
+# it receives, so zsh sees kube\'q (a literal quote).
+lens "kubectl --kubeconfig $E2E_SB/kube\\\\'q/config logs -n $lns $pod"
 native
 before=$(pane_count)
 click_text '▸ side' "$ACTS" || {
