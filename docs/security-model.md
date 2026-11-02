@@ -23,9 +23,21 @@ already run `kubectl` directly. Concretely:
   background processes, and the block refuses requests whose pane is gone or
   whose `created_at + timeout_s` has passed
   (`plugin/lib/mutation/session.luau`).
-- Quick-action confirmation grants live in Tern's plugin kv store
-  (`plugin/lib/mutation/link.luau`): single use, 60 s expiry, exact link
-  match. A same-user process able to write that store is inside the boundary.
+- Quick-action confirmation grants live in the window machine's plugin kv
+  store (`plugin/lib/mutation/link.luau`). The window mints a random
+  32-hex-digit token before opening the approve block and passes it as the
+  block's second argument; the block, which may run on a remote host with
+  its own kv, only hands the token back in the confirmed link. The window
+  consumes it once, within 600 s of minting, and only if every field of the
+  link it minted for comes back unchanged; the block may add only what it
+  resolved and showed (`context`, `kubeconfig`, `image`, `suffix`). A
+  same-user process able to write the window's kv store is inside the
+  boundary. Tokens are never written to a host's kv, audit log or spool.
+- On a remote host the host half runs with that host user's credentials and
+  kubeconfig; installing tern-kube there trusts it like any program the
+  user runs there. Both machines must run the same tern-kube version: an
+  approve block opened without a token (older window half) refuses before
+  previewing anything.
 
 ## The guard is advisory, not admission control
 
@@ -188,8 +200,9 @@ mutate the workload from inside; that is the user's action.
 Mutating quick actions (`kubectl debug` on a pod or node, CronJob
 run-now) need a confirmation grant from the approve block; `debug node` is
 in the typed tier because it creates a privileged pod in the node's host
-namespaces (`plugin/lib/mutation/risk.luau`). Without a valid grant the link
-opens the approve block instead of running.
+namespaces (`plugin/lib/mutation/risk.luau`). A link without `confirm`
+opens the approve block; one whose grant is unknown, expired, used or
+minted for different fields runs nothing ("Tern Kube: not confirmed").
 
 ## No credentials stored
 

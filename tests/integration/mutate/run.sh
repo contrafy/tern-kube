@@ -258,17 +258,30 @@ cronjob_manifest() { # NAME -> stdout
 scenario_cronjob_quick() {
 	suffix=it$(date +%s | tail -c 6)
 	cronjob_manifest tkm-nightly | k apply -f - >/dev/null
+	grant=0123456789abcdef0123456789abcdef
+	TK_GRANT=$grant
 	tk_begin cronjob-quick \
 		"tern-kube://act/cronjob-run?kind=CronJob&name=tkm-nightly&namespace=$NS&suffix=$suffix&context=$CTX"
+	TK_GRANT=
 	tk_expect phase ready
 	tk_expect_has steps "dry-run=ok"
 	tk_key enter
 	tk_expect phase closed
-	tk_effects_has grant
+	tk_effects_lacks grant
 	tk_effects_has open
-	tk_check "the open link carries the token" grep -q "confirm=fedcba\|confirm=[0-9a-f]\{32\}" "$TK_W/effects.log"
+	tk_check "the open link carries the window's token" grep -q "confirm=$grant" "$TK_W/effects.log"
 	tk_check "no job was created by the block" sh -c "! kubectl --kubeconfig '$KC' --context $CTX -n $NS get job tkm-nightly-manual-$suffix"
 	k -n "$NS" delete cronjob tkm-nightly --ignore-not-found >/dev/null
+}
+
+# An approve block from an older window half gets no token: it must refuse
+# before previewing anything.
+scenario_cronjob_quick_no_token() {
+	tk_begin cronjob-quick-no-token \
+		"tern-kube://act/cronjob-run?kind=CronJob&name=tkm-nightly&namespace=$NS&suffix=x1&context=$CTX"
+	tk_expect phase error
+	tk_expect_has errors "without a confirmation token"
+	tk_effects_lacks run
 }
 
 secret_manifest() { # NAME VALUE PART_OF -> stdout
@@ -1301,7 +1314,7 @@ scenario_helm_cleanup() {
 }
 
 ALL="apply_one apply_many diff_modify_cancel stale_file scale restart delete_typed delete_cancel nonexistent
-context_drift server_drift rbac_deny_dry_run tiny_timeout cronjob_quick guard_roundtrip secret_redaction apply_prompt
+context_drift server_drift rbac_deny_dry_run tiny_timeout cronjob_quick cronjob_quick_no_token guard_roundtrip secret_redaction apply_prompt
 guard_disabled label_one label_selector_typed label_conflict_fails annotate_overwrite patch_merge patch_cr_merge
 patch_json_typed patch_file_changed_refused undo_previous undo_to_revision undo_single_revision_fails
 undo_verify_refuses pause_resume cordon_uncordon drain_preflight drain_pdb_blocked drain_ok edit_request

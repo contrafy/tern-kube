@@ -7,9 +7,10 @@
 --   native  tern-kube://mutate?... (Explore keys, lens chips, palette): the
 --           block executes the pinned argv after confirmation (a rollback
 --           link runs `helm rollback`; context reads still use kubectl);
---   quick   tern-kube://act/<debug-pod|debug-node|cronjob-run>?...: after
---           confirmation the block grants a single-use token and opens the
---           action link with confirm=<token>; the window runs the split;
+--   quick   tern-kube://act/<debug-pod|debug-node|cronjob-run>?... with the
+--           window-minted grant token as args[2]: after confirmation the
+--           block opens the action link with confirm=<token>; the window
+--           consumes the grant and runs the split;
 --   guard   <spool>/req-<nonce>.json from `tern open --wait` (shell/PROTOCOL.md):
 --           the block never executes; it writes resp-<nonce>.env and exits 0.
 --
@@ -71,7 +72,7 @@ export type Key = { name: string, text: string?, ctrl: boolean?, alt: boolean?, 
 --   run    tag gen argv env cwd stdin timeout_ms   -> Msg result
 --   read   tag gen paths                           -> Msg read
 --   write  tag gen path text argv  (write path, then run argv) -> Msg result
---   remove path · audit line · grant token url expires · open url
+--   remove path · audit line · open url
 --   focus id · copy text · toast level text · exit
 export type Effect = {
 	t: string,
@@ -86,9 +87,7 @@ export type Effect = {
 	path: string?,
 	text: string?,
 	line: string?,
-	token: string?,
 	url: string?,
-	expires: number?,
 	id: string?,
 	level: string?,
 }
@@ -204,6 +203,8 @@ export type State = {
 	link: Link.Request?,
 	quick: Quick.Request?,
 	launch: Quick.Launch?,
+	-- Quick mode: the window's grant token (args[2]); travels back in the link.
+	grantToken: string?,
 	request: GuardRequest?,
 	-- The request is authentic (spool, nonce, pane): a deny can be written.
 	canRespond: boolean,
@@ -333,7 +334,6 @@ echo 'neither sha256sum nor shasum is available' >&2
 exit 3
 ]]
 
-M.NONCE_SCRIPT = "od -An -N16 -tx1 /dev/urandom | tr -d ' \\n'"
 M.RESPOND_SCRIPT = 'chmod 600 "$1" 2>/dev/null; mv -f "$1" "$2"'
 M.SPOOL_SCRIPT = 'cd -P -- "$1" && pwd -P'
 
@@ -1301,9 +1301,16 @@ local function proceed(s: State, effects: { Effect })
 	if s.mode == "guard" then
 		respond(s, effects, "approve")
 	elseif s.mode == "quick" then
-		s.phase = "responding"
 		s.decided = true
-		emitRun(s, effects, "nonce", { "/bin/sh", "-c", M.NONCE_SCRIPT })
+		local url = quickLink(s, s.grantToken)
+		if url == nil then
+			s.phase = "error"
+			table.insert(s.errors, "Could not build the confirmed link; nothing was started.")
+			return
+		end
+		audit(s, effects, "approved")
+		table.insert(effects, { t = "open", url = url })
+		exit(s, effects)
 	else
 		s.decided = true
 		s.phase = "executing"
@@ -1580,6 +1587,7 @@ local function blank(env: Init, mode: Mode): State
 		link = nil,
 		quick = nil,
 		launch = nil,
+		grantToken = nil,
 		request = nil,
 		canRespond = false,
 		denyReason = nil,
@@ -1671,7 +1679,17 @@ local function initNative(s: State, url: string, effects: { Effect })
 	start(s, effects)
 end
 
-local function initQuick(s: State, url: string, effects: { Effect })
+-- The window minted the grant in its own kv; this block may run on another
+-- host, so it only carries the token back. An old window half sends none.
+local function initQuick(s: State, url: string, token: string?, effects: { Effect })
+	if type(token) ~= "string" or #token ~= 32 or string.find(token, "^[0-9a-f]+$") == nil then
+		fail(
+			s,
+			"The quick action was opened without a confirmation token; is tern-kube the same version on this window's machine and on this host? Nothing was started."
+		)
+		return
+	end
+	s.grantToken = token
 	local req, e = Quick.decode(url)
 	if req == nil then
 		fail(s, "Invalid quick action link: " .. (e or "?"))
@@ -1771,7 +1789,7 @@ function M.init(env: Init): (State, { Effect })
 		elseif native then
 			initNative(s, arg, effects)
 		else
-			initQuick(s, arg, effects)
+			initQuick(s, arg, env.args[2], effects)
 		end
 		return s, effects
 	end
@@ -1957,19 +1975,6 @@ local function onResult(s: State, tag: string, r: ProcessResult, effects: { Effe
 				"Could not write the approval response (the shell will refuse): " .. firstLine(r.stderr)
 			)
 		end
-	elseif tag == "nonce" then
-		local token = string.match(r.stdout, "^(%x+)$")
-		local base = quickLink(s, nil)
-		local url = if token and #token == 32 then quickLink(s, token) else nil
-		if token == nil or #token ~= 32 or base == nil or url == nil then
-			s.phase = "error"
-			table.insert(s.errors, "Could not create the confirmation token; nothing was started.")
-			return
-		end
-		table.insert(effects, { t = "grant", token = token, url = base, expires = s.now + Link.GRANT_TTL })
-		audit(s, effects, "approved")
-		table.insert(effects, { t = "open", url = url })
-		exit(s, effects)
 	elseif string.sub(tag, 1, 3) == "rq:" and s.requery then
 		local rq = s.requery :: Requery
 		for _, run in rq.steps do

@@ -9,7 +9,6 @@
 
 local ConfigHost = require("./config_host")
 local EnvHost = require("./env_host")
-local Link = require("./lib/mutation/link")
 local Render = require("./lib/mutation/render")
 local Shellenv = require("./lib/env/shellenv")
 local Session = require("./lib/mutation/session")
@@ -170,17 +169,6 @@ local function appendAudit(line: string)
 	end
 end
 
-local function grant(e: Effect)
-	local now = os.time()
-	local ttl = math.max(1, (e.expires or now + Link.GRANT_TTL) - now)
-	local grants, err = Link.addGrant(tern.kv.get(Link.GRANTS_KEY), e.token :: string, e.url :: string, now, ttl)
-	if grants == nil then
-		log.warn("tern-kube grant refused", tostring(err))
-		return
-	end
-	tern.kv.set(Link.GRANTS_KEY, grants)
-end
-
 function exec(h: Host, effects: { Effect })
 	for _, e in effects do
 		if h.stopped then
@@ -197,8 +185,6 @@ function exec(h: Host, effects: { Effect })
 			pcall(tern.fs.remove, e.path :: string)
 		elseif t == "audit" then
 			appendAudit(e.line :: string)
-		elseif t == "grant" then
-			grant(e)
 		elseif t == "open" then
 			-- window.luau's route.link claims every tern-kube:// URL.
 			h.cx:open(e.url :: string)

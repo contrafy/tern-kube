@@ -61,7 +61,6 @@ describe("mutate links", function()
 			"tern-kube://mutate?op=scale&kind=deploy&name=x&replicas=-1",
 			"tern-kube://mutate?op=apply&file=relative.yaml",
 			"tern-kube://mutate?op=apply&file=%2Fa&kustomize=%2Fb",
-			"tern-kube://mutate?op=apply",
 			"tern-kube://mutate?op=delete&kind=node&name=n1&namespace=apps",
 			"tern-kube://mutate?op=delete&kind=pod&name=x&context=-x",
 			"tern-kube://mutate?op=delete&kind=pod&name=x&namespace=a%0Ab",
@@ -95,6 +94,17 @@ describe("mutate links", function()
 		expect(typed("/abs/x.yaml")).toEqual({ "kubectl", "apply", "-f", "/abs/x.yaml" })
 		expect(typed("~/m.yaml")).toEqual({ "kubectl", "apply", "-f", "/home/me/m.yaml" })
 		expect((Link.withInput(r, "a.yaml", "/home/me") :: Link.Request).cwd).toBe("/w/repo")
+	end)
+
+	-- A remote pane's cwd is unknown to the window: the block prompts
+	-- relative to its own host's home instead of the window machine's.
+	it("prompts an apply without cwd relative to the approve host's home", function()
+		local r = Link.decode("tern-kube://mutate?op=apply") :: Link.Request
+		expect(Link.argv(r, KUBECTL)).toBeNil()
+		expect(Link.prompt(r, "/home/tk").text).toBe("Apply a file or directory relative to /home/tk")
+		expect(Link.cwd(r, "/home/tk")).toBe("/home/tk")
+		local out = Link.withInput(r, "k8s/app.yaml", "/home/tk") :: Link.Request
+		expect(Link.argv(out, KUBECTL)).toEqual({ "kubectl", "apply", "-f", "/home/tk/k8s/app.yaml" })
 	end)
 
 	it("refuses stdin, empty input and -R with -k at the apply prompt", function()
@@ -522,40 +532,84 @@ describe("helm rollback links", function()
 	end)
 end)
 
+-- The window mints the grant before the approve block opens (the block may
+-- run on another host with its own kv), so the confirmed link may only add
+-- what the block resolves; everything the window saw must come back as is.
 describe("quick-action grants", function()
-	local url = "tern-kube://act/debug-node?kind=Node&name=w1&context=kind-dev"
+	local base = "tern-kube://act/debug-pod?kind=Pod&name=web&namespace=apps&context=kind-dev"
 
-	it("lets a matching token through exactly once", function()
-		local grants = Link.addGrant(nil, TOKEN, url, 100) :: Link.Grants
-		local ok, rest = Link.consumeGrant(grants, TOKEN, url, 110)
+	local function req(url: string): Quick.Request
+		return Quick.decode(url) :: Quick.Request
+	end
+
+	local function minted(now: number?, ttl: number?): Link.Grants
+		return Link.mintGrant(nil, TOKEN, base, now or 100, ttl) :: Link.Grants
+	end
+
+	it("lasts ten minutes from mint (preview plus review)", function()
+		expect(Link.GRANT_TTL).toBe(600)
+		expect(minted()[TOKEN].expires).toBe(700)
+	end)
+
+	it("lets the exact link through exactly once", function()
+		local ok, rest = Link.consumeGrant(minted(), TOKEN, req(base .. "&confirm=" .. TOKEN), 110)
 		expect(ok).toBe(true)
 		expect(rest[TOKEN]).toBeNil()
-		local again = Link.consumeGrant(rest, TOKEN, url, 111)
-		expect(again).toBe(false)
+		expect((Link.consumeGrant(rest, TOKEN, req(base), 111))).toBe(false)
 	end)
 
-	it("refuses expired tokens, other actions and malformed tokens", function()
-		local grants = Link.addGrant(nil, TOKEN, url, 100, 30) :: Link.Grants
-		expect((Link.consumeGrant(grants, TOKEN, url, 131))).toBe(false)
-		local ok, rest, why = Link.consumeGrant(grants, TOKEN, url .. "x", 101)
-		expect(ok).toBe(false)
-		expect(why).toContain("different action")
-		expect(rest[TOKEN]).toBeNil()
-		expect((Link.consumeGrant(grants, "nothex", url, 101))).toBe(false)
-		expect((Link.addGrant(nil, "short", url, 100))).toBeNil()
+	it("accepts what the approve block resolves: kubeconfig, image, suffix", function()
+		local url = base .. "&kubeconfig=%2Fk%2Fconfig&image=busybox%3A1.36"
+		expect((Link.consumeGrant(minted(), TOKEN, req(url), 110))).toBe(true)
+		local cj = "tern-kube://act/cronjob-run?kind=CronJob&name=nightly&namespace=batch"
+		local grants = Link.mintGrant(nil, TOKEN, cj, 100) :: Link.Grants
+		expect((Link.consumeGrant(grants, TOKEN, req(cj .. "&context=kind-dev&suffix=3e8"), 110))).toBe(true)
+		for field in Link.RESOLVED_FIELDS do
+			expect(table.find({ "context", "kubeconfig", "image", "suffix" }, field) ~= nil).toBe(true)
+		end
 	end)
 
-	it("drops expired grants when adding a new one", function()
-		local grants = Link.addGrant(nil, TOKEN, url, 100, 10) :: Link.Grants
+	it("refuses a changed field, an unresolved extra or another action", function()
+		for _, url in
+			{
+				"tern-kube://act/debug-pod?kind=Pod&name=web&namespace=other&context=kind-dev",
+				"tern-kube://act/debug-pod?kind=Pod&name=api&namespace=apps&context=kind-dev",
+				"tern-kube://act/debug-pod?kind=Pod&name=web&namespace=apps&context=prod",
+				base .. "&container=sidecar",
+				"tern-kube://act/debug-node?kind=Node&name=web&context=kind-dev",
+				"tern-kube://act/debug-pod?kind=Pod&name=web&namespace=apps",
+			}
+		do
+			local ok, rest, why = Link.consumeGrant(minted(), TOKEN, req(url), 110)
+			expect(ok).toBe(false)
+			expect(why).toContain("different action")
+			expect(rest[TOKEN]).toBeNil()
+		end
+	end)
+
+	it("refuses expired and malformed tokens", function()
+		expect((Link.consumeGrant(minted(100, 30), TOKEN, req(base), 131))).toBe(false)
+		expect((Link.consumeGrant(minted(), TOKEN, req(base), 701))).toBe(false)
+		expect((Link.consumeGrant(minted(), "nothex", req(base), 101))).toBe(false)
+		expect((Link.consumeGrant(minted(), nil, req(base), 101))).toBe(false)
+		expect((Link.mintGrant(nil, "short", base, 100))).toBeNil()
+		expect((Link.mintGrant(nil, string.upper(TOKEN), base, 100))).toBeNil()
+	end)
+
+	it("refuses to mint for a base that is not a quick-action link", function()
+		expect((Link.mintGrant(nil, TOKEN, "tern-kube://mutate?op=delete", 100))).toBeNil()
+		expect((Link.mintGrant(nil, TOKEN, base .. "&confirm=" .. TOKEN, 100))).toBeNil()
+	end)
+
+	it("drops expired grants when minting a new one", function()
 		local other = string.rep("cd", 16)
-		grants = Link.addGrant(grants, other, url, 200) :: Link.Grants
+		local grants = Link.mintGrant(minted(100, 10), other, base, 200) :: Link.Grants
 		expect(grants[TOKEN]).toBeNil()
-		expect(grants[other].url).toBe(url)
+		expect(grants[other].url).toBe(base)
 	end)
 
 	it("binds a grant to the link without its confirm parameter", function()
-		local req = Quick.decode(url .. "&confirm=" .. TOKEN) :: Quick.Request
-		expect(Link.quickBase(req)).toBe(url)
+		expect(Link.quickBase(req(base .. "&confirm=" .. TOKEN))).toBe(base)
 	end)
 end)
 

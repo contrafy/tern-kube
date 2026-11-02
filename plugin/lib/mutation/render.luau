@@ -747,7 +747,7 @@ local function confirmNodes(s: State, out: { Node })
 	if s.phase == "input" then
 		local link = s.link
 		if link then
-			local prompt = Link.prompt(link :: Link.Request)
+			local prompt = Link.prompt(link :: Link.Request, s.home)
 			table.insert(
 				out,
 				ui.text({
