@@ -157,7 +157,7 @@ local function cwdOf(run: LensRun): string?
 	return if cwd and string.sub(cwd, 1, 1) == "/" then cwd else nil
 end
 
-local EXPLORE_ROUTES: { [string]: boolean } = { manifest = true, diff = true, events = true }
+local EXPLORE_ROUTES: { [string]: boolean } = { manifest = true, diff = true, events = true, compare = true }
 
 local function exploreAction(state: CaptureState, key: string, cx: EffectCx, route: string?)
 	local capture = captureOf(state)

@@ -41,6 +41,11 @@ local function step(w: World, g: Gitops.G, ctx: Gitops.Ctx, fn: (effects: { Effe
 	G.core(w, g, ctx, effects)
 end
 
+-- The block's drift load of a source (loads are keyed per target).
+local function driftOf(g: Gitops.G, ctx: Gitops.Ctx, source: string): Gitops.DriftLoad
+	return g.drifts[Gitops.driftId(ctx.target, source)]
+end
+
 local function find(lines: { string }, needle: string): string?
 	for _, l in lines do
 		if string.find(l, needle, 1, true) then
@@ -536,7 +541,7 @@ describe("explore gitops: drift", function()
 		step(w, g, ctx, function(effects)
 			Gitops.enter(g, ctx, { kind = "drift", source = DRIFT }, false, effects)
 		end)
-		return w, g, ctx, g.drifts[DRIFT]
+		return w, g, ctx, driftOf(g, ctx, DRIFT)
 	end
 
 	it(
@@ -603,16 +608,16 @@ describe("explore gitops: drift", function()
 		local seen: { string } = {}
 		for _ = 1, 4 do
 			G.press(w, g, ctx, route, nil, "f")
-			local load = g.drifts[DRIFT]
+			local load = driftOf(g, ctx, DRIFT)
 			table.insert(seen, load.filter .. " " .. #Gitops.items(g, ctx, route))
 		end
 		expect(seen).toEqual({ "changed 4", "missing 3", "unmanaged 1", "all 8" })
-		Gitops.setFilter(g, DRIFT, "missing")
+		Gitops.setFilter(g, Gitops.driftId(ctx.target, DRIFT), "missing")
 		step(w, g, ctx, function(effects)
 			Gitops.enter(g, ctx, route, true, effects)
 		end)
-		expect(g.drifts[DRIFT].filter).toBe("missing")
-		expect(g.drifts[DRIFT].status).toBe("ok")
+		expect(driftOf(g, ctx, DRIFT).filter).toBe("missing")
+		expect(driftOf(g, ctx, DRIFT).status).toBe("ok")
 	end)
 
 	it("enter drills into an entry whose items are its manifests; m opens them", function()
@@ -675,7 +680,7 @@ describe("explore gitops: drift", function()
 		step(w, g, ctx, function(effects)
 			Gitops.startDriftReport(g, ctx, DRIFT, false, effects)
 		end)
-		local load = g.drifts[DRIFT]
+		local load = driftOf(g, ctx, DRIFT)
 		local secret: any = nil
 		for _, o in load.live do
 			if o.kind == "Secret" then
@@ -693,8 +698,10 @@ describe("explore gitops: drift", function()
 		step(w, g, ctx, function(effects)
 			Gitops.startDriftReport(g, ctx, DRIFT, false, effects)
 		end)
-		expect(g.drifts[DRIFT].status).toBe("error")
-		expect(g.drifts[DRIFT].error).toBe("kubectl diff exited 1: error: unable to recognize (no differences printed)")
+		expect(driftOf(g, ctx, DRIFT).status).toBe("error")
+		expect(driftOf(g, ctx, DRIFT).error).toBe(
+			"kubectl diff exited 1: error: unable to recognize (no differences printed)"
+		)
 
 		local w2, g2, ctx2 = setup()
 		w2.answer = function(argv)
@@ -703,7 +710,7 @@ describe("explore gitops: drift", function()
 		step(w2, g2, ctx2, function(effects)
 			Gitops.startDriftReport(g2, ctx2, DRIFT, false, effects)
 		end)
-		local load = g2.drifts[DRIFT]
+		local load = driftOf(g2, ctx2, DRIFT)
 		expect(load.status).toBe("ok")
 		expect(load.liveErrors).toEqual({ "namespace " .. NS .. ": kubectl get exited 1: Forbidden" })
 	end)
@@ -734,7 +741,7 @@ describe("explore gitops: drift", function()
 		expect(find(lines, "/bin/sh -c")).toBe("/bin/sh -c " .. Gitops.WRITE_SCRIPT .. " tern-kube-tmp " .. tmp)
 		expect(find(lines, " diff ")).toBe("kubectl --context kind-tern-kube-dev diff -f " .. tmp)
 		expect(w.removed).toEqual({ tmp })
-		expect(g.drifts[id :: string].status).toBe("ok")
+		expect(driftOf(g, ctx, id :: string).status).toBe("ok")
 		local _, nav = G.press(w, g, ctx, { kind = "drift", source = id }, nil, "X")
 		expect(nav).toBeNil()
 		expect(G.toastTexts(w)[1]).toContain("Charts are not exported")
@@ -901,7 +908,7 @@ describe("explore gitops: chart auto-detect", function()
 		expect(find(lines, " diff ")).toBe("kubectl --context kind-tern-kube-dev diff -f /data/tmp/drift-1000-n2.yaml")
 		expect(w.removed).toEqual({ VALUES_TMP, "/data/tmp/drift-1000-n2.yaml" })
 		expect((next(w.tmp))).toBeNil()
-		local load = g.drifts[DEPLOYED]
+		local load = driftOf(g, ctx, DEPLOYED)
 		expect(load.status).toBe("ok")
 		-- The render now is the source: its objects are what was compared.
 		expect((load.report :: any).counts.docs).toBe(3)
@@ -918,7 +925,7 @@ describe("explore gitops: chart auto-detect", function()
 			G.HELM .. " template shop-a " .. CHART .. " -n tern-test-helm -f /repo/helm/values-staging.yaml"
 		)
 		expect(find(lines, "get values")).toBeNil()
-		expect(g.drifts[STAGING].status).toBe("ok")
+		expect(driftOf(g, ctx, STAGING).status).toBe("ok")
 	end)
 
 	it("reports a failed render and still removes the deployed values", function()
@@ -931,7 +938,7 @@ describe("explore gitops: chart auto-detect", function()
 		step(w, g, ctx, function(effects)
 			Gitops.startDriftReport(g, ctx, DEPLOYED, false, effects)
 		end)
-		local load = g.drifts[DEPLOYED]
+		local load = driftOf(g, ctx, DEPLOYED)
 		expect(load.status).toBe("error")
 		expect(load.error).toBe("helm template shop-a exited 1: Error: found in Chart.yaml, but missing in charts/")
 		expect(w.removed).toEqual({ VALUES_TMP })
@@ -962,7 +969,7 @@ describe("explore gitops: chart auto-detect", function()
 		G.core(w, g, ctx, writes)
 		expect(table.find(w.removed, VALUES_TMP) ~= nil).toBe(true)
 		expect((next(w.tmp))).toBeNil()
-		expect(g.drifts[DEPLOYED].status).toBe("ok")
+		expect(driftOf(g, ctx, DEPLOYED).status).toBe("ok")
 	end)
 
 	it("resolves the best source of a release opened elsewhere", function()
@@ -985,7 +992,7 @@ describe("explore gitops: chart auto-detect", function()
 		step(w, g, ctx, function(effects)
 			Gitops.startDriftReport(g, ctx, DEPLOYED, false, effects)
 		end)
-		expect(g.drifts[DEPLOYED].status).toBe("ok")
+		expect(driftOf(g, ctx, DEPLOYED).status).toBe("ok")
 		local other = table.clone(row)
 		other.chartName = "web"
 		expect(Gitops.releaseSource(g, ctx, other)).toBeNil()

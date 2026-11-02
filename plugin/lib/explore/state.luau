@@ -14,6 +14,7 @@
 
 local Capture = require("../lens/capture")
 local Command = require("../kubectl/command")
+local Compare = require("./compare")
 local Config = require("../config")
 local EventsModel = require("../events/model")
 local ExploreTypes = require("./types")
@@ -182,6 +183,8 @@ export type State = {
 	-- Helm releases, history, values and their loads (helm.luau).
 	helm: Helm.H,
 	helmProgram: string?,
+	-- Compare across contexts: contexts, sides and their results (compare.luau).
+	compare: Compare.C,
 }
 
 export type Effect = ExploreTypes.Effect
@@ -378,6 +381,9 @@ function M.routeKey(s: State, route: Route): string
 	elseif Helm.isRoute(kind) then
 		-- Never a cache key either: Helm routes keep their data in s.helm.
 		return Helm.routeKey(route, targetId(s.target), M.scope(s, route))
+	elseif Compare.isRoute(kind) then
+		-- Not a cache key: compare keeps its sides in s.compare.
+		return Compare.routeKey(M.compareCtx(s), route)
 	end
 	if kind == "events" then
 		local subject = if route.ref then Resource.key(route.ref) else "ns:" .. scopeId(M.eventsScope(s, route))
@@ -445,7 +451,8 @@ local function firstLines(text: string, n: number): string
 end
 
 -- An actionable message for a failed kubectl run, plus a short kind.
-function M.failure(s: State, result: ProcessResult, spawnError: string?): (string, string)
+-- `context`: the context the run was pinned to (default: the target's).
+function M.failure(s: State, result: ProcessResult, spawnError: string?, context: string?): (string, string)
 	if spawnError then
 		if Shellenv.isNotFound(spawnError) then
 			return Shellenv.notFoundText("kubectl", s.program, s.daemonPath), "spawn"
@@ -468,7 +475,7 @@ function M.failure(s: State, result: ProcessResult, spawnError: string?): (strin
 	local stderr = trim(result.stderr or "")
 	local lower = string.lower(stderr)
 	local first = firstLines(stderr, 3)
-	local ctx = s.target.context or "(unresolved)"
+	local ctx = context or s.target.context or "(unresolved)"
 	if string.find(lower, "forbidden", 1, true) then
 		return string.format(
 			"RBAC: the user of context %s may not do this (Forbidden). Ask for access or pick another context (c).\n%s",
@@ -641,6 +648,22 @@ function M.helmCtx(s: State): Helm.Ctx
 	}
 end
 
+-- What the compare route needs to know about the block.
+function M.compareCtx(s: State): Compare.Ctx
+	return {
+		target = s.target,
+		program = s.program,
+		config = s.config,
+		decode = s.decode,
+		resolved = M.resolved(s),
+		null = s.null,
+		isList = s.isList,
+		failure = function(result: ProcessResult, spawnError: string?, context: string): string
+			return (M.failure(s, result, spawnError, context))
+		end,
+	}
+end
+
 -- The kinds picker's synthetic first row (shown when helm was found).
 M.HELM_KIND_ROW = "helm releases"
 
@@ -691,6 +714,9 @@ function M.items(s: State, route: Route?): { Item }
 	end
 	if Helm.isRoute(r.kind) then
 		return Helm.items(s.helm, M.helmCtx(s), r, s.filter[key])
+	end
+	if Compare.isRoute(r.kind) then
+		return Compare.items(s.compare, M.compareCtx(s), r, s.filter[key])
 	end
 	local out: { Item } = {}
 	local f = string.lower(s.filter[key] or "")
@@ -779,6 +805,9 @@ function M.focusRef(s: State): Ref?
 	end
 	if Helm.isRoute(r.kind) then
 		return Helm.focusRef(s.helm, M.helmCtx(s), r, M.selectedItem(s))
+	end
+	if Compare.isRoute(r.kind) then
+		return Compare.focusRef(s.compare, M.compareCtx(s), r, M.selectedItem(s))
 	end
 	return r.ref
 end
@@ -980,6 +1009,21 @@ local function enterHelm(s: State, route: Route, force: boolean, effects: { Effe
 	end)
 end
 
+-- Runs a compare call on a fresh copy of s.compare.
+local function withCompare<R>(s: State, fn: (c: Compare.C, ctx: Compare.Ctx) -> R): R
+	local c = Compare.clone(s.compare)
+	local r = fn(c, M.compareCtx(s))
+	s.compare = c
+	return r
+end
+
+local function enterCompare(s: State, route: Route, force: boolean, effects: { Effect })
+	withCompare(s, function(c, ctx)
+		Compare.enter(c, ctx, route, force, effects)
+		return nil
+	end)
+end
+
 local startEdit: (s: State, effects: { Effect }) -> boolean
 
 local function replaceTop(s: State, route: Route)
@@ -996,6 +1040,10 @@ local function ensure(s: State, effects: { Effect })
 	end
 	if Helm.isRoute(route.kind) then
 		enterHelm(s, route, false, effects)
+		return
+	end
+	if Compare.isRoute(route.kind) then
+		enterCompare(s, route, false, effects)
 		return
 	end
 	local q = route.q
@@ -1266,6 +1314,9 @@ local function linkRoutes(params: { { key: string, value: string } }): { Route }
 		table.insert(stack, { kind = "manifest", ref = ref })
 	elseif ref and route == "diff" then
 		table.insert(stack, { kind = "diff", ref = ref, doc = 1 })
+	elseif ref and route == "compare" then
+		-- Lens chip "Compare across contexts": the context picker.
+		table.insert(stack, { kind = "compare", ref = ref })
 	end
 	return stack
 end
@@ -1353,6 +1404,7 @@ function M.init(args: { string }, saved: any, config: Config, env: Env): (State,
 		searchPending = param(params, "search") == "1",
 		helm = Helm.new(),
 		helmProgram = env.helm,
+		compare = Compare.new(),
 	}
 	local effects: { Effect } = {}
 	if s.envPending then
@@ -1390,11 +1442,12 @@ local function savedRef(ref: Ref?): any
 end
 
 -- Navigation and target only: cached cluster data is never persisted, and
--- GitOps routes are not restored (they would rescan without being asked).
+-- GitOps and compare routes are not restored (they would query without
+-- being asked).
 function M.save(s: State): any
 	local stack: { any } = {}
 	for i, r in s.stack do
-		if Gitops.isRoute(r.kind) then
+		if Gitops.isRoute(r.kind) or Compare.isRoute(r.kind) then
 			break
 		end
 		stack[i] = {
@@ -1501,6 +1554,7 @@ local function chooseContext(s: State, name: string, effects: { Effect })
 	-- Back to the root view of the newly chosen cluster; nothing read from
 	-- the previous one may show under the new target.
 	s.helm = Helm.new()
+	s.compare = Compare.new()
 	local root = s.stack[1]
 	if root.kind == "helm-releases" then
 		root = { kind = "helm-releases" }
@@ -1566,7 +1620,7 @@ end
 
 local function drill(s: State, effects: { Effect })
 	local r = top(s)
-	if Gitops.isRoute(r.kind) or Helm.isRoute(r.kind) then
+	if Gitops.isRoute(r.kind) or Helm.isRoute(r.kind) or Compare.isRoute(r.kind) then
 		return
 	end
 	if r.kind == "detail" then
@@ -1620,6 +1674,10 @@ function M.refresh(s: State, effects: { Effect })
 		enterHelm(s, r, true, effects)
 		return
 	end
+	if Compare.isRoute(r.kind) then
+		enterCompare(s, r, true, effects)
+		return
+	end
 	if r.kind == "contexts" or M.resolved(s) then
 		startLoad(s, r, true, effects)
 	end
@@ -1639,6 +1697,13 @@ local function copyCommand(s: State, effects: { Effect })
 	if Helm.isRoute(r.kind) then
 		withHelm(s, function(h, ctx)
 			Helm.copy(h, ctx, r, effects)
+			return nil
+		end)
+		return
+	end
+	if Compare.isRoute(r.kind) then
+		withCompare(s, function(c, ctx)
+			Compare.copy(c, ctx, r, effects)
 			return nil
 		end)
 		return
@@ -1788,7 +1853,23 @@ local function openQuick(s: State, action: string, ref: Ref?, opts: { [string]: 
 	table.insert(effects, { t = "open", url = url })
 end
 
+-- Compare views show other contexts next to the base: nothing that acts
+-- runs from them (switch with c, or go back to the object, first).
+local function readOnly(s: State, effects: { Effect }): boolean
+	if not Compare.isRoute(top(s).kind) then
+		return false
+	end
+	table.insert(
+		effects,
+		toast("error", Compare.READ_ONLY, "Go back to the object (esc), or switch context (c), first")
+	)
+	return true
+end
+
 local function quick(s: State, action: string, effects: { Effect })
+	if readOnly(s, effects) then
+		return
+	end
 	if Quick.gate(action) == "editor" and not s.config.mutations.enabled then
 		table.insert(effects, toast("error", "Mutations are disabled", "mutations.enabled is false in the config"))
 		return
@@ -1854,6 +1935,9 @@ end
 -- open the approve block for the focused object; it previews and confirms,
 -- Explore never mutates.
 local function mutate(s: State, op: string, effects: { Effect })
+	if readOnly(s, effects) then
+		return
+	end
 	if not s.config.mutations.enabled then
 		table.insert(effects, toast("error", "Mutations are disabled", "mutations.enabled is false in the config"))
 		return
@@ -1946,6 +2030,9 @@ end
 
 -- E: export the object in view, or every row of the (filtered) list.
 local function exportKey(s: State, effects: { Effect })
+	if readOnly(s, effects) then
+		return
+	end
 	local r = top(s)
 	local objects: { any } = {}
 	local label: string
@@ -2178,6 +2265,57 @@ local function helmRouteKey(s: State, key: Key, ch: string?, effects: { Effect }
 	return handled
 end
 
+-- Compare ----------------------------------------------------------------------
+
+-- x: the list in view (kind and namespace scope), else the focused object,
+-- across contexts; the picker comes first.
+local function compareKey(s: State, effects: { Effect })
+	if not allowLive(s) then
+		table.insert(effects, toast("error", "Live queries are disabled", "explore.allow_live_queries is false"))
+		return
+	end
+	if not needTarget(s, effects) then
+		return
+	end
+	local r = top(s)
+	if r.kind == "list" then
+		pushRoute(s, { kind = "compare", resource = r.resource or "pods", namespace = r.namespace }, effects)
+		return
+	elseif r.kind == "contexts" or r.kind == "namespaces" or r.kind == "kinds" then
+		table.insert(effects, toast("info", "Nothing to compare here", "Open a list or an object first"))
+		return
+	end
+	local ref = M.focusRef(s)
+	if ref == nil then
+		table.insert(effects, toast("error", "Select an object first"))
+		return
+	end
+	if ref.version == nil then
+		-- Every side is read at the version Explore read the base at.
+		local obj = M.findObject(s, ref)
+		local _, version = Resource.splitApiVersion(if type(obj) == "table" then obj.apiVersion else nil)
+		if version then
+			ref = table.clone(ref)
+			ref.version = version
+		end
+	end
+	pushRoute(s, { kind = "compare", ref = ref }, effects)
+end
+
+-- Keys of the compare route; false lets the global keys run.
+local function compareRouteKey(s: State, key: Key, ch: string?, effects: { Effect }): boolean
+	local r = top(s)
+	if not Compare.isRoute(r.kind) then
+		return false
+	end
+	local selected = M.selectedItem(s)
+	local c = Compare.clone(s.compare)
+	local handled, nav = Compare.onKey(c, M.compareCtx(s), r, selected, ch, key, effects)
+	s.compare = c
+	applyNav(s, nav, effects)
+	return handled
+end
+
 -- Logs and events routes ------------------------------------------------------
 
 local ERROR_RANK = LogsParse.rank("error")
@@ -2387,6 +2525,7 @@ local FILTERABLE: { [string]: boolean } = {
 	["helm-releases"] = true,
 	["helm-history"] = true,
 	["helm-resources"] = true,
+	compare = true,
 }
 M.FILTERABLE = FILTERABLE
 
@@ -2467,6 +2606,9 @@ local function onKey(s: State, key: Key, effects: { Effect }): boolean
 		return true
 	end
 	if not s.help and gitopsRouteKey(s, key, ch, effects) then
+		return true
+	end
+	if not s.help and compareRouteKey(s, key, ch, effects) then
 		return true
 	end
 	if not s.help and dataRouteKey(s, key, ch, effects) then
@@ -2574,6 +2716,8 @@ local function onKey(s: State, key: Key, effects: { Effect }): boolean
 		diffKey(s, effects)
 	elseif ch == "E" or (name == "e" and key.shift) then
 		exportKey(s, effects)
+	elseif ch == "x" and not key.shift then
+		compareKey(s, effects)
 	else
 		return false
 	end
@@ -2591,6 +2735,10 @@ local function onAction(s: State, act: string, value: string, effects: { Effect 
 		end
 		if Gitops.isRoute(top(s).kind) then
 			gitopsRouteKey(s, { name = "enter" }, nil, effects)
+			return true
+		end
+		if Compare.isRoute(top(s).kind) then
+			compareRouteKey(s, { name = "enter" }, nil, effects)
 			return true
 		end
 		drill(s, effects)
@@ -2622,6 +2770,8 @@ local function onAction(s: State, act: string, value: string, effects: { Effect 
 			openEvents(s, ref, effects)
 		elseif value == "events-ns" then
 			openEvents(s, nil, effects)
+		elseif value == "compare" then
+			compareKey(s, effects)
 		else
 			return false
 		end
@@ -2728,6 +2878,9 @@ local function onAction(s: State, act: string, value: string, effects: { Effect 
 		end
 	elseif act == "field-focus" then
 		return startField(s, value, effects)
+	elseif act == "compare-key" then
+		local ch = if value == "enter" then nil else value
+		return compareRouteKey(s, { name = value, text = ch }, ch, effects)
 	elseif act == "gitops-key" then
 		local ch = if value == "enter" or value == "escape" then nil else value
 		return gitopsRouteKey(s, { name = value, text = ch }, ch, effects)
@@ -2989,6 +3142,11 @@ local function onResult(s: State, msg: Msg, effects: { Effect }): boolean
 		end
 		s.helm = h
 		return true
+	elseif string.sub(tag, 1, #Compare.TAG) == Compare.TAG then
+		local route = top(s)
+		return withCompare(s, function(c, ctx)
+			return Compare.onResult(c, ctx, msg, route, effects)
+		end)
 	elseif string.sub(tag, 1, 7) == "gitops|" then
 		local g = Gitops.clone(s.gitops)
 		Gitops.onResult(g, M.gitopsCtx(s), msg, effects)

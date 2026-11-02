@@ -233,9 +233,11 @@ describe("explore logs: keys", function()
 		expect(js[1].text).toBe('{"level":"info","ts":"2026-10-30T10:00:00Z","msg":"server started","port":8080}')
 	end)
 
-	it("route keys do not leak: x, w, a and ] stay unbound outside logs and events", function()
+	-- x is global since track 5 (compare across contexts); logs and events
+	-- shadow it, covered above.
+	it("route keys do not leak: w, a and ] stay unbound outside logs and events", function()
 		local s = W.open()
-		for _, k in { "x", "w", "a", "]", "[", "o" } do
+		for _, k in { "w", "a", "]", "[", "o" } do
 			local s2 = State.update(s, W.key(k))
 			expect(s2 == s).toBe(true)
 		end
