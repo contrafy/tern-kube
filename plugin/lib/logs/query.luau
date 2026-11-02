@@ -23,37 +23,93 @@ local function contains(hay: string?, needle: string): boolean
 	return hay ~= nil and string.find(string.lower(hay), needle, 1, true) ~= nil
 end
 
--- Plain, case-insensitive search over message, fields, continuation lines
--- and the source's pod/container (`srcHit`: sources matched once up front).
-local function textMatches(srcHit: { [number]: boolean }, r: Record, needle: string): boolean
-	if srcHit[r.source] or contains(r.message, needle) then
-		return true
+-- Lowered message, fields and continuation lines of a record, NUL-separated
+-- so a needle never matches across two of them; cached in the store until
+-- the record changes or leaves. `buf`: scratch space reused across records.
+local function searchText(s: Store, r: Record, buf: { string }): string
+	local cached = s.search[r.index]
+	if cached then
+		return cached
 	end
-	if r.fields then
-		for _, f in r.fields do
-			if contains(f.key, needle) or contains(f.value, needle) then
-				return true
+	local text: string
+	if r.fields == nil and r.extra == nil then
+		text = string.lower(r.message)
+	else
+		table.clear(buf)
+		buf[1] = r.message
+		local n = 1
+		if r.fields then
+			for _, f in r.fields do
+				buf[n + 1], buf[n + 2] = f.key, f.value
+				n += 2
 			end
 		end
-	end
-	if r.extra then
-		for _, l in r.extra do
-			if contains(l, needle) then
-				return true
+		if r.extra then
+			for _, l in r.extra do
+				n += 1
+				buf[n] = l
 			end
 		end
+		text = string.lower(table.concat(buf, "\0"))
 	end
-	return false
+	s.search[r.index] = text
+	return text
+end
+
+-- A filter in the form matching needs.
+type Spec = {
+	levels: { [Level]: boolean }?,
+	minRank: number,
+	sources: { [number]: boolean }?,
+	needle: string?,
+}
+
+local function spec(f: Filter, floor: Level?): Spec
+	return {
+		levels = f.levels,
+		minRank = math.max(Parse.rank(f.minLevel or "none"), Parse.rank(floor or "none")),
+		sources = f.sources,
+		needle = if f.text and f.text ~= "" then string.lower(f.text) else nil,
+	}
+end
+
+local function matchesAll(p: Spec): boolean
+	return p.levels == nil and p.minRank == 0 and p.sources == nil and p.needle == nil
+end
+
+local function setKey(set: { [any]: boolean }?): string
+	if set == nil then
+		return "*"
+	end
+	local on: { string } = {}
+	for k, v in set do
+		if v then
+			table.insert(on, tostring(k))
+		end
+	end
+	table.sort(on)
+	return table.concat(on, ",")
+end
+
+-- Identifies the hits of `p` over one order, for the store's result cache.
+local function resultKey(p: Spec, merge: boolean): string
+	return table.concat({
+		if merge then "merged" else "arrival",
+		setKey(p.levels),
+		tostring(p.minRank),
+		setKey(p.sources),
+		p.needle or "",
+	}, "\0")
 end
 
 type Matcher = (Record) -> boolean
 
-local function matcher(s: Store, f: Filter, floor: Level?): Matcher
-	local levels = f.levels
-	local sources = f.sources
-	local minRank = math.max(Parse.rank(f.minLevel or "none"), Parse.rank(floor or "none"))
-	local needle = if f.text and f.text ~= "" then string.lower(f.text) else nil
+-- Plain, case-insensitive search over message, fields, continuation lines
+-- and the source's pod/container (sources matched once up front).
+local function matcher(s: Store, p: Spec): Matcher
+	local levels, minRank, sources, needle = p.levels, p.minRank, p.sources, p.needle
 	local srcHit: { [number]: boolean } = {}
+	local buf: { string } = {}
 	if needle then
 		for i, src in s.sources do
 			srcHit[i] = contains(src.pod, needle) or contains(src.container, needle)
@@ -69,7 +125,7 @@ local function matcher(s: Store, f: Filter, floor: Level?): Matcher
 		if sources and not sources[r.source] then
 			return false
 		end
-		return needle == nil or textMatches(srcHit, r, needle)
+		return needle == nil or srcHit[r.source] == true or string.find(searchText(s, r, buf), needle, 1, true) ~= nil
 	end
 end
 
@@ -144,107 +200,212 @@ function M.sortKey(ts: string): string
 	)
 end
 
-type Lane = { indices: { number }, keys: { string }, at: number }
+-- Record indices sorted by (key, index), keys alongside.
+type Run = { indices: { number }, keys: { string } }
 
--- Stable merge by kubelet time: each source keeps its own order (sorted
--- first if its times go backwards); lanes interleave by (time, arrival).
--- Records without a time take the previous time of their source.
-local function merged(s: Store, indices: { number }): { number }
-	local lanes: { [number]: Lane } = {}
-	local order: { number } = {}
-	for _, i in indices do
+-- Each source keeps its own order, sorted first if its times go backwards.
+local function sortRun(run: Run)
+	local keys = run.keys
+	local sorted = true
+	for k = 2, #keys do
+		if keys[k] < keys[k - 1] then
+			sorted = false
+			break
+		end
+	end
+	if sorted then
+		return
+	end
+	local pos: { number } = table.create(#keys)
+	for k = 1, #keys do
+		pos[k] = k
+	end
+	table.sort(pos, function(a: number, b: number): boolean
+		if keys[a] ~= keys[b] then
+			return keys[a] < keys[b]
+		end
+		return a < b
+	end)
+	local ni: { number } = table.create(#pos)
+	local nk: { string } = table.create(#pos)
+	for k, p in pos do
+		ni[k] = run.indices[p]
+		nk[k] = keys[p]
+	end
+	run.indices, run.keys = ni, nk
+end
+
+-- Writes the merge of runs `a` and `b` into `out` from position `at`.
+local function mergeInto(a: Run, b: Run, out: Run, at: number)
+	local ai, ak, bi, bk = a.indices, a.keys, b.indices, b.keys
+	local oi, ok = out.indices, out.keys
+	local x, y, w = 1, 1, at
+	local nx, ny = #ai, #bi
+	while x <= nx and y <= ny do
+		local kx, ky = ak[x], bk[y]
+		if kx < ky or (kx == ky and ai[x] < bi[y]) then
+			oi[w], ok[w] = ai[x], kx
+			x += 1
+		else
+			oi[w], ok[w] = bi[y], ky
+			y += 1
+		end
+		w += 1
+	end
+	if x <= nx then
+		table.move(ai, x, nx, w, oi)
+		table.move(ak, x, nx, w, ok)
+	elseif y <= ny then
+		table.move(bi, y, ny, w, oi)
+		table.move(bk, y, ny, w, ok)
+	end
+end
+
+-- Merges sorted runs pairwise until one is left.
+local function mergeAll(runs: { Run }): Run
+	while #runs > 1 do
+		local paired: { Run } = {}
+		for k = 1, #runs, 2 do
+			local a, b = runs[k], runs[k + 1]
+			if b == nil then
+				table.insert(paired, a)
+			else
+				local n = #a.indices + #b.indices
+				local out: Run = { indices = table.create(n), keys = table.create(n) }
+				mergeInto(a, b, out, 1)
+				table.insert(paired, out)
+			end
+		end
+		runs = paired
+	end
+	return runs[1]
+end
+
+-- Every kept record merged by kubelet time, stable on equal times. Records
+-- without a time take the previous time of their source. Kept in the store
+-- across calls: evicted indices leave, records pushed since are merged in.
+local function mergedOrder(s: Store): { number }
+	local m: Store.Merged = s.merged or { order = {}, keys = {}, upto = s.first - 1, low = s.first, lastKey = {} }
+	s.merged = m
+	local order, keys = m.order, m.keys
+	if m.low < s.first then
+		local n = 0
+		for k = 1, #order do
+			local i = order[k]
+			if i >= s.first then
+				n += 1
+				order[n], keys[n] = i, keys[k]
+			end
+		end
+		for k = #order, n + 1, -1 do
+			order[k], keys[k] = nil, nil
+		end
+		m.low = s.first
+	end
+	local from = math.max(m.upto + 1, s.first)
+	if from > s.last then
+		return order
+	end
+	local bySource: { [number]: Run } = {}
+	local runs: { Run } = {}
+	for i = from, s.last do
 		local r = s.records[i]
-		local lane = lanes[r.source]
-		if lane == nil then
-			lane = { indices = {}, keys = {}, at = 1 }
-			lanes[r.source] = lane
-			table.insert(order, r.source)
+		local key = if r.ts then M.sortKey(r.ts) else (m.lastKey[r.source] or "")
+		m.lastKey[r.source] = key
+		local run = bySource[r.source]
+		if run == nil then
+			run = { indices = {}, keys = {} }
+			bySource[r.source] = run
+			table.insert(runs, run)
 		end
-		local n = #lane.indices + 1
-		lane.indices[n] = i
-		lane.keys[n] = if r.ts then M.sortKey(r.ts) else (lane.keys[n - 1] or "")
+		table.insert(run.indices, i)
+		table.insert(run.keys, key)
 	end
-	local list: { Lane } = {}
-	for _, src in order do
-		local lane = lanes[src]
-		local sorted = true
-		for k = 2, #lane.keys do
-			if lane.keys[k] < lane.keys[k - 1] then
-				sorted = false
-				break
+	m.upto = s.last
+	for _, run in runs do
+		sortRun(run)
+	end
+	local new = mergeAll(runs)
+	-- New records have the highest indices, so they sort after every merged
+	-- record with a key <= the smallest new key: only the tail past that
+	-- point is re-merged (a stream mostly appends).
+	local n = #order
+	local lo, hi = 1, n + 1
+	local smallest = new.keys[1]
+	while lo < hi do
+		local mid = (lo + hi) // 2
+		if keys[mid] <= smallest then
+			lo = mid + 1
+		else
+			hi = mid
+		end
+	end
+	local tail: Run = { indices = table.create(n - lo + 1), keys = table.create(n - lo + 1) }
+	table.move(order, lo, n, 1, tail.indices)
+	table.move(keys, lo, n, 1, tail.keys)
+	mergeInto(tail, new, { indices = order, keys = keys }, lo)
+	return order
+end
+
+-- Kept records matching `p` in arrival or merged order; the last result is
+-- kept in the store so paging and re-renders do not rescan.
+local function hitsOf(s: Store, p: Spec, merge: boolean): { number }
+	local key = resultKey(p, merge)
+	local cached = s.result
+	if cached and cached.gen == s.gen and cached.key == key then
+		return cached.hits
+	end
+	local match = matcher(s, p)
+	local records = s.records
+	local hits: { number } = {}
+	local n = 0
+	if merge then
+		for _, i in mergedOrder(s) do
+			if match(records[i]) then
+				n += 1
+				hits[n] = i
 			end
 		end
-		if not sorted then
-			local pos: { number } = table.create(#lane.keys)
-			for k = 1, #lane.keys do
-				pos[k] = k
-			end
-			local keys = lane.keys
-			table.sort(pos, function(a: number, b: number): boolean
-				if keys[a] ~= keys[b] then
-					return keys[a] < keys[b]
-				end
-				return a < b
-			end)
-			local ni: { number } = table.create(#pos)
-			local nk: { string } = table.create(#pos)
-			for k, p in pos do
-				ni[k] = lane.indices[p]
-				nk[k] = keys[p]
-			end
-			lane.indices, lane.keys = ni, nk
-		end
-		table.insert(list, lane)
-	end
-	if #list == 1 then
-		return list[1].indices
-	end
-	local out: { number } = table.create(#indices)
-	for n = 1, #indices do
-		local best: Lane? = nil
-		local bestKey, bestIndex = "", 0
-		for _, lane in list do
-			local k = lane.keys[lane.at]
-			if k ~= nil then
-				local idx = lane.indices[lane.at]
-				if best == nil or k < bestKey or (k == bestKey and idx < bestIndex) then
-					best, bestKey, bestIndex = lane, k, idx
-				end
+	else
+		for i = s.first, s.last do
+			if match(records[i]) then
+				n += 1
+				hits[n] = i
 			end
 		end
-		local chosen = best :: Lane
-		out[n] = bestIndex
-		chosen.at += 1
 	end
-	return out
+	s.result = { gen = s.gen, key = key, hits = hits }
+	return hits
 end
 
 -- Kept records matching `f`, in arrival order (or merged by kubelet time
 -- when `f.merge` and the run has --timestamps), cut into pages of
 -- `pageSize`. Pages are 1-based; nil asks for the newest (last) page.
 function M.apply(s: Store, f: Filter, page: number?, pageSize: number): Window
-	local match = matcher(s, f, nil)
-	local hits: { number } = {}
-	local n = 0
-	for i = s.first, s.last do
-		if match(s.records[i]) then
-			n += 1
-			hits[n] = i
-		end
+	local merge = f.merge and s.opts.timestamps
+	local p = spec(f, nil)
+	-- nil: every kept record in arrival order, records[first..last].
+	local hits: { number }? = nil
+	if not matchesAll(p) then
+		hits = hitsOf(s, p, merge)
+	elseif merge then
+		hits = mergedOrder(s)
 	end
-	if f.merge and s.opts.timestamps and n > 1 then
-		hits = merged(s, hits)
-	end
+	local n = if hits then #hits else s.last - s.first + 1
 	local size = math.max(1, math.floor(pageSize))
 	local pages = math.max(1, math.ceil(n / size))
-	local p = if page == nil then pages else math.clamp(math.floor(page), 1, pages)
-	local from = (p - 1) * size + 1
-	local to = math.min(n, p * size)
+	local pg = if page == nil then pages else math.clamp(math.floor(page), 1, pages)
+	local from = (pg - 1) * size + 1
+	local to = math.min(n, pg * size)
 	local indices: { number } = table.create(math.max(0, to - from + 1))
-	if to >= from then
+	if hits and to >= from then
 		table.move(hits, from, to, 1, indices)
+	elseif to >= from then
+		for k = from, to do
+			indices[k - from + 1] = s.first + k - 1
+		end
 	end
-	return { indices = indices, matched = n, page = p, pages = pages }
+	return { indices = indices, matched = n, page = pg, pages = pages }
 end
 
 -- Unfiltered records [index - radius, index + radius], clipped to the kept
@@ -263,7 +424,7 @@ end
 -- order, that matches `f` and is at `minLevel` or above; nil past either end.
 function M.next(s: Store, f: Filter, from: number, dir: number, minLevel: Level): number?
 	local step = if dir < 0 then -1 else 1
-	local match = matcher(s, f, minLevel)
+	local match = matcher(s, spec(f, minLevel))
 	local i = from + step
 	if step > 0 then
 		i = math.max(i, s.first)

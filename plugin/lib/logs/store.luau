@@ -16,6 +16,21 @@ type Level = T.Level
 type Record = T.Record
 type Notice = T.Notice
 
+-- Query's time-merged order of kept records: indices sorted by (key, index)
+-- with their keys alongside.
+export type Merged = {
+	order: { number },
+	keys: { string },
+	-- Highest record index merged so far.
+	upto: number,
+	-- `first` when evicted indices were last dropped from `order`.
+	low: number,
+	-- Key of the newest merged record per source, for records without a time.
+	lastKey: { [number]: string },
+}
+-- Query's last filtered result, valid while `gen` is unchanged.
+export type Result = { gen: number, key: string, hits: { number } }
+
 export type Store = {
 	opts: T.Options,
 	limits: T.Limits,
@@ -42,6 +57,13 @@ export type Store = {
 	lastOf: { [number]: number },
 	-- Source of the previous delivered line, nil after a diagnostic.
 	prevSource: number?,
+	-- Query's derived data, built lazily: `gen` changes on every push and
+	-- finish; `search` is the lowered searchable text per kept record,
+	-- dropped here when a record is evicted, removed or grows a continuation.
+	gen: number,
+	search: { [number]: string },
+	merged: Merged?,
+	result: Result?,
 }
 
 local M = {}
@@ -76,6 +98,10 @@ function M.new(opts: T.Options, limits: T.Limits): Store
 		sourceKeys = {},
 		lastOf = {},
 		prevSource = nil,
+		gen = 0,
+		search = {},
+		merged = nil,
+		result = nil,
 	}
 	-- Unprefixed lines belong to one source unless several pods or containers
 	-- interleave without attribution (`-l`, `--all-pods`, `--all-containers`).
@@ -157,6 +183,7 @@ local function evict(s: Store)
 	while s.last - s.first + 1 > s.limits.maxLines or (s.bytes > s.limits.maxBytes and s.last > s.first) do
 		local r = s.records[s.first]
 		s.records[s.first] = nil
+		s.search[s.first] = nil
 		s.bytes -= recordBytes(r)
 		s.first += 1
 		s.dropped += 1
@@ -181,6 +208,7 @@ end
 local function attach(s: Store, r: Record, payload: string)
 	local extra: { string } = r.extra or {}
 	r.extra = extra
+	s.search[r.index] = nil
 	if #extra < Parse.MAX_EXTRA then
 		table.insert(extra, payload)
 		s.bytes += #payload
@@ -190,6 +218,7 @@ local function attach(s: Store, r: Record, payload: string)
 end
 
 function M.push(s: Store, line: string)
+	s.gen += 1
 	s.lines += 1
 	local text = if string.byte(line, -1) == 13 then string.sub(line, 1, -2) else line
 	local diag = Parse.diagnostic(text, "start")
@@ -258,6 +287,8 @@ end
 local function removeLast(s: Store)
 	local r = s.records[s.last]
 	s.records[s.last] = nil
+	s.search[s.last] = nil
+	s.merged = nil
 	s.last -= 1
 	s.counts[r.level] -= 1
 	s.sourceCounts[r.source] -= 1
@@ -274,6 +305,7 @@ end
 -- shell's partial-line mark, the echoed `^C` of a Ctrl-C (status 1, plan F6)
 -- and, when kubectl failed, its closing error/warning lines.
 function M.finish(s: Store, status: number)
+	s.gen += 1
 	s.status = status
 	local interrupted = false
 	local trailing: { Notice } = {}

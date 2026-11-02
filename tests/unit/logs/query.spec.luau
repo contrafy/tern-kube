@@ -4,6 +4,8 @@
 -- kubelet time of `--timestamps --prefix` runs.
 local t = require("../../lib/test")
 local json = require("../../lib/json")
+local synth = require("../../../scripts/fixtures/synth")
+local Parse = require("../../../plugin/lib/logs/parse")
 local Query = require("../../../plugin/lib/logs/query")
 local Store = require("../../../plugin/lib/logs/store")
 local describe, it, expect = t.describe, t.it, t.expect
@@ -145,6 +147,113 @@ describe("logs query: context and jumps", function()
 	it("next honours the active filter so jumps stay inside what is shown", function()
 		local f: Query.Filter = { merge = false, sources = { [2] = true } }
 		expect(Query.next(MIXED, f, 0, 1, "error")).toBe(6)
+	end)
+end)
+
+-- apply caches per store (lowered search text per record, the merged order,
+-- the last filter's hits) because the lens re-applies on every click and every
+-- streamed batch; a cache that misses a push, a continuation, an eviction or
+-- finish's trimming would show records that are not (or no longer) there.
+describe("logs query: caches follow the store", function()
+	local function live(maxLines: number, prefix: boolean, timestamps: boolean): Store.Store
+		return Store.new(
+			{ prefix = prefix, timestamps = timestamps, follow = true, decode = json.decode },
+			{ maxLines = maxLines, maxBytes = 1e9 }
+		)
+	end
+
+	it("a push after a cached search shows the new record", function()
+		local s = live(100, true, false)
+		local f: Query.Filter = { merge = false, text = "checkout" }
+		Store.push(s, "[pod/a/app] INFO Checkout one")
+		expect(Query.apply(s, f, nil, 10).indices).toEqual({ 1 })
+		Store.push(s, "[pod/b/app] INFO other")
+		Store.push(s, "[pod/b/app] INFO CHECKOUT two")
+		expect(Query.apply(s, f, nil, 10).indices).toEqual({ 1, 3 })
+	end)
+
+	it("a push after a cached merge lands at its time, not at the end", function()
+		local s = live(100, true, true)
+		local f: Query.Filter = { merge = true }
+		Store.push(s, "[pod/a/app] 2026-11-02T10:00:03Z A1")
+		expect(Query.apply(s, f, nil, 10).indices).toEqual({ 1 })
+		Store.push(s, "[pod/b/app] 2026-11-02T10:00:01Z B1")
+		expect(Query.apply(s, f, nil, 10).indices).toEqual({ 2, 1 })
+		Store.push(s, "[pod/a/app] 2026-11-02T10:00:04Z A2")
+		Store.push(s, "[pod/b/app] 2026-11-02T10:00:02Z B2")
+		expect(Query.apply(s, f, nil, 10).indices).toEqual({ 2, 4, 1, 3 })
+		expect(Query.apply(s, { merge = true, text = "b" }, nil, 10).indices).toEqual({ 2, 4 })
+	end)
+
+	it("a continuation attached after a cached search is searchable", function()
+		local s = live(100, false, false)
+		local f: Query.Filter = { merge = false, text = "service.java" }
+		Store.push(s, "ERROR boom")
+		expect(Query.apply(s, f, nil, 10).matched).toBe(0)
+		Store.push(s, "\tat com.example.Service.handle(Service.java:12)")
+		expect(Query.apply(s, f, nil, 10).indices).toEqual({ 1 })
+	end)
+
+	it("eviction drops evicted records from results and from every cache", function()
+		local s = live(3, true, true)
+		for k = 1, 3 do
+			Store.push(s, string.format("[pod/a/app] 2026-11-02T10:00:0%dZ x%d", k, k))
+		end
+		expect(Query.apply(s, { merge = true }, nil, 10).indices).toEqual({ 1, 2, 3 })
+		expect(Query.apply(s, { merge = true, text = "x" }, nil, 10).indices).toEqual({ 1, 2, 3 })
+		Store.push(s, "[pod/b/app] 2026-11-02T10:00:00Z x4")
+		Store.push(s, "[pod/b/app] 2026-11-02T10:00:05Z x5")
+		expect(Query.apply(s, { merge = true }, nil, 10).indices).toEqual({ 4, 3, 5 })
+		expect(Query.apply(s, { merge = true, text = "x" }, nil, 10).indices).toEqual({ 4, 3, 5 })
+		expect(Query.apply(s, { merge = false, text = "x" }, nil, 10).indices).toEqual({ 3, 4, 5 })
+		for i in s.search do
+			expect(i >= s.first).toBe(true)
+		end
+		for _, i in (s.merged :: Store.Merged).order do
+			expect(i >= s.first).toBe(true)
+		end
+	end)
+
+	it("finish's trimming of trailing lines drops them from a cached merge", function()
+		local s = live(100, true, true)
+		Store.push(s, "[pod/a/app] 2026-11-02T10:00:01Z a")
+		Store.push(s, "%")
+		expect(Query.apply(s, { merge = true }, nil, 10).indices).toEqual({ 2, 1 })
+		expect(Query.apply(s, { merge = true, text = "%" }, nil, 10).indices).toEqual({ 2 })
+		Store.finish(s, 0)
+		expect(Query.apply(s, { merge = true }, nil, 10).indices).toEqual({ 1 })
+		expect(Query.apply(s, { merge = true, text = "%" }, nil, 10).matched).toBe(0)
+	end)
+
+	it("applying after every pushed line matches a plain time sort of what is kept", function()
+		local lines = synth.logLines(600, 11, true)
+		local s = live(250, true, true)
+		local filters: { Query.Filter } =
+			{ { merge = true }, { merge = true, text = "order" }, { merge = true, minLevel = "warn" } }
+		for k, l in lines do
+			Store.push(s, l)
+			Query.apply(s, filters[k % #filters + 1], 1, 50)
+		end
+		local expected: { number } = {}
+		for i = s.first, s.last do
+			table.insert(expected, i)
+		end
+		table.sort(expected, function(a: number, b: number): boolean
+			local ka = Query.sortKey(s.records[a].ts :: string)
+			local kb = Query.sortKey(s.records[b].ts :: string)
+			if ka ~= kb then
+				return ka < kb
+			end
+			return a < b
+		end)
+		expect(Query.apply(s, { merge = true }, 1, 1000).indices).toEqual(expected)
+		local warn: { number } = {}
+		for _, i in expected do
+			if Parse.rank(s.records[i].level) >= Parse.rank("warn") then
+				table.insert(warn, i)
+			end
+		end
+		expect(Query.apply(s, { merge = true, minLevel = "warn" }, 1, 1000).indices).toEqual(warn)
 	end)
 end)
 
