@@ -327,6 +327,20 @@ describe("explore state: quick actions", function()
 		expect(pf[1].url :: string).toContain("port-forward?")
 	end)
 
+	-- Explore runs on the pane's host, the split opens from the window: the
+	-- link carries this host's placement and logs tail so a remote host's
+	-- config governs its own quick actions.
+	it("quick links carry the host's quick_actions placement and logs tail", function()
+		local cfg = W.config('{"quick_actions": {"placement": "tab", "logs_tail": 75}}')
+		local s = W.open(nil, cfg)
+		local _, logs = State.update(s, W.key("l"))
+		expect(logs[1].url :: string).toContain("tail=75")
+		expect(logs[1].url :: string).toContain("place=tab")
+		local _, shell = State.update(s, W.key("s"))
+		expect(shell[1].url :: string).toContain("place=tab")
+		expect((string.find(shell[1].url :: string, "tail=", 1, true))).toBeNil()
+	end)
+
 	it("s on a deployment resolves a ready pod first, then opens its shell", function()
 		local s = W.open({ context = W.CTX, namespace = W.NS, kind = "Deployment" })
 		s = W.keys(s, { "/", "w", "e", "b", "enter", "enter" })

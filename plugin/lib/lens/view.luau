@@ -7,6 +7,7 @@ local Capture = require("./capture")
 local DescribeView = require("../render/describe_view")
 local Header = require("../render/header")
 local MutationView = require("../render/mutation_view")
+local Quick = require("../actions/quick")
 local TableView = require("../render/table_view")
 local Viewstate = require("./viewstate")
 local Types = require("../model/types")
@@ -17,7 +18,8 @@ type Capture = Capture.Capture
 type Node = ui.Node
 type ViewState = Viewstate.ViewState
 -- notes: muted header lines (a native view of a still-running watch).
-export type Options = { pageSize: number?, mutations: boolean?, notes: { string }? }
+-- quick: this host's quick_actions settings for the inspector's chips.
+export type Options = { pageSize: number?, mutations: boolean?, notes: { string }?, quick: Quick.Settings? }
 
 local M = {}
 
@@ -37,7 +39,7 @@ function M.render(capture: Capture, vs: ViewState, opts: Options?): Node?
 	local notes = if opts then opts.notes else nil
 	if mode == "table" or mode == "name" or mode == "json" then
 		local tableOpts: TableView.Options? = if opts
-			then { pageSize = opts.pageSize, mutations = opts.mutations }
+			then { pageSize = opts.pageSize, mutations = opts.mutations, quick = opts.quick }
 			else nil
 		local body, counts = TableView.render(capture, vs, tableOpts)
 		if body == nil and #capture.diagnostics == 0 then

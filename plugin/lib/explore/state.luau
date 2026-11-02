@@ -1775,8 +1775,12 @@ function M.readyPod(items: { any }): string?
 	return nil
 end
 
+-- The link carries this host's placement and logs tail: the window opens
+-- the split, but a remote host's config governs its quick actions.
 local function openQuick(s: State, action: string, ref: Ref?, opts: { [string]: any }, effects: { Effect })
-	local url, err = Quick.encode(action :: any, s.target :: any, ref, opts :: any)
+	local qa = s.config.quick_actions
+	local withHost = Quick.withHost(action, opts :: any, { placement = qa.placement, logsTail = qa.logs_tail })
+	local url, err = Quick.encode(action :: any, s.target :: any, ref, withHost)
 	if url == nil then
 		table.insert(effects, toast("error", "Cannot " .. action, err))
 		return
