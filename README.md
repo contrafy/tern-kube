@@ -107,7 +107,7 @@ tern plugin install github.com/contrafy/tern-kube
 Installing copies the whole repository (about 6 MB); Tern loads only
 `plugin.toml` and `plugin/`.
 
-Requires Tern 0.6.2 or later with shell integration and native command
+Requires Tern 0.9 or later (tested on 0.9.8) with shell integration and native command
 output on (`command_lenses`, the default), and `kubectl` installed. Started
 from the Dock or Finder, Tern has a minimal `PATH`; tern-kube reads yours
 from your login shell ([Programs and `PATH`](docs/configuration.md#programs-and-path)).

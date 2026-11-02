@@ -1,6 +1,7 @@
-# Tern SDK capability matrix (M0 + M2 quick actions)
+# Tern SDK capability matrix (M0 + M2 quick actions, Tern 0.9.8 re-check)
 
-Verified against Tern 0.6.2 (4b3ed42) on macOS arm64, 2026-10-08. M0 rows ran in an
+Verified against Tern 0.6.2 (4b3ed42) on macOS arm64, 2026-10-08, and
+re-checked on Tern 0.9.8 on 2026-11-02 (see "Tern 0.9.8" below). M0 rows ran in an
 isolated sandbox (`scripts/dev-tern.sh`, sandbox `/tmp/tk-tern`) with the
 plugin in `plugin/` linked and the fake kubectl in `tests/bin/`. Evidence
 quotes are from `tern ctl --control /tmp/tk-tern/ctl.sock ...` replies, the
@@ -24,6 +25,29 @@ capability is missing; the named substitute was observed working),
 **Unsupported** (observed absent or not working), **Proposed** (design built
 on verified pieces, the composition itself not exercised),
 **Unverified** (not exercised, with the reason).
+
+## Tern 0.9.8
+
+Types pinned to tern-sdk `78ba204` (`plugins/tern.d.luau`, see
+`scripts/bootstrap.sh`); the full unit, integration and e2e suites pass on
+0.9.8. Changes against the 0.6.2-era types (`19658cb`) and what tern-kube does
+with them:
+
+| Change in 0.9.8 | Status | Evidence (Tern 0.9.8) | tern-kube |
+| --- | --- | --- | --- |
+| `BlockDef.features = { "edit", "undo" }`: native editing of `input`/`editor` fields | Verified | Explore filter: shift+left selection replaced by typing, cmd+Z as an `undo` event, clicks placing the caret, cmd+A + cmd+V replacing everything, Home arriving as one `edit` event; after Enter the field lost `focused` and shift+arrows went back to the list. Settings value field and the approve block's replicas, path and typed-confirmation fields: the same edits, plus Enter with `tk-e2e-WEB`, `xtk-e2e-web` or a pasted `tk-e2e-web ` never deleted, and the exact token did (e2e `32-native-edit`). | Explore, Settings and Approve opt in (`plugin/lib/textfield.luau`): UTF-16 offsets converted to bytes, an `edit` whose `len` no longer matches the text is dropped, own undo history. Keys keep working without the feature. |
+| Paste of clipboard text ending in a newline, no selection | Tern behaviour | `db\n` pasted at the caret reached the block neither as a key nor as an event; `zz` did. | None needed; pastes that arrive are kept to one line. |
+| Fields below a block's fold | Tern behaviour | At 1280x800 the approve block's typed field (`y=818`) is not scrolled into view on focus; a click there lands outside the window and drops keyboard focus until the block is clicked again. | e2e moves that caret with Home, not a click. |
+| Daemon outlives its window | Verified | After `ctl quit` the daemon kept its pid for 20 s; a new window (also `--gui-path`) attached to it (`daemon client attached id=2 kind=Window`) and kept the old daemon's environment. `tern plugin reload` with no daemon says `no daemon running` and starts none. | `scripts/dev-tern.sh stop` waits for the window, then TERMs and KILLs the sandbox daemon; e2e `restart_window` requires a new daemon pid. |
+| omp management | Verified | A fresh config dir offers to install and manage omp (a download, then a link on the user's `PATH`); Settings > General > omp > "Managed by Tern" off writes `cfg/omp/state.json`. | `dev-tern.sh start` seeds that file with management off, so sandboxes never fetch or link omp. |
+| `How = "over"`; `cx:new_block(kind, args, how, BlockOpts)` with `target`/`dir`/`ratio`; `layout:float(..., FloatOpts)` | Unverified | Types only (the 4th argument replaced `reveal`). | Source compatible: tern-kube passes at most three arguments. Candidates: Approve `over` the lens pane, sized quick-action splits. |
+| Window `cx:pick`, `cx:prompt`, `cx:window_key`, `cx.session:selection` | Unverified | Types only. | Not used; candidates for context/namespace pickers. |
+| Lua budgets (host 2 s, window 50 ms per call; overruns pause the hook, doubling up to 5 min) | Unverified | Types header only. | Explore keeps parsing bounded (`max_rows`, `max_capture_bytes`). |
+| `ExportCall:wait` returns `ExportWait`, not `userdata` | Verified | The pinned file contains no `userdata`; luau-lsp checks against it unpatched. | The bootstrap patch step is gone. |
+| `tern.process.run`, lenses, hooks, `tern.fs`, routing, `Launch` | Unchanged | Same shapes; still no kill handle, streaming, lens keys or pre-exec veto. | See [upstream-opportunities.md](upstream-opportunities.md). |
+| Docs vs types on `features` | Note | The input/protocol guides still say plugin blocks advertise no features; the Host API reference and the types list `features`, and the live check confirms the types. Nothing documents how Tern before 0.9 treats the key. | README requires Tern 0.9 or later. |
+
+## Tern 0.6.2 (M0, M2 quick actions)
 
 | Capability | Status | Evidence (Tern 0.6.2) | Notes / fallback |
 | --- | --- | --- | --- |
@@ -94,7 +118,7 @@ on verified pieces, the composition itself not exercised),
 | Headless `tern shot` | Verified (no user plugins) | `tern shot headless.txt --out ...` with `TERN_CONFIG_DIR` = sandbox (tern-kube linked) ran a real shell and rendered the built-in `kubectl get` table, not the plugin view. | CI cannot screenshot the plugin headlessly; use the real-window `--control` path. |
 | Scripted testing | Verified | `ready`, `run`, `expect` (grid text only), `plugins expect` (surfaces incl. lens views), `plugins run plugin.tern-kube.explore`, `click`, `key`, `type`, `tab new`, `focus left`, `close`, `scroll`, `state`, `tree`, `dump`, `shot`, `quit`. | `ctl` joins words: quote scenario strings (`run '"cmd"'`). `expect` does not see lens views; use `plugins expect`. |
 | Settings (`command_lenses`) | Verified (default) | No `settings.json` in the sandbox; lenses fired and panes report `TERN_LENSES=1`. | Not toggled. Plugin settings: none in the manifest; kv/config file. |
-| Sandbox lifecycle | Verified | `dev-tern.sh start` (named service), `link` (`tern-kube 0.0.1 Tern Kube — 2 blocks, 1 lenses, window ready`), `reload`, `list`, `ctl`, `stop` (`ctl quit`; the daemon stopped with the window, no processes left), `env`, refusal of sandboxes outside `/tmp` (exit 2). `clean` = `stop` + `rm -rf <sandbox>` (not run, sandbox kept). | `(cmd &)` from a one-shot shell dies; run `start` under a persistent service or terminal. |
+| Sandbox lifecycle | Verified | `dev-tern.sh start` (named service), `link` (`tern-kube 0.0.1 Tern Kube — 2 blocks, 1 lenses, window ready`), `reload`, `list`, `ctl`, `stop` (`ctl quit`; the daemon stopped with the window, no processes left), `env`, refusal of sandboxes outside `/tmp` (exit 2). `clean` = `stop` + `rm -rf <sandbox>` (not run, sandbox kept). | `(cmd &)` from a one-shot shell dies; run `start` under a persistent service or terminal. On 0.9.8 the daemon outlives the window (see "Tern 0.9.8"), so `stop` waits for it and terminates it. |
 
 ## Captures in detail
 

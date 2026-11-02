@@ -1,6 +1,8 @@
 # Upstream opportunities (Tern SDK)
 
-SDK gaps observed while building tern-kube against Tern 0.6.2 (4b3ed42).
+SDK gaps observed while building tern-kube against Tern 0.6.2 (4b3ed42),
+each checked again against Tern 0.9.8 (pinned types `78ba204` and the 0.9
+docs, 2026-11-02): all ten are still open.
 Evidence is in `docs/sdk-capability-matrix.md`; each item lists the impact,
 the current workaround and a minimal reproduction. Anything not directly
 observed is marked `[not observed]`.
@@ -9,6 +11,9 @@ observed is marked `[not observed]`.
 
 - Impact: a plugin cannot stop a command (e.g. a mutating `kubectl`) before it runs.
 - Workaround: the mutation guard is a shell wrapper using `tern open --wait`.
+- Tern 0.9.8: still open, checked against 0.9.8. The hook list is unchanged,
+  `command_started` is a notification, and `tern.override` covers only
+  built-in command ids.
 - Reproduction:
 
   ```luau
@@ -22,6 +27,8 @@ observed is marked `[not observed]`.
 
 - Impact: lens views are pointer-only; no filter/search or key navigation in a lens.
 - Workaround: keys, filter and search live in the Explore block.
+- Tern 0.9.8: still open, checked against 0.9.8. `LensDef` is unchanged;
+  the new `features` (native editing) exists only on `BlockDef`.
 - Reproduction: render an `input` node in a lens view, click it (the lens gets
   `{"ev":"focus",...}`), then `tern ctl key j` / `type abc`: reply
   `focused: textarea.tv-input` and the text goes to the shell prompt.
@@ -30,6 +37,9 @@ observed is marked `[not observed]`.
 
 - Impact: lens tables cannot adapt to the pane width; a narrow split of a wide window keeps all columns.
 - Workaround: `@media (max-width: ...)` tiers in `plugin/tern-kube.css`, which compare to the window width.
+- Tern 0.9.8: still open, checked against 0.9.8. `@container` is still
+  rejected, `@media` still compares to the window, and a lens `view` still
+  gets no cols.
 - Reproduction: add `@container (max-width: 500px) { .x { display: none } }` to a
   manifest `styles` sheet (rejected); log the arguments of a lens `view`
   callback (no cols; only blocks get `cx.cols`).
@@ -38,6 +48,9 @@ observed is marked `[not observed]`.
 
 - Impact: the caller cannot read a block's decision from the exit status.
 - Workaround: the decision travels in a response file; the approve block always exits 0.
+- Tern 0.9.8: still open, checked against 0.9.8 types and docs, which still
+  describe `--wait` as waiting only; the exit status is undocumented
+  `[not observed on 0.9.8]`.
 - Reproduction: a route opens a block whose action calls `cx:exit(3)`;
   `tern open --wait <file>; echo RC=$?` prints `RC=0`, and the "Shell exited
   with 3" sheet keeps `--wait` blocked until closed by hand.
@@ -46,6 +59,8 @@ observed is marked `[not observed]`.
 
 - Impact: Explore cannot cancel a fetch or show progressive output (watch, logs).
 - Workaround: `timeout_ms`, plus ignoring late callbacks via a generation/stopped flag.
+- Tern 0.9.8: still open, checked against 0.9.8. `tern.process.run` still
+  returns no handle; `Awaitable` has no cancel.
 - Reproduction:
 
   ```luau
@@ -58,12 +73,17 @@ observed is marked `[not observed]`.
 
 - Impact: `-o yaml` output and YAML manifests cannot be parsed natively.
 - Workaround: request `-o json`, or parse YAML in Luau.
+- Tern 0.9.8: still open, checked against 0.9.8: only `tern.json` and
+  `tern.base64` codecs.
 - Reproduction: `print(type(tern.yaml))` -> `nil`.
 
 ## 7. Unclaimed custom-scheme links fall through to the OS
 
 - Impact: an unclaimed `tern-kube://` link (or a `route.link` handler that raises) shows the macOS "There is no application set to open the URL" dialog.
 - Workaround: the window half claims every `tern-kube://` URL, wraps handlers in pcall and always returns `{handled = true}`.
+- Tern 0.9.8: still open, checked against 0.9.8 types and docs: nothing
+  documents a fix for the fallthrough `[not observed on 0.9.8]`; the
+  workaround stays.
 - Reproduction:
 
   ```luau
@@ -78,6 +98,8 @@ observed is marked `[not observed]`.
 
 - Impact: native `table` nodes cannot have clickable rows.
 - Workaround: `el` div CSS grid with `display:contents` rows carrying `actions`.
+- Tern 0.9.8: still open, checked against 0.9.8: the data guide still says
+  table rows have no events or per-row actions.
 - Reproduction: render a `table` node whose rows have `actions`; clicking a
   cell fires `{"act":"table-click","ev":"action","id":"b.n12"}` with no row info.
 
@@ -85,6 +107,8 @@ observed is marked `[not observed]`.
 
 - Impact: config files managed by dotfile managers (symlinked) cannot be read.
 - Workaround: `plugin/config_host.luau` resolves the path with `realpath` via `tern.process.run` and reads the target.
+- Tern 0.9.8: still open, checked against 0.9.8: `tern.fs.read` with
+  `max_bytes` still requires a regular non-symlink file.
 - Reproduction: `ln -s real.toml config.toml`, then `tern.fs.read` of
   `config.toml` with a size cap fails with an error containing `non-symlink`.
 
@@ -92,6 +116,8 @@ observed is marked `[not observed]`.
 
 - Impact: environment exported only in `.zshrc`/`.bashrc` (e.g. `KUBECONFIG`) is missing in quick-action splits.
 - Workaround: actions pin `--kubeconfig`/`--context` when known, else print the effective context first; opt-in KUBECONFIG capture planned for M3 `[not observed]`.
+- Tern 0.9.8: still open, checked against 0.9.8: the layout guide still runs
+  `Launch.command` through the login shell, and `Launch` has no env option.
 - Reproduction: put `export FOO=1` in `.zshrc` only, then from `route.link`:
 
   ```luau
