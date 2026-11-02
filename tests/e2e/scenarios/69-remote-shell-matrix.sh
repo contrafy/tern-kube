@@ -44,10 +44,15 @@ before=$(pane_count)
 click_text 'db-0' '.tk-grid .tk-c' || return
 click_text Logs '[data-role="tern-kube.inspector"] .sf-act' || return
 E2E_WAIT=15 quick_pane "tern-kube logs pod tern-test-apps/db-0" || return
+# bash and zsh exec the last simple command of `-c`, so only fish keeps its
+# wrapper process; under those two the remote kubectl itself is the proof.
 remote_wrapper() {
-	rsh "pgrep -f -- '^$login -l -c sh -c ' >/dev/null"
+	case $TK_REMOTE_SHELL in
+	fish) rsh "pgrep -f -- '^$login -l -c sh -c ' >/dev/null" ;;
+	*) rsh "pgrep -f -- '^kubectl logs -f .* -n tern-test-apps db-0' >/dev/null" ;;
+	esac
 }
-E2E_WAIT=15 wait_for "the split's $TK_REMOTE_SHELL login wrapper on the remote host" remote_wrapper
+E2E_WAIT=15 wait_for "the split's $TK_REMOTE_SHELL login command on the remote host" remote_wrapper
 ctl close >/dev/null
 panes_back() {
 	[ "$(pane_count)" = "$before" ]
