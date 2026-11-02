@@ -52,7 +52,17 @@ type Invocation = Types.Invocation
 
 local M = {}
 
-local MUTATION_VERBS: { [string]: boolean } = { apply = true, delete = true, scale = true, rollout = true }
+local MUTATION_VERBS: { [string]: boolean } = {
+	apply = true,
+	delete = true,
+	scale = true,
+	rollout = true,
+	patch = true,
+	label = true,
+	annotate = true,
+	cordon = true,
+	uncordon = true,
+}
 
 local function modeFor(inv: Invocation, supported: boolean): Mode
 	if not supported then
@@ -646,7 +656,7 @@ function M.build(run: Run, rawLines: { string }, status: number?, deps: Deps): C
 			capture.describe, capture.masked = redactDescribe(parsed, inv)
 		end
 	elseif mode == "mutation" then
-		local verb = if inv.verb == "rollout" then "rollout restart" else inv.verb :: string
+		local verb = if inv.verb == "rollout" then "rollout " .. (inv.subverb or "restart") else inv.verb :: string
 		local parsed = Mutation.parse(verb, lines)
 		capture.mutation = parsed
 		capture.diagnostics = parsed.diagnostics

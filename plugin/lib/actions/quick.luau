@@ -1,7 +1,9 @@
 --!strict
 -- Quick actions: one key in Explore / two clicks in the lens open a new
 -- split running a visible kubectl command (shell, follow logs,
--- port-forward, and the mutating debug/cronjob ones that M3 gates).
+-- port-forward, the mutating debug/cronjob ones the approve block gates,
+-- and `kubectl edit` through the shell guard, which asks for approval after
+-- the user saves).
 --
 -- They travel as `tern-kube://act/<action>?<params>` links to the window's
 -- route.link. The window never runs text taken from a URL: decode()
@@ -15,11 +17,16 @@
 -- kubectl so its exit status is the pane's.
 
 local Command = require("../kubectl/command")
+local Kinds = require("../kubectl/kinds")
 local Types = require("../model/types")
 
 type Ref = Types.ResourceRef
 
-export type ActionId = "shell" | "logs-follow" | "port-forward" | "debug-pod" | "debug-node" | "cronjob-run"
+export type ActionId = "shell" | "logs-follow" | "port-forward" | "debug-pod" | "debug-node" | "cronjob-run" | "edit"
+
+-- How the window opens an action: directly, after the approve block's
+-- confirmation grant, or directly as an editor whose save the guard approves.
+export type Gate = "none" | "approve" | "editor"
 
 export type Action = {
 	id: ActionId,
@@ -57,7 +64,8 @@ export type Opts = {
 }
 
 -- Local quick_actions config; nil or invalid fields keep the defaults.
-export type Settings = { shellCommand: { string }?, logsTail: number?, debugImage: string? }
+-- guardCore: absolute path of the plugin's shell/tern-kube-guard (edit).
+export type Settings = { shellCommand: { string }?, logsTail: number?, debugImage: string?, guardCore: string? }
 
 export type Request = { action: ActionId, target: Target, ref: Ref, opts: Opts }
 
@@ -105,6 +113,8 @@ type Spec = {
 	key: string?,
 	mutates: boolean,
 	kinds: { [string]: boolean },
+	-- Any named object of any type, custom resources included (kinds unused).
+	anyKind: boolean?,
 	-- Parameters beyond kind/name/namespace/context/kubeconfig.
 	params: { [string]: boolean },
 }
@@ -152,14 +162,23 @@ local SPECS: { [string]: Spec } = {
 		kinds = set({ "CronJob" }),
 		params = set({ "suffix", "confirm" }),
 	},
+	edit = {
+		label = "Edit",
+		key = "e",
+		mutates = true,
+		kinds = {},
+		anyKind = true,
+		params = set({ "group" }),
+	},
 }
 
-local ORDER: { ActionId } = { "shell", "logs-follow", "port-forward", "debug-pod", "debug-node", "cronjob-run" }
+local ORDER: { ActionId } = { "shell", "logs-follow", "port-forward", "debug-pod", "debug-node", "cronjob-run", "edit" }
 M.ORDER = ORDER
 
 -- URL parameter order; also the full set any action may carry.
 local FIELDS = {
 	"kind",
+	"group",
 	"name",
 	"namespace",
 	"container",
@@ -211,8 +230,14 @@ local function portNumber(s: string): number?
 	return if n <= 65535 then n else nil
 end
 
+-- Event objects are records; edit does not apply to them.
+local NOT_EDITABLE = { Event = true }
+
 -- Validators return an error message or nil.
 local CHECKS: { [string]: (string) -> string? } = {
+	group = function(v)
+		return if dnsSubdomain(v) then nil else "group must be an API group such as apps or example.com"
+	end,
 	name = function(v)
 		return if dnsSubdomain(v) then nil else "name must be a DNS-1123 subdomain"
 	end,
@@ -266,7 +291,7 @@ local CHECKS: { [string]: (string) -> string? } = {
 	end,
 }
 
-local function fieldsOf(target: Target, ref: Ref, opts: Opts): { [string]: string }
+local function fieldsOf(action: string, target: Target, ref: Ref, opts: Opts): { [string]: string }
 	local f: { [string]: string } = {}
 	local function put(k: string, v: any)
 		if v ~= nil and v ~= "" then
@@ -278,6 +303,10 @@ local function fieldsOf(target: Target, ref: Ref, opts: Opts): { [string]: strin
 		end
 	end
 	put("kind", ref.kind)
+	local spec = SPECS[action :: ActionId]
+	if spec and spec.anyKind then
+		put("group", ref.group)
+	end
 	put("name", ref.name)
 	put("namespace", ref.namespace)
 	put("container", opts.container)
@@ -293,6 +322,36 @@ local function fieldsOf(target: Target, ref: Ref, opts: Opts): { [string]: strin
 	return f
 end
 
+-- Any object name kubectl accepts as TYPE/NAME (RBAC objects use `:`).
+local function objectName(v: string): string?
+	return if #v <= 253 and string.find(v, "^[%w][%w%-%._:@]*$") ~= nil then nil else "name must be an object name"
+end
+
+-- An action open to any type: the kind is a Kind name and the group an
+-- API group, so `Command.resourceType` addresses exactly that type.
+local function validateAny(action: string, f: { [string]: string }): (Request?, string?)
+	local kind = f.kind :: string
+	-- Lens rows of unknown custom resources carry the plural (`widgets`).
+	if #kind > 63 or string.find(kind, "^%a[%w]*$") == nil then
+		return nil, "kind must be a Kind such as Deployment or a resource name such as widgets"
+	end
+	if NOT_EDITABLE[kind] then
+		return nil, string.format("%s does not apply to %s", action, kind)
+	end
+	local ref: Ref = { kind = kind, group = f.group, name = f.name, namespace = f.namespace, source = "live" }
+	local info = Kinds.normalize(Command.resourceType(ref))
+	if info.known and info.namespaced == false and f.namespace then
+		return nil, kind .. " is not namespaced"
+	end
+	return {
+		action = action :: ActionId,
+		target = { context = f.context, kubeconfig = f.kubeconfig },
+		ref = ref,
+		opts = {},
+	},
+		nil
+end
+
 -- Checks a field set for `action`; returns the validated request or an error.
 local function validate(action: string, f: { [string]: string }, group: string?): (Request?, string?)
 	local spec = SPECS[action :: ActionId]
@@ -306,7 +365,7 @@ local function validate(action: string, f: { [string]: string }, group: string?)
 		if not noControl(v) then
 			return nil, k .. " contains control characters"
 		end
-		local check = CHECKS[k]
+		local check: ((string) -> string?)? = if k == "name" and spec.anyKind then objectName else CHECKS[k]
 		if check then
 			local err = check(v)
 			if err then
@@ -317,6 +376,9 @@ local function validate(action: string, f: { [string]: string }, group: string?)
 	local kind = f.kind
 	if kind == nil or f.name == nil then
 		return nil, action .. " needs kind and name"
+	end
+	if spec.anyKind then
+		return validateAny(action, f)
 	end
 	local info = KINDS[kind]
 	if info == nil or not spec.kinds[kind] then
@@ -384,6 +446,14 @@ function M.mutates(action: string): boolean
 	return spec ~= nil and spec.mutates
 end
 
+function M.gate(action: string): Gate
+	local spec = SPECS[action :: ActionId]
+	if spec == nil or not spec.mutates then
+		return "none"
+	end
+	return if spec.anyKind then "editor" else "approve"
+end
+
 -- Local port for a remote one: the same when unprivileged, else 8000+port.
 function M.localPort(port: number): number
 	return if port > 1024 then port else 8000 + port
@@ -394,16 +464,12 @@ end
 function M.available(kind: string, ref: Ref?, info: Info?): { Action }
 	local i: Info = info or {}
 	local k = KINDS[kind]
-	if k == nil then
-		return {}
-	end
-	if ref and ref.group and ref.group ~= "" and ref.group ~= k.group then
-		return {}
-	end
+	local groupOk = k ~= nil and (ref == nil or ref.group == nil or ref.group == "" or ref.group == (k :: any).group)
 	local out: { Action } = {}
 	for _, id in ORDER do
 		local spec = SPECS[id]
-		local ok: boolean = spec.kinds[kind] == true and (not spec.mutates or i.allowMutations == true)
+		local kindOk = if spec.anyKind then not NOT_EDITABLE[kind] else groupOk and spec.kinds[kind] == true
+		local ok: boolean = kindOk and (not spec.mutates or i.allowMutations == true)
 		if ok and id == "shell" and kind ~= "Pod" then
 			ok = i.pod ~= nil and i.pod ~= ""
 		end
@@ -415,7 +481,7 @@ function M.available(kind: string, ref: Ref?, info: Info?): { Action }
 end
 
 function M.encode(action: string, target: Target, ref: Ref, opts: Opts?): (string?, string?)
-	local f = fieldsOf(target, ref, opts or {})
+	local f = fieldsOf(action, target, ref, opts or {})
 	local _, err = validate(action, f, ref.group)
 	if err then
 		return nil, err
@@ -517,14 +583,55 @@ local PORT_PATHS: { [string]: string } = {
 	Service = "{.spec.ports[*].port}",
 }
 
+local function dirname(path: string): string?
+	return string.match(path, "^(.*)/[^/]*$")
+end
+
+-- `kubectl edit` through the guard core, which approves the saved edit
+-- before kubectl applies it. A configured kubectl path goes first on PATH:
+-- the guard runs `command kubectl`.
+local function editCommand(req: Request, target: Target, s: Settings): (Launch?, string?)
+	local core = s.guardCore
+	if core == nil or core == "" or string.sub(core, 1, 1) ~= "/" or not noControl(core) then
+		return nil, "shell/tern-kube-guard is missing from the plugin directory"
+	end
+	local r = req.ref
+	local ctx = req.target.context
+	local argv: { string } = { "kubectl", "edit" }
+	if ctx then
+		append(argv, { "--context", ctx })
+	end
+	if req.target.kubeconfig then
+		append(argv, { "--kubeconfig", req.target.kubeconfig :: string })
+	end
+	if r.namespace then
+		append(argv, { "-n", r.namespace :: string })
+	end
+	table.insert(argv, Command.resourceType(r) .. "/" .. r.name)
+	local where = (if r.namespace then r.namespace .. "/" else "") .. r.name
+	local title = "tern-kube edit " .. where .. " @ " .. (ctx or "current context")
+	local script: { string } = { "printf '\\033]0;%s\\007' " .. Command.quote(title) }
+	local program = target.program
+	local dir = if program and string.find(program, "/", 1, true) then dirname(program) else nil
+	if dir and dir ~= "" then
+		table.insert(script, "PATH=" .. Command.quote(dir) .. ":$PATH")
+		table.insert(script, "export PATH")
+	end
+	table.insert(script, "exec " .. Command.quote(core) .. " " .. Command.format(argv))
+	return { argv = argv, line = "sh -c " .. Command.quote(table.concat(script, "; ")), title = title }, nil
+end
+
 -- The command a validated request runs. Validation is repeated so a caller
 -- cannot skip decode().
 function M.command(action: string, target: Target, ref: Ref, opts: Opts?, settings: Settings?): (Launch?, string?)
 	local o: Opts = opts or {}
 	local s: Settings = settings or {}
-	local req, err = validate(action, fieldsOf(target, ref, o), ref.group)
+	local req, err = validate(action, fieldsOf(action, target, ref, o), ref.group)
 	if req == nil then
 		return nil, err
+	end
+	if action == "edit" then
+		return editCommand(req, target, s)
 	end
 	local r = req.ref
 	o = req.opts
@@ -690,7 +797,13 @@ function M.chipsFor(kind: string, ref: Ref, target: Target, info: Info?, setting
 		end
 		local url = M.encode(a.id, target, ref, o)
 		local launch = if url then M.command(a.id, target, ref, o, settings) else nil
-		if url and launch then
+		if url and M.gate(a.id) == "editor" then
+			table.insert(out, {
+				label = a.label,
+				url = url,
+				title = "Opens kubectl edit in a new split; after you save, the approve block previews the change",
+			})
+		elseif url and launch then
 			table.insert(out, {
 				label = a.label,
 				url = url,

@@ -176,6 +176,39 @@ describe("explore gitops keys", function()
 		expect(top(s2).kind).toBe("detail")
 		expect(scans(w2)).toBe(0)
 	end)
+	-- Explore's mutate keys are global, but GitOps views bind some of the
+	-- same letters (export t, drift X, git p P e); inside those views the
+	-- view's meaning wins and nothing mutates.
+	it("view keys win inside GitOps views; on lists the same keys open mutate links", function()
+		local function mutateOpens(effects: { State.Effect }): number
+			local n = 0
+			for _, e in effects do
+				if e.t == "open" and string.sub(e.url or "", 1, #Link.SCHEME) == Link.SCHEME then
+					n += 1
+				end
+			end
+			return n
+		end
+		local w = world()
+		local s = selectName(w, open(w), "web")
+		local _, onList = State.update(s, W.key("t"))
+		expect(mutateOpens(onList)).toBe(1)
+		local _, patchList = State.update(s, W.key("X", { text = "X", shift = true }))
+		expect(mutateOpens(patchList)).toBe(1)
+
+		local ex = press(w, s, "E")
+		expect(top(ex).kind).toBe("export")
+		local inExport, effects = State.update(ex, W.key("t"))
+		expect(inExport.field).toBe("dir")
+		expect(mutateOpens(effects)).toBe(0)
+
+		local d = press(w, open(w), "g", { ctrl = true })
+		d = press(w, d, "enter")
+		expect(top(d).kind).toBe("drift")
+		local afterX, xEffects = State.update(d, W.key("X", { text = "X", shift = true }))
+		expect(mutateOpens(xEffects)).toBe(0)
+		expect(Gitops.isRoute(top(drive(w, afterX, xEffects)).kind)).toBe(true)
+	end)
 end)
 
 return nil

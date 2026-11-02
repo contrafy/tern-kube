@@ -369,9 +369,71 @@ describe("explore state: quick actions", function()
 		expect(del[1].url :: string).toContain("op=delete&kind=pod&")
 	end)
 
+	it("t T X U p P open label, annotate, patch and rollout links for the focused workload", function()
+		local s = W.open({ context = W.CTX, namespace = W.NS, kind = "Deployment" })
+		s = W.keys(s, { "/", "w", "e", "b", "enter", "enter" })
+		local cases: { { any } } = {
+			{ W.key("t"), "op=label&kind=deployment.apps&name=web" },
+			{ W.key("T", { text = "T", shift = true }), "op=annotate&" },
+			{ W.key("t", { shift = true }), "op=annotate&" },
+			{ W.key("X", { text = "X", shift = true }), "op=patch&" },
+			{ W.key("U", { text = "U", shift = true }), "op=undo&" },
+			{ W.key("p"), "op=pause&" },
+			{ W.key("P", { text = "P", shift = true }), "op=resume&" },
+		}
+		for _, c in cases do
+			local _, effects = State.update(s, c[1])
+			expect(effects[1].t).toBe("open")
+			expect(effects[1].url :: string).toContain(c[2])
+			expect(effects[1].url :: string).toContain("context=" .. W.CTX)
+		end
+	end)
+
+	-- k9s binds c/r on nodes; here they are the context picker and refresh,
+	-- so node operations take C u D. A key on the wrong kind says why.
+	it("C u D are node operations and toast on other kinds; shift never falls through to d or c", function()
+		local s = W.open()
+		local cases: { { any } } = {
+			{ W.key("C", { text = "C", shift = true }), "Cannot cordon Pod" },
+			{ W.key("u"), "Cannot uncordon Pod" },
+			{ W.key("D", { text = "D", shift = true }), "Cannot drain Pod" },
+			{ W.key("U", { text = "U", shift = true }), "Cannot undo Pod" },
+			{ W.key("p"), "Cannot pause Pod" },
+		}
+		for _, c in cases do
+			local s2, effects = State.update(s, c[1])
+			expect(#effects).toBe(1)
+			expect(effects[1].t).toBe("toast")
+			expect(effects[1].text).toBe(c[2])
+			expect(top(s2).kind).toBe(top(s).kind)
+		end
+		local _, label = State.update(s, W.key("t"))
+		expect(label[1].url :: string).toContain("op=label&kind=pod&")
+	end)
+
+	it("e opens kubectl edit for the focused object as a quick action", function()
+		local s = W.open()
+		local _, effects = State.update(s, W.key("e"))
+		expect(effects[1].t).toBe("open")
+		local url = effects[1].url :: string
+		expect(string.sub(url, 1, 21)).toBe("tern-kube://act/edit?")
+		expect(url).toContain("kind=Pod&")
+		expect(url).toContain("context=" .. W.CTX)
+	end)
+
 	it("offers no mutation when mutations are disabled", function()
 		local s = W.open(nil, W.config('{"mutations": {"enabled": false}}'))
-		for _, k in { W.key("d", { ctrl = true }), W.key("r", { ctrl = true }), W.key("S", { shift = true }) } do
+		for _, k in
+			{
+				W.key("d", { ctrl = true }),
+				W.key("r", { ctrl = true }),
+				W.key("S", { shift = true }),
+				W.key("e"),
+				W.key("t"),
+				W.key("X", { text = "X", shift = true }),
+				W.key("D", { text = "D", shift = true }),
+			}
+		do
 			local _, effects = State.update(s, k)
 			expect(#effects).toBe(1)
 			expect(effects[1].t).toBe("toast")

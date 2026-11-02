@@ -461,7 +461,16 @@ local function quickInfo(s: State, ref: Ref): ({ [string]: any }, any)
 	return info, obj
 end
 
-local QUICK_KEYS: { [string]: string } = { shell = "s", ["logs-follow"] = "l", ["port-forward"] = "F" }
+local QUICK_KEYS: { [string]: string } = { shell = "s", ["logs-follow"] = "l", ["port-forward"] = "F", edit = "e" }
+
+-- Pause or Resume, Cordon or Uncordon: what the loaded object says; unknown
+-- without one (both chips show).
+local function objState(obj: any): Link.ObjState?
+	if type(obj) ~= "table" or type(obj.spec) ~= "table" then
+		return nil
+	end
+	return { paused = obj.spec.paused == true, unschedulable = obj.spec.unschedulable == true }
+end
 
 local function actionChips(s: State, ref: Ref): Node
 	local chips: { Node } = {
@@ -478,7 +487,7 @@ local function actionChips(s: State, ref: Ref): Node
 	if workload then
 		table.insert(chips, chip("Logs (L)", "nav=logs", { key = "a-logs" }))
 	end
-	local info = quickInfo(s, ref)
+	local info, obj = quickInfo(s, ref)
 	-- Workload shells pick a ready pod at run time; offer them like pod shells.
 	if ref.kind ~= "Pod" and workload then
 		info.pod = info.pod or "?"
@@ -486,7 +495,16 @@ local function actionChips(s: State, ref: Ref): Node
 	local mutations = s.config.mutations.enabled
 	info.allowMutations = mutations
 	for _, action in Quick.available(ref.kind, ref, info :: any) do
-		if not action.mutates and QUICK_KEYS[action.id] then
+		if Quick.gate(action.id) == "editor" then
+			table.insert(
+				chips,
+				chip(action.label .. " (" .. QUICK_KEYS[action.id] .. ")", "quick=" .. action.id, {
+					key = "q-" .. action.id,
+					tone = "warning",
+					title = "Opens kubectl edit in a new split; after you save, the approve block previews the change",
+				})
+			)
+		elseif not action.mutates and QUICK_KEYS[action.id] then
 			table.insert(
 				chips,
 				chip(action.label .. " (" .. QUICK_KEYS[action.id] .. ")", "quick=" .. action.id, {
@@ -512,7 +530,7 @@ local function actionChips(s: State, ref: Ref): Node
 			source = Link.sourceOf(s.target.contextSource, s.target.confirmed),
 			kubeconfig = s.target.kubeconfig,
 		}
-		for _, m in Link.chips(ref, origin) do
+		for _, m in Link.chips(ref, origin, objState(obj)) do
 			table.insert(
 				chips,
 				chip(m.label .. " (" .. m.key .. ")", "mutate=" .. m.op, {
@@ -870,7 +888,7 @@ end
 
 local HINTS: { [string]: string } = {
 	list = "j/k move · enter open · / filter · d describe · y object · R relations · s shell · l logs · F port-forward · : kinds · ? help",
-	detail = "enter relations · d describe · L logs · s shell · l follow logs · F port-forward · ctrl+d delete · ctrl+r restart · S scale · esc back",
+	detail = "enter relations · d describe · L logs · s shell · l follow logs · F port-forward · e edit · ctrl+d delete · ctrl+r restart · S scale · ? more · esc back",
 	relations = "j/k move · enter open · / filter · r refresh · esc back",
 	describe = "y object · R relations · r refresh · esc back",
 	logs = "r refresh · l follow in split · esc back",
@@ -932,6 +950,13 @@ M.KEYS = {
 	{ "ctrl+d", "Delete: preview, then typed confirmation in the approve block", "Delete" },
 	{ "ctrl+r", "Rollout restart (deployments, statefulsets, daemonsets): preview, then confirm", "Restart" },
 	{ "shift+s", "Scale: asks for replicas, previews, then confirm", "Scale" },
+	{ "e", "Edit in a new split (kubectl edit); the approve block previews after you save", "Edit" },
+	{ "t / T", "Label / annotate: asks for KEY=VALUE or KEY-, previews, then confirm", "Label, Annotate" },
+	{ "X", "Patch: asks for [--type=strategic|merge|json] JSON, previews, then confirm", "Patch" },
+	{ "U", "Rollout undo (deployments, statefulsets, daemonsets): diff to the target revision", "Undo" },
+	{ "p / P", "Rollout pause / resume (deployments)", "Pause, Resume" },
+	{ "C / u", "Cordon / uncordon the node", "Cordon, Uncordon" },
+	{ "D", "Drain the node: asks for options, previews evictions and PodDisruptionBudgets", "Drain" },
 	{ "Y", "Copy the kubectl command of this view", "Copy command" },
 	{ "m", "Open the object's manifest at its line (indexes the repository first)", "Manifest" },
 	{ "=", "Diff the live object against its manifest (kubectl diff)", "Diff vs manifest" },

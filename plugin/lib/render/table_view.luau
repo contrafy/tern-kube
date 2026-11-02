@@ -244,9 +244,24 @@ local function quickChips(
 	return out
 end
 
--- Delete / Restart / Scale chips: tern-kube://mutate links the window routes
--- to the approve block, which previews before anything runs.
-local function mutationChips(capture: Capture, ref: Types.ResourceRef): { Node }
+-- What a Node row's STATUS says about scheduling (`Ready,SchedulingDisabled`);
+-- nil when the row has no STATUS column. Deployments' paused state is not in
+-- any table column, so it stays unknown (both Pause and Resume show).
+function M.rowState(tbl: SnapshotTable, row: ResourceRow, ref: Types.ResourceRef): Link.ObjState?
+	if ref.kind ~= "Node" then
+		return nil
+	end
+	local index = columnIndex(tbl, "STATUS")
+	if index == nil then
+		return nil
+	end
+	local status = row.cells[index] or ""
+	return { unschedulable = string.find(status, "SchedulingDisabled", 1, true) ~= nil }
+end
+
+-- Mutation chips: tern-kube://mutate links the window routes to the approve
+-- block, which previews before anything runs.
+local function mutationChips(capture: Capture, tbl: SnapshotTable, row: ResourceRow, ref: Types.ResourceRef): { Node }
 	local inv = capture.invocation
 	local origin: Link.Origin = {
 		context = inv.context,
@@ -254,7 +269,7 @@ local function mutationChips(capture: Capture, ref: Types.ResourceRef): { Node }
 		kubeconfig = inv.kubeconfig,
 	}
 	local out: { Node } = {}
-	for _, m in Link.chips(ref, origin) do
+	for _, m in Link.chips(ref, origin, M.rowState(tbl, row, ref)) do
 		table.insert(
 			out,
 			ui.badge(
@@ -308,7 +323,7 @@ local function actionChips(
 			table.insert(out, n)
 		end
 		if mutations then
-			for _, n in mutationChips(capture, ref) do
+			for _, n in mutationChips(capture, tbl, row, ref) do
 				table.insert(out, n)
 			end
 		end

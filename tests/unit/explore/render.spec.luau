@@ -201,6 +201,36 @@ describe("explore render: other views", function()
 		expect(text).toContain("exec runs a shell inside the container")
 	end)
 
+	it("an object offers the guarded verbs that fit its kind and state, with their keys", function()
+		local s = W.keys(W.open({ context = W.CTX, namespace = W.NS, kind = "Deployment" }), {
+			"/",
+			"w",
+			"e",
+			"b",
+			"enter",
+			"enter",
+		})
+		local m = main(s)
+		local actions = nodes.actions(m)
+		for _, a in { "quick=edit", "mutate=label", "mutate=annotate", "mutate=patch", "mutate=undo", "mutate=pause" } do
+			expect(actions).toContain(a)
+		end
+		-- The loaded Deployment is not paused: resume would only make kubectl exit 1.
+		expect(table.find(actions, "mutate=resume")).toBeNil()
+		expect(table.find(actions, "mutate=cordon")).toBeNil()
+		local text = nodes.text(m)
+		for _, label in { "Edit (e)", "Label (t)", "Annotate (T)", "Patch (X)", "Undo (U)", "Pause (p)" } do
+			expect(text).toContain(label)
+		end
+	end)
+
+	it("hides the edit chip with the other mutations when mutations are disabled", function()
+		local s = W.keys(W.open(nil, W.config('{"mutations": {"enabled": false}}')), { "enter" })
+		local actions = nodes.actions(main(s))
+		expect(table.find(actions, "quick=edit")).toBeNil()
+		expect(table.find(actions, "mutate=label")).toBeNil()
+	end)
+
 	it("describe reuses the native describe view", function()
 		local s = W.keys(W.open(), { "d" })
 		expect(nodes.find(main(s), nodes.role("tern-kube.describe")) ~= nil).toBe(true)
@@ -227,6 +257,22 @@ describe("explore render: other views", function()
 			expect(text).toContain(k[1])
 		end
 		expect(view((W.open())).layer).toBeNil()
+	end)
+
+	-- One key, one meaning outside the GitOps views (whose rows say which
+	-- view they belong to; inside those views their keys win).
+	it("binds no global key twice", function()
+		local seen: { [string]: string } = {}
+		for _, k in Render.KEYS do
+			local desc = k[2]
+			if string.find(desc, "^Drift:") or string.find(desc, "^Export:") or string.find(desc, "^Git:") then
+				continue
+			end
+			for key in string.gmatch(k[1], "[^%s,/]+") do
+				expect(seen[key]).toBeNil()
+				seen[key] = desc
+			end
+		end
 	end)
 end)
 
