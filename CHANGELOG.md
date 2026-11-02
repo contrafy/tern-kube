@@ -21,6 +21,11 @@ versions may break).
 - The lens shows native results for `label`, `annotate`, `patch`, `cordon`, `uncordon` and `rollout undo|pause|resume`.
 - End-to-end scenarios 24-29 cover the new verbs in a sandbox window against kind; the snapshot under test includes `shell/` (native edit runs `shell/tern-kube-guard`) and a scripted `KUBE_EDITOR`.
 
+### Fixed
+
+- A failed preview step shows kubectl's error, not a warning printed before it: kubectl 1.37 warns about `last-applied-configuration` before `rollout undo` errors such as "no rollout history", and the approve block and the shell refusal showed only the warning.
+- The mutation integration suite installs the Widget CRD it patches, so it passes on a freshly created cluster.
+
 ## [0.1.3] - 2026-11-02
 
 ### Added

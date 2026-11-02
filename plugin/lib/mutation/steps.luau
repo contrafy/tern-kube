@@ -573,17 +573,26 @@ export type ProcessResult = { code: number?, stdout: string?, stderr: string?, t
 export type OutcomeStatus = "ok" | "changes" | "no-changes" | "failed" | "timeout"
 export type Outcome = { status: OutcomeStatus, ok: boolean, text: string }
 
-local function firstLine(text: string?): string
-	if text == nil then
-		return ""
-	end
-	for line in string.gmatch(text, "[^\n]+") do
+-- The line of kubectl output that says why it failed. kubectl prints client
+-- and server warnings before the error (1.37's `rollout undo` warns about
+-- last-applied-configuration first), so `Warning:` lines lose to `error:` /
+-- `Error from server` lines and to any other line.
+function M.headline(text: string?): string
+	local first: string? = nil
+	local other: string? = nil
+	for line in string.gmatch(text or "", "[^\n]+") do
 		local trimmed = string.match(line, "^%s*(.-)%s*$") :: string
 		if trimmed ~= "" then
-			return trimmed
+			if string.find(trimmed, "^error:") or string.find(trimmed, "^Error from server") then
+				return trimmed
+			end
+			first = first or trimmed
+			if other == nil and not string.find(trimmed, "^Warning:") then
+				other = trimmed
+			end
 		end
 	end
-	return ""
+	return other or first or ""
 end
 
 -- `kubectl diff` exits 0 without differences, 1 with differences and >1 on
@@ -611,9 +620,9 @@ function M.outcome(s: Step, result: ProcessResult): Outcome
 	elseif code == 0 then
 		return { status = "ok", ok = true, text = s.label .. " succeeded" }
 	end
-	local detail = firstLine(result.stderr)
+	local detail = M.headline(result.stderr)
 	if detail == "" then
-		detail = firstLine(result.stdout)
+		detail = M.headline(result.stdout)
 	end
 	return {
 		status = "failed",

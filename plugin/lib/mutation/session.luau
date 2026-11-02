@@ -974,11 +974,11 @@ local function computeFamilyFacts(s: State, plan: T.Plan)
 		local original, edited = okRun(s, "convert-original"), runOf(s, "convert-edited")
 		local facts: Risk.EditFacts = { renamed = {}, liveChanged = {}, rejected = nil, changed = 0 }
 		if edited and not (edited.outcome and (edited.outcome :: Steps.Outcome).ok) then
-			facts.rejected = firstLine(edited.stderr)
+			facts.rejected = Steps.headline(edited.stderr)
 		end
 		for _, run in s.steps do
 			if run.step.kind == "after" and run.outcome and not (run.outcome :: Steps.Outcome).ok then
-				facts.rejected = facts.rejected or firstLine(run.stderr)
+				facts.rejected = facts.rejected or Steps.headline(run.stderr)
 			end
 		end
 		if original and edited and facts.rejected == nil then

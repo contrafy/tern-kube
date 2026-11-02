@@ -53,3 +53,4 @@ convert-original-list	kubectl --context kind-tern-kube-dev patch --local --type=
 convert-edited-list	kubectl --context kind-tern-kube-dev patch --local --type=merge -p '{}' -f edit-input/edited-list.yaml -o json	0	v1.34.1	v1.37.0
 convert-edited-renamed	kubectl --context kind-tern-kube-dev patch --local --type=merge -p '{}' -f edit-input/edited-renamed.yaml -o json	0	v1.34.1	v1.37.0
 convert-edited-invalid	kubectl --context kind-tern-kube-dev patch --local --type=merge -p '{}' -f edit-input/edited-invalid.yaml -o json	1	v1.34.1	v1.37.0
+undo-single-server-json-k137	kubectl --context kind-tern-kube-dev rollout undo deployment/tkm-single --dry-run=server -o json -n tern-test-mutate	1	v1.37.1	v1.37.0

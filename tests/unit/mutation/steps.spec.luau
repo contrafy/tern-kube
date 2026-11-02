@@ -247,6 +247,29 @@ describe("mutation step outcomes", function()
 		expect(Steps.outcome(step("diff"), { code = nil, timedOut = true }).status).toBe("timeout")
 		expect(Steps.outcome(step("diff"), { code = nil }).ok).toBe(false)
 	end)
+
+	-- kubectl 1.37 prints a client warning before the error on `rollout undo`;
+	-- the headline is the only text the block and the shell refusal show, so a
+	-- leading warning would hide why the preview failed.
+	it("headlines the error, not a kubectl warning printed before it", function()
+		local single = Steps.outcome(step("dry-run"), {
+			code = 1,
+			stderr = Fixtures.read("kubectl/track1/undo-single-server-json-k137.stderr"),
+		})
+		expect(single.text).toBe('Step failed (exit 1): error: no rollout history found for deployment "tkm-single"')
+		local server = Steps.outcome(step("targets"), {
+			code = 1,
+			stderr = 'Warning: v1 ComponentStatus is deprecated\nError from server (NotFound): pods "x" not found\n',
+		})
+		expect(server.text).toBe('Step failed (exit 1): Error from server (NotFound): pods "x" not found')
+	end)
+
+	it("falls back past warnings to any other line, then to the warning itself", function()
+		local other = Steps.outcome(step("after"), { code = 1, stderr = "Warning: w\nthe server is unreachable\n" })
+		expect(other.text).toBe("Step failed (exit 1): the server is unreachable")
+		local only = Steps.outcome(step("after"), { code = 1, stderr = "Warning: only this\n" })
+		expect(only.text).toBe("Step failed (exit 1): Warning: only this")
+	end)
 end)
 
 describe("mutation targets from get -o json", function()
