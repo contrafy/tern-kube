@@ -656,7 +656,16 @@ scenario_patch_merge() {
 	gone patch/tkm-patch.yaml
 }
 
+# A freshly created cluster (CI) has no fixture world, so the suite installs
+# the Widget CRD itself; applying an unchanged CRD is a no-op.
+widget_crd() {
+	k apply -f "$TK_REPO/tests/integration/manifests/crd/crd.yaml" >/dev/null &&
+		k wait --for=condition=Established --timeout=60s crd/widgets.lens.example.com >/dev/null ||
+		tk_fail "cannot install the Widget CRD"
+}
+
 scenario_patch_cr_merge() {
+	widget_crd
 	fresh patch/tkm-widget.yaml
 	tk_begin patch-cr-merge "$(link patch widgets.lens.example.com tkm-widget)"
 	tk_expect phase input
@@ -932,6 +941,9 @@ scenario_drain_pdb_blocked() {
 scenario_drain_ok() {
 	node_begin
 	gone nodes/tkm-drain-pdb.yaml
+	# drain-pdb-blocked deletes tkm-drain without waiting: a terminating pod of
+	# it would be listed below but never previewed (drain skips it).
+	k -n "$NS" wait --for=delete pod -l app=tkm-drain --timeout=60s >/dev/null 2>&1
 	fresh nodes/tkm-drain.yaml
 	k -n "$NS" rollout status deployment/tkm-drain --timeout=120s >/dev/null || tk_fail "tkm-drain not ready"
 	pod=$(k -n "$NS" get pods -l app=tkm-drain -o jsonpath='{.items[*].metadata.name}')

@@ -98,6 +98,17 @@ mkdir -p "$E2E_SB"
 mkdir -p "$E2E_SB/pkg"
 cp "$repo/plugin.toml" "$E2E_SB/pkg/plugin.toml"
 cp -R "$repo/plugin" "$E2E_SB/pkg/plugin"
+# Installed packages ship shell/: native edit runs shell/tern-kube-guard.
+cp -R "$repo/shell" "$E2E_SB/pkg/shell"
+# KUBE_EDITOR of every pane and split: runs the script a scenario writes to
+# <sandbox>/edit-script; without one an edit fails instead of opening vi.
+cat >"$E2E_SB/kube-editor" <<EOF
+#!/bin/sh
+[ -f '$E2E_SB/edit-script' ] || exit 1
+exec sh '$E2E_SB/edit-script' "\$@"
+EOF
+chmod +x "$E2E_SB/kube-editor"
+export TK_DEV_KUBE_EDITOR="$E2E_SB/kube-editor"
 clip_save
 trap cleanup EXIT
 trap 'exit 130' INT TERM
