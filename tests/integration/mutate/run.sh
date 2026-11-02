@@ -932,6 +932,9 @@ scenario_drain_pdb_blocked() {
 scenario_drain_ok() {
 	node_begin
 	gone nodes/tkm-drain-pdb.yaml
+	# drain-pdb-blocked deletes tkm-drain without waiting: a terminating pod of
+	# it would be listed below but never previewed (drain skips it).
+	k -n "$NS" wait --for=delete pod -l app=tkm-drain --timeout=60s >/dev/null 2>&1
 	fresh nodes/tkm-drain.yaml
 	k -n "$NS" rollout status deployment/tkm-drain --timeout=120s >/dev/null || tk_fail "tkm-drain not ready"
 	pod=$(k -n "$NS" get pods -l app=tkm-drain -o jsonpath='{.items[*].metadata.name}')
