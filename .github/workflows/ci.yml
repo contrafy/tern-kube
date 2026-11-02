@@ -142,6 +142,24 @@ jobs:
             echo "skipped: tests/integration/gitops/roundtrip.sh is not on this branch"
           fi
 
+      - name: Logs parser against real kubectl logs
+        if: ${{ !cancelled() && steps.cluster.outcome == 'success' }}
+        run: |
+          if [ -f tests/integration/logs/check.sh ]; then
+            sh tests/integration/logs/check.sh
+          else
+            echo "skipped: tests/integration/logs/check.sh is not on this branch"
+          fi
+
+      - name: Events model against real events
+        if: ${{ !cancelled() && steps.cluster.outcome == 'success' }}
+        run: |
+          if [ -f tests/integration/events/check.sh ]; then
+            sh tests/integration/events/check.sh
+          else
+            echo "skipped: tests/integration/events/check.sh is not on this branch"
+          fi
+
       # Evidence only: kubeconfigs (.sandbox/kubeconfig, .sandbox/rbac,
       # .sandbox/drift-rbac, the harness HOME) are never copied or uploaded.
       - name: Collect logs
