@@ -142,9 +142,17 @@ describe("settings catalog", function()
 			if f.kind ~= "int" then
 				continue
 			end
+			-- Errors only: a value in range may still warn about another key
+			-- (helm.rollback_timeout_s against mutations.execute_timeout_ms).
 			local function errs(v: number): number
 				local _, diags = Config.parse(State.encode(State.setValue({}, f, v), isList), decode)
-				return #State.diagnosticsFor(diags, f.path)
+				local n = 0
+				for _, d in State.diagnosticsFor(diags, f.path) do
+					if d.level == "error" then
+						n += 1
+					end
+				end
+				return n
 			end
 			expect(errs(f.min :: number)).toBe(0)
 			expect(errs(f.max :: number)).toBe(0)

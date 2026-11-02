@@ -101,6 +101,8 @@ the rest of the file still applies:
 | `schema_version` newer than this tern-kube | known keys apply, unknown keys are ignored | warning |
 | `explore.auto_refresh` set to `true` | kept `false` | warning |
 | Invalid entry in `gitops.helm` or `gitops.unmanaged_kinds` | that entry is dropped, the others kept | error |
+| Invalid entry in `helm.chart_sources` (bad chart name, a ref starting with `-`, a second source for the same chart) | that entry is dropped, the others kept | error |
+| `helm.rollback_timeout_s` is set and, plus 30 s, exceeds `mutations.execute_timeout_ms` | kept as set | warning |
 
 Example messages:
 
@@ -131,6 +133,7 @@ without a fractional part, within the stated range.
 | `kubectl` | string: program name or absolute path (`~/` allowed) | `"kubectl"` | The kubectl binary Explore, quick actions and mutations run. A name is looked up as described in [Programs and `PATH`](#programs-and-path); an absolute path is used as is. Relative paths with a `/` are rejected because the daemon's working directory is not yours. |
 | `kubeconfig` | string: absolute path (`~/` allowed), or `null` | `null` | Kubeconfig passed as `--kubeconfig` when an Explore link does not name one. |
 | `gitops` | object | see [`gitops`](#gitops) | Manifest index, drift, export and the git flow in Explore ([gitops.md](gitops.md)). |
+| `helm` | object | see [`helm`](#helm) | Helm releases in Explore, rollbacks through the approve block, chart auto-detect for drift. |
 
 ### Programs and `PATH`
 
@@ -143,7 +146,7 @@ The kubectl program, first match wins: the Tern kv key `kubectl` (set by
 tests and the settings flow), then `kubectl` from this file when it is
 anything other than the bare default `"kubectl"`, then the daemon
 environment variable `TKUBE_KUBECTL`, then the name `kubectl`. `gh` comes
-from `gitops.gh`, `helm` is always the name `helm`. An absolute path is run
+from `gitops.gh`, `helm` from `helm.program`. An absolute path is run
 as is. A name (the default, or a value such as `"kubecolor"`) is searched,
 first hit wins, in:
 
@@ -253,6 +256,30 @@ Explore's working directory.
 | `render_kustomize` | boolean | `true` | Render top-level kustomizations with `kubectl kustomize` while indexing, so overlays map to live names. |
 | `gh` | string: program name or absolute path | `"gh"` | GitHub CLI for the optional `gh pr create` step; offered only when `gh auth status` succeeds. A name is looked up like `kubectl`. |
 
+### `helm`
+
+Read by Explore's Helm views, the approve block's Helm rollback and the
+drift chooser's chart auto-detect. Every helm call pins `--kube-context`
+(and `--kubeconfig` when it names one file) and runs with `HELM_DRIVER` set
+from `driver`, because the Tern daemon does not inherit your shell's
+environment.
+
+| Key | Type | Default | Effect |
+| --- | --- | --- | --- |
+| `program` | string: program name or absolute path | `"helm"` | The helm binary. A name is looked up like `kubectl` ([Programs and `PATH`](#programs-and-path)). Helm features are hidden when it is not found. |
+| `driver` | `"secret"` or `"configmap"` | `"secret"` | Release storage (`HELM_DRIVER`). It must match how the releases were installed: helm reading the wrong storage lists no releases, without an error. |
+| `list_max` | integer 1-100000 | `1000` | Releases Explore lists at once (`helm list --max`); a full page says so. |
+| `history_max` | integer 1-10000 | `256` | Revisions Explore reads per release (`helm history --max`). |
+| `auto_detect` | boolean | `true` | Offer chart directories of the repository whose `Chart.yaml` name matches a deployed release as drift sources, next to the configured `gitops.helm` entries. |
+| `chart_sources` | list of `{"chart", "ref"}` | `[]` | Where a chart's pristine default values come from when the release's stored defaults are unusable (a revision upgraded with `--reuse-values` stores the previous values as defaults) and no chart directory in the repository matches: `helm show values <ref> --version <chart version>`. `ref` is an `oci://` reference, `repo/chart` from your helm repositories, or a chart path (absolute or `~/`); this is the only Helm feature that may use the network. One entry per chart name. |
+| `rollback_wait` | boolean | `true` | Rollbacks pass `--wait`: helm reports success only once the rolled-back objects are ready. |
+| `rollback_wait_for_jobs` | boolean | `false` | With `rollback_wait`, also `--wait-for-jobs`. |
+| `rollback_cleanup_on_fail` | boolean | `false` | Rollbacks pass `--cleanup-on-fail` (delete objects a failed rollback created). |
+| `rollback_timeout_s` | integer 10-3570 | `240` | Rollback `--timeout` in seconds. Always passed, because it also bounds hooks when `--wait` is off. Keep it at least 30 seconds below `mutations.execute_timeout_ms`, else the approve block stops waiting while helm still runs (a warning says so). |
+
+The approve block shows the three rollback options as chips; these keys are
+only their initial state.
+
 ## Complete example
 
 This is `examples/config.json`: every key at its default. Delete the keys
@@ -307,6 +334,18 @@ you do not change; missing keys keep their defaults.
     "max_file_bytes": 1048576,
     "render_kustomize": true,
     "gh": "gh"
+  },
+  "helm": {
+    "program": "helm",
+    "driver": "secret",
+    "list_max": 1000,
+    "history_max": 256,
+    "auto_detect": true,
+    "chart_sources": [],
+    "rollback_wait": true,
+    "rollback_wait_for_jobs": false,
+    "rollback_cleanup_on_fail": false,
+    "rollback_timeout_s": 240
   }
 }
 ```

@@ -306,6 +306,87 @@
         }
       },
       "additionalProperties": false
+    },
+    "helm": {
+      "description": "Helm releases in Explore and rollbacks through the approve block",
+      "type": "object",
+      "properties": {
+        "program": {
+          "description": "helm program: an absolute path, or a name looked up like kubectl's",
+          "type": "string",
+          "pattern": "^(/|~/|[^/]+$)",
+          "default": "helm"
+        },
+        "driver": {
+          "description": "Release storage helm reads (HELM_DRIVER); must match how the releases were installed",
+          "type": "string",
+          "enum": ["secret", "configmap"],
+          "default": "secret"
+        },
+        "list_max": {
+          "description": "Releases Explore lists at once (helm list --max)",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100000,
+          "default": 1000
+        },
+        "history_max": {
+          "description": "Revisions Explore reads per release (helm history --max)",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10000,
+          "default": 256
+        },
+        "auto_detect": {
+          "description": "Offer chart directories in the repository as drift sources for matching releases",
+          "type": "boolean",
+          "default": true
+        },
+        "chart_sources": {
+          "description": "Where pristine chart defaults come from when a release's stored ones are unusable: [{chart, ref}]",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["chart", "ref"],
+            "properties": {
+              "chart": {
+                "type": "string",
+                "maxLength": 250,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+              },
+              "ref": {
+                "type": "string",
+                "maxLength": 4096,
+                "pattern": "^[^\\x00-\\x1F\\x7F]+$"
+              }
+            }
+          },
+          "default": []
+        },
+        "rollback_wait": {
+          "description": "Rollbacks wait for the rolled-back objects to be ready (--wait)",
+          "type": "boolean",
+          "default": true
+        },
+        "rollback_wait_for_jobs": {
+          "description": "With rollback_wait, also wait for Jobs to complete (--wait-for-jobs)",
+          "type": "boolean",
+          "default": false
+        },
+        "rollback_cleanup_on_fail": {
+          "description": "Delete objects a failed rollback created (--cleanup-on-fail)",
+          "type": "boolean",
+          "default": false
+        },
+        "rollback_timeout_s": {
+          "description": "Rollback --timeout in seconds (also bounds hooks); keep it 30 s under mutations.execute_timeout_ms",
+          "type": "integer",
+          "minimum": 10,
+          "maximum": 3570,
+          "default": 240
+        }
+      },
+      "additionalProperties": false
     }
   },
   "additionalProperties": false

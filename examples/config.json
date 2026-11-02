@@ -46,5 +46,17 @@
     "max_file_bytes": 1048576,
     "render_kustomize": true,
     "gh": "gh"
+  },
+  "helm": {
+    "program": "helm",
+    "driver": "secret",
+    "list_max": 1000,
+    "history_max": 256,
+    "auto_detect": true,
+    "chart_sources": [],
+    "rollback_wait": true,
+    "rollback_wait_for_jobs": false,
+    "rollback_cleanup_on_fail": false,
+    "rollback_timeout_s": 240
   }
 }
