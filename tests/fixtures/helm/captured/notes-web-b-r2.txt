@@ -1,0 +1,5 @@
+NOTES:
+web-b serves on port 80 in tern-test-helm.
+Mode: canary
+API token: tok-REDACTME
+

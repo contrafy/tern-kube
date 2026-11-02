@@ -15,7 +15,7 @@ tmp="$out.tmp.$$"
 trap 'rm -f "$tmp"' EXIT INT TERM
 
 dirs=""
-for d in tests/fixtures/kubectl tests/fixtures/real tests/fixtures/synthetic tests/fixtures/logs tests/fixtures/gitops tests/fixtures/drift examples schema tests/shell/drift/cases; do
+for d in tests/fixtures/kubectl tests/fixtures/real tests/fixtures/synthetic tests/fixtures/logs tests/fixtures/gitops tests/fixtures/drift tests/fixtures/helm examples schema tests/shell/drift/cases; do
 	[ -d "$d" ] && dirs="$dirs $d"
 done
 

@@ -1,0 +1,5 @@
+weird: "q\"uote back\\slash tab\t bell\a nul\u0000 é 漢 😀"
+list: [1, 2.5, true, null, {"a": [ ]}]
+big: 12345678901234567890
+float: 1.0e+21
+empty: {}

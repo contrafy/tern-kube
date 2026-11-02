@@ -1,0 +1,2 @@
+Error: release has no 99 version
+exit=1

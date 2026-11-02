@@ -1,0 +1,11 @@
+secret/sh.helm.release.v1.broken-c.v1
+secret/sh.helm.release.v1.shop-a.v1
+secret/sh.helm.release.v1.shop-a.v2
+secret/sh.helm.release.v1.shop-a.v3
+secret/sh.helm.release.v1.stuck-d.v1
+secret/sh.helm.release.v1.stuck-d.v2
+secret/sh.helm.release.v1.tricky-e.v1
+secret/sh.helm.release.v1.tricky-e.v2
+secret/sh.helm.release.v1.web-b.v1
+secret/sh.helm.release.v1.web-b.v2
+secret/sh.helm.release.v1.web-b.v3
