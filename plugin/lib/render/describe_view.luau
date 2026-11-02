@@ -1,11 +1,14 @@
 --!strict
 -- `kubectl describe` as one card per object: scalar fields as key/values,
 -- nested blocks as disclosure sections, embedded tables as tables and the
--- Events table as a timeline whose Warning rows stand out. Nothing here is
--- clickable beyond Tern's own disclosure toggles, which need no view state.
+-- Events table as a timeline whose Warning rows stand out. The only chip is
+-- the Helm release one (from the Annotations field); everything else is
+-- Tern's own disclosure toggles, which need no view state.
 
 local Capture = require("../lens/capture")
 local Cells = require("./cells")
+local HelmChip = require("./helm_chip")
+local Owner = require("../helm/owner")
 local Types = require("../model/types")
 local Values = require("../model/values")
 local Viewstate = require("../lens/viewstate")
@@ -286,6 +289,14 @@ local function objectCard(obj: DescribeObject, index: number, collapsed: boolean
 			badges,
 			ui.badge(string.format("%d Warning event%s", warnings, if warnings == 1 then "" else "s"), "warning")
 		)
+	end
+	local annotations = topField(obj, "Annotations")
+	local helm = HelmChip.node(
+		if annotations then Owner.fromDescribe(fieldValue(annotations), obj.namespace) else nil,
+		id .. "/helm"
+	)
+	if helm then
+		table.insert(badges, helm)
 	end
 	if #badges > 0 then
 		table.insert(body, ui.row(badges))

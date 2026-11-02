@@ -3,7 +3,10 @@
 -- snapshot header, or nil so Tern shows the raw output.
 local Argv = require("../../../plugin/lib/kubectl/argv")
 local Capture = require("../../../plugin/lib/lens/capture")
+local Command = require("../../../plugin/lib/kubectl/command")
+local HelmChip = require("../../../plugin/lib/render/helm_chip")
 local View = require("../../../plugin/lib/lens/view")
+local fixtures = require("../../lib/fixtures")
 local json = require("../../lib/json")
 local nodes = require("../../lib/nodes")
 local runs = require("../../lib/runs")
@@ -203,6 +206,67 @@ describe("lens view", function()
 		expect(View.rawWhileRunning(inv("kubectl get events -w"), "native")).toBe(false)
 		expect(View.rawWhileRunning(inv("kubectl get events"), "raw")).toBe(false)
 		expect(View.rawWhileRunning(inv("kubectl get pods"), "raw")).toBe(false)
+	end)
+
+	-- Plan 7: describe, JSON and YAML of a Helm-managed object link its
+	-- release. Tern rebuilds a lens block by replaying the recorded lines, and
+	-- the chip comes from those lines alone (no helm query), so the
+	-- rehydrated block shows the same chip with the same link.
+	it("Helm release chips survive rehydration with the same Explore link", function()
+		local describeLines = {
+			"Name:         shop-a-shop",
+			"Namespace:    tern-test-helm",
+			"Annotations:  deployment.kubernetes.io/revision: 3",
+			"              meta.helm.sh/release-name: shop-a",
+			"              meta.helm.sh/release-namespace: tern-test-helm",
+			"Replicas:     2 desired | 2 updated | 2 total | 2 available | 0 unavailable",
+		}
+		local yamlLines = {
+			"apiVersion: apps/v1",
+			"kind: Deployment",
+			"metadata:",
+			"  annotations:",
+			"    meta.helm.sh/release-name: shop-a",
+			"    meta.helm.sh/release-namespace: tern-test-helm",
+			"  name: shop-a-shop",
+			"  namespace: tern-test-helm",
+		}
+		local key = "apps/Deployment/tern-test-helm/shop-a-shop"
+		local ctx = "kubectl --context kind-tern-kube-dev -n tern-test-helm "
+		local cases: { { command: string, lines: { string }, vs: vsm.ViewState } } = {
+			{ command = ctx .. "describe deploy shop-a-shop", lines = describeLines, vs = vsm.default() },
+			{
+				command = ctx .. "get deployments,services,configmaps,secrets -o json",
+				lines = fixtures.lines("helm/captured/objects.json"),
+				vs = vsm.opened(vsm.default(), key),
+			},
+			{ command = ctx .. "get deploy shop-a-shop -o yaml", lines = yamlLines, vs = vsm.default() },
+		}
+		for _, case in cases do
+			local function chips(): { string }
+				local node = View.render(fromLines(case.command, case.lines, 0), case.vs) :: any
+				local out: { string } = {}
+				for _, chip in nodes.findAll(node, nodes.role(HelmChip.ROLE)) do
+					table.insert(out, nodes.text(chip) .. " " .. (nodes.action(chip) :: string))
+				end
+				return out
+			end
+			local first = chips()
+			expect(first).toEqual({ "Helm release tern-test-helm/shop-a helm-release=tern-test-helm/shop-a" })
+			expect(chips()).toEqual(first)
+			local inv = fromLines(case.command, case.lines, 0).invocation
+			local url = HelmChip.url(inv, "tern-test-helm/shop-a") :: string
+			local params: { [string]: string } = {}
+			for _, kv in Command.parseQuery(url) do
+				params[kv.key] = kv.value
+			end
+			expect(params).toEqual({
+				route = "helm-release",
+				release = "shop-a",
+				namespace = "tern-test-helm",
+				context = "kind-tern-kube-dev",
+			})
+		end
 	end)
 end)
 

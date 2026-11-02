@@ -3,6 +3,7 @@ local Argv = require("./lib/kubectl/argv")
 local Capture = require("./lib/lens/capture")
 local Command = require("./lib/kubectl/command")
 local ConfigHost = require("./config_host")
+local HelmChip = require("./lib/render/helm_chip")
 local Link = require("./lib/mutation/link")
 local LogsParse = require("./lib/logs/parse")
 local LogsRender = require("./lib/logs/render")
@@ -196,6 +197,22 @@ local function mutateAction(url: string, cx: EffectCx)
 	cx:open(url)
 end
 
+-- "Helm release ns/X" chips carry only the release key; the URL pins the
+-- invocation's context and kubeconfig, and the window routes it to the
+-- helm-release Explore route.
+local function helmAction(state: CaptureState, value: string, cx: EffectCx)
+	local capture = captureOf(state)
+	if capture == nil then
+		return
+	end
+	local url = HelmChip.url(capture.invocation, value, cwdOf(state.run))
+	if url == nil then
+		log.warn("tern-kube lens helm chip ignored", value)
+		return
+	end
+	cx:open(url)
+end
+
 -- Logs branch ---------------------------------------------------------------------
 
 local function programOf(inv: Invocation): string
@@ -370,6 +387,8 @@ local function captureEvent(state: CaptureState, act: string, value: string, cx:
 		quickAction(value, cx)
 	elseif act == "mutate" then
 		mutateAction(value, cx)
+	elseif act == HelmChip.ACT then
+		helmAction(state, value, cx)
 	end
 end
 

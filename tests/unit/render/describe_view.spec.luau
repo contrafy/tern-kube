@@ -207,4 +207,46 @@ describe("describe view: several objects and errors", function()
 	end)
 end)
 
+-- Plan 7: a Helm-managed object's card links its release; the lens reads
+-- the Annotations field only (no helm query), so a rehydrated block matches.
+describe("describe view: Helm release chip", function()
+	local HELM_DEPLOY = {
+		"Name:                   shop-a-shop",
+		"Namespace:              tern-test-helm-ui",
+		"Labels:                 app.kubernetes.io/instance=shop-a",
+		"                        app.kubernetes.io/managed-by=Helm",
+		"Annotations:            deployment.kubernetes.io/revision: 3",
+		"                        meta.helm.sh/release-name: shop-a",
+		"                        meta.helm.sh/release-namespace: tern-test-helm-ui",
+		"Selector:               app=shop",
+		"Replicas:               2 desired | 2 updated | 2 total | 2 available | 0 unavailable",
+		"Events:                 <none>",
+	}
+	local CMD = "kubectl describe deploy shop-a-shop -n tern-test-helm-ui"
+
+	local function chips(view: Node): { Node }
+		return nodes.findAll(view, nodes.role("tern-kube.helm-release"))
+	end
+
+	it("shows the release chip on the object's card", function()
+		local view = DescribeView.render(captures.fromLines(CMD, HELM_DEPLOY, 0), Viewstate.default(), Viewstate)
+		local found = chips(view)
+		expect(#found).toBe(1)
+		expect(nodes.text(found[1])).toBe("Helm release tern-test-helm-ui/shop-a")
+		expect(nodes.action(found[1])).toBe("helm-release=tern-test-helm-ui/shop-a")
+	end)
+
+	it("falls back to the object's namespace without the release-namespace annotation", function()
+		local lines = table.clone(HELM_DEPLOY)
+		table.remove(lines, 7)
+		local view = DescribeView.render(captures.fromLines(CMD, lines, 0), Viewstate.default(), Viewstate)
+		expect(nodes.action(chips(view)[1])).toBe("helm-release=tern-test-helm-ui/shop-a")
+	end)
+
+	it("shows no chip for objects Helm does not manage", function()
+		local view = render("real/ns-apps/describe_pod_crashloop", "kubectl describe pod crashloop -n tern-test-apps")
+		expect(#chips(view)).toBe(0)
+	end)
+end)
+
 return nil

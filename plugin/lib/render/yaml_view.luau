@@ -5,6 +5,8 @@
 
 local Capture = require("../lens/capture")
 local Grid = require("./grid")
+local HelmChip = require("./helm_chip")
+local Owner = require("../helm/owner")
 local Query = require("../lens/query")
 local Redact = require("../model/redact")
 local Types = require("../model/types")
@@ -53,6 +55,16 @@ end
 
 local function codeNode(lines: { string }, doc: Doc, key: string): Node
 	return ui.code(M.docText(lines, doc), "yaml", doc.startLine, { key = key .. "/code" })
+end
+
+local function helmNode(lines: { string }, doc: Doc, key: string): Node?
+	return HelmChip.node(Owner.fromYamlLines(lines, doc.startLine, doc.endLine), key .. "/helm")
+end
+
+local function docNode(lines: { string }, doc: Doc, key: string): Node
+	local code = codeNode(lines, doc, key)
+	local helm = helmNode(lines, doc, key)
+	return if helm then ui.col({ ui.row({ helm }, { wrap = true }), code }) else code
 end
 
 local function title(doc: Doc): { ui.SpanLike }
@@ -158,7 +170,7 @@ local function docsGrid(docs: { Doc }, lines: { string }, vs: ViewState, vsm: ty
 			inspector = function(rowKey: string): Node?
 				local index = docIndex(rowKey)
 				local doc = if index then docs[index] else nil
-				return if doc then codeNode(lines, doc, rowKey) else nil
+				return if doc then docNode(lines, doc, rowKey) else nil
 			end,
 		})
 	)
@@ -189,6 +201,10 @@ function M.render(capture: Capture, vs: ViewState, vsm: typeof(Viewstate)): Node
 		local docs = split.docs
 		if #docs == 1 then
 			table.insert(children, ui.text(title(docs[1]), { key = "doc:1/title" }))
+			local helm = helmNode(lines, docs[1], M.docKey(1))
+			if helm then
+				table.insert(children, ui.row({ helm }, { key = "doc:1/chips", wrap = true }))
+			end
 			table.insert(children, codeNode(lines, docs[1], M.docKey(1)))
 		elseif #docs > 1 then
 			table.insert(children, ui.muted(string.format("%d documents; click one to show its YAML", #docs)))

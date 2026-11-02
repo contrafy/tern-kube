@@ -231,4 +231,77 @@ describe("yaml view: large lists", function()
 	end)
 end)
 
+-- Plan 7: YAML of a Helm-managed object links its release, read from the
+-- document's own metadata.annotations lines (no helm query).
+describe("yaml view: Helm release chip", function()
+	local function chips(view: Node): { Node }
+		return nodes.findAll(view, nodes.role("tern-kube.helm-release"))
+	end
+
+	local SINGLE = {
+		"apiVersion: apps/v1",
+		"kind: Deployment",
+		"metadata:",
+		"  annotations:",
+		'    deployment.kubernetes.io/revision: "3"',
+		"    meta.helm.sh/release-name: shop-a",
+		"    meta.helm.sh/release-namespace: tern-test-helm-ui",
+		"  labels:",
+		"    app.kubernetes.io/managed-by: Helm",
+		"  name: shop-a-shop",
+		"  namespace: tern-test-helm-ui",
+		"spec:",
+		"  replicas: 2",
+	}
+
+	local LIST = {
+		"apiVersion: v1",
+		"items:",
+		"- apiVersion: apps/v1",
+		"  kind: Deployment",
+		"  metadata:",
+		"    name: plain",
+		"    namespace: tern-test-helm",
+		"  spec:",
+		"    replicas: 1",
+		"- apiVersion: apps/v1",
+		"  kind: Deployment",
+		"  metadata:",
+		"    annotations:",
+		"      meta.helm.sh/release-name: web-b",
+		"      meta.helm.sh/release-namespace: tern-test-helm",
+		"    name: web-b-web",
+		"    namespace: tern-test-helm",
+		"  spec:",
+		"    replicas: 1",
+		"kind: List",
+		"metadata:",
+		'  resourceVersion: ""',
+	}
+
+	it("a single object shows the chip above its YAML", function()
+		local view =
+			render(captures.fromLines("kubectl get deploy shop-a-shop -n tern-test-helm-ui -o yaml", SINGLE, 0))
+		local found = chips(view)
+		expect(#found).toBe(1)
+		expect(nodes.text(found[1])).toBe("Helm release tern-test-helm-ui/shop-a")
+		expect(nodes.action(found[1])).toBe("helm-release=tern-test-helm-ui/shop-a")
+	end)
+
+	it("an opened List item shows its own release, other items none", function()
+		local capture = captures.fromLines("kubectl get deploy -n tern-test-helm -o yaml", LIST, 0)
+		expect(#chips(render(capture))).toBe(0)
+		local opened = render(capture, Viewstate.opened(Viewstate.default(), YamlView.docKey(2)))
+		local found = chips(opened)
+		expect(#found).toBe(1)
+		expect(nodes.action(found[1])).toBe("helm-release=tern-test-helm/web-b")
+		expect(#chips(render(capture, Viewstate.opened(Viewstate.default(), YamlView.docKey(1))))).toBe(0)
+	end)
+
+	it("objects Helm does not manage show no chip", function()
+		local capture = captures.fromLines("kubectl get -f mutate/app.yaml -o yaml", MANIFEST, 0)
+		expect(#chips(render(capture, Viewstate.opened(Viewstate.default(), YamlView.docKey(2))))).toBe(0)
+	end)
+end)
+
 return nil

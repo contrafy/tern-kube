@@ -6,6 +6,7 @@ local Capture = require("../../../plugin/lib/lens/capture")
 local Link = require("../../../plugin/lib/mutation/link")
 local Quick = require("../../../plugin/lib/actions/quick")
 local TableView = require("../../../plugin/lib/render/table_view")
+local fixtures = require("../../lib/fixtures")
 local json = require("../../lib/json")
 local nodes = require("../../lib/nodes")
 local runs = require("../../lib/runs")
@@ -500,6 +501,72 @@ describe("table view events overlay", function()
 	it("non-event tables get no Events-for chip", function()
 		local node = render(build("ns-apps/get_pods"), vsm.opened(vsm.default(), "/Pod/tern-test-apps/db-0"))
 		expect(nodes.find(node, nodes.hasText("Events for"))).toBeNil()
+	end)
+end)
+
+-- Plan 7: rows of Helm-managed objects link their release. `-o json` rows
+-- read the release annotations (captured `helm install` objects); plain
+-- tables only know it from `--show-labels` and the instance label.
+describe("table view Helm release chip", function()
+	local OBJECTS_CMD = "kubectl -n tern-test-helm get deployments,services,configmaps,secrets -o json"
+
+	local function helmChips(c: Capture.Capture, key: string): { any }
+		local node = TableView.render(c, vsm.opened(vsm.default(), key))
+		local insp = nodes.find(node :: any, nodes.role("tern-kube.inspector"))
+		assert(insp, "no inspector for " .. key)
+		return nodes.findAll(insp, nodes.role("tern-kube.helm-release"))
+	end
+
+	local function objects(): Capture.Capture
+		return Capture.build(runs.run(OBJECTS_CMD), fixtures.lines("helm/captured/objects.json"), 0, {
+			decode = json.decode,
+		})
+	end
+
+	it("json rows of release objects show the release from their annotations", function()
+		local c = objects()
+		local releases: { [string]: string } = {
+			["apps/Deployment/tern-test-helm/shop-a-shop"] = "shop-a",
+			["/Service/tern-test-helm/web-b-web"] = "web-b",
+			["/ConfigMap/tern-test-helm/stuck-d-shop-config"] = "stuck-d",
+		}
+		for key, release in releases do
+			local chips = helmChips(c, key)
+			expect(#chips).toBe(1)
+			expect(nodes.action(chips[1])).toBe("helm-release=tern-test-helm/" .. release)
+		end
+	end)
+
+	it("the full Inspect view carries the same chip", function()
+		local key = "apps/Deployment/tern-test-helm/shop-a-shop"
+		local c = objects()
+		local row, tbl = Capture.findRow(c, key)
+		assert(row and tbl, "row " .. key)
+		local view = TableView.inspectView(c, tbl, row, vsm.inspect(vsm.default(), key))
+		local chip = nodes.find(view, nodes.role("tern-kube.helm-release")) :: any
+		expect(nodes.action(chip)).toBe("helm-release=tern-test-helm/shop-a")
+	end)
+
+	it("objects no release owns show no chip", function()
+		local c = objects()
+		expect(#helmChips(c, "/ConfigMap/tern-test-helm/kube-root-ca.crt")).toBe(0)
+		-- Hooks carry no release annotation (helm.sh/hook only).
+		expect(#helmChips(c, "/ConfigMap/tern-test-helm/web-b-web-post-install")).toBe(0)
+		expect(#helmChips(build("ns-apps/get_deployments"), "apps/Deployment/tern-test-apps/web")).toBe(0)
+	end)
+
+	it("--show-labels rows show the release from the instance label, in the row's namespace", function()
+		local c = Capture.build(runs.run("kubectl get deploy -n tern-test-helm-ui --show-labels"), {
+			"NAME          READY   UP-TO-DATE   AVAILABLE   AGE   LABELS",
+			"shop-a-shop   2/2     2            2           5m    app.kubernetes.io/instance=shop-a,app.kubernetes.io/managed-by=Helm,app=shop",
+			"plain         1/1     1            1           5m    app.kubernetes.io/instance=plain,app=plain",
+		}, 0, { decode = json.decode })
+		local chips = helmChips(c, "apps/Deployment/tern-test-helm-ui/shop-a-shop")
+		expect(#chips).toBe(1)
+		expect(nodes.action(chips[1])).toBe("helm-release=tern-test-helm-ui/shop-a")
+		expect(chips[1].p.title).toContain("Probably")
+		-- An instance label without managed-by=Helm is not Helm's.
+		expect(#helmChips(c, "apps/Deployment/tern-test-helm-ui/plain")).toBe(0)
 	end)
 end)
 
