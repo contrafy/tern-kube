@@ -59,7 +59,24 @@ function M.config(over: { [string]: any }?): Session.Config
 			(m :: any)[k] = v
 		end
 	end
-	return { mutations = m, previewTimeoutMs = 30000, execTimeoutMs = 300000, showSecretValues = show, quick = {} }
+	return {
+		mutations = m,
+		previewTimeoutMs = 30000,
+		execTimeoutMs = 300000,
+		showSecretValues = show,
+		quick = {},
+		helm = {
+			driver = "secret",
+			rollback = {
+				wait = true,
+				waitForJobs = false,
+				cleanupOnFail = false,
+				force = false,
+				noHooks = false,
+				timeoutS = 240,
+			},
+		},
+	}
 end
 
 export type Opts = {
@@ -69,6 +86,9 @@ export type Opts = {
 	request: string?,
 	panes: { string }?,
 	decode: ((string) -> any)?,
+	-- helm program (default "helm"); `noHelm` = helm not found.
+	helm: string?,
+	noHelm: boolean?,
 }
 
 function M.init(arg: string, opts: Opts?): (State, { Effect })
@@ -78,6 +98,7 @@ function M.init(arg: string, opts: Opts?): (State, { Effect })
 		now = o.now or 1000,
 		config = o.config or M.config(),
 		kubectl = "kubectl",
+		helm = if o.noHelm then nil else o.helm or "helm",
 		kubeconfig = o.kubeconfig or "/k/config",
 		home = M.HOME,
 		spool = M.SPOOL,

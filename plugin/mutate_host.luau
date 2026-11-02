@@ -52,6 +52,17 @@ local function settings(): Session.Config
 			logsTail = cfg.quick_actions.logs_tail,
 			debugImage = cfg.quick_actions.debug_image,
 		},
+		helm = {
+			driver = cfg.helm.driver,
+			rollback = {
+				wait = cfg.helm.rollback_wait,
+				waitForJobs = cfg.helm.rollback_wait_for_jobs,
+				cleanupOnFail = cfg.helm.rollback_cleanup_on_fail,
+				force = false,
+				noHooks = false,
+				timeoutS = cfg.helm.rollback_timeout_s,
+			},
+		},
 	}
 end
 
@@ -287,6 +298,14 @@ local function isList(t: { [any]: any }): boolean
 	return next(t) == nil and tern.json.encode(t) == "[]"
 end
 
+-- Resolved helm program, nil when it is not installed (the block says so).
+-- While the login-shell PATH is still being read, the bare name is kept:
+-- EnvHost.run resolves it once the read settles.
+local function helmProgram(): string?
+	local r = EnvHost.resolve("helm")
+	return if r.found or EnvHost.pending() then r.program else nil
+end
+
 function M.register()
 	pcall(tern.fs.mkdir, M.SPOOL)
 	tern.block.define("approve", {
@@ -298,6 +317,7 @@ function M.register()
 				now = os.time(),
 				config = conf,
 				kubectl = EnvHost.program("kubectl"),
+				helm = helmProgram(),
 				kubeconfig = cfg.kubeconfig or EnvHost.kubeconfig(),
 				home = tern.getenv("HOME"),
 				spool = M.SPOOL,

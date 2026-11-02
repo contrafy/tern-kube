@@ -4,8 +4,10 @@
 -- are marked advisory: tern-kube never claims policy conformance.
 local Diffseg = require("./diffseg")
 local Drain = require("./drain")
+local HelmTypes = require("../helm/types")
 local Kinds = require("../kubectl/kinds")
 local Objdiff = require("./objdiff")
+local RevDiff = require("../helm/revdiff")
 local Rollout = require("./rollout")
 local T = require("./types")
 local Types = require("../model/types")
@@ -24,6 +26,18 @@ export type EditFacts = {
 	rejected: string?,
 	-- Objects the edit changes.
 	changed: number,
+}
+
+-- What a helm rollback preview read: the newest revision (history --max 1),
+-- the current and target releases, the target's stored chart and hooks,
+-- the change between the two stored manifests and the live diff.
+export type HelmFacts = {
+	latest: HelmTypes.Revision?,
+	current: HelmTypes.ReleaseStatus?,
+	target: HelmTypes.ReleaseStatus?,
+	extras: HelmTypes.Extras?,
+	revdiff: RevDiff.Result?,
+	live: Diffseg.Summary?,
 }
 
 export type Facts = {
@@ -45,6 +59,7 @@ export type Facts = {
 	drain: Drain.Facts?,
 	undo: { Rollout.UndoTarget }?,
 	edit: EditFacts?,
+	helm: HelmFacts?,
 }
 
 local M = {}
@@ -81,6 +96,7 @@ local VERB_WORD: { [T.Family]: string } = {
 	uncordon = "uncordon",
 	drain = "drain",
 	edit = "edit",
+	["helm-rollback"] = "roll back",
 }
 
 type Builder = { list: { Reason }, byId: { [string]: Reason } }
@@ -865,6 +881,158 @@ local function editReasons(b: Builder, plan: Plan, facts: Facts)
 	end
 end
 
+local function chartText(name: string?, version: string?, app: string?): string
+	return (name or "?")
+		.. (if version then "-" .. version else "")
+		.. (if app and app ~= "" then " (app " .. app .. ")" else "")
+end
+
+local function segId(seg: Diffseg.Segment): string
+	return (seg.kind or "?") .. "/" .. (seg.namespace or "") .. "/" .. (seg.name or seg.key)
+end
+
+-- Facts from the argv alone: always shown, also before the preview ends.
+local function helmArgvReasons(b: Builder, plan: Plan, facts: Facts)
+	local h = plan.helm :: T.HelmRollback
+	local latest = if facts.helm then facts.helm.latest else nil
+	add(
+		b,
+		"helm-rollback",
+		"medium",
+		"typed",
+		string.format(
+			"Rolls %s back from revision %s to %d",
+			h.release,
+			if latest then tostring(latest.revision) else "?",
+			h.revision
+		)
+	)
+	if h.options.force then
+		add(b, "helm-force", "high", "typed", "--force deletes and re-creates objects that cannot be patched")
+	end
+	if not h.options.wait then
+		add(b, "helm-no-wait", "info", "simple", "Without --wait helm reports success before the pods are ready")
+	end
+	if h.options.noHooks then
+		add(b, "helm-hooks", "low", "simple", "--no-hooks: the chart's rollback hooks are skipped")
+	end
+end
+
+local function helmReasons(b: Builder, plan: Plan, facts: Facts)
+	local h = plan.helm :: T.HelmRollback
+	local f = facts.helm
+	if f == nil then
+		return
+	end
+	local latest = f.latest
+	if latest then
+		if string.sub(latest.status, 1, 8) == "pending-" then
+			add(
+				b,
+				"helm-pending",
+				"high",
+				"typed",
+				string.format(
+					"Revision %d is %s (since %s): if another helm process still runs, the rollback races it; "
+						.. "a rollback is also how a stuck release recovers",
+					latest.revision,
+					latest.status,
+					latest.updated
+				)
+			)
+		elseif latest.status == "uninstalled" then
+			add(b, "helm-uninstalled", "medium", "typed", "The release is uninstalled: the rollback reinstalls it")
+		end
+		if latest.revision == h.revision then
+			add(
+				b,
+				"helm-same",
+				"info",
+				"simple",
+				string.format("Revision %d is the latest: the rollback re-applies it (repairs drift)", h.revision)
+			)
+		end
+	end
+	local target = f.target
+	if target and target.info.status == "failed" then
+		add(
+			b,
+			"helm-target-failed",
+			"medium",
+			"typed",
+			string.format("Revision %d failed when it was deployed: %s", h.revision, target.info.description)
+		)
+	end
+	local rd = f.revdiff
+	if rd then
+		local s = rd.summary
+		if s.delete > 0 then
+			add(
+				b,
+				"helm-deletes",
+				"high",
+				"typed",
+				string.format(
+					"%d object(s) of the current revision are not in revision %d: helm deletes them",
+					s.delete,
+					h.revision
+				)
+			)
+		end
+		for _, seg in s.segments do
+			if seg.kind == "Secret" then
+				add(b, "helm-secrets", "low", "simple", "Secret objects change (values masked)")
+			end
+		end
+	end
+	local x = f.extras
+	if x and not h.options.noHooks then
+		local names: { string } = {}
+		for _, hook in x.hooks do
+			for _, ev in hook.events do
+				if ev == "pre-rollback" or ev == "post-rollback" then
+					table.insert(names, hook.kind .. "/" .. hook.name .. " (" .. ev .. ")")
+				end
+			end
+		end
+		if #names > 0 then
+			add(b, "helm-hooks", "info", "simple", "Rollback hooks run: " .. table.concat(names, ", "))
+		end
+	end
+	if x and latest then
+		local from = chartText(latest.chartName, latest.chartVersion, latest.appVersion)
+		local to = chartText(x.chart.name, x.chart.version, x.chart.appVersion)
+		if from ~= to then
+			add(b, "helm-chart-change", "info", "simple", "Chart " .. from .. " → " .. to)
+		end
+	end
+	local live = f.live
+	if live and rd then
+		local recorded: { [string]: boolean } = {}
+		for _, seg in rd.summary.segments do
+			recorded[segId(seg)] = true
+		end
+		local outside: { string } = {}
+		for _, seg in live.segments do
+			if not recorded[segId(seg)] then
+				table.insert(outside, (seg.kind or "?") .. " " .. (seg.name or seg.key))
+			end
+		end
+		if #outside > 0 then
+			add(
+				b,
+				"helm-live-drift",
+				"low",
+				"simple",
+				"Live objects differ from the revision where helm's records do not: "
+					.. table.concat(outside, ", ")
+					.. " (edited outside helm; the rollback overwrites them)",
+				true
+			)
+		end
+	end
+end
+
 local function familyReasons(b: Builder, plan: Plan, facts: Facts)
 	local f = plan.family
 	if f == "undo" then
@@ -881,6 +1049,8 @@ local function familyReasons(b: Builder, plan: Plan, facts: Facts)
 		drainReasons(b, plan, facts)
 	elseif f == "edit" then
 		editReasons(b, plan, facts)
+	elseif f == "helm-rollback" then
+		helmReasons(b, plan, facts)
 	end
 end
 
@@ -947,8 +1117,12 @@ local function factReasons(b: Builder, plan: Plan, facts: Facts)
 end
 
 -- Names the typed tier asks for: the object's name when exactly one object
--- is affected, `<verb> N resources` for several, and the context otherwise.
+-- is affected, `<verb> N resources` for several, the release for a helm
+-- rollback, and the context otherwise.
 local function tokenFor(plan: Plan, facts: Facts): string
+	if plan.helm then
+		return (plan.helm :: T.HelmRollback).release
+	end
 	local names: { string } = {}
 	if facts.targets and plan.family ~= "apply" then
 		for _, r in facts.targets do
@@ -975,6 +1149,9 @@ function M.assess(plan: Plan, facts: Facts): T.Assessment
 	local b: Builder = { list = {}, byId = {} }
 	factReasons(b, plan, facts)
 	argvReasons(b, plan, facts)
+	if plan.helm then
+		helmArgvReasons(b, plan, facts)
+	end
 	if facts.manifests and (plan.family == "apply") then
 		manifestReasons(b, facts.manifests :: { T.Manifest }, nil)
 	end

@@ -8,6 +8,7 @@ local t = require("../../lib/test")
 local describe, it, expect = t.describe, t.it, t.expect
 
 local TOKEN = string.rep("ab", 16)
+local KUBECTL: Link.Programs = { kubectl = "kubectl" }
 
 describe("mutate links", function()
 	it("round-trips every field", function()
@@ -29,7 +30,7 @@ describe("mutate links", function()
 		expect(r.replicas).toBe(3)
 		expect(r.context).toBe("kind dev's")
 		expect(r.kubeconfig).toBe("/k/a b")
-		expect(Link.argv(r, "kubectl")).toEqual({
+		expect(Link.argv(r, KUBECTL)).toEqual({
 			"kubectl",
 			"scale",
 			"deployment.apps/web",
@@ -41,10 +42,10 @@ describe("mutate links", function()
 
 	it("builds apply argv from a file or a kustomization, with the input's directory as cwd", function()
 		local r = Link.decode("tern-kube://mutate?op=apply&file=%2Fw%2Fm%2Fa.yaml&recursive=1") :: Link.Request
-		expect(Link.argv(r, "kubectl")).toEqual({ "kubectl", "apply", "-f", "/w/m/a.yaml", "-R" })
+		expect(Link.argv(r, KUBECTL)).toEqual({ "kubectl", "apply", "-f", "/w/m/a.yaml", "-R" })
 		expect(Link.cwd(r, "/home")).toBe("/w/m")
 		r = Link.decode("tern-kube://mutate?op=apply&kustomize=%2Fw%2Fover") :: Link.Request
-		expect(Link.argv(r, "kubectl")).toEqual({ "kubectl", "apply", "-k", "/w/over" })
+		expect(Link.argv(r, KUBECTL)).toEqual({ "kubectl", "apply", "-k", "/w/over" })
 	end)
 
 	it("rejects anything that is not a plain target", function()
@@ -74,17 +75,17 @@ describe("mutate links", function()
 
 	it("leaves a scale without replicas for the block to ask", function()
 		local r = Link.decode("tern-kube://mutate?op=scale&kind=sts&name=db") :: Link.Request
-		expect(Link.argv(r, "kubectl")).toBeNil()
+		expect(Link.argv(r, KUBECTL)).toBeNil()
 	end)
 
 	-- The palette's "Apply file or directory" opens the block with only the
 	-- focused pane's cwd; the user types the path there.
 	it("leaves an apply with only a cwd for the block to ask, and resolves the typed path", function()
 		local r = Link.decode("tern-kube://mutate?op=apply&cwd=%2Fw%2Frepo") :: Link.Request
-		expect(Link.argv(r, "kubectl")).toBeNil()
+		expect(Link.argv(r, KUBECTL)).toBeNil()
 		local function typed(input: string): { string }?
 			local out = Link.withInput(r, input, "/home/me")
-			return if out then Link.argv(out, "kubectl") else nil
+			return if out then Link.argv(out, KUBECTL) else nil
 		end
 		expect(typed("k8s/app.yaml")).toEqual({ "kubectl", "apply", "-f", "/w/repo/k8s/app.yaml" })
 		expect(typed("  ./k8s/../dir with space/ ")).toEqual({ "kubectl", "apply", "-f", "/w/repo/dir with space" })
@@ -186,7 +187,7 @@ describe("mutate links", function()
 		local node: any = { kind = "Node", name = "w1", source = "live" }
 		local function argv(op: Link.Op, ref: any): { string }?
 			local url = Link.forRef(op, ref, origin)
-			return Link.argv(Link.decode(url :: string) :: Link.Request, "kubectl")
+			return Link.argv(Link.decode(url :: string) :: Link.Request, KUBECTL)
 		end
 		expect(argv("undo", deploy)).toEqual({ "kubectl", "rollout", "undo", "deployment.apps/web", "-n", "apps" })
 		expect(argv("pause", deploy)).toEqual({ "kubectl", "rollout", "pause", "deployment.apps/web", "-n", "apps" })
@@ -262,7 +263,7 @@ describe("mutate link input", function()
 		end
 		local label = req("label", "configmap", "cm", "a")
 		expect(Link.needsInput(label)).toBe(true)
-		expect(Link.argv(label, "kubectl")).toBeNil()
+		expect(Link.argv(label, KUBECTL)).toBeNil()
 		local done = Link.withInput(label, "app=web") :: Link.Request
 		expect(Link.needsInput(done)).toBe(false)
 		expect(Link.needsInput(req("undo", "deployment.apps", "web", "a"))).toBe(false)
@@ -271,7 +272,7 @@ describe("mutate link input", function()
 	it("reads the replica count for scale", function()
 		local r = req("scale", "deployment.apps", "web", "a")
 		local out = Link.withInput(r, " 3 ") :: Link.Request
-		expect(Link.argv(out, "kubectl")).toEqual({
+		expect(Link.argv(out, KUBECTL)).toEqual({
 			"kubectl",
 			"scale",
 			"deployment.apps/web",
@@ -293,7 +294,7 @@ describe("mutate link input", function()
 		expect(p.text).toBe("Labels for configmap/cm: KEY=VALUE sets, KEY- removes; add --overwrite to change values")
 		expect(p.prefill).toBe("")
 		local out = Link.withInput(r, "app=web  tier- example.com/team=a_b.c --overwrite") :: Link.Request
-		expect(Link.argv(out, "kubectl")).toEqual({
+		expect(Link.argv(out, KUBECTL)).toEqual({
 			"kubectl",
 			"label",
 			"configmap/cm",
@@ -355,7 +356,7 @@ describe("mutate link input", function()
 		local cr = req("patch", "widgets.lens.example.com", "w", "a")
 		expect(Link.prompt(cr).prefill).toBe("--type=merge ")
 		local out = Link.withInput(deploy, '--type=merge {"spec":{"replicas":2}}') :: Link.Request
-		expect(Link.argv(out, "kubectl")).toEqual({
+		expect(Link.argv(out, KUBECTL)).toEqual({
 			"kubectl",
 			"patch",
 			"deployment.apps/web",
@@ -386,7 +387,7 @@ describe("mutate link input", function()
 			r,
 			"--timeout=90s --pod-selector='app in (a, b)' --ignore-daemonsets --grace-period=-1"
 		) :: Link.Request
-		expect(Link.argv(out, "kubectl")).toEqual({
+		expect(Link.argv(out, KUBECTL)).toEqual({
 			"kubectl",
 			"drain",
 			"w1",
@@ -429,6 +430,95 @@ describe("mutate link input", function()
 		local none, e = Link.withInput(r, "x")
 		expect(none).toBeNil()
 		expect(e).toBe("cordon takes no input")
+	end)
+end)
+
+describe("helm rollback links", function()
+	local KEY = { name = "shop-a", namespace = "shop" }
+	local ORIGIN: Link.Origin = { context = "kind-dev", source = "chosen", kubeconfig = "/k/config" }
+	local DEFAULTS =
+		{ wait = true, waitForJobs = false, cleanupOnFail = false, force = false, noHooks = false, timeoutS = 240 }
+	local PROGRAMS: Link.Programs = { kubectl = "kubectl", helm = "/opt/bin/helm", rollback = DEFAULTS }
+
+	it("names a release revision and leaves unset options to the config", function()
+		local url = Link.forRelease(KEY, 1, ORIGIN) :: string
+		expect(url).toBe(
+			"tern-kube://mutate?op=rollback&namespace=shop&context=kind-dev&source=chosen&kubeconfig=%2Fk%2Fconfig"
+				.. "&release=shop-a&revision=1"
+		)
+		local r = Link.decode(url) :: Link.Request
+		expect(r.op).toBe("rollback")
+		expect(r.release).toBe("shop-a")
+		expect(r.revision).toBe(1)
+		expect(r.wait).toBeNil()
+		expect(Link.needsInput(r)).toBe(false)
+		-- --timeout is always pinned: it also bounds hooks without --wait.
+		expect(Link.argv(r, PROGRAMS)).toEqual({
+			"/opt/bin/helm",
+			"rollback",
+			"shop-a",
+			"1",
+			"-n",
+			"shop",
+			"--timeout",
+			"240s",
+			"--wait",
+		})
+	end)
+
+	it("carries explicit option toggles over the config defaults", function()
+		local url = Link.forRelease(KEY, 3, ORIGIN, { wait = false, cleanup = true, force = true }) :: string
+		expect(url).toContain("&wait=0&cleanup=1&force=1")
+		local r = Link.decode(url) :: Link.Request
+		expect(Link.argv(r, PROGRAMS)).toEqual({
+			"/opt/bin/helm",
+			"rollback",
+			"shop-a",
+			"3",
+			"-n",
+			"shop",
+			"--timeout",
+			"240s",
+			"--cleanup-on-fail",
+			"--force",
+		})
+		local toggled = Link.toggle(r, "wait")
+		expect(toggled.wait).toBe(true)
+		expect(Link.rollbackOptions(toggled, DEFAULTS).wait).toBe(true)
+		expect(Link.rollbackOptions(Link.toggle(toggled, "wait"), DEFAULTS).wait).toBe(false)
+	end)
+
+	it("has no argv without a helm program: the block reports helm missing", function()
+		local r = Link.decode(Link.forRelease(KEY, 1, ORIGIN) :: string) :: Link.Request
+		expect(Link.argv(r, KUBECTL)).toBeNil()
+	end)
+
+	it("refuses anything but a valid release, revision and namespace", function()
+		local base = "tern-kube://mutate?op=rollback&release=shop-a&revision=1&namespace=shop"
+		expect((Link.decode(base)) ~= nil).toBe(true)
+		for _, bad in
+			{
+				"tern-kube://mutate?op=rollback&release=shop-a&namespace=shop",
+				"tern-kube://mutate?op=rollback&revision=1&namespace=shop",
+				"tern-kube://mutate?op=rollback&release=shop-a&revision=1",
+				base .. "x&kind=deployment",
+				"tern-kube://mutate?op=rollback&release=Shop_A&revision=1&namespace=shop",
+				"tern-kube://mutate?op=rollback&release=-x&revision=1&namespace=shop",
+				"tern-kube://mutate?op=rollback&release=shop-a&revision=0&namespace=shop",
+				"tern-kube://mutate?op=rollback&release=shop-a&revision=1e3&namespace=shop",
+				base .. "&name=web",
+				base .. "&file=%2Fa.yaml",
+				base .. "&replicas=2",
+				base .. "&wait=yes",
+				"tern-kube://mutate?op=delete&kind=deployment&name=web&release=shop-a",
+				"tern-kube://mutate?op=delete&kind=deployment&name=web&wait=1",
+			}
+		do
+			local r, e = Link.decode(bad)
+			expect(r).toBeNil()
+			expect(type(e)).toBe("string")
+		end
+		expect((Link.forRelease({ name = "shop-a", namespace = "shop" }, 0, ORIGIN))).toBeNil()
 	end)
 end)
 

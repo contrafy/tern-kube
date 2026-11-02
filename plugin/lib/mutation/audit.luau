@@ -25,6 +25,8 @@ export type Event = {
 	objects: { string }?,
 	-- Digests of the fingerprinted input files (-f, --patch-file, edit files).
 	files: { Fingerprint.FileDigest }?,
+	-- helm rollback: the release's latest revision when it was previewed.
+	fromRevision: number?,
 }
 
 export type FileEntry = { path: string, sha256: string }
@@ -38,6 +40,9 @@ export type Record = {
 	context: string,
 	context_source: string,
 	namespace: string?,
+	release: string?,
+	revision: number?,
+	from_revision: number?,
 	kubeconfig: string?,
 	cwd: string,
 	argv: { string },
@@ -116,6 +121,9 @@ function M.record(plan: Plan, event: Event): Record
 		context = plan.targetContext,
 		context_source = plan.contextSource,
 		namespace = plan.targetNamespace,
+		release = if plan.helm then plan.helm.release else nil,
+		revision = if plan.helm then plan.helm.revision else nil,
+		from_revision = if plan.helm then event.fromRevision else nil,
 		kubeconfig = plan.kubeconfig,
 		cwd = plan.cwd,
 		argv = M.redactArgv(plan.argv),
@@ -142,6 +150,9 @@ local ORDER = {
 	"context",
 	"context_source",
 	"namespace",
+	"release",
+	"revision",
+	"from_revision",
 	"kubeconfig",
 	"cwd",
 	"argv",

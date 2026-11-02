@@ -6,8 +6,10 @@ local Capture = require("../lens/capture")
 local Command = require("../kubectl/command")
 local Confirm = require("./confirm")
 local Diffseg = require("./diffseg")
+local HelmParse = require("../helm/parse")
 local Link = require("./link")
 local MutationView = require("../render/mutation_view")
+local RevDiff = require("../helm/revdiff")
 local Rollout = require("./rollout")
 local Session = require("./session")
 local T = require("./types")
@@ -91,13 +93,72 @@ end
 local function opLabel(s: State): string
 	local plan = s.plan
 	if plan then
-		return "kubectl " .. plan.operation
+		return (if plan.helm then "helm " else "kubectl ") .. plan.operation
 	elseif s.quick then
 		return (Session.quickLabel(s))
 	elseif s.link then
-		return "kubectl " .. s.link.op
+		return (if s.link.op == "rollback" then "helm " else "kubectl ") .. s.link.op
 	end
 	return "kubectl"
+end
+
+local function revisionText(revision: number?, status: string?): string
+	return (if revision then tostring(revision) else "?") .. (if status then " (" .. status .. ")" else "")
+end
+
+-- Release, revisions, chart and the option chips of a helm rollback.
+local function helmRows(s: State, plan: T.Plan, add: (string, { SpanLike }) -> ())
+	local h = plan.helm :: T.HelmRollback
+	local f = s.helmFacts
+	local latest = if f then f.latest else nil
+	local target = if f then f.target else nil
+	add("Release", { ui.span(h.release, "strong") })
+	add("Revision", {
+		ui.span(
+			revisionText(if latest then latest.revision else nil, if latest then latest.status else nil)
+				.. " → "
+				.. revisionText(h.revision, if target then target.info.status else nil),
+			"strong"
+		),
+	})
+	local x = if f then f.extras else nil
+	if latest and x then
+		local from = latest.chart .. " (app " .. latest.appVersion .. ")"
+		local to = x.chart.name .. "-" .. x.chart.version .. " (app " .. x.chart.appVersion .. ")"
+		add("Chart", if from == to then { ui.span(to, "muted") } else { ui.span(from .. " → " .. to, "warning") })
+	end
+	local o = h.options
+	add("Options", {
+		ui.span(
+			string.format(
+				"--timeout %ds%s%s%s%s",
+				o.timeoutS,
+				if o.wait then (if o.waitForJobs then " --wait --wait-for-jobs" else " --wait") else "",
+				if o.cleanupOnFail then " --cleanup-on-fail" else "",
+				if o.force then " --force" else "",
+				if o.noHooks then " --no-hooks" else ""
+			),
+			"mono"
+		),
+	})
+end
+
+-- Toggling an option is a new command: the block previews it again.
+local function helmOptionChips(s: State): Node?
+	local plan = s.plan
+	if plan == nil or plan.helm == nil or s.decided or not (s.phase == "ready" or s.phase == "error") then
+		return nil
+	end
+	local o = (plan.helm :: T.HelmRollback).options
+	local function opt(label: string, on: boolean, act: string): Node
+		return chip(label .. (if on then ": on" else ": off"), act, act, if on then "accent" else "neutral")
+	end
+	return ui.row({
+		ui.text({ ui.span("Options (preview again): ", "muted") }, { key = "t" }),
+		opt("Wait", o.wait, "helm-wait"),
+		opt("Cleanup on fail", o.cleanupOnFail, "helm-cleanup"),
+		opt("Force", o.force, "helm-force"),
+	}, { key = "helm-opts", wrap = true })
 end
 
 local function contextOf(s: State): string?
@@ -139,7 +200,9 @@ local function header(s: State): Node
 	local plan = s.plan
 	if plan then
 		local ns: string
-		if plan.family == "cordon" or plan.family == "uncordon" or plan.family == "drain" then
+		if plan.helm then
+			ns = (plan.helm :: T.HelmRollback).namespace .. " (release namespace)"
+		elseif plan.family == "cordon" or plan.family == "uncordon" or plan.family == "drain" then
 			ns = "cluster-scoped (nodes)"
 		elseif plan.family == "edit" then
 			ns = "as in the edited objects"
@@ -153,6 +216,9 @@ local function header(s: State): Node
 			ns = (plan.targetNamespace or "default") .. " (context default)"
 		end
 		add("Namespace", { ns })
+		if plan.helm then
+			helmRows(s, plan, add)
+		end
 		if plan.kubeconfig then
 			add("Kubeconfig", { ui.span(plan.kubeconfig :: string, "mono muted") })
 		end
@@ -337,18 +403,19 @@ local function segName(seg: Diffseg.Segment): string
 	return (seg.kind or "?") .. " " .. (if seg.namespace then seg.namespace .. "/" else "") .. (seg.name or seg.key)
 end
 
-local function diffCards(s: State): Node?
-	local diff = s.diff
-	if diff == nil or #diff.segments == 0 then
-		return nil
-	end
+type CardOpts = { prefix: string, expanded: { [number]: boolean }, focus: number?, masked: { [string]: boolean }? }
+
+local function segmentCards(segments: { Diffseg.Segment }, o: CardOpts): { Node }
 	local cards: { Node } = {}
-	for i, seg in diff.segments do
+	for i, seg in segments do
 		local text, hidden = hunks(seg)
 		local body: { Node } = {}
+		if o.masked and o.masked[seg.key] then
+			table.insert(body, ui.muted(RevDiff.MASKED_NOTE, { key = "masked" }))
+		end
 		if seg.binary then
 			table.insert(body, ui.muted("Binary or unreadable difference", { key = "bin" }))
-		else
+		elseif text ~= "" then
 			table.insert(
 				body,
 				{ k = "diff", p = { key = "diff", text = text, path = "object.yaml", mode = "unified" } }
@@ -368,17 +435,78 @@ local function diffCards(s: State): Node?
 		table.insert(
 			cards,
 			ui.card(head, body, {
-				key = "d" .. i,
+				key = o.prefix .. i,
 				collapsible = true,
-				collapsed = not s.expanded[i],
-				selected = s.focus == i,
+				collapsed = not o.expanded[i],
+				selected = o.focus == i,
 				inset = true,
 				tone = ACTION_TONE[seg.action],
 				role = "tern-kube.approve-diff",
 			})
 		)
 	end
-	return ui.col(cards, { key = "diffs" })
+	return cards
+end
+
+-- helm rollback: the change between the two stored revisions (what helm
+-- records), then the target manifest against the live objects.
+local function helmDiffCards(s: State, plan: T.Plan): Node?
+	local h = plan.helm :: T.HelmRollback
+	local f = s.helmFacts
+	if f == nil then
+		return nil
+	end
+	local latest = f.latest
+	local out: { Node } = {}
+	local rd = f.revdiff
+	if rd then
+		local title = string.format(
+			"Recorded change (helm revisions %s → %d)",
+			if latest then tostring(latest.revision) else "?",
+			h.revision
+		)
+		local cards = segmentCards(
+			rd.summary.segments,
+			{ prefix = "d", expanded = s.expanded, focus = s.focus, masked = rd.masked }
+		)
+		if #cards == 0 then
+			table.insert(cards, ui.muted("The two revisions render the same objects.", { key = "same" }))
+		end
+		table.insert(cards, 1, ui.text({ ui.span(title, "strong") }, { key = "title" }))
+		table.insert(out, ui.col(cards, { key = "diffs", role = "tern-kube.approve-helm-recorded" }))
+	end
+	local live = f.live
+	if live then
+		local cards = segmentCards(live.segments, { prefix = "l", expanded = s.liveExpanded })
+		if #cards == 0 then
+			table.insert(cards, ui.muted("The live objects already match the revision.", { key = "same" }))
+		end
+		table.insert(
+			cards,
+			1,
+			ui.text({
+				ui.span("Against live objects (kubectl diff)", "strong"),
+				ui.span("   approximate: helm merges three ways", "muted"),
+			}, { key = "title" })
+		)
+		table.insert(out, ui.col(cards, { key = "live", role = "tern-kube.approve-helm-live" }))
+	end
+	return if #out > 0 then ui.col(out, { key = "helm-diffs" }) else nil
+end
+
+local function diffCards(s: State): Node?
+	local plan = s.plan
+	if plan and plan.helm then
+		return helmDiffCards(s, plan)
+	end
+	local diff = s.diff
+	if diff == nil or #diff.segments == 0 then
+		return nil
+	end
+	return ui.col(
+		segmentCards(diff.segments, { prefix = "d", expanded = s.expanded, focus = s.focus }),
+		{ key = "diffs" }
+	)
 end
 
 local function keyName(key: string): string
@@ -776,6 +904,19 @@ local function confirmNodes(s: State, out: { Node })
 	table.insert(out, ui.row(buttons, { key = "buttons", wrap = true, role = "tern-kube.approve-buttons" }))
 end
 
+-- The newest revision after a rollback: "<release> is now at revision N
+-- (status): description".
+local function releaseSummary(s: State, stdout: string): string
+	local rows = HelmParse.history(stdout, s.decode)
+	local last = if rows then rows[#rows] else nil
+	if last == nil then
+		return "no revision listed"
+	end
+	local plan = s.plan
+	local name = if plan and plan.helm then (plan.helm :: T.HelmRollback).release else "the release"
+	return string.format("%s is now at revision %d (%s): %s", name, last.revision, last.status, last.description)
+end
+
 local function commandNode(s: State): Node?
 	if not s.showCommand or s.argv == nil then
 		return nil
@@ -870,6 +1011,8 @@ local function resultNodes(s: State, out: { Node })
 			local spans: { SpanLike } = { ui.span(run.step.label .. ": ", "strong") }
 			if o == nil then
 				table.insert(spans, ui.span("running …", "muted"))
+			elseif run.step.kind == "helm-history" and o.ok then
+				table.insert(spans, ui.span(releaseSummary(s, run.stdout or ""), "success"))
 			elseif run.step.kind == "targets" then
 				if o.ok then
 					table.insert(spans, ui.span(objectSummary(s, run.stdout or ""), "success"))
@@ -1008,6 +1151,7 @@ function M.view(s: State): View
 			ui.text({ ui.span("The shell stopped waiting; nothing was approved and nothing ran.", "warning") }),
 		}, { key = "expired", tone = "warning" }))
 	end
+	add(helmOptionChips(s))
 	add(commandNode(s))
 	add(stepsCard(s))
 	local summary = countBadges(s)
