@@ -1,0 +1,1 @@
+error: error parsing edit-input/edited-invalid.yaml: error converting YAML to JSON: yaml: line 7: did not find expected ',' or ']'

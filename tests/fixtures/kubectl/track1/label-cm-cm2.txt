@@ -1,0 +1,2 @@
+configmap/cm labeled (server dry run)
+configmap/cm2 labeled (server dry run)

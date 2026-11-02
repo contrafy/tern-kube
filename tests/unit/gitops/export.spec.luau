@@ -342,46 +342,4 @@ describe("gitops.export kustomization edits", function()
 	end)
 end)
 
-describe("gitops.export unified diff", function()
-	it("emits hunks with context and correct ranges", function()
-		local old = "a\nb\nc\nd\ne\nf\ng\nh\ni\nj\n"
-		local new = "a\nb\nc\nd\nE\nf\ng\nh\ni\nj\nk\n"
-		expect(Export.unified(old, new, "/p")).toBe(table.concat({
-			"--- /p",
-			"+++ /p",
-			"@@ -2,9 +2,10 @@",
-			" b",
-			" c",
-			" d",
-			"-e",
-			"+E",
-			" f",
-			" g",
-			" h",
-			" i",
-			" j",
-			"+k",
-			"",
-		}, "\n"))
-	end)
-
-	it("splits distant changes into separate hunks", function()
-		local a, b = {}, {}
-		for i = 1, 30 do
-			table.insert(a, tostring(i))
-			table.insert(b, if i == 2 or i == 28 then "x" else tostring(i))
-		end
-		local d = Export.unified(table.concat(a, "\n") .. "\n", table.concat(b, "\n") .. "\n", "/p") :: string
-		local hunks = {}
-		for h in string.gmatch(d, "@@ [^@]+ @@") do
-			table.insert(hunks, h)
-		end
-		expect(hunks).toEqual({ "@@ -1,5 +1,5 @@", "@@ -25,6 +25,6 @@" })
-	end)
-
-	it("diffs new files against /dev/null", function()
-		expect(Export.unified(nil, "a\n", "/p")).toBe("--- /dev/null\n+++ /p\n@@ -0,0 +1,1 @@\n+a\n")
-	end)
-end)
-
 return nil

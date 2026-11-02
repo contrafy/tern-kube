@@ -6,8 +6,8 @@
 #
 #   tk_begin NAME ARG      start a session for block arg ARG (URL or request path)
 #   tk_pump                execute pending effects until the session waits for the user
-#   tk_key NAME [TEXT] · tk_type TEXT · tk_action ACT [VALUE] · tk_tick ALIVE CANCELLED
-#   tk_expect VAR VALUE · tk_expect_has VAR TEXT · tk_note TEXT
+#   tk_key NAME [TEXT] · tk_keys NAME COUNT · tk_type TEXT · tk_action ACT [VALUE] · tk_tick ALIVE CANCELLED
+#   tk_expect VAR VALUE · tk_expect_has VAR TEXT · tk_expect_lacks VAR TEXT · tk_expect_line SIGN TEXT · tk_note TEXT
 #
 # Inputs (env): TK_KUBECONFIG (host kubeconfig the block resolves),
 # TK_PREVIEW_MS, TK_EXEC_MS, TK_MUTATIONS_ENABLED (true|false),
@@ -203,15 +203,32 @@ tk_key() { # NAME [TEXT]
 	tk_pump
 }
 
-tk_type() { # TEXT (letters, digits, - . / :)
+tk_type() { # TEXT (printable ASCII; a space is the "space" key)
 	text=$1
 	tk_log "user: types $text"
 	while [ -n "$text" ]; do
 		rest=${text#?}
 		ch=${text%"$rest"}
 		text=$rest
-		tk_event "{ t = \"key\", name = \"$ch\", text = \"$ch\", now = $(date +%s) },"
+		case $ch in
+		'"') esc='\"' ;;
+		'\') esc='\\' ;;
+		*) esc=$ch ;;
+		esac
+		name=$esc
+		[ "$ch" = ' ' ] && name=space
+		tk_event "{ t = \"key\", name = \"$name\", text = \"$esc\", now = $(date +%s) },"
 	done
+	tk_pump
+}
+
+tk_keys() { # NAME COUNT: one key pressed COUNT times (e.g. backspace to clear a prefill)
+	n=0
+	while [ "$n" -lt "$2" ]; do
+		tk_event "{ t = \"key\", name = \"$1\", now = $(date +%s) },"
+		n=$((n + 1))
+	done
+	tk_log "user: key $1 x$2"
 	tk_pump
 }
 
@@ -248,6 +265,22 @@ tk_expect_has() { # VAR TEXT
 	*"$2"*) tk_ok "$1 has '$2'" ;;
 	*) tk_fail "$1: expected to contain '$2', got '$v'" ;;
 	esac
+}
+
+tk_expect_lacks() { # VAR TEXT
+	eval "v=\${S_$1-}"
+	case $v in
+	*"$2"*) tk_fail "$1: must not contain '$2', got '$v'" ;;
+	*) tk_ok "$1 lacks '$2'" ;;
+	esac
+}
+
+tk_expect_line() { # SIGN TEXT: a diff line starting with SIGN (+ or -) that contains TEXT
+	if printf '%s\n' "$S_diff_text" | grep -F -- "$2" | grep -q "^$1"; then
+		tk_ok "diff line $1 ...$2"
+	else
+		tk_fail "no diff line '$1 ...$2' in: $(printf '%s' "$S_diff_text" | tr '\n' '|')"
+	fi
 }
 
 tk_check() { # DESCRIPTION COMMAND...

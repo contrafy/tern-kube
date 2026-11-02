@@ -147,8 +147,9 @@ local function quickAction(url: string, cx: EffectCx)
 	cx:open(url)
 end
 
--- Delete / Restart / Scale chips carry a tern-kube://mutate link; the window
--- opens the approve block for it, which previews before anything runs.
+-- Mutation chips (Delete, Restart, Label, Drain, ...) carry a
+-- tern-kube://mutate link; the window opens the approve block for it, which
+-- previews before anything runs.
 local function mutateAction(url: string, cx: EffectCx)
 	local req, err = Link.decode(url)
 	if req == nil then

@@ -1,0 +1,72 @@
+{
+    "kind": "ReplicaSet",
+    "apiVersion": "apps/v1",
+    "metadata": {
+        "name": "web-847df46fb8",
+        "namespace": "tern-test-t1",
+        "uid": "00030e11-0bd4-4288-9928-411b16d99a45",
+        "resourceVersion": "657758",
+        "generation": 3,
+        "creationTimestamp": "2026-10-30T21:54:07Z",
+        "labels": {
+            "pod-template-hash": "847df46fb8",
+            "t1app": "web",
+            "tern-t1": "yes"
+        },
+        "annotations": {
+            "deployment.kubernetes.io/desired-replicas": "2",
+            "deployment.kubernetes.io/max-replicas": "3",
+            "deployment.kubernetes.io/revision": "1"
+        },
+        "ownerReferences": [
+            {
+                "apiVersion": "apps/v1",
+                "kind": "Deployment",
+                "name": "web",
+                "uid": "51d18bb5-1e3f-4ec9-8074-781f59c5cc10",
+                "controller": true,
+                "blockOwnerDeletion": true
+            }
+        ]
+    },
+    "spec": {
+        "replicas": 0,
+        "selector": {
+            "matchLabels": {
+                "pod-template-hash": "847df46fb8",
+                "t1app": "web"
+            }
+        },
+        "template": {
+            "metadata": {
+                "labels": {
+                    "pod-template-hash": "847df46fb8",
+                    "t1app": "web",
+                    "tern-t1": "yes"
+                }
+            },
+            "spec": {
+                "containers": [
+                    {
+                        "name": "c",
+                        "image": "registry.k8s.io/pause:3.9",
+                        "resources": {},
+                        "terminationMessagePath": "/dev/termination-log",
+                        "terminationMessagePolicy": "File",
+                        "imagePullPolicy": "IfNotPresent"
+                    }
+                ],
+                "restartPolicy": "Always",
+                "terminationGracePeriodSeconds": 1,
+                "dnsPolicy": "ClusterFirst",
+                "securityContext": {},
+                "schedulerName": "default-scheduler"
+            }
+        }
+    },
+    "status": {
+        "replicas": 0,
+        "terminatingReplicas": 0,
+        "observedGeneration": 3
+    }
+}

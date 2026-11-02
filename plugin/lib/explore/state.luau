@@ -1327,6 +1327,10 @@ local function openQuick(s: State, action: string, ref: Ref, opts: { [string]: a
 end
 
 local function quick(s: State, action: string, effects: { Effect })
+	if Quick.gate(action) == "editor" and not s.config.mutations.enabled then
+		table.insert(effects, toast("error", "Mutations are disabled", "mutations.enabled is false in the config"))
+		return
+	end
 	if not M.resolved(s) then
 		table.insert(effects, toast("error", "No cluster target yet", "Pick a context first (c)"))
 		return
@@ -1373,8 +1377,9 @@ local function quick(s: State, action: string, effects: { Effect })
 	openQuick(s, action, ref, opts, effects)
 end
 
--- ctrl+d / ctrl+r / shift+s and the matching chips: open the approve block
--- for the focused object; it previews and confirms, Explore never mutates.
+-- ctrl+d / ctrl+r / shift+s / U p P t T X C u D and the matching chips:
+-- open the approve block for the focused object; it previews and confirms,
+-- Explore never mutates.
 local function mutate(s: State, op: string, effects: { Effect })
 	if not s.config.mutations.enabled then
 		table.insert(effects, toast("error", "Mutations are disabled", "mutations.enabled is false in the config"))
@@ -1753,6 +1758,26 @@ local function onKey(s: State, key: Key, effects: { Effect }): boolean
 		mutate(s, "restart", effects)
 	elseif ch == "S" or (name == "s" and key.shift) then
 		mutate(s, "scale", effects)
+	elseif ch == "U" or (name == "u" and key.shift) then
+		mutate(s, "undo", effects)
+	elseif ch == "P" or (name == "p" and key.shift) then
+		mutate(s, "resume", effects)
+	elseif ch == "T" or (name == "t" and key.shift) then
+		mutate(s, "annotate", effects)
+	elseif ch == "X" or (name == "x" and key.shift) then
+		mutate(s, "patch", effects)
+	elseif ch == "C" or (name == "c" and key.shift) then
+		mutate(s, "cordon", effects)
+	elseif ch == "D" or (name == "d" and key.shift) then
+		mutate(s, "drain", effects)
+	elseif ch == "p" and not key.shift then
+		mutate(s, "pause", effects)
+	elseif ch == "t" and not key.shift then
+		mutate(s, "label", effects)
+	elseif ch == "u" and not key.shift then
+		mutate(s, "uncordon", effects)
+	elseif ch == "e" and not key.shift then
+		quick(s, "edit", effects)
 	elseif name == "home" then
 		move(s, nil, 1)
 	elseif name == "end" then

@@ -1,0 +1,1 @@
+statefulset.apps/db rolled back (server dry run)

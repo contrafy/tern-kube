@@ -1,0 +1,7 @@
+apiVersion: lens.example.com/v1alpha1
+kind: Widget
+metadata:
+  name: w1
+  namespace: tern-test-t1
+spec:
+  color: [blue

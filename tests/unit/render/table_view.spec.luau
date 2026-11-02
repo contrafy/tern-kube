@@ -354,7 +354,63 @@ describe("table view mutation chips", function()
 		expect(chips.Delete.kind).toBe("pod")
 		expect(chips.Restart).toBeNil()
 		expect(chips.Scale).toBeNil()
-		expect(quickLabels(insp)).toEqual({ "Debug", "Logs", "Port-forward", "Shell" })
+		expect(quickLabels(insp)).toEqual({ "Debug", "Edit", "Logs", "Port-forward", "Shell" })
+		expect(chips.Label.op).toBe("label")
+		expect(chips.Annotate.op).toBe("annotate")
+		expect(chips.Patch.op).toBe("patch")
+		expect(chips.Patch.patch).toBeNil()
+	end)
+
+	local function chipLabels(chips: { [string]: Link.Request }): { string }
+		local out: { string } = {}
+		for label in chips do
+			table.insert(out, label)
+		end
+		table.sort(out)
+		return out
+	end
+
+	-- A table never shows spec.paused, so a Deployment row offers both;
+	-- the approve block's preview says which one would change nothing.
+	it("a deployment row offers the rollout verbs, both Pause and Resume, and the metadata verbs", function()
+		local insp = inspector(build("ns-apps/get_deployments"), "apps/Deployment/tern-test-apps/web", true)
+		expect(chipLabels(mutateChips(insp))).toEqual({
+			"Annotate",
+			"Delete",
+			"Label",
+			"Patch",
+			"Pause",
+			"Restart",
+			"Resume",
+			"Scale",
+			"Undo",
+		})
+		expect(table.find(quickLabels(insp), "Edit") ~= nil).toBe(true)
+	end)
+
+	-- STATUS says whether a node is cordoned: only the op that changes
+	-- something is offered.
+	it("a node row offers Cordon or Uncordon from STATUS, plus Drain and no namespace", function()
+		local f = runs.load("cluster/get_nodes")
+		local key = "/Node//tern-kube-dev-control-plane"
+		local ready = Capture.build(f.run, f.lines, f.status, { decode = json.decode })
+		local chips = mutateChips(inspector(ready, key, true))
+		expect(chipLabels(chips)).toEqual({ "Annotate", "Cordon", "Delete", "Drain", "Label", "Patch" })
+		expect(chips.Cordon.kind).toBe("node")
+		expect(chips.Cordon.namespace).toBeNil()
+		local cordoned: { string } = {}
+		for i, line in f.lines do
+			cordoned[i] = (string.gsub(line, " Ready ", " Ready,SchedulingDisabled "))
+		end
+		local off = Capture.build(f.run, cordoned, f.status, { decode = json.decode })
+		expect(chipLabels(mutateChips(inspector(off, key, true)))).toEqual({
+			"Annotate",
+			"Delete",
+			"Drain",
+			"Label",
+			"Patch",
+			"Uncordon",
+		})
 	end)
 
 	it("a CronJob row offers Run now", function()

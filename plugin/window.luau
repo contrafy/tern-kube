@@ -13,6 +13,8 @@ local APPROVE = "tern-kube.approve"
 local SETTINGS = "tern-kube.settings"
 local SETTINGS_URL = "tern-kube://settings"
 local SPOOL = tern.plugin.data .. "/spool"
+-- The shell guard core ships in the installed package; native edit runs it.
+local GUARD_CORE = tern.plugin.dir .. "/shell/tern-kube-guard"
 
 -- The KUBECONFIG the shell in `pane` had at its last prompt, when the opt-in
 -- shell snippet recorded one (shell/PROTOCOL.md "Pane env record").
@@ -47,6 +49,7 @@ local function launch(link: LinkRequest, req: Quick.Request, cx: WindowCx)
 		shellCommand = cfg.quick_actions.shell_command,
 		logsTail = cfg.quick_actions.logs_tail,
 		debugImage = cfg.quick_actions.debug_image,
+		guardCore = GUARD_CORE,
 	})
 	if cmd == nil then
 		cx:toast("error", "Tern Kube: invalid quick action", cerr)
@@ -69,7 +72,8 @@ end
 -- Quick actions open a new split (or tab) running a kubectl command rebuilt
 -- from the link's validated fields; the URL never supplies the command.
 -- Mutating ones go to the approve block first; it re-opens the link with a
--- single-use `confirm` token once the user confirmed the preview.
+-- single-use `confirm` token once the user confirmed the preview. Edit opens
+-- directly: the guard in the split asks for approval after the user saves.
 local function quickAction(link: LinkRequest, cx: WindowCx): RouteDecision?
 	local req, err = Quick.decode(link.url)
 	if req == nil then
@@ -94,7 +98,18 @@ local function quickAction(link: LinkRequest, cx: WindowCx): RouteDecision?
 			req.target = { context = req.target.context, kubeconfig = kubeconfig }
 		end
 	end
-	if Quick.mutates(req.action) then
+	local gate = Quick.gate(req.action)
+	if gate == "editor" then
+		if not ConfigHost.load().config.mutations.enabled then
+			cx:toast("error", "Mutations are disabled", "mutations.enabled is false in the config")
+			return nil
+		end
+		local okExists, present = pcall(tern.fs.exists, GUARD_CORE)
+		if not okExists or not present then
+			cx:toast("error", "Tern Kube: cannot edit", "shell/tern-kube-guard is missing from the plugin directory")
+			return nil
+		end
+	elseif gate == "approve" then
 		local url = Quick.encode(req.action, req.target, req.ref, req.opts)
 		return { block = APPROVE, args = { url or link.url } }
 	end
@@ -179,6 +194,7 @@ tern.command({
 		local url, err = Link.encode({
 			op = "apply",
 			recursive = false,
+			overwrite = false,
 			cwd = cwd or "/",
 			kubeconfig = paneKubeconfig(focused),
 		})

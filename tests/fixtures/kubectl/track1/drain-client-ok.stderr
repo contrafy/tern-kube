@@ -1,0 +1,1 @@
+Warning: deleting Pods that declare no controller: tern-test-t1/bare, tern-test-t1/ed; ignoring DaemonSet-managed Pods: tern-test-t1/ds-9rrlz

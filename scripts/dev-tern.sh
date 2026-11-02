@@ -17,7 +17,8 @@
 #                     a Dock/Finder (launchd) start has,
 #                     /usr/bin:/bin:/usr/sbin:/sbin, and no TKUBE_KUBECTL;
 #                     panes still get the sandbox zsh rc. --print shows the
-#                     environment
+#                     environment. TK_DEV_KUBE_EDITOR sets KUBE_EDITOR in
+#                     every pane and split (sandbox zshenv)
 #   link [DIR]        point <sandbox>/cfg/plugins/tern-kube.path at the repo root
 #                     (or DIR, e.g. a snapshot copy) and reload the daemon
 #   unlink            remove the link and reload
@@ -176,6 +177,11 @@ export KUBECONFIG='$kubeconfig'
 export KUBERC=off
 unset KUBECTL_EXTERNAL_DIFF
 EOF
+	# Panes and splits get KUBE_EDITOR only from here (Tern filters the launch
+	# environment); scenarios that drive `kubectl edit` set a scripted editor.
+	if [ -n "${TK_DEV_KUBE_EDITOR:-}" ]; then
+		echo "export KUBE_EDITOR='$TK_DEV_KUBE_EDITOR'" >>"$zdot/.zshenv"
+	fi
 	cat >"$zdot/.zshrc" <<EOF
 HISTFILE='$zdot/history'
 PROMPT='%1~ %# '

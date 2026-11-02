@@ -670,7 +670,7 @@ M.CATALOG = freezeDeep({
 		intSpec("query_timeout_ms", 500, 600000, "Each Explore kubectl call is killed after this many ms"),
 		intSpec("relationship_max_nodes", 1, 5000, "Objects in a relations graph before it is truncated"),
 	}),
-	sectionSpec("mutations", "Previews and confirmations for apply, delete, rollout restart and scale", {
+	sectionSpec("mutations", "Previews and confirmations for every guarded change", {
 		boolSpec("enabled", "Off hides every mutating action; the approve block refuses"),
 		boolSpec("interactive_guard", "Marks the opt-in shell guard as wanted (installed separately)"),
 		boolSpec("require_target_confirmation", "Mutations need a named or confirmed context, never an inferred one"),

@@ -104,7 +104,7 @@
       "additionalProperties": false
     },
     "mutations": {
-      "description": "Previews and confirmations for apply, delete, rollout restart and scale",
+      "description": "Previews and confirmations for every guarded change",
       "type": "object",
       "properties": {
         "enabled": {

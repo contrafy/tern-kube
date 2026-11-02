@@ -1,0 +1,73 @@
+{
+    "kind": "StatefulSet",
+    "apiVersion": "apps/v1",
+    "metadata": {
+        "name": "db",
+        "namespace": "tern-test-t1",
+        "uid": "d869d81b-47d8-405b-a9da-b7158f0d2266",
+        "resourceVersion": "657783",
+        "generation": 2,
+        "creationTimestamp": "2026-10-30T21:54:07Z",
+        "annotations": {
+            "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"apps/v1\",\"kind\":\"StatefulSet\",\"metadata\":{\"annotations\":{},\"name\":\"db\",\"namespace\":\"tern-test-t1\"},\"spec\":{\"replicas\":1,\"selector\":{\"matchLabels\":{\"t1app\":\"db\"}},\"serviceName\":\"db\",\"template\":{\"metadata\":{\"labels\":{\"t1app\":\"db\",\"tern-t1\":\"yes\"}},\"spec\":{\"containers\":[{\"image\":\"registry.k8s.io/pause:3.9\",\"imagePullPolicy\":\"IfNotPresent\",\"name\":\"c\"}],\"terminationGracePeriodSeconds\":1}}}}\n"
+        }
+    },
+    "spec": {
+        "replicas": 1,
+        "selector": {
+            "matchLabels": {
+                "t1app": "db"
+            }
+        },
+        "template": {
+            "metadata": {
+                "labels": {
+                    "t1app": "db",
+                    "tern-t1": "yes"
+                }
+            },
+            "spec": {
+                "containers": [
+                    {
+                        "name": "c",
+                        "image": "registry.k8s.io/pause:3.9",
+                        "resources": {},
+                        "terminationMessagePath": "/dev/termination-log",
+                        "terminationMessagePolicy": "File",
+                        "imagePullPolicy": "IfNotPresent"
+                    }
+                ],
+                "restartPolicy": "Always",
+                "terminationGracePeriodSeconds": 1,
+                "dnsPolicy": "ClusterFirst",
+                "securityContext": {},
+                "schedulerName": "default-scheduler"
+            }
+        },
+        "serviceName": "db",
+        "podManagementPolicy": "OrderedReady",
+        "updateStrategy": {
+            "type": "RollingUpdate",
+            "rollingUpdate": {
+                "partition": 0,
+                "maxUnavailable": 1
+            }
+        },
+        "revisionHistoryLimit": 10,
+        "persistentVolumeClaimRetentionPolicy": {
+            "whenDeleted": "Retain",
+            "whenScaled": "Retain"
+        }
+    },
+    "status": {
+        "observedGeneration": 2,
+        "replicas": 1,
+        "readyReplicas": 1,
+        "currentReplicas": 1,
+        "updatedReplicas": 1,
+        "currentRevision": "db-74b565c789",
+        "updateRevision": "db-74b565c789",
+        "collisionCount": 0,
+        "availableReplicas": 1
+    }
+}

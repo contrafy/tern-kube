@@ -279,4 +279,105 @@ describe("mutation plan execution argv", function()
 	end)
 end)
 
+describe("mutation plan: track 1 guarded verbs", function()
+	it("detects every new family and its operation", function()
+		local cases = {
+			{ "kubectl rollout undo deployment/web", "undo", "rollout undo" },
+			{ "kubectl rollout pause deployment/web", "pause", "rollout pause" },
+			{ "kubectl rollout resume deployment/web", "resume", "rollout resume" },
+			{ "kubectl patch configmap/cm -p {}", "patch", "patch" },
+			{ "kubectl label configmap/cm a=b", "label", "label" },
+			{ "kubectl annotate configmap/cm a=b", "annotate", "annotate" },
+			{ "kubectl cordon n1", "cordon", "cordon" },
+			{ "kubectl uncordon n1", "uncordon", "uncordon" },
+			{ "kubectl drain n1 --ignore-daemonsets", "drain", "drain" },
+		}
+		for _, c in cases do
+			local p = plan(c[1])
+			expect(p.family).toBe(c[2])
+			expect(p.operation).toBe(c[3])
+		end
+	end)
+
+	it("records label edits, --overwrite and drops the edits from the targets", function()
+		local p = plan("kubectl label configmap cm a=b old- --overwrite")
+		expect(p.edits[1]).toEqual({ key = "a", value = "b", remove = false })
+		expect(p.edits[2].key).toBe("old")
+		expect(p.edits[2].value).toBeNil()
+		expect(p.edits[2].remove).toBe(true)
+		expect(#p.edits).toBe(2)
+		expect(p.overwrite).toBe(true)
+		expect(#p.resources).toBe(1)
+		expect(p.resources[1].name).toBe("cm")
+	end)
+
+	it("records patch files, the patch type and the undo revision", function()
+		local p = plan("kubectl patch widget/w1 --type=merge --patch-file=fix.yaml")
+		expect(p.patchFiles).toEqual({ "fix.yaml" })
+		expect(p.patchType).toBe("merge")
+		expect(plan("kubectl rollout undo deployment/web --to-revision=3").toRevision).toBe(3)
+	end)
+
+	it("reads drain options and never pins a namespace for node verbs", function()
+		local p = plan("kubectl drain node/n1 --ignore-daemonsets --grace-period=0 --timeout=2m --pod-selector=app=x")
+		local d = p.drain :: T.DrainOpts
+		expect(d.ignoreDaemonsets).toBe(true)
+		expect(d.deleteEmptyDir).toBe(false)
+		expect(d.gracePeriod).toBe(0)
+		expect(d.timeout).toBe("2m")
+		expect(d.podSelector).toBe("app=x")
+		expect(p.targetNamespace).toBeNil()
+		expect(p.resources[1].kind).toBe("Node")
+		expect(p.resources[1].name).toBe("n1")
+	end)
+
+	it("lets --local and --list through: they never contact the cluster or change nothing", function()
+		expect(rejected("kubectl patch -f cm.yaml -p {} --local")).toEqual({ "info:not-mutation" })
+		expect(rejected("kubectl label -f cm.yaml a=b --local")).toEqual({ "info:not-mutation" })
+		expect(rejected("kubectl annotate configmap/cm --list")).toEqual({ "info:not-mutation" })
+	end)
+
+	it("lets dry runs through for verbs that have one", function()
+		expect(rejected("kubectl label configmap/cm a=b --dry-run=server")).toEqual({ "info:dry-run" })
+		expect(rejected("kubectl drain n1 --dry-run=client")).toEqual({ "info:dry-run" })
+	end)
+
+	it("fails closed on --dry-run for pause, which kubectl does not know", function()
+		expect(rejected("kubectl rollout pause deployment/web --dry-run=server")).toEqual({ "error:unknown-flag" })
+	end)
+
+	it("needs a patch and a target for patch, and an edit for label", function()
+		expect(textOf("kubectl patch configmap/cm")).toContain("-p PATCH or --patch-file")
+		expect(rejected("kubectl patch configmap -p {}")).toEqual({ "error:missing-target" })
+		expect(textOf("kubectl label configmap/cm")).toContain("KEY=VALUE or KEY-")
+		expect(rejected("kubectl label configmap a=b")).toEqual({ "error:missing-target" })
+	end)
+
+	it("refuses patch input it cannot fingerprint", function()
+		expect(rejected("kubectl patch configmap/cm --patch-file=-")).toEqual({ "error:stdin" })
+	end)
+
+	it("limits undo and pause/resume to the kinds kubectl supports", function()
+		expect(textOf("kubectl rollout undo configmap/cm")).toContain("deployments, daemonsets and statefulsets")
+		expect(textOf("kubectl rollout pause daemonset/ds")).toContain("deployments only")
+		expect(rejected("kubectl rollout undo deployment")).toEqual({ "error:missing-target" })
+		expect(plan("kubectl rollout undo deployment -l app=web").selector).toBe("app=web")
+	end)
+
+	it("takes node names only for cordon, uncordon and drain", function()
+		expect(rejected("kubectl cordon")).toEqual({ "error:missing-target" })
+		expect(rejected("kubectl cordon pod/x")).toEqual({ "error:invalid" })
+		expect(plan("kubectl cordon -l pool=a").selector).toBe("pool=a")
+	end)
+
+	it("plans kubectl edit only with an edit request; a plain edit can never be approved", function()
+		expect(textOf("kubectl edit configmap/cm")).toContain("approved after you save")
+		local env = table.clone(ENV)
+		env.edit = { file = "/tmp/kubectl-edit-1.yaml", original = "/tmp/tkube-edit.x/original.yaml" }
+		local p = plan("kubectl edit configmap/cm", env)
+		expect(p.family).toBe("edit")
+		expect(p.edit).toEqual(env.edit)
+	end)
+end)
+
 return nil

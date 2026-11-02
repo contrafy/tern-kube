@@ -263,6 +263,8 @@ export type Req = {
 	timeout: number?,
 	fingerprint: string?,
 	nonce: string?,
+	-- Edit approvals: `{"file":..,"original":..}` (paths as given).
+	edit: { file: string, original: string }?,
 }
 
 -- A guard request whose fingerprint is what the block will compute with M.sha.
@@ -289,7 +291,7 @@ function M.request(r: Req): string
 	return string.format(
 		'{"version":1,"nonce":%s,"argv":[%s],"program":"/usr/local/bin/kubectl","cwd":%s,"kubeconfig":%s,'
 			.. '"context":%s,"context_source":%s,"namespace":%s,"pane":%s,"files":[%s],"fingerprint":%s,'
-			.. '"created_at":%d,"timeout_s":%d}',
+			.. '"created_at":%d,"timeout_s":%d%s}',
 		q(r.nonce or M.NONCE),
 		table.concat(args, ","),
 		q(r.cwd or "/work"),
@@ -301,7 +303,8 @@ function M.request(r: Req): string
 		table.concat(fs, ","),
 		q(fp :: string),
 		r.created or 990,
-		r.timeout or 600
+		r.timeout or 600,
+		if r.edit then string.format(',"edit":{"file":%s,"original":%s}', q(r.edit.file), q(r.edit.original)) else ""
 	)
 end
 

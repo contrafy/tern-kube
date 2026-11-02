@@ -49,7 +49,14 @@ context came from, and only refreshes when you ask.
 | `s` `l` `shift+f` | shell, follow logs, port-forward in a split |
 | `c` `n` `:` | context, namespace, kind |
 | `ctrl+d` `ctrl+r` `shift+s` | delete, rollout restart, scale |
+| `e` | edit in a split, approve after saving |
+| `t` `T` `X` | label, annotate, patch |
+| `U` `p` `P` | rollout undo, pause, resume |
+| `C` `u` `D` | cordon, uncordon, drain |
 | `r` `Y` `?` | refresh, copy the command, help |
+
+Inside the GitOps views (drift, export, git), a view's own keys take
+precedence: there `t`, `X`, `e`, `p` and `P` keep their view meaning.
 
 Shell, logs and port-forward are also chips in the lens inspector (two
 clicks from any row). They open beside the pane by default; see
@@ -57,19 +64,23 @@ clicks from any row). They open beside the pane by default; see
 
 ## Changes
 
-Delete, restart, scale, debug, CronJob run-now (Explore keys or inspector
+Delete, rollout restart/undo/pause/resume, scale, patch, label, annotate,
+cordon, uncordon, drain, debug, CronJob run-now (Explore keys or inspector
 chips) and **Tern Kube: Apply file or directory** open an approval block
-first: server dry run, `kubectl diff` per resource, then a confirmation
-scaled to the risk. Deletes and other broad changes need the target typed.
+first: server dry run, `kubectl diff` or a before/after object diff per
+resource, then a confirmation scaled to the risk. Edit (`e` or the Edit
+chip) opens `kubectl edit` in a split; after you save, the approval block
+shows the diff before kubectl applies it. Deletes and other broad changes need the target typed.
 Nothing runs if the preview fails or the inputs or target change before
 you confirm.
 
 ![Approving an apply with per-resource diffs](docs/screenshots/m3-diff-expanded-dark-wide.png)
 
 Typed commands can get the same preview with the opt-in shell guard for
-zsh, bash and fish: `kubectl apply`, `delete`, `scale` and
-`rollout restart` wait for your approval in Tern; everything else runs
-untouched. It is a seatbelt, not a policy: `command kubectl` and scripts
+zsh, bash and fish: `kubectl apply`, `delete`, `scale`, `patch`, `label`,
+`annotate`, `cordon`, `uncordon`, `drain`, `rollout restart|undo|pause|resume`
+and `edit` (after you save) wait for your approval in Tern; everything else
+runs untouched. It is a seatbelt, not a policy: `command kubectl` and scripts
 bypass it. Setup: [shell/README.md](shell/README.md).
 
 ## GitOps
@@ -149,19 +160,19 @@ v1.0 is when every row reads done. Release history: [CHANGELOG.md](CHANGELOG.md)
 | Debug container, node debug pod, CronJob run now | done |
 | New split (right, down) or tab; context and kubeconfig pinned | done |
 | **Changes (mutations)** | |
-| Delete, rollout restart, scale from Explore keys or lens chips | done |
+| Delete, rollout restart/undo/pause/resume, scale, patch, label, annotate from Explore keys or lens chips | done |
 | **Tern Kube: Apply file or directory**, Kustomize included | done |
 | Approve block: server dry run, per-resource `kubectl diff` | done |
 | Risk tiers; re-verifies argv, target and files before running | done |
 | JSON-lines audit log | done |
-| `rollout undo`/`pause`/`resume`, `patch`, `label`, `annotate` | planned |
-| `cordon`, `uncordon`, `drain`; `edit` as preview then apply | planned |
+| Before/after object diffs for `patch`, `label`, `annotate`, `rollout undo`/`pause`/`resume` | done |
+| `cordon`, `uncordon`, `drain` with eviction and PodDisruptionBudget preview; `edit` as preview then apply | done |
 | Helm rollback through the approve block | planned |
 | **Shell guard** | |
 | Opt-in for zsh, bash and fish; one POSIX `sh` core | done |
 | Guards `apply`, `delete`, `scale`, `rollout restart` | done |
 | Fails closed outside Tern, on timeout or mismatch | done |
-| Guards the planned verbs above | planned |
+| Guards `rollout undo`/`pause`/`resume`, `patch`, `label`, `annotate`, `cordon`, `uncordon`, `drain`, `edit` | done |
 | **GitOps** | |
 | Manifest index: YAML, Kustomize, configured Helm releases | done |
 | Open manifest at its line; diff vs live object | done |
@@ -183,24 +194,24 @@ v1.0 is when every row reads done. Release history: [CHANGELOG.md](CHANGELOG.md)
 | Remote SSH hosts | planned |
 | fish as login shell | planned |
 
-| Kind | Lens | Relations | Shell/logs | Port-fwd | Restart/scale | Delete | Manifest |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| Pods | done | done | done | done | - | done | done |
-| Deployments | done | done | done | done | done | done | done |
-| StatefulSets | done | done | done | - | done | done | done |
-| DaemonSets | done | done | done | - | done | done | done |
-| ReplicaSets | done | done | done | - | done | done | done |
-| Jobs | done | done | done | - | - | done | done |
-| CronJobs | done | done | - | - | - | done | done |
-| Services | done | done | - | done | - | done | done |
-| Ingresses | done | done | - | - | - | done | done |
-| Nodes | done | partial | done | - | - | done | - |
-| Namespaces | done | - | - | - | - | done | done |
-| ConfigMaps | done | partial | - | - | - | done | done |
-| Secrets | done | partial | - | - | - | done | done |
-| Events | done | - | - | - | - | - | - |
-| Custom resources | done | partial | - | - | - | done | done |
-| Helm releases | - | planned | - | - | - | - | partial |
+| Kind | Lens | Relations | Shell/logs | Port-fwd | Rollout/scale | Edit/label/patch | Cordon/drain | Delete | Manifest |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Pods | done | done | done | done | - | done | - | done | done |
+| Deployments | done | done | done | done | done | done | - | done | done |
+| StatefulSets | done | done | done | - | done | done | - | done | done |
+| DaemonSets | done | done | done | - | done | done | - | done | done |
+| ReplicaSets | done | done | done | - | done | done | - | done | done |
+| Jobs | done | done | done | - | - | done | - | done | done |
+| CronJobs | done | done | - | - | - | done | - | done | done |
+| Services | done | done | - | done | - | done | - | done | done |
+| Ingresses | done | done | - | - | - | done | - | done | done |
+| Nodes | done | partial | done | - | - | done | done | done | - |
+| Namespaces | done | - | - | - | - | done | - | done | done |
+| ConfigMaps | done | partial | - | - | - | done | - | done | done |
+| Secrets | done | partial | - | - | - | done | - | done | done |
+| Events | done | - | - | - | - | - | - | - | - |
+| Custom resources | done | partial | - | - | - | done | - | done | done |
+| Helm releases | - | planned | - | - | - | - | - | - | partial |
 
 `-`: not applicable or outside v1.0. partial: Nodes, ConfigMaps and Secrets
 appear only as relations of Pods; custom resources show owners only; Helm

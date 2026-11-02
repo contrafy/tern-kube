@@ -14,21 +14,27 @@
 --
 -- Pipeline: resolve the context (when not given) -> `config view --minify`
 -- (the context exists; its cluster server is recorded) -> plan -> input
--- digests -> fingerprint -> preview steps (in parallel) -> risk tier. On
+-- digests -> fingerprint -> preview steps (in parallel) -> stage-2 steps
+-- that need stage-1 output (undo revisions, edit dry runs) -> risk tier. On
 -- confirm everything that decides the target is read again (digests,
--- fingerprint, server, current-context when inferred) and any change refuses.
+-- fingerprint, server, current-context when inferred, undo revision list)
+-- and any change refuses.
 -- A result whose generation is not current is ignored: processes cannot be
 -- killed, so "cancel" means dropping late callbacks.
 local Audit = require("./audit")
 local Command = require("../kubectl/command")
 local Confirm = require("./confirm")
 local Diffseg = require("./diffseg")
+local Drain = require("./drain")
+local Edit = require("./edit")
 local Fingerprint = require("./fingerprint")
 local Link = require("./link")
+local Objdiff = require("./objdiff")
 local ParseMutation = require("../parse/mutation")
 local Plan = require("./plan")
 local Quick = require("../actions/quick")
 local Risk = require("./risk")
+local Rollout = require("./rollout")
 local Steps = require("./steps")
 local T = require("./types")
 local Textfield = require("../textfield")
@@ -108,6 +114,11 @@ export type Config = {
 	quick: Quick.Settings,
 }
 
+-- How the host's JSON decoder marks null and `[]` (tern.json.null, the
+-- encoder's view of an empty table) so object diffs render them like
+-- `kubectl get -o yaml`.
+export type JsonShape = { null: any?, isList: ((t: { [any]: any }) -> boolean)? }
+
 export type Init = {
 	args: { string },
 	now: number,
@@ -124,6 +135,7 @@ export type Init = {
 	-- Live pane ids at init.
 	panes: { string }?,
 	decode: (string) -> any,
+	json: JsonShape?,
 }
 
 export type GuardRequest = {
@@ -139,6 +151,8 @@ export type GuardRequest = {
 	namespace: string?,
 	pane: string,
 	files: { Fingerprint.FileDigest },
+	-- Edit approvals (shell guard edit hook).
+	edit: T.EditInput?,
 	fingerprint: string,
 	createdAt: number,
 	timeoutS: number,
@@ -200,12 +214,33 @@ export type State = {
 	dryRun: Types.MutationParse?,
 	targets: { Types.ResourceRef }?,
 	replicasNow: { [string]: number },
+	-- Decoded `targets` objects and their before/after diffs (families
+	-- without kubectl diff); s.diff holds objects.summary.
+	live: { any }?,
+	objects: Objdiff.Result?,
+	drainFacts: Drain.Facts?,
+	undo: { Rollout.UndoTarget }?,
+	editSet: Edit.EditSet?,
+	editFacts: Risk.EditFacts?,
+	-- edit: the original file, the baseline of the manifest heuristics.
+	baseline: { T.Manifest }?,
+	-- Steps added after stage 1 settled.
+	stage: number,
+	-- Why stage 2 could not be planned; fails the preview.
+	followUpError: string?,
+	json: JsonShape,
 	assessment: T.Assessment?,
 	requirements: Confirm.Requirements?,
 	previewedAt: number?,
 	gen: number,
 	pending: { [string]: boolean },
-	verify: { files: { Fingerprint.FileDigest }?, fingerprint: string?, target: TargetInfo?, current: string? },
+	verify: {
+		files: { Fingerprint.FileDigest }?,
+		fingerprint: string?,
+		target: TargetInfo?,
+		current: string?,
+		history: StepRun?,
+	},
 	typed: string,
 	-- Caret and undo history of the typed field (its text is `typed`).
 	input: Textfield.Field?,
@@ -249,7 +284,7 @@ list() {
 		kind=${item%%:*}
 		p=${item#*:}
 		case $p in /*) ;; *) p=$cwd/$p ;; esac
-		if [ "$mode" = exact ]; then printf '%s\n' "$p"; continue; fi
+		if [ "$mode" = exact ] || [ "$kind" = p ]; then printf '%s\n' "$p"; continue; fi
 		if [ -d "$p" ]; then
 			while :; do case $p in /) break ;; */) p=${p%/} ;; *) break ;; esac; done
 			case $(cd -- "$p" && find . -name "*$nl*") in ?*) printf '!a file name under %s contains a newline\n' "$p"; continue ;; esac
@@ -353,6 +388,30 @@ local function outcomeOf(step: T.Step, r: ProcessResult): Steps.Outcome
 	return Steps.outcome(step, { code = code, stdout = r.stdout, stderr = r.stderr, timedOut = r.timed_out })
 end
 
+-- `Kind ns/name` of what the preview resolved: the targets, else the
+-- objects kubectl diff reported (apply).
+local function previewObjects(s: State): { string }?
+	local out: { string } = {}
+	if s.targets then
+		for _, r in s.targets :: { Types.ResourceRef } do
+			table.insert(out, r.kind .. " " .. (if r.namespace then r.namespace .. "/" else "") .. r.name)
+		end
+	elseif s.diff then
+		for _, seg in (s.diff :: Diffseg.Summary).segments do
+			table.insert(
+				out,
+				(seg.kind or "?")
+					.. " "
+					.. (if seg.namespace then seg.namespace .. "/" else "")
+					.. (seg.name or seg.key)
+			)
+		end
+	else
+		return nil
+	end
+	return out
+end
+
 local function audit(s: State, effects: { Effect }, decision: Audit.Decision, exitCode: number?)
 	local plan = s.plan
 	if plan == nil then
@@ -369,6 +428,8 @@ local function audit(s: State, effects: { Effect }, decision: Audit.Decision, ex
 		decidedAt = s.now,
 		startedAt = if exec then exec.startedAt else nil,
 		finishedAt = if exec then exec.finishedAt else nil,
+		objects = previewObjects(s),
+		files = s.files,
 	})
 	table.insert(effects, { t = "audit", line = Audit.line(record) })
 end
@@ -470,6 +531,23 @@ function M.parseRequest(path: string, text: string, decode: (string) -> any): (G
 		end
 		table.insert(files, { path = f.path, size = f.size, sha256 = f.sha256 })
 	end
+	local edit: T.EditInput? = nil
+	if doc.edit ~= nil then
+		local e = doc.edit
+		if type(e) ~= "table" or not isAbs(e.file) or not isAbs(e.original) or e.file == e.original then
+			return nil, "the request edit must name two absolute paths (file, original)"
+		end
+		local listed = 0
+		for _, f in files do
+			if f.path == e.file or f.path == e.original then
+				listed += 1
+			end
+		end
+		if listed ~= 2 then
+			return nil, "the request edit files must both be listed in files"
+		end
+		edit = { file = e.file, original = e.original }
+	end
 	return {
 		path = path,
 		dir = dir,
@@ -483,6 +561,7 @@ function M.parseRequest(path: string, text: string, decode: (string) -> any): (G
 		namespace = namespace,
 		pane = doc.pane,
 		files = files,
+		edit = edit,
 		fingerprint = doc.fingerprint,
 		createdAt = doc.created_at,
 		timeoutS = doc.timeout_s,
@@ -609,6 +688,9 @@ local function digestArgv(s: State, plan: T.Plan): { string }?
 		if plan.kustomize then
 			table.insert(items, "k:" .. plan.kustomize)
 		end
+		for _, f in plan.patchFiles do
+			table.insert(items, "p:" .. f)
+		end
 	end
 	if #items == 0 then
 		return nil
@@ -687,7 +769,50 @@ local function startSteps(s: State, effects: { Effect })
 			s.pending.manifests = true
 			table.insert(effects, { t = "read", tag = "manifests", gen = s.gen, paths = paths })
 		end
+	elseif plan.edit then
+		local edit = plan.edit :: T.EditInput
+		s.pending.manifests = true
+		table.insert(effects, { t = "read", tag = "manifests", gen = s.gen, paths = { edit.file, edit.original } })
 	end
+end
+
+local function stepResults(s: State): { [string]: Steps.StepResult }
+	local out: { [string]: Steps.StepResult } = {}
+	for _, run in s.steps do
+		local o = run.outcome
+		out[run.step.id] = {
+			ok = o ~= nil and o.ok,
+			code = nil,
+			stdout = run.stdout or "",
+			stderr = run.stderr or "",
+		}
+	end
+	return out
+end
+
+-- Stage 2 starts once every stage-1 step succeeded (soft failures aside);
+-- false when there is none and the preview can finish.
+local function startStage2(s: State, effects: { Effect }): boolean
+	local plan = s.plan :: T.Plan
+	s.stage = 2
+	for _, run in s.steps do
+		if not run.step.soft and (run.outcome == nil or not (run.outcome :: Steps.Outcome).ok) then
+			return false
+		end
+	end
+	local more, err = Steps.followUp(plan, stepResults(s), s.config.previewTimeoutMs, s.decode)
+	if err then
+		s.followUpError = err
+		return false
+	end
+	if more == nil or #more == 0 then
+		return false
+	end
+	for _, step in more do
+		table.insert(s.steps, { step = step, status = "running" })
+		emitRun(s, effects, "step:" .. step.id, step.argv, { env = step.env, cwd = plan.cwd, timeout = step.timeoutMs })
+	end
+	return true
 end
 
 local function decodeTargets(s: State, stdout: string): any
@@ -729,7 +854,158 @@ local VERB: { [T.Family]: string } = {
 	["debug-pod"] = "debug",
 	["debug-node"] = "debug",
 	["cronjob-run"] = "create",
+	undo = "rollout",
+	cordon = "cordon",
+	uncordon = "uncordon",
 }
+
+local function runOf(s: State, id: string): StepRun?
+	for _, run in s.steps do
+		if run.step.id == id then
+			return run
+		end
+	end
+	return nil
+end
+
+local function okRun(s: State, id: string): StepRun?
+	local run = runOf(s, id)
+	return if run and run.outcome and (run.outcome :: Steps.Outcome).ok then run else nil
+end
+
+local function decodeOne(s: State, text: string): any
+	local ok, v = pcall(s.decode, text)
+	return if ok then v else nil
+end
+
+-- After states per family (plan section 2.3); nil when the family has no
+-- object diff or its inputs are missing.
+local function afterObjects(s: State, plan: T.Plan, live: { any }): { any }?
+	local f = plan.family
+	if f == "patch" or f == "label" or f == "annotate" then
+		local run = okRun(s, "after")
+		return if run then (Objdiff.decodeStream(run.stdout or "", s.decode)) else nil
+	elseif f == "pause" or f == "resume" then
+		local out: { any } = {}
+		for _, obj in live do
+			table.insert(out, Rollout.pausedAfter(obj, f == "pause"))
+		end
+		return out
+	elseif f == "cordon" or f == "uncordon" or f == "drain" then
+		local out: { any } = {}
+		for _, obj in live do
+			table.insert(out, Rollout.cordonAfter(obj, f ~= "uncordon"))
+		end
+		return out
+	elseif f == "undo" then
+		local out: { any } = {}
+		for _, obj in live do
+			local key = Objdiff.identity(obj)
+			local run = if key then okRun(s, "revision:" .. key) else nil
+			local revision = if run then decodeOne(s, run.stdout or "") else nil
+			if revision ~= nil then
+				table.insert(out, Rollout.undoAfter(obj, revision))
+			end
+		end
+		return out
+	elseif f == "edit" then
+		local out: { any } = {}
+		for _, run in s.steps do
+			if run.step.kind == "after" and run.outcome and (run.outcome :: Steps.Outcome).ok then
+				local obj = decodeOne(s, run.stdout or "")
+				if obj ~= nil then
+					table.insert(out, obj)
+				end
+			end
+		end
+		return out
+	end
+	return nil
+end
+
+-- Only objects both sides know are diffed: a missing side means a step
+-- did not cover it, not that it would be created or deleted.
+local function computeObjects(s: State, plan: T.Plan)
+	local targets = okRun(s, "targets")
+	if targets == nil or plan.family == "apply" then
+		return
+	end
+	local live = Objdiff.decodeStream(targets.stdout or "", s.decode)
+	if live == nil then
+		return
+	end
+	s.live = live
+	local after = afterObjects(s, plan, live :: { any })
+	if after == nil then
+		return
+	end
+	local both: { Objdiff.Pair } = {}
+	for _, p in Objdiff.pair(live :: { any }, after :: { any }) do
+		if p.before ~= nil and p.after ~= nil then
+			table.insert(both, p)
+		end
+	end
+	s.objects = Objdiff.compute(both, {
+		showSecretValues = s.config.showSecretValues,
+		null = s.json.null,
+		isList = s.json.isList,
+	})
+	s.diff = (s.objects :: Objdiff.Result).summary
+end
+
+local function computeFamilyFacts(s: State, plan: T.Plan)
+	if plan.family == "drain" then
+		local client = runOf(s, "dry-run")
+		local server = runOf(s, "evict")
+		s.drainFacts = Drain.merge(
+			Drain.parse(if client then client.stdout or "" else "", if client then client.stderr or "" else ""),
+			if server then Drain.parse(server.stdout or "", server.stderr or "") else nil
+		)
+	elseif plan.family == "undo" and okRun(s, "targets") and okRun(s, "history") then
+		local plans = Steps.undoPlans(plan, stepResults(s), s.decode)
+		if plans then
+			local out: { Rollout.UndoTarget } = {}
+			for _, u in plans do
+				table.insert(out, u.target)
+			end
+			s.undo = out
+		end
+	elseif plan.family == "edit" then
+		local original, edited = okRun(s, "convert-original"), runOf(s, "convert-edited")
+		local facts: Risk.EditFacts = { renamed = {}, liveChanged = {}, rejected = nil, changed = 0 }
+		if edited and not (edited.outcome and (edited.outcome :: Steps.Outcome).ok) then
+			facts.rejected = Steps.headline(edited.stderr)
+		end
+		for _, run in s.steps do
+			if run.step.kind == "after" and run.outcome and not (run.outcome :: Steps.Outcome).ok then
+				facts.rejected = facts.rejected or Steps.headline(run.stderr)
+			end
+		end
+		if original and edited and facts.rejected == nil then
+			local set = Edit.plan(original.stdout or "", edited.stdout or "")
+			if set then
+				s.editSet = set
+				facts.renamed = table.clone(set.renamed)
+				facts.changed = #set.changes
+				local versions: { [string]: string } = {}
+				for _, obj in s.live or {} :: { any } do
+					local key = Objdiff.identity(obj)
+					local rv = if type(obj.metadata) == "table" then obj.metadata.resourceVersion else nil
+					if key and type(rv) == "string" then
+						versions[key] = rv
+					end
+				end
+				for _, c in set.changes do
+					local now = versions[c.key]
+					if c.liveVersion and now and now ~= c.liveVersion then
+						table.insert(facts.liveChanged, c.key)
+					end
+				end
+			end
+		end
+		s.editFacts = facts
+	end
+end
 
 local function finishPreview(s: State, effects: { Effect })
 	local plan = s.plan :: T.Plan
@@ -737,7 +1013,7 @@ local function finishPreview(s: State, effects: { Effect })
 	local failure: string? = nil
 	for _, run in s.steps do
 		local o = run.outcome
-		if o == nil or not o.ok then
+		if (o == nil or not o.ok) and not run.step.soft then
 			ok = false
 			failure = failure or (if o then o.text else run.step.label .. " did not finish")
 		end
@@ -748,16 +1024,28 @@ local function finishPreview(s: State, effects: { Effect })
 			local doc = decodeTargets(s, run.stdout or "")
 			s.targets = Steps.targets(doc)
 			s.replicasNow = replicasOf(doc)
-		elseif run.step.kind == "dry-run" and o and o.ok then
+		elseif run.step.kind == "dry-run" and o and o.ok and VERB[plan.family] then
 			s.dryRun = ParseMutation.parse(VERB[plan.family], lines(run.stdout or ""))
 		end
 	end
+	if s.followUpError then
+		ok = false
+		failure = failure or s.followUpError
+	end
+	computeObjects(s, plan)
+	computeFamilyFacts(s, plan)
 	local facts: Risk.Facts = {
 		previewOk = ok,
 		failure = failure,
 		targets = s.targets,
 		manifests = s.manifests,
+		baseline = s.baseline,
 		diff = s.diff,
+		live = s.live,
+		objects = s.objects,
+		drain = s.drainFacts,
+		undo = s.undo,
+		edit = s.editFacts,
 	}
 	s.assessment = Risk.assess(plan, facts)
 	s.requirements =
@@ -788,6 +1076,15 @@ local function resetPreview(s: State)
 	s.dryRun = nil
 	s.targets = nil
 	s.replicasNow = {}
+	s.live = nil
+	s.objects = nil
+	s.drainFacts = nil
+	s.undo = nil
+	s.editSet = nil
+	s.editFacts = nil
+	s.baseline = nil
+	s.stage = 1
+	s.followUpError = nil
 	s.assessment = nil
 	s.requirements = nil
 	s.files = nil
@@ -891,6 +1188,36 @@ local function proceed(s: State, effects: { Effect })
 	end
 end
 
+-- `rollout undo` without --to-revision restores "the previous revision":
+-- a rollout since the preview moves that target.
+local function rolloutMoved(s: State): string?
+	local run = s.verify.history
+	if run == nil then
+		return nil
+	end
+	local o = run.outcome
+	if o == nil or not o.ok then
+		return "Cannot re-read the rollout history"
+			.. (if o then ": " .. o.text else "")
+			.. ". Press r to preview again."
+	end
+	local histories = Rollout.parseHistory(run.stdout or "")
+	for _, u in s.undo or {} :: { Rollout.UndoTarget } do
+		local id = Diffseg.identity(u.key)
+		local kind = if id then string.lower(id.kind) else ""
+		local newest: number? = nil
+		for _, h in histories do
+			if h.kind == kind and h.name == u.name then
+				newest = h.revisions[#h.revisions]
+			end
+		end
+		if newest ~= u.from then
+			return "A rollout happened since the preview; press r to preview again."
+		end
+	end
+	return nil
+end
+
 local function finishVerify(s: State, effects: { Effect })
 	local plan = s.plan :: T.Plan
 	local v = s.verify
@@ -929,6 +1256,11 @@ local function finishVerify(s: State, effects: { Effect })
 		)
 		return
 	end
+	local moved = rolloutMoved(s)
+	if moved then
+		refuse(s, effects, moved)
+		return
+	end
 	if s.request and s.now > deadline(s.request :: GuardRequest) then
 		s.phase = "expired"
 		return
@@ -961,10 +1293,17 @@ local function verifyNext(s: State, effects: { Effect }, after: string)
 		emitRun(s, effects, "v-target", argv, { env = penv })
 		return
 	end
-	if after == "v-target" then
-		if plan.contextSource == "inferred" then
-			local argv, penv = connArgv(s, { "config", "current-context" })
-			emitRun(s, effects, "v-current", argv, { env = penv })
+	if after == "v-target" and plan.contextSource == "inferred" then
+		local argv, penv = connArgv(s, { "config", "current-context" })
+		emitRun(s, effects, "v-current", argv, { env = penv })
+		return
+	end
+	if after == "v-target" or after == "v-current" then
+		local again = Steps.verifySteps(plan)
+		if #again > 0 then
+			local step = again[1]
+			s.verify.history = { step = step, status = "running" }
+			emitRun(s, effects, "v-history", step.argv, { env = step.env, cwd = plan.cwd, timeout = step.timeoutMs })
 			return
 		end
 	end
@@ -1082,6 +1421,16 @@ local function blank(env: Init, mode: Mode): State
 		dryRun = nil,
 		targets = nil,
 		replicasNow = {},
+		live = nil,
+		objects = nil,
+		drainFacts = nil,
+		undo = nil,
+		editSet = nil,
+		editFacts = nil,
+		baseline = nil,
+		stage = 1,
+		followUpError = nil,
+		json = env.json or {},
 		assessment = nil,
 		requirements = nil,
 		previewedAt = nil,
@@ -1126,6 +1475,7 @@ local function initNative(s: State, url: string, effects: { Effect })
 	local argv = Link.argv(req, s.kubectl)
 	if argv == nil then
 		s.phase = "input"
+		s.typed = Link.prompt(req).prefill
 		s.focused = true
 		table.insert(effects, { t = "focus", id = M.TYPED_INPUT })
 		return
@@ -1140,7 +1490,7 @@ local function initQuick(s: State, url: string, effects: { Effect })
 		fail(s, "Invalid quick action link: " .. (e or "?"))
 		return
 	end
-	if not Quick.mutates(req.action) then
+	if Quick.gate(req.action) ~= "approve" then
 		fail(s, "Quick action " .. req.action .. " does not need approval")
 		return
 	end
@@ -1217,6 +1567,7 @@ local function initGuard(s: State, path: string, env: Init, effects: { Effect })
 		program = req.program,
 		cwd = req.cwd,
 		timeoutMs = s.config.previewTimeoutMs,
+		edit = req.edit,
 	}
 	s.phase = "loading"
 	emitRun(s, effects, "spool", { "/bin/sh", "-c", M.SPOOL_SCRIPT, "tern-kube-spool", s.spool })
@@ -1303,6 +1654,22 @@ local function onResult(s: State, tag: string, r: ProcessResult, effects: { Effe
 			return
 		end
 		s.plan = p
+		if s.mode == "native" and p.family == "drain" then
+			-- A spawned process cannot be killed: a drain the block's exec
+			-- timeout abandons leaves a cordoned, half-drained node.
+			local ms = if s.link then Link.drainTimeoutMs(s.link :: Link.Request) else nil
+			if ms == nil or ms >= s.config.execTimeoutMs then
+				fail(
+					s,
+					string.format(
+						"A native drain needs a --timeout below mutations.execute_timeout_ms (%d s): "
+							.. "the block cannot stop kubectl once it runs.",
+						math.floor(s.config.execTimeoutMs / 1000)
+					)
+				)
+				return
+			end
+		end
 		if not emitDigest(s, effects, "digest") then
 			s.files = {}
 			emitHash(s, effects, "fp", {})
@@ -1355,6 +1722,13 @@ local function onResult(s: State, tag: string, r: ProcessResult, effects: { Effe
 		verifyNext(s, effects, "v-target")
 	elseif tag == "v-current" then
 		s.verify.current = if r.status == 0 then nonEmpty(firstLine(r.stdout)) else nil
+		verifyNext(s, effects, "v-current")
+	elseif tag == "v-history" and s.verify.history then
+		local run = s.verify.history :: StepRun
+		run.outcome = outcomeOf(run.step, r)
+		run.status = if (run.outcome :: Steps.Outcome).ok then "ok" else "failed"
+		run.stdout = r.stdout
+		run.stderr = r.stderr
 		finishVerify(s, effects)
 	elseif tag == "exec" then
 		local ex = s.exec :: Exec
@@ -1403,15 +1777,21 @@ local function onResult(s: State, tag: string, r: ProcessResult, effects: { Effe
 end
 
 local function onRead(s: State, files: { ReadFile })
+	local edit = if s.plan then (s.plan :: T.Plan).edit else nil
 	local out: { T.Manifest } = {}
+	local baseline: { T.Manifest } = {}
 	for _, f in files do
 		if f.text then
-			table.insert(out, { path = f.path, text = f.text :: string })
+			local m: T.Manifest = { path = f.path, text = f.text :: string }
+			table.insert(if edit and f.path == edit.original then baseline else out, m)
 		else
 			table.insert(s.notes, "Manifest scan skipped for " .. f.path .. ": " .. (f.error or "unreadable"))
 		end
 	end
 	s.manifests = out
+	if edit then
+		s.baseline = baseline
+	end
 end
 
 local function settle(s: State, effects: { Effect })
@@ -1419,6 +1799,9 @@ local function settle(s: State, effects: { Effect })
 		return
 	end
 	if s.phase == "previewing" then
+		if s.stage == 1 and startStage2(s, effects) then
+			return
+		end
 		finishPreview(s, effects)
 	elseif s.requery and s.phase == "done" and s.requery.at == nil then
 		(s.requery :: Requery).at = s.now
@@ -1471,27 +1854,46 @@ local function cycle(s: State, dir: number): boolean
 end
 
 local function submitInput(s: State, effects: { Effect })
-	local link = s.link :: Link.Request
-	if link.op == "apply" then
-		local req, e = Link.withPath(link, s.typed, s.home)
-		if req == nil then
-			s.confirmError = e
-			return
-		end
-		s.link = req
-		link = req
-	else
-		local n = tonumber(s.typed)
-		if not string.find(s.typed, "^%d+$") or n == nil or n > Link.MAX_REPLICAS then
-			s.confirmError = "Enter a whole number of replicas"
-			return
-		end
-		link.replicas = n
+	local req, e = Link.withInput(s.link :: Link.Request, s.typed, s.home)
+	if req == nil then
+		s.confirmError = e
+		return
 	end
+	s.link = req
 	s.typed = ""
+	s.input = nil
 	s.confirmError = nil
-	s.argv = Link.argv(link, s.kubectl)
+	s.argv = Link.argv(req, s.kubectl)
 	start(s, effects)
+end
+
+-- `i` after a preview: edit the input of a scale/apply/label/annotate/
+-- patch/drain link again, starting from the last accepted text.
+function M.canReinput(s: State): boolean
+	local link = s.link
+	return s.mode == "native"
+		and link ~= nil
+		and not s.decided
+		and (s.phase == "ready" or s.phase == "error")
+		and Link.takesInput((link :: Link.Request).op)
+end
+
+local function backToInput(s: State, effects: { Effect }): boolean
+	local link = s.link
+	if link == nil or not M.canReinput(s) then
+		return false
+	end
+	resetPreview(s)
+	s.plan = nil
+	s.target = nil
+	s.argv = nil
+	s.typed = Link.inputText(link :: Link.Request)
+	s.input = nil
+	s.targetConfirmed = false
+	s.phase = "input"
+	s.focused = true
+	table.insert(effects, { t = "focus", id = M.TYPED_INPUT })
+	return true
 end
 
 local function applyAction(s: State, act: string, value: string?, effects: { Effect })
@@ -1503,6 +1905,8 @@ local function applyAction(s: State, act: string, value: string?, effects: { Eff
 		end
 	elseif act == "cancel" or act == "close" then
 		cancel(s, effects)
+	elseif act == "input" then
+		backToInput(s, effects)
 	elseif act == "target" then
 		s.targetConfirmed = true
 		s.confirmError = nil
@@ -1609,6 +2013,8 @@ local function onKey(s: State, key: Key, effects: { Effect }): boolean
 			s.targetConfirmed = true
 			return true
 		end
+	elseif ch == "i" then
+		return backToInput(s, effects)
 	end
 	return false
 end

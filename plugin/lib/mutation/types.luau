@@ -3,7 +3,24 @@
 -- confirm). Pure data: the host runs the steps and feeds results back.
 local Types = require("../model/types")
 
-export type Family = "apply" | "delete" | "restart" | "scale" | "debug-pod" | "debug-node" | "cronjob-run"
+export type Family =
+	"apply"
+	| "delete"
+	| "restart"
+	| "scale"
+	| "debug-pod"
+	| "debug-node"
+	| "cronjob-run"
+	| "undo"
+	| "pause"
+	| "resume"
+	| "patch"
+	| "label"
+	| "annotate"
+	| "cordon"
+	| "uncordon"
+	| "drain"
+	| "edit"
 
 -- Same vocabulary as Explore's target provenance.
 export type ContextSource = "flag" | "chosen" | "inferred"
@@ -42,9 +59,36 @@ export type Env = {
 	namespace: string?,
 	cwd: string,
 	timeoutMs: number?,
+	-- Guard edit approvals: kubectl's temp file and the copy of its first round.
+	edit: EditInput?,
 }
 
-export type StepKind = "dry-run" | "diff" | "targets"
+-- A `kubectl edit` round: the file the editor saved and kubectl's original
+-- serialization of the objects (both absolute, both fingerprinted).
+export type EditInput = { file: string, original: string }
+
+-- label/annotate positional edits: `key=value` sets, `key-` removes.
+export type LabelEdit = { key: string, value: string?, remove: boolean }
+
+export type DrainOpts = {
+	ignoreDaemonsets: boolean,
+	deleteEmptyDir: boolean,
+	force: boolean,
+	disableEviction: boolean,
+	gracePeriod: number?,
+	timeout: string?,
+	podSelector: string?,
+}
+
+-- targets   `get -o json` of the objects (before state)
+-- dry-run   human dry-run text (parse/mutation)
+-- diff      `kubectl diff` (apply)
+-- after     server dry run with `-o json` (after state, concatenated objects)
+-- evict     drain server dry run with a bounded --timeout (PodDisruptionBudget probe)
+-- history   `rollout history` text (revision list)
+-- revision  `rollout history --revision=N -o json` (target template)
+-- convert   `patch --local -f FILE -o json` (edit: a manifest file to JSON, offline)
+export type StepKind = "dry-run" | "diff" | "targets" | "after" | "evict" | "history" | "revision" | "convert"
 
 export type Step = {
 	id: string,
@@ -54,6 +98,11 @@ export type Step = {
 	-- Environment overrides for the preview process (never secrets).
 	env: { [string]: string },
 	timeoutMs: number,
+	-- Stage-2 steps: identity key (Objdiff.identity) of their object.
+	object: string?,
+	-- A failure is a preview finding (edit rejected by the server), not a
+	-- failed preview.
+	soft: boolean?,
 }
 
 export type KindRef = { kind: string, group: string?, namespaced: boolean? }
@@ -87,6 +136,19 @@ export type Plan = {
 	fieldSelector: string?,
 	all: boolean,
 	replicas: number?,
+	-- --patch-file values as typed (relative to cwd).
+	patchFiles: { string },
+	-- label/annotate positional edits; {} for other families.
+	edits: { LabelEdit },
+	-- label/annotate --overwrite.
+	overwrite: boolean,
+	-- patch --type (nil: strategic).
+	patchType: string?,
+	-- rollout undo --to-revision (nil or 0: previous).
+	toRevision: number?,
+	drain: DrainOpts?,
+	-- Guard edit approvals only.
+	edit: EditInput?,
 	steps: { Step },
 	invocation: Types.Invocation,
 	validation: { Diagnostic },

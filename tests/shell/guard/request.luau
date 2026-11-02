@@ -9,7 +9,9 @@
 --   argv JSON A1 A2 ...   exit 1 unless request.argv equals A1 A2 ...
 --   files JSON            print each request.files path
 --   field JSON NAME       print a top-level scalar ("null" for null)
---   strict JSON           exit 1 unless JSON is one object with exactly the documented keys
+--   edit JSON             print edit.file and edit.original, one per line
+--   strict JSON           exit 1 unless JSON is one object with exactly the
+--                         documented keys (plus the optional edit object)
 local Fingerprint = require("../../../plugin/lib/mutation/fingerprint")
 
 local NULL = newproxy(false)
@@ -215,6 +217,9 @@ elseif mode == "files" then
 elseif mode == "field" then
 	local v = r[args[3]]
 	print(if v == NULL then "null" else tostring(v))
+elseif mode == "edit" then
+	print(r.edit.file)
+	print(r.edit.original)
 elseif mode == "strict" then
 	local n = 0
 	for _ in r do
@@ -224,6 +229,20 @@ elseif mode == "strict" then
 		if r[k] == nil then
 			error("missing key " .. k, 0)
 		end
+	end
+	if r.edit ~= nil then
+		local e = r.edit
+		if type(e) ~= "table" or type(e.file) ~= "string" or type(e.original) ~= "string" then
+			error("edit must be an object with string file and original", 0)
+		end
+		local m = 0
+		for _ in e do
+			m += 1
+		end
+		if m ~= 2 then
+			error("unexpected keys in edit", 0)
+		end
+		n -= 1
 	end
 	if n ~= #KEYS then
 		error("unexpected keys", 0)

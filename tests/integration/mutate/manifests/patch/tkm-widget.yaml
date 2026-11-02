@@ -1,0 +1,10 @@
+apiVersion: lens.example.com/v1alpha1
+kind: Widget
+metadata:
+  name: tkm-widget
+  namespace: tern-test-mutate
+  labels:
+    app.kubernetes.io/part-of: tern-kube-mutate-it
+spec:
+  color: blue
+  size: 1

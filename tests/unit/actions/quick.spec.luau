@@ -55,12 +55,16 @@ describe("quick actions", function()
 		it("hides mutating actions until the M3 confirm tier exists", function()
 			expect(ids(Quick.available("Node", ref("Node", "n1"), {}))).toEqual({})
 			expect(ids(Quick.available("CronJob", ref("CronJob", "nightly", "b", "batch"), {}))).toEqual({})
-			expect(ids(Quick.available("Node", ref("Node", "n1"), { allowMutations = true }))).toEqual({ "debug-node" })
+			expect(ids(Quick.available("Node", ref("Node", "n1"), { allowMutations = true }))).toEqual({
+				"debug-node",
+				"edit",
+			})
 			expect(ids(Quick.available("Pod", ref("Pod", "p", "ns"), { allowMutations = true }))).toEqual({
 				"shell",
 				"logs-follow",
 				"port-forward",
 				"debug-pod",
+				"edit",
 			})
 		end)
 
@@ -74,6 +78,101 @@ describe("quick actions", function()
 			expect(Quick.mutates("cronjob-run")).toBe(true)
 			expect(Quick.mutates("shell")).toBe(false)
 			expect(Quick.mutates("rm")).toBe(false)
+		end)
+
+		it("gates mutating actions through the approve block, edit through the guard after saving", function()
+			expect(Quick.gate("shell")).toBe("none")
+			expect(Quick.gate("debug-pod")).toBe("approve")
+			expect(Quick.gate("cronjob-run")).toBe("approve")
+			expect(Quick.gate("edit")).toBe("editor")
+			expect(Quick.gate("rm")).toBe("none")
+		end)
+	end)
+
+	-- Edit opens kubectl edit under the shell guard in a split; the guard
+	-- asks for approval after the save, so the link only names the object.
+	describe("edit", function()
+		local CORE = "/plugins/tern kube/shell/tern-kube-guard"
+		local SETTINGS = { guardCore = CORE }
+
+		it("offers edit for any named object, custom resources included, except events", function()
+			local allow = { allowMutations = true }
+			expect(ids(Quick.available("Widget", ref("Widget", "w", "ns", "lens.example.com"), allow))).toEqual({
+				"edit",
+			})
+			expect(ids(Quick.available("ConfigMap", ref("ConfigMap", "c", "ns"), allow))).toEqual({ "edit" })
+			expect(ids(Quick.available("Event", ref("Event", "e.1", "ns"), allow))).toEqual({})
+			expect(ids(Quick.available("ConfigMap", ref("ConfigMap", "c", "ns"), {}))).toEqual({})
+		end)
+
+		it("round-trips the group so the type stays exact, and refuses what kubectl would not address", function()
+			local url = Quick.encode("edit", PINNED, ref("Widget", "w", "ns", "lens.example.com")) :: string
+			expect(url).toContain("group=lens.example.com")
+			local req = Quick.decode(url) :: Quick.Request
+			expect(req.ref.group).toBe("lens.example.com")
+			expect((Quick.encode("edit", PINNED, ref("ClusterRole", "system:view")) ~= nil)).toBe(true)
+			for _, bad in
+				{
+					"tern-kube://act/edit?kind=ConfigMap&name=c&namespace=ns&confirm=abc",
+					"tern-kube://act/edit?kind=Config-Map&name=c",
+					"tern-kube://act/edit?kind=Node&name=n&namespace=ns",
+					"tern-kube://act/edit?kind=Widget&group=Bad_Group&name=w",
+					"tern-kube://act/edit?kind=Event&name=e&namespace=ns",
+					"tern-kube://act/edit?kind=ConfigMap&name=-x",
+				}
+			do
+				expect((Quick.decode(bad))).toBeNil()
+			end
+		end)
+
+		it("runs the guard core with kubectl edit, context pinned and paths quoted", function()
+			local launch = Quick.command(
+				"edit",
+				{ context = "kind-tern-kube-dev", kubeconfig = "/tmp/kube config", program = "/opt/k 8s/bin/kubectl" },
+				ref("Deployment", "web", "apps", "apps"),
+				{},
+				SETTINGS
+			) :: Quick.Launch
+			expect(launch.argv).toEqual({
+				"kubectl",
+				"edit",
+				"--context",
+				"kind-tern-kube-dev",
+				"--kubeconfig",
+				"/tmp/kube config",
+				"-n",
+				"apps",
+				"deployment.apps/web",
+			})
+			expect(launch.title).toBe("tern-kube edit apps/web @ kind-tern-kube-dev")
+			expect(unquoteLine(launch.line)).toBe(
+				"printf '\\033]0;%s\\007' 'tern-kube edit apps/web @ kind-tern-kube-dev'; "
+					.. "PATH='/opt/k 8s/bin':$PATH; export PATH; "
+					.. "exec '/plugins/tern kube/shell/tern-kube-guard' kubectl edit --context kind-tern-kube-dev "
+					.. "--kubeconfig '/tmp/kube config' -n apps deployment.apps/web"
+			)
+		end)
+
+		it("leaves PATH alone for a bare kubectl and pins no kubeconfig when unknown", function()
+			local launch = Quick.command("edit", { context = "c" }, ref("Node", "w1"), {}, SETTINGS) :: Quick.Launch
+			expect(unquoteLine(launch.line)).toBe(
+				"printf '\\033]0;%s\\007' 'tern-kube edit w1 @ c'; "
+					.. "exec '/plugins/tern kube/shell/tern-kube-guard' kubectl edit --context c node/w1"
+			)
+		end)
+
+		it("refuses without the guard core", function()
+			local launch, e = Quick.command("edit", PINNED, ref("ConfigMap", "c", "ns"), {}, {})
+			expect(launch).toBeNil()
+			expect(e).toBe("shell/tern-kube-guard is missing from the plugin directory")
+			expect((Quick.command("edit", PINNED, ref("ConfigMap", "c", "ns"), {}, { guardCore = "rel/core" }))).toBeNil()
+		end)
+
+		it("gives an edit chip that names the guard flow", function()
+			local chips = Quick.chipsFor("ConfigMap", ref("ConfigMap", "c", "ns"), PINNED, { allowMutations = true })
+			expect(#chips).toBe(1)
+			expect(chips[1].label).toBe("Edit")
+			expect(chips[1].title).toContain("approve block previews")
 		end)
 	end)
 

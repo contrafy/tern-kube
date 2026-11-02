@@ -29,6 +29,14 @@ describe("argv.lensSupport", function()
 				"delete pod x",
 				"rollout restart deploy/web",
 				"scale deploy/web --replicas=2",
+				"label cm/x a=b",
+				"annotate cm/x a=b --overwrite",
+				"patch deploy/web -p {}",
+				"cordon n1",
+				"uncordon n1",
+				"rollout undo deploy/web",
+				"rollout pause deploy/web",
+				"rollout resume deploy/web",
 			}
 		do
 			local s = support(line)
@@ -54,6 +62,10 @@ describe("argv.lensSupport", function()
 			{ "edit deploy/web", "raw" },
 			{ "explain pods", "raw" },
 			{ "rollout status deploy/web", "rollout status" },
+			{ "rollout history deploy/web", "rollout history" },
+			{ "label pods --list", "--list" },
+			{ "annotate deploy/web --list", "--list" },
+			{ "drain n1 --ignore-daemonsets", "kubectl drain" },
 			{ "config view", "kubectl config" },
 			{ "", "No kubectl command" },
 		}

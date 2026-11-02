@@ -1,0 +1,2 @@
+error: unknown flag: --dry-run
+See 'kubectl rollout pause --help' for usage.

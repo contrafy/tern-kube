@@ -234,6 +234,29 @@ describe("lens capture", function()
 		expect(Capture.modeOf(runs.run("kubectl --context x describe pod a"))).toBe("describe")
 	end)
 
+	-- The new guarded verbs print kubectl's one-line results; the lens shows
+	-- them as a result summary with kubectl's own words.
+	it("reads label, annotate, patch, cordon and rollout undo/pause/resume results", function()
+		local cases: { { string } } = {
+			{ "kubectl label cm x a=b", "configmap/x labeled", "labeled" },
+			{ "kubectl annotate cm x a=b", "configmap/x annotated", "annotated" },
+			{ "kubectl patch cm x -p {}", "configmap/x patched (no change)", "unchanged" },
+			{ "kubectl cordon n1", "node/n1 cordoned", "cordoned" },
+			{ "kubectl uncordon n1", "node/n1 already uncordoned", "already uncordoned" },
+			{ "kubectl rollout undo deploy/web", "deployment.apps/web rolled back", "rolled back" },
+			{ "kubectl rollout pause deploy/web", "deployment.apps/web paused", "paused" },
+			{ "kubectl rollout resume deploy/web", "deployment.apps/web resumed", "resumed" },
+		}
+		for _, c in cases do
+			local cap = fromLines(c[1], { c[2] }, 0)
+			expect(cap.mode).toBe("mutation")
+			local m = cap.mutation :: any
+			expect(#m.results).toBe(1)
+			expect(m.results[1].action).toBe(c[3])
+		end
+		expect(fromLines("kubectl label pods --list", { "app=web" }, 0).mode).toBe("raw")
+	end)
+
 	it("row keys are unique even when kubectl prints the same name twice", function()
 		local c = fromLines("kubectl get pods", { "NAME   READY", "a      1/1", "a      0/1" }, 0)
 		expect(keysOf(c)).toEqual({ "/Pod//a", "/Pod//a#2" })

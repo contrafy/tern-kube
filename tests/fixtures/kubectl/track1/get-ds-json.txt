@@ -1,0 +1,65 @@
+{
+    "apiVersion": "apps/v1",
+    "kind": "DaemonSet",
+    "metadata": {
+        "annotations": {
+            "deprecated.daemonset.template.generation": "2",
+            "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"apps/v1\",\"kind\":\"DaemonSet\",\"metadata\":{\"annotations\":{},\"name\":\"ds\",\"namespace\":\"tern-test-t1\"},\"spec\":{\"selector\":{\"matchLabels\":{\"t1app\":\"ds\"}},\"template\":{\"metadata\":{\"labels\":{\"t1app\":\"ds\",\"tern-t1\":\"yes\"}},\"spec\":{\"containers\":[{\"image\":\"registry.k8s.io/pause:3.9\",\"imagePullPolicy\":\"IfNotPresent\",\"name\":\"c\"}],\"terminationGracePeriodSeconds\":1}}}}\n"
+        },
+        "creationTimestamp": "2026-10-30T21:54:07Z",
+        "generation": 2,
+        "name": "ds",
+        "namespace": "tern-test-t1",
+        "resourceVersion": "657736",
+        "uid": "5c35fd7e-e6fb-400a-b8d0-2b48cafa0eed"
+    },
+    "spec": {
+        "revisionHistoryLimit": 10,
+        "selector": {
+            "matchLabels": {
+                "t1app": "ds"
+            }
+        },
+        "template": {
+            "metadata": {
+                "labels": {
+                    "t1app": "ds",
+                    "tern-t1": "yes"
+                }
+            },
+            "spec": {
+                "containers": [
+                    {
+                        "image": "registry.k8s.io/pause:3.10",
+                        "imagePullPolicy": "IfNotPresent",
+                        "name": "c",
+                        "resources": {},
+                        "terminationMessagePath": "/dev/termination-log",
+                        "terminationMessagePolicy": "File"
+                    }
+                ],
+                "dnsPolicy": "ClusterFirst",
+                "restartPolicy": "Always",
+                "schedulerName": "default-scheduler",
+                "securityContext": {},
+                "terminationGracePeriodSeconds": 1
+            }
+        },
+        "updateStrategy": {
+            "rollingUpdate": {
+                "maxSurge": 0,
+                "maxUnavailable": 1
+            },
+            "type": "RollingUpdate"
+        }
+    },
+    "status": {
+        "currentNumberScheduled": 1,
+        "desiredNumberScheduled": 1,
+        "numberAvailable": 1,
+        "numberMisscheduled": 0,
+        "numberReady": 1,
+        "observedGeneration": 2,
+        "updatedNumberScheduled": 1
+    }
+}

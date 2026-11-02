@@ -855,6 +855,7 @@ local function openApply(ctx: Ctx, fields: { file: string?, kustomize: string? }
 		file = fields.file,
 		kustomize = fields.kustomize,
 		recursive = false,
+		overwrite = false,
 		context = origin.context,
 		source = if origin.context then origin.source else nil,
 		kubeconfig = origin.kubeconfig,

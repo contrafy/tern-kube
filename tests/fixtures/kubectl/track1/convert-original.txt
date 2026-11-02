@@ -1,0 +1,21 @@
+{
+    "apiVersion": "lens.example.com/v1alpha1",
+    "kind": "Widget",
+    "metadata": {
+        "labels": {
+            "app": "widgets"
+        },
+        "name": "w1",
+        "namespace": "tern-test-t1",
+        "resourceVersion": "1234"
+    },
+    "spec": {
+        "color": "blue",
+        "enabled": true,
+        "extra": {},
+        "owner": "team-a",
+        "ratio": 1.5,
+        "size": 3,
+        "tags": []
+    }
+}

@@ -58,6 +58,16 @@ for _, verb in
 		{ "tkg_delete", "delete" },
 		{ "tkg_scale", "scale" },
 		{ "tkg_restart", "rollout restart" },
+		{ "tkg_undo", "rollout undo" },
+		{ "tkg_pause", "rollout pause" },
+		{ "tkg_resume", "rollout resume" },
+		{ "tkg_patch", "patch" },
+		{ "tkg_label", "label" },
+		{ "tkg_annotate", "annotate" },
+		{ "tkg_cordon", "cordon" },
+		{ "tkg_uncordon", "uncordon" },
+		{ "tkg_drain", "drain" },
+		{ "tkg_edit", "edit" },
 	}
 do
 	local spec = flags.commands[verb[2]]

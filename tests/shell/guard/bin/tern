@@ -13,8 +13,9 @@
 #   stale        appends to the first input file, then approves
 #   old          approval dated before the request
 #   dup          approval repeating the decision line
-# It copies the request to $FAKE_DIR/req.json and records the modes of the
-# request file and spool dir in $FAKE_DIR/req-mode and spool-mode.
+# It copies the request to $FAKE_DIR/req.json (and appends it to reqs, one
+# line per request) and records the modes of the request file and spool dir
+# in $FAKE_DIR/req-mode and spool-mode.
 d=${FAKE_DIR:?FAKE_DIR is required}
 printf '%s\n' "$*" >>"$d/tern-calls"
 [ "$1" = open ] && [ "$2" = --wait ] && [ $# = 3 ] || {
@@ -23,6 +24,7 @@ printf '%s\n' "$*" >>"$d/tern-calls"
 }
 req=$3
 cp "$req" "$d/req.json"
+cat "$req" >>"$d/reqs"
 ls -ld "$req" | cut -c1-10 >"$d/req-mode"
 ls -ld "$(dirname "$req")" | cut -c1-10 >"$d/spool-mode"
 

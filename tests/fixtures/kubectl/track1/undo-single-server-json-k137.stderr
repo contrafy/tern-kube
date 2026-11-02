@@ -1,0 +1,2 @@
+Warning: resource deployments/tkm-single was previously managed with 'kubectl apply'. Rolling back will not update the kubectl.kubernetes.io/last-applied-configuration annotation, which may cause unexpected behavior on future 'kubectl apply' operations. Consider using 'kubectl apply' with your previous configuration file instead.
+error: no rollout history found for deployment "tkm-single"

@@ -1,0 +1,1 @@
+error: application/strategic-merge-patch+json is not supported by lens.example.com/v1alpha1, Kind=Widget: the body of the request was in an unknown format - accepted media types include: application/json-patch+json, application/merge-patch+json, application/apply-patch+yaml

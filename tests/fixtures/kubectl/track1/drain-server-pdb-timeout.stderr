@@ -1,0 +1,17 @@
+Warning: deleting Pods that declare no controller: tern-test-t1/bare, tern-test-t1/ed; ignoring DaemonSet-managed Pods: tern-test-t1/ds-9rrlz
+error when evicting pods/"web-8db544b56-6s4kx" -n "tern-test-t1" (will retry after 5s): Cannot evict pod as it would violate the pod's disruption budget.
+error when evicting pods/"web-8db544b56-bslpm" -n "tern-test-t1" (will retry after 5s): Cannot evict pod as it would violate the pod's disruption budget.
+error when evicting pods/"web-8db544b56-bslpm" -n "tern-test-t1" (will retry after 5s): Cannot evict pod as it would violate the pod's disruption budget.
+error when evicting pods/"web-8db544b56-6s4kx" -n "tern-test-t1" (will retry after 5s): Cannot evict pod as it would violate the pod's disruption budget.
+There are pending pods in node "tern-kube-dev-control-plane" when an error occurred: [error when evicting pods/"web-8db544b56-6s4kx" -n "tern-test-t1": global timeout reached: 8s, error when evicting pods/"web-8db544b56-bslpm" -n "tern-test-t1": global timeout reached: 8s]
+pod/bare
+pod/db-0
+pod/ed
+pod/one-585b986bcd-r7sf7
+pod/web-8db544b56-6s4kx
+pod/web-8db544b56-bslpm
+error: unable to drain node "tern-kube-dev-control-plane" due to error: [error when evicting pods/"web-8db544b56-6s4kx" -n "tern-test-t1": global timeout reached: 8s, error when evicting pods/"web-8db544b56-bslpm" -n "tern-test-t1": global timeout reached: 8s], continuing command...
+There are pending nodes to be drained:
+ tern-kube-dev-control-plane
+error when evicting pods/"web-8db544b56-6s4kx" -n "tern-test-t1": global timeout reached: 8s
+error when evicting pods/"web-8db544b56-bslpm" -n "tern-test-t1": global timeout reached: 8s

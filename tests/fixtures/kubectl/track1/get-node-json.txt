@@ -1,0 +1,260 @@
+{
+    "apiVersion": "v1",
+    "kind": "Node",
+    "metadata": {
+        "annotations": {
+            "node.alpha.kubernetes.io/ttl": "0",
+            "volumes.kubernetes.io/controller-managed-attach-detach": "true"
+        },
+        "creationTimestamp": "2026-10-08T20:38:34Z",
+        "labels": {
+            "beta.kubernetes.io/arch": "arm64",
+            "beta.kubernetes.io/os": "linux",
+            "kubernetes.io/arch": "arm64",
+            "kubernetes.io/hostname": "tern-kube-dev-control-plane",
+            "kubernetes.io/os": "linux",
+            "node-role.kubernetes.io/control-plane": ""
+        },
+        "name": "tern-kube-dev-control-plane",
+        "resourceVersion": "657161",
+        "uid": "6a02a42c-b31e-4a5c-a44f-d9c93849d3f0"
+    },
+    "spec": {
+        "podCIDR": "10.244.0.0/24",
+        "podCIDRs": [
+            "10.244.0.0/24"
+        ],
+        "providerID": "kind://docker/tern-kube-dev/tern-kube-dev-control-plane"
+    },
+    "status": {
+        "addresses": [
+            {
+                "address": "172.18.0.2",
+                "type": "InternalIP"
+            },
+            {
+                "address": "tern-kube-dev-control-plane",
+                "type": "Hostname"
+            }
+        ],
+        "allocatable": {
+            "cpu": "10",
+            "ephemeral-storage": "977843695616",
+            "hugepages-1Gi": "0",
+            "hugepages-2Mi": "0",
+            "hugepages-32Mi": "0",
+            "hugepages-64Ki": "0",
+            "memory": "8126480Ki",
+            "pods": "110"
+        },
+        "capacity": {
+            "cpu": "10",
+            "ephemeral-storage": "977843695616",
+            "hugepages-1Gi": "0",
+            "hugepages-2Mi": "0",
+            "hugepages-32Mi": "0",
+            "hugepages-64Ki": "0",
+            "memory": "8126480Ki",
+            "pods": "110"
+        },
+        "conditions": [
+            {
+                "lastHeartbeatTime": "2026-10-30T21:49:35Z",
+                "lastTransitionTime": "2026-10-08T20:38:33Z",
+                "message": "kubelet has sufficient memory available",
+                "reason": "KubeletHasSufficientMemory",
+                "status": "False",
+                "type": "MemoryPressure"
+            },
+            {
+                "lastHeartbeatTime": "2026-10-30T21:49:35Z",
+                "lastTransitionTime": "2026-10-08T20:38:33Z",
+                "message": "kubelet has no disk pressure",
+                "reason": "KubeletHasNoDiskPressure",
+                "status": "False",
+                "type": "DiskPressure"
+            },
+            {
+                "lastHeartbeatTime": "2026-10-30T21:49:35Z",
+                "lastTransitionTime": "2026-10-08T20:38:33Z",
+                "message": "kubelet has sufficient PID available",
+                "reason": "KubeletHasSufficientPID",
+                "status": "False",
+                "type": "PIDPressure"
+            },
+            {
+                "lastHeartbeatTime": "2026-10-30T21:49:35Z",
+                "lastTransitionTime": "2026-10-08T20:38:54Z",
+                "message": "kubelet is posting ready status",
+                "reason": "KubeletReady",
+                "status": "True",
+                "type": "Ready"
+            }
+        ],
+        "daemonEndpoints": {
+            "kubeletEndpoint": {
+                "Port": 10250
+            }
+        },
+        "declaredFeatures": [
+            "ExtendWebSocketsToKubelet",
+            "InPlacePodLevelResourcesVerticalScaling",
+            "InPlacePodVerticalScalingInitContainers",
+            "RestartAllContainersOnContainerExits"
+        ],
+        "features": {
+            "supplementalGroupsPolicy": true
+        },
+        "images": [
+            {
+                "names": [
+                    "docker.io/library/import-2026-08-26@sha256:4fbbef5581e6ed60b96426e3786371b57da07f66e350b4ff2b0077413c2b0444",
+                    "registry.k8s.io/kube-apiserver-arm64:v1.37.0",
+                    "registry.k8s.io/kube-apiserver:v1.37.0"
+                ],
+                "sizeBytes": 97074036
+            },
+            {
+                "names": [
+                    "docker.io/library/import-2026-08-26@sha256:dda35f6553455c1dde75aebfbb20759d24b7de776b884eb06415f242f276200c",
+                    "registry.k8s.io/kube-controller-manager-arm64:v1.37.0",
+                    "registry.k8s.io/kube-controller-manager:v1.37.0"
+                ],
+                "sizeBytes": 85081821
+            },
+            {
+                "names": [
+                    "docker.io/library/import-2026-08-26@sha256:d5e740cce95911da5590b633aae2f7f7e3370ec9d212d4dbbbf3bf19fa07551f",
+                    "registry.k8s.io/kube-proxy-arm64:v1.37.0",
+                    "registry.k8s.io/kube-proxy:v1.37.0"
+                ],
+                "sizeBytes": 84532964
+            },
+            {
+                "names": [
+                    "docker.io/library/import-2026-08-26@sha256:2aa78b45454b3df79d15bf6a57b4f9871f11ce16c8b645109ba2310076d228dd",
+                    "registry.k8s.io/kube-scheduler-arm64:v1.37.0",
+                    "registry.k8s.io/kube-scheduler:v1.37.0"
+                ],
+                "sizeBytes": 59129565
+            },
+            {
+                "names": [
+                    "docker.io/kindest/kindnetd:v20260820-69b56db7"
+                ],
+                "sizeBytes": 35652389
+            },
+            {
+                "names": [
+                    "docker.io/library/nginx@sha256:65645c7bb6a0661892a8b03b89d0743208a18dd2f3f17a54ef4b76fb8e2f2a10",
+                    "docker.io/library/nginx:1.27-alpine"
+                ],
+                "sizeBytes": 21832241
+            },
+            {
+                "names": [
+                    "docker.io/library/nginx@sha256:814a8e88df978ade80e584cc5b333144b9372a8e3c98872d07137dbf3b44d0e4",
+                    "docker.io/library/nginx:1.27.3-alpine"
+                ],
+                "sizeBytes": 21565101
+            },
+            {
+                "names": [
+                    "registry.k8s.io/coredns/coredns:v1.14.6"
+                ],
+                "sizeBytes": 21239459
+            },
+            {
+                "names": [
+                    "docker.io/library/import-2026-10-08@sha256:4b96416bb8485a90e2c0d392b2ee17df2396cc9d3e14c6e03adf9223beb23d44",
+                    "registry.k8s.io/metrics-server/metrics-server:v0.9.0"
+                ],
+                "sizeBytes": 20913293
+            },
+            {
+                "names": [
+                    "registry.k8s.io/etcd:3.7.0-0"
+                ],
+                "sizeBytes": 20455189
+            },
+            {
+                "names": [
+                    "docker.io/kindest/local-path-provisioner:v20260820-69b56db7"
+                ],
+                "sizeBytes": 14217939
+            },
+            {
+                "names": [
+                    "docker.io/kindest/local-path-helper:v20260131-7181c60a"
+                ],
+                "sizeBytes": 2740462
+            },
+            {
+                "names": [
+                    "docker.io/library/busybox@sha256:bdf57e528e45e4433820e045b29b4597825a1c9e38353532d90a01445013f82e",
+                    "docker.io/library/busybox:1.37"
+                ],
+                "sizeBytes": 1911395
+            },
+            {
+                "names": [
+                    "docker.io/library/busybox@sha256:73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662",
+                    "docker.io/library/busybox:1.36"
+                ],
+                "sizeBytes": 1906887
+            },
+            {
+                "names": [
+                    "registry.k8s.io/pause@sha256:7031c1b283388d2c2e09b57badb803c05ebed362dc88d84b480cc47f72a21097",
+                    "registry.k8s.io/pause:3.9"
+                ],
+                "sizeBytes": 268051
+            },
+            {
+                "names": [
+                    "registry.k8s.io/pause:3.10"
+                ],
+                "sizeBytes": 267933
+            }
+        ],
+        "nodeInfo": {
+            "architecture": "arm64",
+            "bootID": "917a11ad-3204-4bb4-a52b-955740344199",
+            "containerRuntimeVersion": "containerd://2.3.4",
+            "kernelVersion": "6.12.76-linuxkit",
+            "kubeProxyVersion": "",
+            "kubeletVersion": "v1.37.0",
+            "machineID": "4c929740063745f4ae03e23a6541e427",
+            "operatingSystem": "linux",
+            "osImage": "Debian GNU/Linux 13 (trixie)",
+            "runningInUserNamespace": false,
+            "swap": {
+                "capacity": 1073737728
+            },
+            "systemUUID": "4c929740063745f4ae03e23a6541e427"
+        },
+        "runtimeHandlers": [
+            {
+                "features": {
+                    "recursiveReadOnlyMounts": true,
+                    "userNamespaces": true
+                },
+                "name": ""
+            },
+            {
+                "features": {
+                    "recursiveReadOnlyMounts": true,
+                    "userNamespaces": true
+                },
+                "name": "runc"
+            },
+            {
+                "features": {
+                    "recursiveReadOnlyMounts": true,
+                    "userNamespaces": true
+                },
+                "name": "test-handler"
+            }
+        ]
+    }
+}

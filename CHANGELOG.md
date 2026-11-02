@@ -7,6 +7,25 @@ versions may break).
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-02
+
+### Added
+
+- Guarded `rollout undo`, `rollout pause`, `rollout resume`, `patch`, `label`, `annotate`, `cordon`, `uncordon` and `drain`: Explore keys (`U` `p` `P` `X` `t` `T` `C` `u` `D`), lens inspector chips and the shell guard, each with a before/after object diff from a server dry run (or the target revision for `rollout undo`) and risk tiers.
+- `drain` previews the pods it would evict, the DaemonSet, unmanaged and emptyDir pods, and pods a PodDisruptionBudget blocks right now.
+- `kubectl edit` as preview then apply: after you save, the approve block shows the diff and a server dry run; deny restores the object and keeps your edit in a file. Explore `e` and the lens Edit chip open it in a split.
+- Audit records list the previewed objects and the digests of input files.
+
+### Changed
+
+- The lens shows native results for `label`, `annotate`, `patch`, `cordon`, `uncordon` and `rollout undo|pause|resume`.
+- End-to-end scenarios 24-29 cover the new verbs in a sandbox window against kind; the snapshot under test includes `shell/` (native edit runs `shell/tern-kube-guard`) and a scripted `KUBE_EDITOR`.
+
+### Fixed
+
+- A failed preview step shows kubectl's error, not a warning printed before it: kubectl 1.37 warns about `last-applied-configuration` before `rollout undo` errors such as "no rollout history", and the approve block and the shell refusal showed only the warning.
+- The mutation integration suite installs the Widget CRD it patches, so it passes on a freshly created cluster.
+
 ## [0.1.3] - 2026-11-02
 
 ### Added
@@ -107,7 +126,8 @@ First public beta.
 - Docs: SDK capability matrix, configuration, performance, architecture,
   security model, testing, releasing.
 
-[Unreleased]: https://github.com/contrafy/tern-kube/compare/v0.1.3...HEAD
+[Unreleased]: https://github.com/contrafy/tern-kube/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/contrafy/tern-kube/compare/v0.1.3...v0.2.0
 [0.1.3]: https://github.com/contrafy/tern-kube/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/contrafy/tern-kube/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/contrafy/tern-kube/compare/v0.1.0...v0.1.1

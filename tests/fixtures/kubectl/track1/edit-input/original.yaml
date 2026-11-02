@@ -1,0 +1,20 @@
+# Please edit the object below. Lines beginning with a '#' will be ignored,
+# and an empty file will abort the edit. If an error occurs while saving this file will be
+# reopened with the relevant failures.
+#
+apiVersion: lens.example.com/v1alpha1
+kind: Widget
+metadata:
+  name: w1
+  namespace: tern-test-t1
+  resourceVersion: "1234"
+  labels:
+    app: widgets
+spec:
+  color: blue
+  size: 3
+  ratio: 1.50
+  enabled: yes
+  tags: []
+  extra: {}
+  owner: team-a

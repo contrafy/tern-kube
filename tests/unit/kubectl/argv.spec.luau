@@ -284,4 +284,17 @@ describe("argv.parse performance", function()
 	end)
 end)
 
+-- The approve block drops edit tokens from label/annotate positionals when
+-- it builds the `get` of the targets; a name never reads as an edit.
+describe("argv.isLabelEdit", function()
+	it("tells KEY=VALUE and KEY- edits from resource names", function()
+		for _, edit in { "app=web", "app=", "example.com/team=a", "app-", "a=b=c" } do
+			expect(argv.isLabelEdit(edit)).toBe(true)
+		end
+		for _, name in { "web", "deploy/web", "cm", "pods" } do
+			expect(argv.isLabelEdit(name)).toBe(false)
+		end
+	end)
+end)
+
 return nil

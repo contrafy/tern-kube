@@ -10,7 +10,8 @@ INS='[data-role="tern-kube.inspector"] .sf-act'
 lens "kubectl get deploy tk-e2e-web -n $MNS"
 native
 click_text tk-e2e-web '.tk-grid .tk-c'
-eq "mutation chips" "$(texts '[data-role="tern-kube.mutate"]')" '["Delete","Restart","Scale"]'
+eq "mutation chips" "$(texts '[data-role="tern-kube.mutate"]')" \
+	'["Delete","Restart","Scale","Undo","Pause","Resume","Label","Annotate","Patch"]'
 
 click_text Scale "$INS"
 approve_open || return
@@ -40,7 +41,7 @@ approve_closed || return
 lens "kubectl --context kind-tern-kube-dev get configmap tk-e2e-cm -n $MNS"
 native
 click_text tk-e2e-cm '.tk-grid .tk-c'
-eq "configmaps offer only Delete" "$(texts '[data-role="tern-kube.mutate"]')" '["Delete"]'
+eq "configmaps offer no workload chips" "$(texts '[data-role="tern-kube.mutate"]')" '["Delete","Label","Annotate","Patch"]'
 click_text Delete "$INS"
 approve_open || return
 a_ready || return

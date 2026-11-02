@@ -32,13 +32,36 @@ for s in zsh bash fish dash; do
 	ln -s "$p" "$root/shellbin/$s"
 	shells="$shells $s"
 done
+
+# The user's editor for `kubectl edit` cases: records its argv (one word per
+# line) in editor-argv and its run count in editor-runs, then edits the last
+# argument as $FAKE_DIR/editor-mode says: change (k: v -> k: edited, the
+# default), append (a new line each run), comment (adds a `#` line only),
+# none, fail (exit 3).
+cat >"$root/ed" <<'EOF'
+#!/bin/sh
+d=${FAKE_DIR:?FAKE_DIR is required}
+printf '%s\n' "$@" >"$d/editor-argv"
+for f in "$@"; do :; done
+n=$(($(cat "$d/editor-runs" 2>/dev/null || echo 0) + 1))
+echo "$n" >"$d/editor-runs"
+case $(cat "$d/editor-mode" 2>/dev/null || echo change) in
+change) sed 's/^  k: v$/  k: edited/' "$f" >"$d/ed.tmp" && cat "$d/ed.tmp" >"$f" ;;
+append) printf '  r%s: x\n' "$n" >>"$f" ;;
+comment) printf '# a note\n' >>"$f" ;;
+none) ;;
+fail) exit 3 ;;
+esac
+EOF
+chmod +x "$root/ed"
 PATH=$here/bin:$root/shellbin:/usr/bin:/bin:/usr/sbin:/sbin
 HOME=$root/home
 XDG_CONFIG_HOME=$root/home/.config
 XDG_DATA_HOME=$root/home/.local/share
 XDG_CACHE_HOME=$root/home/.cache
 export PATH HOME XDG_CONFIG_HOME XDG_DATA_HOME XDG_CACHE_HOME
-unset KUBECONFIG TERN_BIN TKUBE_GUARD_TIMEOUT ZDOTDIR FAKE_READ_STDIN BASH_ENV ENV PROMPT_COMMAND
+unset KUBECONFIG TERN_BIN TKUBE_GUARD_TIMEOUT ZDOTDIR FAKE_READ_STDIN BASH_ENV ENV PROMPT_COMMAND \
+	KUBE_EDITOR EDITOR TKUBE_EDIT_DIR TKUBE_EDIT_REAL
 FAKE_DIR=$root/fake
 export FAKE_DIR
 
@@ -67,8 +90,8 @@ skip() {
 # Fresh fake state, spool and work dir; the environment of a new Tern pane.
 fresh() {
 	case_name=$1
-	rm -rf "$FAKE_DIR" "$root/spool" "$root/work"
-	mkdir -p "$FAKE_DIR" "$root/work/my dir/sub" "$root/work/kust"
+	rm -rf "$FAKE_DIR" "$root/spool" "$root/work" "$root/tmp"
+	mkdir -p "$FAKE_DIR" "$root/work/my dir/sub" "$root/work/kust" "$root/tmp"
 	echo kind-dev >"$FAKE_DIR/context"
 	mkdir -m 755 "$root/spool"
 	printf 'kind: ConfigMap\n' >"$root/work/my dir/a b.yaml"
@@ -80,8 +103,9 @@ fresh() {
 	TERM_PROGRAM=tern
 	TERN_PANE=4294967309
 	TKUBE_SPOOL=$root/spool
-	export TERM_PROGRAM TERN_PANE TKUBE_SPOOL
-	unset KUBECONFIG TKUBE_GUARD_TIMEOUT TERN_BIN FAKE_READ_STDIN
+	TMPDIR=$root/tmp
+	export TERM_PROGRAM TERN_PANE TKUBE_SPOOL TMPDIR
+	unset KUBECONFIG TKUBE_GUARD_TIMEOUT TERN_BIN FAKE_READ_STDIN KUBE_EDITOR EDITOR TKUBE_EDIT_DIR
 	cd "$root/work" || exit 2
 	: >"$root/out"
 }
@@ -665,12 +689,332 @@ printf 'pc=%s|\n' \"\$PROMPT_COMMAND\""
 	fi
 }
 
+# The verbs added with track 1: each is guarded with its own flag table,
+# passes through only when it cannot change the cluster, and --patch-file is
+# fingerprinted as an exact input file.
+verb_cases() {
+	sh=$1
+
+	for args in "rollout undo deploy/web --to-revision 2" "rollout pause deploy/web" "rollout resume -f kust/x.yaml" \
+		'patch deploy/web --type merge -p {"spec":{}}' "label pods --field-selector status.phase=Running tier=web" \
+		"annotate cm/x note=hi --overwrite" "cordon node1" "uncordon -l role=x" \
+		"drain node1 --pod-selector app=web --timeout 4m" "-n prod label cm/x a=b"; do
+		fresh "$sh approve: $args"
+		# shellcheck disable=SC2086
+		run_k "$sh" $args
+		expect_status 0 "approved $args"
+		# shellcheck disable=SC2086
+		expect_ran "approved $args" $args
+		# shellcheck disable=SC2086
+		expect_request "$args request" kubectl $args
+		expect_spool_clean "approved $args"
+	done
+	fresh "$sh rollout resume -f is an input"
+	run_k "$sh" rollout resume -f kust/x.yaml
+	expect_files "resume -f file" "$W/kust/x.yaml"
+
+	for args in "rollout undo deploy/web" "patch node/n1 -p {}" "label ns/prod a=b" "annotate cm/x a=b" \
+		"cordon node1" "uncordon node1" "drain node1 --ignore-daemonsets" "rollout pause deploy/web" "rollout resume deploy/web"; do
+		fresh "$sh deny: $args"
+		mode deny
+		# shellcheck disable=SC2086
+		run_k "$sh" $args
+		expect_status 1 "denied $args"
+		expect_out 'denied in Tern; nothing was executed' "denied $args"
+		expect_not_run "denied $args"
+		expect_spool_clean "denied $args"
+	done
+
+	# Outside a Tern pane a guarded command is refused, so running here proves
+	# that it passed through without approval.
+	for args in "rollout undo deploy/web --to-revision 2 --dry-run=server" "patch deploy/web --type merge -p {} --dry-run=client" \
+		"label pods --field-selector a=b x=y --dry-run=server" "annotate cm/x --resource-version 5 n=v --dry-run=server" \
+		"cordon -l a=b --dry-run=server" "uncordon node1 --dry-run=server" \
+		"drain node1 --pod-selector app=web --timeout 10s --dry-run=server" "patch -f kust/x.yaml --local -p {} -o yaml" \
+		"label --local -f kust/x.yaml a=b" "annotate cm/x --list" "label cm/x --list=true" "annotate --local=1 -f kust/x.yaml a=b"; do
+		fresh "$sh pass-through: $args"
+		unset TERM_PROGRAM
+		# shellcheck disable=SC2086
+		run_k "$sh" $args
+		expect_status 0 "$args"
+		# shellcheck disable=SC2086
+		expect_ran "$args" $args
+		expect_no_tern "$args"
+	done
+	for args in "rollout pause deploy/web --dry-run=server" "rollout resume deploy/web --dry-run=client" \
+		"label cm/x a=b --local=false" "label cm/x a=b --list=false" "patch deploy/web -p {} --bogus --dry-run=server" \
+		"cordon node1 --local" "drain node1 --dry-run=none" "annotate cm/x n=v --dry-run" "rollout undo deploy/web --list"; do
+		fresh "$sh needs approval: $args"
+		unset TERM_PROGRAM
+		# shellcheck disable=SC2086
+		run_k "$sh" $args
+		expect_status 1 "$args"
+		expect_out 'not a Tern pane' "$args is guarded"
+		expect_not_run "$args"
+	done
+
+	for args in "label cm/x a=b" "annotate cm/x a=b" "patch deploy/web -p {}" "cordon n1" "uncordon n1" "drain n1" \
+		"edit cm/x" "rollout undo deploy/web"; do
+		fresh "$sh unknown flag before: $args"
+		# shellcheck disable=SC2086
+		run_k "$sh" --some-new-flag x $args
+		expect_status 1 "unknown flag before $args"
+		expect_out 'cannot tell which kubectl command' "unknown flag before $args"
+		expect_not_run "unknown flag before $args"
+		expect_no_tern "unknown flag before $args"
+	done
+
+	fresh "$sh --patch-file"
+	printf '{"spec":{}}\n' >"$W/my dir/p,q.json"
+	run_k "$sh" patch deploy/web --patch-file 'my dir/p,q.json'
+	expect_status 0 "patch-file approved"
+	expect_ran "patch-file argv" patch deploy/web --patch-file 'my dir/p,q.json'
+	expect_request "patch-file request" kubectl patch deploy/web --patch-file 'my dir/p,q.json'
+	expect_files "--patch-file is listed exactly, never split on commas" "$W/my dir/p,q.json"
+	fresh "$sh --patch-file with -f"
+	run_k "$sh" patch -f 'my dir/a b.yaml' --patch-file="$W/my dir/c.json"
+	expect_status 0 "patch-file with -f"
+	expect_files "patch file and manifest" "$W/my dir/a b.yaml" "$W/my dir/c.json"
+	fresh "$sh --patch-file changed after approval"
+	mode stale
+	run_k "$sh" patch deploy/web --patch-file 'my dir/c.json'
+	expect_status 1 "patch file changed"
+	expect_out 'fingerprint mismatch' "patch file changed"
+	expect_not_run "patch file changed"
+	for f in '--patch-file -' '--patch-file=-'; do
+		fresh "$sh patch from stdin refused: $f"
+		# shellcheck disable=SC2086
+		run_k "$sh" patch deploy/web $f
+		expect_status 1 "$f"
+		expect_out 'stdin \(--patch-file -\)' "$f message"
+		expect_not_run "$f"
+		expect_no_tern "$f"
+	done
+	for m in "/dev/stdin|not a regular file" "my dir|not a regular file" "https://example.com/p.json|remote patch files" \
+		"nope.json|no such file"; do
+		fresh "$sh --patch-file ${m%%|*} refused"
+		run_k "$sh" patch deploy/web --patch-file "${m%%|*}"
+		expect_status 1 "--patch-file ${m%%|*}"
+		expect_out "${m#*|}" "--patch-file ${m%%|*} message"
+		expect_not_run "--patch-file ${m%%|*}"
+	done
+
+	fresh "$sh status lists the verbs"
+	case $sh in
+	fish) run_code fish '$TKG_CORE status' ;;
+	*) run_code "$sh" '"$TKG_CORE" status' ;;
+	esac
+	expect_out '^guarded verbs: annotate, apply, cordon, delete, drain, edit \(after you save\), label, patch, rollout restart, rollout undo, rollout pause, rollout resume, scale, uncordon$' "status verbs"
+}
+
+# The copy of an unapproved edit that the hook saved in TMPDIR.
+denied_copy() {
+	ls "$root/tmp"/kubectl-edit-denied-* 2>/dev/null
+}
+
+expect_not_applied() {
+	if [ -e "$FAKE_DIR/edit-applied" ]; then bad "$1: kubectl applied the edit"; else ok; fi
+}
+
+expect_saved_copy() {
+	n_=$(denied_copy | wc -l | tr -d ' ')
+	if [ "$n_" = 1 ] && grep -q '^  k: edited$' "$(denied_copy)"; then ok; else bad "$1: $n_ saved copies of the edit"; fi
+}
+
+expect_tmp_clean() {
+	left=$(cd "$root/tmp" && ls -A | grep -v '^kubectl-edit-denied-')
+	if [ -z "$left" ]; then ok; else bad "$1: TMPDIR not cleaned: $left"; fi
+}
+
+edit_fresh() {
+	fresh "$1"
+	KUBE_EDITOR=$root/ed
+	export KUBE_EDITOR
+}
+
+# `kubectl edit`: the hook asks for approval after each save; kubectl applies
+# only an approved file and finds its own bytes back otherwise.
+edit_cases() {
+	sh=$1
+
+	edit_fresh "$sh edit approved"
+	run_k "$sh" edit cm/x -n team
+	expect_status 0 "edit approved"
+	expect_out '^configmap/x edited$' "kubectl applied the edit"
+	if grep -q '^  k: edited$' "$FAKE_DIR/edit-applied" 2>/dev/null; then ok; else bad "kubectl did not apply the edited text"; fi
+	expect_ran "edit argv" edit cm/x -n team
+	expect_request "edit request" kubectl edit cm/x -n team
+	expect_field namespace team "edit request"
+	file_=$(sed -n 1p "$FAKE_DIR/edit-files")
+	if [ "$(tail -n 1 "$FAKE_DIR/editor-argv")" = "$file_" ]; then ok; else bad "the editor did not get kubectl's file"; fi
+	reqtool edit "$(req)" >"$root/got-edit" 2>&1
+	orig_=$(sed -n 2p "$root/got-edit")
+	if [ "$(sed -n 1p "$root/got-edit")" = "$file_" ]; then ok; else bad "edit.file is not kubectl's file: $(cat "$root/got-edit")"; fi
+	case $orig_ in
+	"$root/tmp"/tkube-edit.*/original.yaml) ok ;;
+	*) bad "edit.original is not in the private edit dir: $orig_" ;;
+	esac
+	expect_files "edit files" "$file_" "$orig_"
+	sha_=$(sha256_ <"$FAKE_DIR/edit-round-1")
+	sha_=${sha_%% *}
+	if req | grep -qF "{\"path\":\"$orig_\",\"size\":$(wc -c <"$FAKE_DIR/edit-round-1" | tr -d ' '),\"sha256\":\"$sha_\"}"; then ok; else bad "edit.original is not kubectl's first serialization"; fi
+	expect_spool_clean "edit approved"
+	expect_tmp_clean "edit approved"
+
+	for m in none comment; do
+		edit_fresh "$sh edit unchanged ($m)"
+		echo "$m" >"$FAKE_DIR/editor-mode"
+		run_k "$sh" edit cm/x
+		expect_status 0 "unchanged ($m)"
+		expect_out '^Edit cancelled, no changes made.$' "unchanged ($m)"
+		expect_no_tern "unchanged ($m) needs no approval"
+		expect_tmp_clean "unchanged ($m)"
+	done
+
+	edit_fresh "$sh edit denied"
+	mode deny
+	run_k "$sh" edit cm/x
+	expect_status 0 "edit denied (kubectl cancels)"
+	expect_out 'denied in Tern; the object was not changed' "deny message"
+	expect_out '^Edit cancelled, no changes made.$' "kubectl found its own bytes"
+	expect_out 'your edit is saved at' "copy message"
+	expect_not_applied "edit denied"
+	expect_saved_copy "edit denied"
+	expect_spool_clean "edit denied"
+	expect_tmp_clean "edit denied"
+
+	for m in "hang:no decision within 1s" "stale:fingerprint mismatch" "drift:context changed"; do
+		name=${m%%:*}
+		edit_fresh "$sh edit refused: $name"
+		mode "$name"
+		[ "$name" = hang ] && TKUBE_GUARD_TIMEOUT=1 && export TKUBE_GUARD_TIMEOUT
+		run_k "$sh" edit cm/x
+		expect_status 1 "edit refused: $name"
+		expect_out "${m#*:}" "edit refused: $name message"
+		expect_out 'the edit was not applied' "edit refused: $name says so"
+		expect_out 'problem with the editor' "edit refused: $name fails kubectl's editor"
+		expect_not_applied "edit refused: $name"
+		if [ "$(denied_copy | wc -l | tr -d ' ')" = 1 ]; then ok; else bad "edit refused: $name saved no copy"; fi
+		expect_spool_clean "edit refused: $name"
+		expect_tmp_clean "edit refused: $name"
+	done
+
+	edit_fresh "$sh edit: kubectl reopens a rejected edit"
+	echo 1 >"$FAKE_DIR/edit-reject"
+	echo append >"$FAKE_DIR/editor-mode"
+	run_k "$sh" edit cm/x
+	expect_status 0 "second round approved"
+	expect_out 'is invalid' "first round rejected"
+	if [ "$(wc -l <"$FAKE_DIR/reqs" | tr -d ' ')" = 2 ]; then ok; else bad "want one request per changed round"; fi
+	o1_=$(sed -n 1p "$FAKE_DIR/reqs" | sed 's/.*"original":"\([^"]*\)".*/\1/')
+	o2_=$(sed -n 2p "$FAKE_DIR/reqs" | sed 's/.*"original":"\([^"]*\)".*/\1/')
+	h1_=$(sed -n 1p "$FAKE_DIR/reqs" | sed "s|.*\"path\":\"$o1_\",\"size\":[0-9]*,\"sha256\":\"\([0-9a-f]*\)\".*|\1|")
+	h2_=$(sed -n 2p "$FAKE_DIR/reqs" | sed "s|.*\"path\":\"$o2_\",\"size\":[0-9]*,\"sha256\":\"\([0-9a-f]*\)\".*|\1|")
+	if [ "$o1_" = "$o2_" ] && [ "$h1_" = "$h2_" ] && [ ${#h1_} = 64 ]; then ok; else bad "round 2 must keep round 1's original ($o1_ $h1_ / $o2_ $h2_)"; fi
+	if grep -q '^  r2: x$' "$FAKE_DIR/edit-applied" 2>/dev/null; then ok; else bad "round 2 edit not applied"; fi
+
+	edit_fresh "$sh edit: editor exits 3"
+	echo fail >"$FAKE_DIR/editor-mode"
+	run_k "$sh" edit cm/x
+	expect_status 1 "editor failure"
+	expect_out 'problem with the editor' "editor failure"
+	expect_no_tern "editor failure"
+	expect_not_applied "editor failure"
+	expect_tmp_clean "editor failure"
+
+	edit_fresh "$sh edit: EDITOR with arguments"
+	unset KUBE_EDITOR
+	EDITOR="$root/ed --wait"
+	export EDITOR
+	run_k "$sh" edit cm/x
+	expect_status 0 "EDITOR with --wait"
+	if [ "$(sed -n 1p "$FAKE_DIR/editor-argv")" = --wait ] && [ "$(wc -l <"$FAKE_DIR/editor-argv" | tr -d ' ')" = 2 ]; then ok; else bad "EDITOR not split like kubectl: $(tr '\n' '|' <"$FAKE_DIR/editor-argv")"; fi
+	if [ -e "$FAKE_DIR/edit-applied" ]; then ok; else bad "EDITOR edit not applied"; fi
+
+	edit_fresh "$sh edit: TMPDIR with a space"
+	mkdir "$root/tmp/t mp"
+	TMPDIR="$root/tmp/t mp"
+	run_k "$sh" edit cm/x
+	expect_status 1 "TMPDIR with a space"
+	expect_out 'TMPDIR contains whitespace' "TMPDIR message"
+	expect_not_run "TMPDIR with a space"
+	if [ -e "$FAKE_DIR/editor-runs" ]; then bad "the editor opened before the refusal"; else ok; fi
+
+	edit_fresh "$sh edit: nested"
+	TKUBE_EDIT_DIR=$root/tmp
+	export TKUBE_EDIT_DIR
+	run_k "$sh" edit cm/x
+	expect_status 1 "nested edit"
+	expect_out 'nested edits are not supported' "nested message"
+	expect_not_run "nested edit"
+
+	edit_fresh "$sh edit: unknown flag"
+	run_k "$sh" edit cm/x --dry-run=server
+	expect_status 1 "edit --dry-run"
+	expect_out 'cannot be previewed' "edit --dry-run message"
+	expect_not_run "edit --dry-run"
+
+	edit_fresh "$sh edit outside Tern"
+	unset TERN_PANE
+	run_k "$sh" edit cm/x
+	expect_status 1 "edit outside Tern"
+	expect_not_run "edit outside Tern"
+
+	edit_fresh "$sh edit without tern"
+	TERN_BIN=$root/no-such-tern
+	export TERN_BIN
+	run_k "$sh" edit cm/x
+	expect_status 1 "edit without tern"
+	expect_out 'is not on PATH' "edit without tern message"
+	expect_not_run "edit without tern"
+
+	edit_fresh "$sh edit: core path with a space"
+	rm -rf "$root/co re"
+	cp -R "$repo/shell" "$root/co re"
+	TKG_SNIP="$root/co re/tern-kube.$sh" TKG_CORE="$root/co re/tern-kube-guard" run_k "$sh" edit cm/x
+	expect_status 0 "core with a space"
+	if [ -e "$FAKE_DIR/edit-applied" ]; then ok; else bad "edit through a core path with a space not applied"; fi
+
+	edit_fresh "$sh edit Ctrl-C"
+	mode hang
+	TKUBE_GUARD_TIMEOUT=30
+	export TKUBE_GUARD_TIMEOUT
+	(launch_group "$sh" edit cm/x >"$root/out" 2>&1 </dev/null) &
+	pid=$!
+	i=0
+	while [ $i -lt 100 ] && ! ls "$root/spool"/req-*.json >/dev/null 2>&1; do
+		sleep 0.1
+		i=$((i + 1))
+	done
+	kill -s INT -- "-$pid" 2>/dev/null || bad "edit Ctrl-C: no process group $pid to signal"
+	wait "$pid"
+	st=$?
+	i=0
+	while [ $i -lt 50 ] && { ls -d "$root/tmp"/tkube-edit.* >/dev/null 2>&1 || [ -z "$(denied_copy)" ]; }; do
+		sleep 0.1
+		i=$((i + 1))
+	done
+	unset TKUBE_GUARD_TIMEOUT
+	[ "$st" != 0 ] && ok || bad "edit Ctrl-C exited 0"
+	expect_not_applied "edit Ctrl-C"
+	expect_saved_copy "edit Ctrl-C"
+	expect_spool_clean "edit Ctrl-C"
+	# A kubectl killed by Ctrl-C leaves its own temp file, as the real one does.
+	if ls -d "$root/tmp"/tkube-edit.* >/dev/null 2>&1; then bad "edit Ctrl-C left the edit dir"; else ok; fi
+	if pgrep -f 'sleep 1797' >/dev/null 2>&1; then
+		bad "edit Ctrl-C left the waiting tern open running"
+		pkill -f 'sleep 1797'
+	else ok; fi
+}
+
 for sh in $shells; do
 	TKG_SNIP=$repo/shell/tern-kube.$sh
 	TKG_CORE=$core
 	export TKG_SNIP TKG_CORE
 	core_cases "$sh"
 	[ "$sh" = dash ] || snippet_cases "$sh"
+	verb_cases "$sh"
+	edit_cases "$sh"
 done
 for want in zsh bash fish; do
 	case " $shells " in

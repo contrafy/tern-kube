@@ -1,9 +1,10 @@
 # Screenshots for docs/screenshots/m1-<view>-<theme>-<size>.png,
 # m2-<view>-<theme>-wide.png, m3-{result,guard,diff-expanded}-<theme>-wide.png,
-# m3b-<view>-<theme>-wide.png and m4-settings-<theme>-wide.png (sourced by
-# scripts/e2e.sh --shots). E2E_SHOTS limits the groups (space-separated:
-# m1 m2 m3 m3b m4; default all). Every shot is of the live sandbox window with
-# the plugin loaded; check each PNG by eye before committing.
+# m3b-<view>-<theme>-wide.png, m4-settings-<theme>-wide.png and
+# t1-{label-diff,drain-preview,undo-diff,edit-approve}-dark-wide.png (sourced
+# by scripts/e2e.sh --shots). E2E_SHOTS limits the groups (space-separated:
+# m1 m2 m3 m3b m4 t1; default all). Every shot is of the live sandbox window
+# with the plugin loaded; check each PNG by eye before committing.
 
 shots_dir="$E2E_REPO/docs/screenshots"
 
@@ -190,8 +191,86 @@ shots_m4() {
 	reset_pane
 }
 
+t1_shot() { # t1_shot VIEW
+	dev shot "t1-$1-$theme-wide" "$shots_dir/t1-$1-$theme-wide.png" >/dev/null || fail "shot t1 $1"
+}
+
+# Previews of the 0.2.0 verbs, nothing confirmed: a label diff from the lens
+# chip, then from Explore (approve pane zoomed) a drain blocked by a
+# PodDisruptionBudget, a rollout undo diff and a kubectl edit approval
+# (scripted KUBE_EDITOR, denied after the shot). As scenarios 24-28.
+shots_t1() {
+	reset_pane
+	e2e_objects
+	kc -n "$MNS" set image deploy/tk-e2e-web web=registry.k8s.io/pause:3.9 >/dev/null
+	kc -n "$MNS" rollout status deploy/tk-e2e-web --timeout=60s >/dev/null
+	kc -n "$MNS" create pdb tk-e2e-pdb --selector=app=tk-e2e-web --min-available=1 >/dev/null
+	ins='[data-role="tern-kube.inspector"] .sf-act'
+	lens "kubectl --context kind-tern-kube-dev get configmap tk-e2e-cm -n $MNS"
+	click_text tk-e2e-cm '.tk-grid .tk-c'
+	click_text Label "$ins"
+	approve_open && a_input || return
+	ctl type '"tier=gold team=payments"' >/dev/null
+	xkey enter
+	a_ready || return
+	t1_shot label-diff
+	xkey escape
+	approve_closed
+
+	node=$(kc get nodes -o jsonpath='{.items[0].metadata.name}')
+	lens "kubectl --context kind-tern-kube-dev get nodes"
+	click_text "$node" '.tk-grid .tk-c'
+	click_text 'Explore live'
+	explore_open && xwait "Object node/$node" || return
+	xkey D
+	approve_open && a_input || return
+	xkey cmd+a
+	ctl type '"--ignore-daemonsets --timeout=4m --pod-selector=app=tk-e2e-web"' >/dev/null
+	xkey enter
+	E2E_WAIT=40 a_ready || return
+	ctl zoom >/dev/null
+	sleep 0.8
+	t1_shot drain-preview
+	xkey escape
+	approve_closed
+	explore_close
+	kc -n "$MNS" delete pdb tk-e2e-pdb --ignore-not-found >/dev/null
+
+	lens "kubectl --context kind-tern-kube-dev get deploy tk-e2e-web -n $MNS"
+	click_text tk-e2e-web '.tk-grid .tk-c'
+	click_text 'Explore live'
+	explore_open && xwait 'Object deployment/tk-e2e-web' || return
+	xkey U
+	approve_open && a_ready || return
+	ctl zoom >/dev/null
+	sleep 0.8
+	t1_shot undo-diff
+	xkey escape
+	approve_closed
+	explore_close
+
+	printf '%s\n' "sed 's/^  LEVEL: .*/  LEVEL: debug/' \"\$1\" >\"\$1.new\" && cat \"\$1.new\" >\"\$1\" && rm -f \"\$1.new\"" \
+		>"$E2E_SB/edit-script"
+	lens "kubectl --context kind-tern-kube-dev get configmap tk-e2e-cm -n $MNS"
+	click_text tk-e2e-cm '.tk-grid .tk-c'
+	click_text 'Explore live'
+	explore_open && xwait 'Object configmap/tk-e2e-cm' || return
+	xkey e
+	approve_open && a_ready || return
+	ctl zoom >/dev/null
+	sleep 0.8
+	t1_shot edit-approve
+	xkey escape
+	approve_closed
+	sleep 2
+	explore_close
+	rm -f "$E2E_SB/edit-script"
+	e2e_objects_delete
+	reset_pane
+}
+
 wants() {
-	case " ${E2E_SHOTS:-m1 m2 m3 m3b m4} " in *" $1 "*) true ;; *) false ;; esac
+	case " ${E2E_SHOTS:-m1 m2 m3 m3b m4 t1} " in *" $1 "*) true ;; *) false ;; esac
 }
 
 echo "SHOTS -> $shots_dir"
@@ -211,6 +290,9 @@ for theme in light dark; do
 			wants m3 && shots_m3
 			wants m3b && shots_m3b
 			wants m4 && shots_m4
+			if [ $theme = dark ]; then
+				wants t1 && shots_t1
+			fi
 		fi
 	done
 done

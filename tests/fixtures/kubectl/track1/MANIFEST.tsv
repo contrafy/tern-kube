@@ -1,0 +1,56 @@
+name	argv	exit	kubectl_version	server_version
+rollout-history-deploy	kubectl --context kind-tern-kube-dev rollout history deployment/web -n tern-test-t1	0	v1.34.1	v1.37.0
+rollout-history-ds	kubectl --context kind-tern-kube-dev rollout history daemonset/ds -n tern-test-t1	0	v1.34.1	v1.37.0
+rollout-history-sts	kubectl --context kind-tern-kube-dev rollout history statefulset/db -n tern-test-t1	0	v1.34.1	v1.37.0
+rollout-history-selector	kubectl --context kind-tern-kube-dev rollout history deployment -l tern-t1-owner=capture -n tern-test-t1	0	v1.34.1	v1.37.0
+rollout-history-deploy-rev1-json	kubectl --context kind-tern-kube-dev rollout history deployment/web --revision=1 -o json -n tern-test-t1	0	v1.34.1	v1.37.0
+rollout-history-ds-rev1-json	kubectl --context kind-tern-kube-dev rollout history daemonset/ds --revision=1 -o json -n tern-test-t1	0	v1.34.1	v1.37.0
+rollout-history-sts-rev1-json	kubectl --context kind-tern-kube-dev rollout history statefulset/db --revision=1 -o json -n tern-test-t1	0	v1.34.1	v1.37.0
+rollout-history-deploy-rev9-json	kubectl --context kind-tern-kube-dev rollout history deployment/web --revision=9 -o json -n tern-test-t1	1	v1.34.1	v1.37.0
+get-deploy-web-json	kubectl --context kind-tern-kube-dev get deployment/web -o json -n tern-test-t1	0	v1.34.1	v1.37.0
+get-ds-json	kubectl --context kind-tern-kube-dev get daemonset/ds -o json -n tern-test-t1	0	v1.34.1	v1.37.0
+get-sts-json	kubectl --context kind-tern-kube-dev get statefulset/db -o json -n tern-test-t1	0	v1.34.1	v1.37.0
+undo-deploy-server	kubectl --context kind-tern-kube-dev rollout undo deployment/web --dry-run=server -n tern-test-t1	0	v1.34.1	v1.37.0
+undo-deploy-server-json	kubectl --context kind-tern-kube-dev rollout undo deployment/web --dry-run=server -o json -n tern-test-t1	0	v1.34.1	v1.37.0
+undo-deploy-to9-server	kubectl --context kind-tern-kube-dev rollout undo deployment/web --to-revision=9 --dry-run=server -n tern-test-t1	1	v1.34.1	v1.37.0
+undo-single-server	kubectl --context kind-tern-kube-dev rollout undo deployment/one --dry-run=server -n tern-test-t1	1	v1.34.1	v1.37.0
+undo-ds-server	kubectl --context kind-tern-kube-dev rollout undo daemonset/ds --dry-run=server -n tern-test-t1	0	v1.34.1	v1.37.0
+undo-sts-server	kubectl --context kind-tern-kube-dev rollout undo statefulset/db --dry-run=server -n tern-test-t1	0	v1.34.1	v1.37.0
+pause-dry-run	kubectl --context kind-tern-kube-dev rollout pause deployment/web --dry-run=server -n tern-test-t1	1	v1.34.1	v1.37.0
+get-cm-json	kubectl --context kind-tern-kube-dev get configmap cm cm2 -o json -n tern-test-t1	0	v1.34.1	v1.37.0
+label-cm-cm2-json	kubectl --context kind-tern-kube-dev label configmap cm cm2 x=y --dry-run=server -o json -n tern-test-t1	0	v1.34.1	v1.37.0
+label-cm-cm2	kubectl --context kind-tern-kube-dev label configmap cm cm2 x=y --dry-run=server -n tern-test-t1	0	v1.34.1	v1.37.0
+label-not-labeled	kubectl --context kind-tern-kube-dev label configmap/cm a=b --dry-run=server -n tern-test-t1	0	v1.34.1	v1.37.0
+label-unlabeled	kubectl --context kind-tern-kube-dev label configmap/cm a- --dry-run=server -n tern-test-t1	0	v1.34.1	v1.37.0
+label-conflict	kubectl --context kind-tern-kube-dev label configmap/cm a=c --dry-run=server -n tern-test-t1	1	v1.34.1	v1.37.0
+label-overwrite-json	kubectl --context kind-tern-kube-dev label configmap/cm a=c --overwrite --dry-run=server -o json -n tern-test-t1	0	v1.34.1	v1.37.0
+label-selector-none	kubectl --context kind-tern-kube-dev label configmap -l a=zzz x=y --dry-run=server -n tern-test-t1	0	v1.34.1	v1.37.0
+annotate-cm-json	kubectl --context kind-tern-kube-dev annotate configmap/cm note=b --overwrite --dry-run=server -o json -n tern-test-t1	0	v1.34.1	v1.37.0
+annotate-cm	kubectl --context kind-tern-kube-dev annotate configmap/cm note=b --overwrite --dry-run=server -n tern-test-t1	0	v1.34.1	v1.37.0
+patch-cm-json	kubectl --context kind-tern-kube-dev patch configmap/cm -p '{"data":{"k":"v2"}}' --dry-run=server -o json -n tern-test-t1	0	v1.34.1	v1.37.0
+patch-cm	kubectl --context kind-tern-kube-dev patch configmap/cm -p '{"data":{"k":"v2"}}' --dry-run=server -n tern-test-t1	0	v1.34.1	v1.37.0
+patch-cm-nochange	kubectl --context kind-tern-kube-dev patch configmap/cm -p '{"data":{"k":"v"}}' --dry-run=server -n tern-test-t1	0	v1.34.1	v1.37.0
+patch-multi-json	kubectl --context kind-tern-kube-dev patch configmap cm cm2 -p '{"data":{"k":"v3"}}' --dry-run=server -o json -n tern-test-t1	0	v1.34.1	v1.37.0
+patch-deploy-replicas-json	kubectl --context kind-tern-kube-dev patch deployment/web -p '{"spec":{"replicas":3}}' --dry-run=server -o json -n tern-test-t1	0	v1.34.1	v1.37.0
+get-secret-json	kubectl --context kind-tern-kube-dev get secret/creds -o json -n tern-test-t1	0	v1.34.1	v1.37.0
+patch-secret-json	kubectl --context kind-tern-kube-dev patch secret/creds -p '{"stringData":{"pass":"rotated"}}' --dry-run=server -o json -n tern-test-t1	0	v1.34.1	v1.37.0
+get-widget-json	kubectl --context kind-tern-kube-dev get widget/w1 -o json -n tern-test-t1	0	v1.34.1	v1.37.0
+patch-widget-merge-json	kubectl --context kind-tern-kube-dev patch widget/w1 --type merge -p '{"spec":{"size":4}}' --dry-run=server -o json -n tern-test-t1	0	v1.34.1	v1.37.0
+patch-widget-strategic	kubectl --context kind-tern-kube-dev patch widget/w1 -p '{"spec":{"size":4}}' --dry-run=server -n tern-test-t1	1	v1.34.1	v1.37.0
+get-node-json	kubectl --context kind-tern-kube-dev get node tern-kube-dev-control-plane -o json	0	v1.34.1	v1.37.0
+cordon-server	kubectl --context kind-tern-kube-dev cordon tern-kube-dev-control-plane --dry-run=server	0	v1.34.1	v1.37.0
+uncordon-server	kubectl --context kind-tern-kube-dev uncordon tern-kube-dev-control-plane --dry-run=server	0	v1.34.1	v1.37.0
+drain-client-ok	kubectl --context kind-tern-kube-dev drain tern-kube-dev-control-plane --pod-selector=tern-t1=yes --ignore-daemonsets --delete-emptydir-data --force --dry-run=client	0	v1.34.1	v1.37.0
+drain-client-preflight	kubectl --context kind-tern-kube-dev drain tern-kube-dev-control-plane --pod-selector=tern-t1=yes --dry-run=client	1	v1.34.1	v1.37.0
+drain-server-preflight	kubectl --context kind-tern-kube-dev drain tern-kube-dev-control-plane --pod-selector=tern-t1=yes --dry-run=server --timeout=20s	1	v1.34.1	v1.37.0
+drain-server-ok	kubectl --context kind-tern-kube-dev drain tern-kube-dev-control-plane '--pod-selector=tern-t1=yes,t1app!=web' --ignore-daemonsets --delete-emptydir-data --force --dry-run=server --timeout=30s	0	v1.34.1	v1.37.0
+drain-server-pdb-timeout	kubectl --context kind-tern-kube-dev drain tern-kube-dev-control-plane --pod-selector=tern-t1=yes --ignore-daemonsets --delete-emptydir-data --force --dry-run=server --timeout=8s	1	v1.34.1	v1.37.0
+drain-server-disable-eviction	kubectl --context kind-tern-kube-dev drain tern-kube-dev-control-plane '--pod-selector=tern-t1=yes,t1app!=web' --ignore-daemonsets --delete-emptydir-data --force --disable-eviction --dry-run=server --timeout=6s	1	v1.34.1	v1.37.0
+drain-server-nopods	kubectl --context kind-tern-kube-dev drain tern-kube-dev-control-plane --pod-selector=t1app=none --dry-run=server --timeout=10s	0	v1.34.1	v1.37.0
+convert-original	kubectl --context kind-tern-kube-dev patch --local --type=merge -p '{}' -f edit-input/original.yaml -o json	0	v1.34.1	v1.37.0
+convert-edited	kubectl --context kind-tern-kube-dev patch --local --type=merge -p '{}' -f edit-input/edited.yaml -o json	0	v1.34.1	v1.37.0
+convert-original-list	kubectl --context kind-tern-kube-dev patch --local --type=merge -p '{}' -f edit-input/original-list.yaml -o json	0	v1.34.1	v1.37.0
+convert-edited-list	kubectl --context kind-tern-kube-dev patch --local --type=merge -p '{}' -f edit-input/edited-list.yaml -o json	0	v1.34.1	v1.37.0
+convert-edited-renamed	kubectl --context kind-tern-kube-dev patch --local --type=merge -p '{}' -f edit-input/edited-renamed.yaml -o json	0	v1.34.1	v1.37.0
+convert-edited-invalid	kubectl --context kind-tern-kube-dev patch --local --type=merge -p '{}' -f edit-input/edited-invalid.yaml -o json	1	v1.34.1	v1.37.0
+undo-single-server-json-k137	kubectl --context kind-tern-kube-dev rollout undo deployment/tkm-single --dry-run=server -o json -n tern-test-mutate	1	v1.37.1	v1.37.0

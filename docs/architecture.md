@@ -53,7 +53,8 @@ plugin/
                        argv), relations, label selectors
     actions/quick.luau shell, logs, port-forward, debug, CronJob run-now
                        links and the commands they launch
-    mutation/          plan, steps, diffseg, risk, confirm, fingerprint,
+    mutation/          plan, steps, diffseg, objdiff (before/after diffs),
+                       drain, rollout, edit, risk, confirm, fingerprint,
                        audit, link (mutate links + grants), session (approve
                        block core), render
     gitops/            index, controllers, clean, emit, export, drift, view
@@ -103,7 +104,8 @@ bin/tern-kube-drift    POSIX sh drift report for CI (no Tern)
   (`plugin/lib/kubectl/argv.luau`) and returns nil (raw output) for anything
   it cannot render faithfully: watches, `-o jsonpath`, empty output, output
   over `general.max_rows` lines or `general.max_capture_bytes`.
-- Mutation verbs (`apply`, `delete`, `rollout restart`, `scale`) render as a
+- Mutation verbs (`apply`, `delete`, `scale`, `patch`, `label`, `annotate`,
+  `cordon`, `uncordon`, `rollout restart|undo|pause|resume`) render as a
   result summary (`plugin/lib/render/mutation_view.luau`); by the time a lens
   sees them the change has happened.
 
@@ -151,16 +153,45 @@ palette), quick (mutating quick actions) and guard (spool request).
 1. resolve the context, `config view --minify` (context exists, server URL
    recorded);
 2. `plan.luau`: family, target, exact argv; unsupported input fails closed;
-3. digest input files, compute the fingerprint (`fingerprint.luau`);
-4. preview steps in parallel (`steps.luau`): server dry run, `kubectl diff`
-   split per resource (`diffseg.luau`), target listing;
+3. digest input files (`-f`, `--patch-file`, edit files), compute the
+   fingerprint (`fingerprint.luau`);
+4. stage-1 preview steps in parallel (`steps.luau`), then stage-2 steps that
+   need stage-1 output (`Steps.followUp`: undo target revisions, edit dry
+   runs; at most 20 objects);
 5. risk tier `simple` / `typed` / `blocked` (`risk.luau`; manifest scans
    are advisory);
-6. confirm (`confirm.luau`): re-read digests, fingerprint, server and
-   inferred context; any change refuses;
+6. confirm (`confirm.luau`): re-read digests, fingerprint, server, inferred
+   context and, for `rollout undo`, the revision list; any change refuses;
 7. native: run the pinned argv; quick: grant a single-use token and open
    the action link; guard: write `resp-<nonce>.env`, exit 0;
-8. append one JSON line to `<plugin data>/audit.log` (`audit.luau`).
+8. append one JSON line to `<plugin data>/audit.log` (`audit.luau`: argv,
+   previewed objects, input file digests).
+
+Families and their preview steps:
+
+| Family | Stage 1 | Stage 2 | Before/after |
+| --- | --- | --- | --- |
+| apply | server dry run, `kubectl diff` | | `kubectl diff` per resource (`diffseg.luau`) |
+| delete, scale | targets, server dry run | | |
+| restart | targets | | |
+| patch, label, annotate | targets, server dry run `-o json` | | live vs dry run |
+| rollout undo | targets, `rollout history`, server dry run | `rollout history --revision=R -o json` per object | live vs live with the revision's template |
+| rollout pause/resume | targets | | live vs `spec.paused` set/removed |
+| cordon, uncordon | targets (nodes), server dry run | | live vs `spec.unschedulable` set/removed |
+| drain | targets, client dry run, server eviction probe (bounded `--timeout`) | | node cordoned; evictions card (`drain.luau`) |
+| edit (guard edit hook) | `patch --local -o json` of both files, targets | merge patch dry run per changed object (`edit.luau`) | live vs dry run |
+
+Families without `kubectl diff` render before/after object diffs through
+`objdiff.luau`: both sides are cleaned (generation, resourceVersion,
+managedFields; Secret values redacted), emitted as YAML and line-diffed into
+the same unified text `kubectl diff` prints, so the diff cards, counts and
+focus cycling are shared with apply.
+
+Input ops (scale, apply, label, annotate, patch, drain) open at a prompt
+(`Link.prompt`); typed text is validated into link fields by
+`Link.withInput`, and `i` after a preview returns to the prompt. A native
+drain must carry a `--timeout` below `mutations.execute_timeout_ms`: the
+block cannot stop kubectl once it runs.
 
 ### GitOps
 

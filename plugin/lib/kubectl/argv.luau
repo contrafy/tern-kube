@@ -307,6 +307,8 @@ local TYPED_VERBS = {
 -- Verbs addressing a pod (or TYPE/NAME) as first positional.
 local POD_VERBS = { logs = true, exec = true, attach = true, ["port-forward"] = true }
 
+-- A label/annotate (or `set env`) positional that edits rather than names:
+-- `KEY=VALUE` or `KEY-`.
 local function isLabelEdit(s: string): boolean
 	return string.find(s, "=", 1, true) ~= nil or string.sub(s, -1) == "-"
 end
@@ -408,6 +410,8 @@ local function truthy(list: { string }?): boolean
 end
 
 local M = {}
+
+M.isLabelEdit = isLabelEdit
 
 function M.parse(program: string, args: { string }): Invocation
 	-- Any program other than kubectl is kubecolor or a shell alias reported as
@@ -519,7 +523,21 @@ local RAW_VERBS: { [string]: string } = {
 	cp = "cp copies files; showing raw output.",
 }
 
-local NATIVE_VERBS = { get = true, describe = true, top = true, apply = true, delete = true, scale = true }
+local NATIVE_VERBS = {
+	get = true,
+	describe = true,
+	top = true,
+	apply = true,
+	delete = true,
+	scale = true,
+	patch = true,
+	label = true,
+	annotate = true,
+	cordon = true,
+	uncordon = true,
+}
+
+local NATIVE_ROLLOUTS = { restart = true, undo = true, pause = true, resume = true }
 
 local UNSUPPORTED_OUTPUT: { [Types.OutputFormat]: string } = {
 	jsonpath = "jsonpath output is free-form; use -o json or -o yaml for a native view.",
@@ -552,12 +570,18 @@ function M.lensSupport(inv: Invocation): LensSupport
 		return { supported = false, reason = outputReason }
 	end
 	if verb == "rollout" then
-		if inv.subverb == "restart" then
+		if NATIVE_ROLLOUTS[inv.subverb or ""] then
 			return { supported = true }
 		end
 		return {
 			supported = false,
 			reason = string.format("kubectl rollout %s has no native view yet; showing raw output.", inv.subverb or ""),
+		}
+	end
+	if (verb == "label" or verb == "annotate") and truthy(inv.flags.list) then
+		return {
+			supported = false,
+			reason = string.format("kubectl %s --list prints plain text; showing raw output.", verb),
 		}
 	end
 	if NATIVE_VERBS[verb] then

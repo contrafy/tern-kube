@@ -5,6 +5,8 @@
 -- typed; an unfinished or failed preview blocks. Manifest scans are text
 -- heuristics and must say so: tern-kube never claims policy conformance.
 local Diffseg = require("../../../plugin/lib/mutation/diffseg")
+local Drain = require("../../../plugin/lib/mutation/drain")
+local Objdiff = require("../../../plugin/lib/mutation/objdiff")
 local Plan = require("../../../plugin/lib/mutation/plan")
 local Risk = require("../../../plugin/lib/mutation/risk")
 local T = require("../../../plugin/lib/mutation/types")
@@ -301,6 +303,325 @@ spec:
 		)
 		expect(a.reasons[1].severity).toBe("high")
 		expect(a.reasons[#a.reasons].severity).toBe("low")
+	end)
+end)
+
+local function cm(name: string, labels: { [string]: string }?, extra: { [string]: any }?): any
+	local o: any = {
+		apiVersion = "v1",
+		kind = "ConfigMap",
+		metadata = { name = name, namespace = "apps", labels = labels },
+	}
+	local fields: { [string]: any } = extra or {}
+	for k, v in fields do
+		o.metadata[k] = v
+	end
+	return o
+end
+
+local function diffOf(before: { any }, after: { any }): any
+	return Objdiff.compute(Objdiff.pair(before, after), { showSecretValues = false })
+end
+
+local function tiers(a: T.Assessment): { string }
+	local out = {}
+	for _, r in a.reasons do
+		table.insert(out, r.tier .. ":" .. r.id)
+	end
+	table.sort(out)
+	return out
+end
+
+describe("risk: label and annotate", function()
+	it("one labelled object is a simple confirm", function()
+		local a = Risk.assess(
+			plan("kubectl label configmap/cm a=b"),
+			facts({
+				targets = { ref("ConfigMap", "cm", "apps") },
+				objects = diffOf({ cm("cm") }, { cm("cm", { a = "b" }) }),
+			})
+		)
+		expect(a.tier).toBe("simple")
+	end)
+
+	it("a selector needs the typed `label N resources`", function()
+		local p = plan("kubectl label configmap -l app=x a=b")
+		local a = Risk.assess(p, facts({ targets = { ref("ConfigMap", "a", "apps"), ref("ConfigMap", "b", "apps") } }))
+		expect(a.tier).toBe("typed")
+		expect(reason(a, "broad-selector").tier).toBe("typed")
+		expect(a.token).toBe("label 2 resources")
+	end)
+
+	it("several named objects are typed too", function()
+		local p = plan("kubectl annotate configmap a b note=x")
+		local a = Risk.assess(p, facts({ targets = { ref("ConfigMap", "a", "apps"), ref("ConfigMap", "b", "apps") } }))
+		expect(reason(a, "multiple-objects").tier).toBe("typed")
+		expect(a.token).toBe("annotate 2 resources")
+	end)
+
+	it("node and namespace labels are typed: they steer scheduling and policies", function()
+		local a = Risk.assess(plan("kubectl label node n1 pool=a"), facts({ targets = { ref("Node", "n1") } }))
+		expect(reason(a, "cluster-scoped").text).toContain("scheduling")
+		local b = Risk.assess(
+			plan("kubectl label namespace apps pod-security.kubernetes.io/enforce=privileged --overwrite"),
+			facts({ targets = { ref("Namespace", "apps") } })
+		)
+		expect(reason(b, "pod-security").severity).toBe("high")
+		expect(b.tier).toBe("typed")
+	end)
+
+	it("rewriting last-applied is typed; system keys and overwrites are flagged", function()
+		local a = Risk.assess(
+			plan("kubectl annotate configmap/cm kubectl.kubernetes.io/last-applied-configuration=x --overwrite"),
+			OK
+		)
+		expect(reason(a, "last-applied").tier).toBe("typed")
+		expect(reason(a, "system-keys").severity).toBe("medium")
+		local o = Risk.assess(
+			plan("kubectl label configmap/cm a=c --overwrite"),
+			facts({ objects = diffOf({ cm("cm", { a = "b" }) }, { cm("cm", { a = "c" }) }) })
+		)
+		expect(reason(o, "overwrites").text).toContain("1 existing value")
+	end)
+
+	it("warns that relabelling an owned pod may detach it, and lists removals", function()
+		local owned = { { kind = "ReplicaSet", name = "rs" } }
+		local before: any = cm("p", { app = "web" }, { ownerReferences = owned })
+		before.kind = "Pod"
+		local after: any = cm("p", nil, { ownerReferences = owned })
+		after.kind = "Pod"
+		local a = Risk.assess(plan("kubectl label pod/p app-"), facts({ objects = diffOf({ before }, { after }) }))
+		expect(reason(a, "pod-owner-labels").advisory).toBe(true)
+		expect(reason(a, "removals").severity).toBe("info")
+	end)
+
+	it("says so when the dry run changes nothing", function()
+		local a = Risk.assess(
+			plan("kubectl label configmap/cm a=b"),
+			facts({ objects = diffOf({ cm("cm", { a = "b" }) }, { cm("cm", { a = "b" }) }) })
+		)
+		expect(reason(a, "no-change").severity).toBe("info")
+	end)
+end)
+
+describe("risk: patch", function()
+	it("a JSON patch, -f targets or a cluster-scoped object are typed", function()
+		local json = Risk.assess(plan("kubectl patch configmap/cm --type=json -p []"), OK)
+		expect(reason(json, "json-patch").tier).toBe("typed")
+		expect(reason(Risk.assess(plan("kubectl patch -f cm.yaml -p {}"), OK), "file-targets").tier).toBe("typed")
+		local a = Risk.assess(plan("kubectl patch node/n1 -p {}"), facts({ targets = { ref("Node", "n1") } }))
+		expect(reason(a, "cluster-scoped").tier).toBe("typed")
+		expect(a.token).toBe("n1")
+	end)
+
+	it("flags removal-only patches and status subresources", function()
+		local a = Risk.assess(
+			plan("kubectl patch configmap/cm -p {} --subresource=status"),
+			facts({ objects = diffOf({ cm("cm", { a = "b" }) }, { cm("cm") }) })
+		)
+		expect(reason(a, "removes-fields").severity).toBe("medium")
+		expect(reason(a, "subresource").severity).toBe("info")
+		expect(a.tier).toBe("simple")
+	end)
+end)
+
+describe("risk: rollout undo, pause, resume", function()
+	local function deploy(image: string, extra: { [string]: any }?): any
+		local o: any = {
+			apiVersion = "apps/v1",
+			kind = "Deployment",
+			metadata = { name = "web", namespace = "apps", generation = 2 },
+			spec = { template = { spec = { containers = { { name = "c", image = image } } } } },
+			status = { observedGeneration = 2 },
+		}
+		local fields: { [string]: any } = extra or {}
+		for k, v in fields do
+			o[k] = v
+		end
+		return o
+	end
+	local KEY = "apps.v1.Deployment.apps.web"
+
+	it("undo is always typed and names the revision and the image change", function()
+		local a = Risk.assess(
+			plan("kubectl rollout undo deployment/web"),
+			facts({
+				targets = { ref("Deployment", "web", "apps") },
+				objects = diffOf({ deploy("pause:3.10") }, { deploy("pause:3.9") }),
+				undo = { { key = KEY, name = "web", from = 2, to = 1 } },
+			})
+		)
+		expect(a.tier).toBe("typed")
+		expect(a.token).toBe("web")
+		expect(reason(a, "undo").text).toContain("revision 1 (images pause:3.10 -> pause:3.9)")
+	end)
+
+	it("says when the target revision is the current template", function()
+		local a = Risk.assess(
+			plan("kubectl rollout undo deployment/web --to-revision=2"),
+			facts({
+				objects = diffOf({ deploy("pause:3.10") }, { deploy("pause:3.10") }),
+				undo = { { key = KEY, name = "web", from = 2, to = 2 } },
+			})
+		)
+		expect(reason(a, "undo-noop").severity).toBe("info")
+	end)
+
+	it("pause of a paused deployment and resume of a running one change nothing", function()
+		local paused = deploy("x", { spec = { paused = true } })
+		local p = Risk.assess(plan("kubectl rollout pause deployment/web"), facts({ live = { paused } }))
+		expect(reason(p, "already-paused").severity).toBe("info")
+		local r = Risk.assess(plan("kubectl rollout resume deployment/web"), facts({ live = { deploy("x") } }))
+		expect(reason(r, "not-paused").severity).toBe("info")
+	end)
+
+	it("resuming after spec changes made while paused warns about the rollout", function()
+		local o = deploy("x", { spec = { paused = true } })
+		o.metadata.generation = 5
+		local a = Risk.assess(plan("kubectl rollout resume deployment/web"), facts({ live = { o } }))
+		expect(reason(a, "resume-pending").severity).toBe("medium")
+		expect(a.tier).toBe("simple")
+	end)
+end)
+
+describe("risk: cordon, uncordon, drain", function()
+	local function node(name: string, cp: boolean, off: boolean?): any
+		return {
+			apiVersion = "v1",
+			kind = "Node",
+			metadata = {
+				name = name,
+				labels = if cp then { ["node-role.kubernetes.io/control-plane"] = "" } else {},
+			},
+			spec = { unschedulable = off },
+		}
+	end
+
+	it("cordon is simple, flags a control-plane node and an already cordoned one", function()
+		local a = Risk.assess(
+			plan("kubectl cordon n1"),
+			facts({ targets = { ref("Node", "n1") }, live = { node("n1", true, true) } })
+		)
+		expect(a.tier).toBe("simple")
+		expect(tiers(a)).toEqual({ "simple:already-cordoned", "simple:control-plane" })
+		local b = Risk.assess(plan("kubectl uncordon n1"), facts({ live = { node("n1", false) } }))
+		expect(reason(b, "already-uncordoned").severity).toBe("info")
+		expect(reason(Risk.assess(plan("kubectl cordon -l pool=a"), OK), "broad-selector").tier).toBe("typed")
+	end)
+
+	local function drainFacts(): any
+		local client = Drain.parse(
+			fixtures.read("kubectl/track1/drain-client-ok.txt"),
+			fixtures.read("kubectl/track1/drain-client-ok.stderr")
+		)
+		local server = Drain.parse(
+			fixtures.read("kubectl/track1/drain-server-pdb-timeout.txt"),
+			fixtures.read("kubectl/track1/drain-server-pdb-timeout.stderr")
+		)
+		return Drain.merge(client, server)
+	end
+
+	it("drain is typed with the node's name and names evictions and blocked pods", function()
+		local a = Risk.assess(
+			plan("kubectl drain n1 --ignore-daemonsets --timeout=1m --force --delete-emptydir-data --grace-period=0"),
+			facts({ targets = { ref("Node", "n1") }, live = { node("n1", true) }, drain = drainFacts() })
+		)
+		expect(a.tier).toBe("typed")
+		expect(a.token).toBe("n1")
+		expect(reason(a, "drain").text).toContain("from node n1")
+		expect(reason(a, "pdb-blocked").text).toContain("--timeout (1m)")
+		expect(reason(a, "force-unmanaged").tier).toBe("typed")
+		expect(reason(a, "emptydir-loss").tier).toBe("typed")
+		expect(reason(a, "grace-period-zero").tier).toBe("typed")
+		expect(reason(a, "control-plane").severity).toBe("high")
+	end)
+
+	it("drain without --timeout or with --disable-eviction says what that means", function()
+		local a = Risk.assess(plan("kubectl drain n1 --disable-eviction"), facts({ targets = { ref("Node", "n1") } }))
+		expect(reason(a, "no-timeout").severity).toBe("medium")
+		expect(reason(a, "disable-eviction").tier).toBe("typed")
+	end)
+
+	it("a pre-flight refusal fails the preview with the flag that overrides it", function()
+		local d = Drain.parse(
+			fixtures.read("kubectl/track1/drain-client-preflight.txt"),
+			fixtures.read("kubectl/track1/drain-client-preflight.stderr")
+		)
+		local a = Risk.assess(
+			plan("kubectl drain n1 --timeout=1m"),
+			facts({ previewOk = false, drain = Drain.merge(d, nil) })
+		)
+		local r = reason(a, "preview-failed")
+		expect(r.tier).toBe("blocked")
+		expect(r.overridable).toBe(true)
+		expect(r.text).toContain("kubectl would cordon the node, then stop")
+		expect(r.text).toContain("(use --force)")
+	end)
+end)
+
+describe("risk: edit", function()
+	local env: T.Env = {
+		context = "kind-dev",
+		contextSource = "chosen",
+		namespace = "apps",
+		cwd = "/w",
+		edit = { file = "/t/e.yaml", original = "/t/o.yaml" },
+	}
+	local function editPlan(): T.Plan
+		return plan("kubectl edit configmap/cm", env)
+	end
+	local function edit(over: { [string]: any }): any
+		local e: any = { renamed = {}, liveChanged = {}, rejected = nil, changed = 1 }
+		for k, v in over do
+			e[k] = v
+		end
+		return e
+	end
+
+	it("one changed namespaced object is a simple confirm", function()
+		local a = Risk.assess(editPlan(), facts({ targets = { ref("ConfigMap", "cm", "apps") }, edit = edit({}) }))
+		expect(a.tier).toBe("simple")
+	end)
+
+	it("a renamed object blocks without override: kubectl refuses it", function()
+		local a = Risk.assess(editPlan(), facts({ edit = edit({ renamed = { "v1.ConfigMap.apps.cm" } }) }))
+		local r = reason(a, "edit-renamed")
+		expect(r.tier).toBe("blocked")
+		expect(r.overridable).toBe(false)
+	end)
+
+	it("a server rejection stays approvable so kubectl can reopen the editor", function()
+		local a = Risk.assess(editPlan(), facts({ edit = edit({ rejected = "error: invalid" }) }))
+		expect(reason(a, "edit-rejected").tier).toBe("simple")
+		expect(a.tier).toBe("simple")
+	end)
+
+	it("RBAC kinds, several objects and drifted objects raise the bar or warn", function()
+		local a = Risk.assess(
+			editPlan(),
+			facts({
+				targets = { ref("Role", "r", "apps") },
+				edit = edit({ changed = 2, liveChanged = { "rbac.authorization.k8s.io.v1.Role.apps.r" } }),
+			})
+		)
+		expect(tiers(a)).toEqual({ "simple:live-changed", "typed:multiple-objects", "typed:sensitive-kind" })
+	end)
+
+	it("reports only manifest heuristics the edit introduces", function()
+		local pod = "apiVersion: v1\nkind: Pod\nmetadata:\n  name: p\n  namespace: apps\nspec:\n  hostNetwork: true\n"
+		local priv = pod .. "  containers:\n    - name: c\n      securityContext:\n        privileged: true\n"
+		local a = Risk.assess(
+			editPlan(),
+			facts({
+				edit = edit({}),
+				manifests = { { path = "/t/e.yaml", text = priv } },
+				baseline = { { path = "/t/o.yaml", text = pod } },
+			})
+		)
+		expect(reason(a, "privileged").advisory).toBe(true)
+		for _, r in a.reasons do
+			expect(r.id ~= "host-namespaces").toBe(true)
+		end
 	end)
 end)
 
