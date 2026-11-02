@@ -17,7 +17,9 @@ three; e2e needs Tern, which is closed beta, and stays local.
   `KUBECONFIG` and verifies that the file holds exactly that context and
   that its API server is the local kind endpoint.
 - Mutations only in `tern-test-*` namespaces (plus cluster-scoped objects
-  named `tern-test-*` where a test needs them). Never a real cluster.
+  named `tern-test-*` where a test needs them, and the kind node, which e2e
+  scenarios 27 and 29 cordon and always uncordon on exit). Never a real
+  cluster.
 - Tern only in a sandbox under `/tmp` via `scripts/dev-tern.sh` (it refuses
   other paths): `TERN_CONFIG_DIR` and `TERN_DAEMON_SOCKET` always point into
   the sandbox; `tern ctl` always with `--control <sandbox>/ctl.sock`. Never
@@ -86,18 +88,27 @@ evidence (without kubeconfigs) and `kind export logs` are uploaded.
 
 `make e2e` (`scripts/e2e.sh [--only GLOB] [--shots] [--perf] [--keep]`)
 starts an isolated Tern window (sandbox `TK_E2E_SANDBOX`, default
-`/tmp/tk-tern-e2e`) with a snapshot copy of `plugin/`, then runs
+`/tmp/tk-tern-e2e`) with a snapshot copy of `plugin/` and `shell/`, then runs
 `tests/e2e/scenarios/*.sh` against the kind cluster, asserting with
 `tern ctl` (`plugins expect`, `click`, `key`, `tree`). Scenarios 01-17 are
 read-only; 18-22 mutate only `tk-e2e-*` objects in `tern-test-mutate` (and
 Jobs they create in `tern-test-batch`), 23 works in its own
-`tern-test-gitops-ui` namespace and a throwaway git repository, 30 edits
-only the sandbox's config file, 31 restarts the window and its daemon with a
-Dock-like `PATH`, and 32 (native editing) edits the sandbox config and
-deletes its own `tk-e2e-web`; all clean up on exit. Scenarios that need
+`tern-test-gitops-ui` namespace and a throwaway git repository. 24-29 cover
+the guarded verbs of 0.2.0 on `tk-e2e-*` objects: label and annotate from
+lens chips (24), patch (25) and rollout undo, pause and resume (26) from
+Explore keys, cordon, uncordon and drain of the kind node (27; drain is
+limited to `tk-e2e-web` with `--pod-selector`, and the node is uncordoned on
+exit), Explore `e` edit approved and denied (28) and the shell guard on the
+new verbs (29). Every pane and split runs `kubectl edit` with
+`KUBE_EDITOR=<sandbox>/kube-editor` (via `TK_DEV_KUBE_EDITOR`), which runs
+the `<sandbox>/edit-script` a scenario writes and fails without one. 30
+edits only the sandbox's config file, 31 restarts the window and its daemon
+with a Dock-like `PATH`, and 32 (native editing) edits the sandbox config
+and deletes its own `tk-e2e-web`; all clean up on exit. Scenarios that need
 output a read-only cluster cannot produce switch the pane to the fake
 `tests/bin/kubectl`. `--shots` regenerates `docs/screenshots/`
-(`E2E_SHOTS="m3b m4"` limits it to some groups) and then runs
+(`E2E_SHOTS="m3b m4"` limits it to some groups; `t1` is the 0.2.0 verbs,
+dark only) and then runs
 `make shots-optimize` (pngquant quality floor 95, then lossless oxipng;
 idempotent, only `docs/screenshots/*.png`), `--perf`
 prints timings for [performance.md](performance.md). It exits 0 with
