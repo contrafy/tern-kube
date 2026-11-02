@@ -280,6 +280,31 @@ environment.
 The approve block shows the three rollback options as chips; these keys are
 only their initial state.
 
+### `compare`
+
+Shared by Explore's compare across contexts and the GitOps drift matrix
+(`x`). Both offer only the contexts of the block's kubeconfig, run every
+query with `--context` pinned and `explore.query_timeout_ms` (drift:
+`mutations.preview_timeout_ms` for `kubectl diff`), and never refresh on
+their own. Compare and matrix views are read-only: switch context with `c`
+before changing anything.
+
+| Key | Type | Default | Effect |
+| --- | --- | --- | --- |
+| `contexts` | list of up to 32 context names | `[]` | The "Configured" preset in both pickers. Names missing from the kubeconfig are listed as such, not dropped silently; an entry that is empty, starts with `-`, holds control characters or repeats an earlier one is ignored with an error. |
+| `max_contexts` | integer 1-32 | `8` | Most other contexts in one compare or matrix; "All contexts" and the preset are disabled, with the reason, when they would exceed it. |
+| `max_parallel` | integer 1-16 | `4` | kubectl queries (Explore) or whole contexts (drift matrix) in flight at once. Worst-case wait: `ceil(contexts / max_parallel)` timeouts. |
+| `max_objects` | integer 1-5000 | `500` | Objects per context in a list compare; a larger list is refused with a message. |
+
+Before comparing, both sides drop what differs between clusters for
+identical objects: `status`, uid, resourceVersion, generation,
+creationTimestamp, managedFields, ownerReferences, the last-applied and
+revision/restartedAt annotations, Service cluster IPs and health-check node
+port, Pod `nodeName` and the injected token volume, PVC `volumeName`.
+`nodePort` values are kept (they may be chosen explicitly). Secret values
+take part in the comparison but are shown as `<redacted>` /
+`<redacted, changed>` unless `security.show_secret_values` is on.
+
 ## Complete example
 
 This is `examples/config.json`: every key at its default. Delete the keys
@@ -346,6 +371,12 @@ you do not change; missing keys keep their defaults.
     "rollback_wait_for_jobs": false,
     "rollback_cleanup_on_fail": false,
     "rollback_timeout_s": 240
+  },
+  "compare": {
+    "contexts": [],
+    "max_contexts": 8,
+    "max_parallel": 4,
+    "max_objects": 500
   }
 }
 ```

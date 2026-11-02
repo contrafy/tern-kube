@@ -18,6 +18,8 @@ export type Options = {
 	-- Passed to the YAML emitter: JSON null sentinel and `[]` detection.
 	null: any?,
 	isList: ((t: { [any]: any }) -> boolean)?,
+	-- Header prefixes {before, after}: `--- <before>/<key>`, `+++ <after>/<key>`.
+	paths: { string }?,
 }
 
 local M = {}
@@ -184,6 +186,8 @@ end
 function M.compute(pairs: { Pair }, opts: Options): Result
 	local texts: { string } = {}
 	local unchanged: { string } = {}
+	local beforePath = if opts.paths then opts.paths[1] else "/live"
+	local afterPath = if opts.paths then opts.paths[2] else "/merged"
 	for _, p in pairs do
 		local before = if p.before ~= nil then M.clean(p.before) else nil
 		local after = if p.after ~= nil then M.clean(p.after) else nil
@@ -192,7 +196,7 @@ function M.compute(pairs: { Pair }, opts: Options): Result
 		end
 		local old = if before ~= nil then render(before, opts) else nil
 		local new = if after ~= nil then render(after, opts) else ""
-		local diff = Linediff.unified(old, new, "/merged/" .. p.key, "/live/" .. p.key)
+		local diff = Linediff.unified(old, new, afterPath .. "/" .. p.key, beforePath .. "/" .. p.key)
 		if diff == nil then
 			table.insert(unchanged, p.key)
 		else

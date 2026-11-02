@@ -2,8 +2,8 @@
 -- Turns a live object (`kubectl get -o json`) into the manifest a user would
 -- have written: server-populated bookkeeping is dropped so re-applying the
 -- export neither fights the API server (uid/resourceVersion conflicts,
--- immutable allocated fields) nor carries runtime state into git. Secrets
--- never leave the cluster: their values become placeholders.
+-- immutable allocated fields) nor carries runtime state into git. Exported
+-- Secrets never leave the cluster: their values become placeholders.
 
 type Object = { [string]: any }
 
@@ -11,6 +11,11 @@ export type Note = { severity: "info" | "warning", code: string, text: string }
 
 export type Options = {
 	placeholder: string?,
+	-- "keep" leaves Secret values in place (compare needs them for equality
+	-- and masks them itself); the default replaces them with placeholders.
+	secretValues: ("placeholder" | "keep")?,
+	-- false keeps objects Kubernetes creates on its own (export skips them).
+	skipDefaults: boolean?,
 }
 
 local PLACEHOLDER = "REPLACE_ME"
@@ -264,7 +269,7 @@ end
 
 local function clean(input: Object, opts: Options?): (Object?, { Note })
 	local notes: { Note } = {}
-	local reason = skipReason(input)
+	local reason = if opts and opts.skipDefaults == false then nil else skipReason(input)
 	if reason then
 		note(notes, "info", "skipped", reason)
 		return nil, notes
@@ -300,7 +305,7 @@ local function clean(input: Object, opts: Options?): (Object?, { Note })
 			cleanJob(spec, notes)
 		end
 	end
-	if kind == "Secret" and isCore(obj) then
+	if kind == "Secret" and isCore(obj) and not (opts and opts.secretValues == "keep") then
 		redactSecret(obj, (opts and opts.placeholder) or PLACEHOLDER, notes)
 	end
 	return obj, notes

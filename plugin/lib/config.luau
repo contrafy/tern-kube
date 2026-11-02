@@ -87,6 +87,12 @@ export type Config = {
 		rollback_cleanup_on_fail: boolean,
 		rollback_timeout_s: number,
 	},
+	compare: {
+		contexts: { string },
+		max_contexts: number,
+		max_parallel: number,
+		max_objects: number,
+	},
 }
 
 export type Level = "error" | "warning" | "info"
@@ -197,6 +203,12 @@ function M.defaults(): Config
 			rollback_wait_for_jobs = false,
 			rollback_cleanup_on_fail = false,
 			rollback_timeout_s = 240,
+		},
+		compare = {
+			contexts = {},
+			max_contexts = 8,
+			max_parallel = 4,
+			max_objects = 500,
 		},
 	}
 	return freezeDeep(cfg)
@@ -587,6 +599,38 @@ local function kindList(): Check
 	end
 end
 
+local MAX_COMPARE_CONTEXTS = 32
+
+-- `compare.contexts`: names reach kubectl argv after --context, so a name
+-- must not read as a flag; duplicates would query one cluster twice.
+local function contextNames(): Check
+	return function(v, path, default, ctx)
+		if not isArray(v) or #v > MAX_COMPARE_CONTEXTS then
+			reject(ctx, path, string.format("a list of up to %d context names", MAX_COMPARE_CONTEXTS), v, default)
+			return default
+		end
+		local out: { string } = {}
+		local seen: { [string]: boolean } = {}
+		for i, item in v do
+			local problem: string? = nil
+			if type(item) ~= "string" or item == "" or #item > 1024 or string.find(item, "%c") then
+				problem = string.format("expected a context name, got %s", describeGot(item))
+			elseif string.sub(item, 1, 1) == "-" then
+				problem = "a context name must not start with -"
+			elseif seen[item] then
+				problem = "context " .. item .. " is already listed"
+			end
+			if problem then
+				add(ctx, "error", string.format("%s[%d]", path, i), problem .. "; the entry is ignored.")
+			else
+				seen[item] = true
+				table.insert(out, item)
+			end
+		end
+		return out
+	end
+end
+
 local function schemaRef(): Check
 	return function(v, path, _default, ctx)
 		if type(v) ~= "string" then
@@ -894,6 +938,23 @@ M.CATALOG = freezeDeep({
 			3570,
 			"Rollback --timeout in seconds (also bounds hooks); keep it 30 s under mutations.execute_timeout_ms"
 		),
+	}),
+	sectionSpec("compare", "Comparing objects and GitOps sources across contexts", {
+		spec(
+			"contexts",
+			"list",
+			"Contexts of the Configured preset in the compare and matrix pickers",
+			contextNames(),
+			{
+				type = "array",
+				maxItems = MAX_COMPARE_CONTEXTS,
+				uniqueItems = true,
+				items = { type = "string", maxLength = 1024, pattern = "^[^-\\x00-\\x1F\\x7F][^\\x00-\\x1F\\x7F]*$" },
+			}
+		),
+		intSpec("max_contexts", 1, 32, "Most other contexts in one compare or matrix"),
+		intSpec("max_parallel", 1, 16, "kubectl queries (Explore) or contexts (drift matrix) in flight at once"),
+		intSpec("max_objects", 1, 5000, "Objects per context in a list compare; more is refused"),
 	}),
 }) :: { Spec }
 

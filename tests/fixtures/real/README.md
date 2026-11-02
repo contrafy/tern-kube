@@ -48,6 +48,16 @@ unchanged mix, CRD objects (including a dotted name and a prune deletion), and
 cluster-scoped creates (empty namespace in the diff file name). `capture.sh` keeps
 this directory; re-run the preview script after rebuilding the world.
 
+## Two-cluster compare
+
+`compare/` holds per-context `get -o json` objects and lists, `kubectl diff` of a
+GitOps source and `kubectl config view -o json` from the two sandbox clusters
+(`a-*` = kind-tern-kube-dev, `b-*` = kind-tern-kube-dev2), captured by
+`sh scripts/fixtures/capture-compare.sh` (needs `scripts/cluster.sh create-peer`;
+recreates only namespace `tern-test-mc` from `tests/integration/manifests/compare/`,
+then reads; argv in `compare/MANIFEST.tsv`). Secrets hold test values only; the
+kube-root-ca.crt certificate reads `REDACTED`. `capture.sh` keeps this directory.
+
 ## Layout
 
 `<scenario>/<key>.txt` stdout, `<key>.stderr` stderr (only when non-empty),

@@ -1,0 +1,397 @@
+{
+    "apiVersion": "v1",
+    "items": [
+        {
+            "apiVersion": "v1",
+            "data": {
+                "ca.crt": "REDACTED"
+            },
+            "kind": "ConfigMap",
+            "metadata": {
+                "annotations": {
+                    "kubernetes.io/description": "Contains a CA bundle that can be used to verify the kube-apiserver when using internal endpoints such as the internal service IP or kubernetes.default.svc. No other usage is guaranteed across distributions of Kubernetes clusters."
+                },
+                "creationTimestamp": "2026-11-02T20:18:37Z",
+                "name": "kube-root-ca.crt",
+                "namespace": "tern-test-mc",
+                "resourceVersion": "720381",
+                "uid": "417420c6-76f6-4720-9cbd-4a8aeb231745"
+            }
+        },
+        {
+            "apiVersion": "v1",
+            "data": {
+                "FEATURE_X": "on",
+                "LOG_LEVEL": "info"
+            },
+            "kind": "ConfigMap",
+            "metadata": {
+                "annotations": {
+                    "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"v1\",\"data\":{\"FEATURE_X\":\"on\",\"LOG_LEVEL\":\"info\"},\"kind\":\"ConfigMap\",\"metadata\":{\"annotations\":{},\"name\":\"tkm-config\",\"namespace\":\"tern-test-mc\"}}\n"
+                },
+                "creationTimestamp": "2026-11-02T20:18:37Z",
+                "name": "tkm-config",
+                "namespace": "tern-test-mc",
+                "resourceVersion": "720431",
+                "uid": "3a5c959d-05cc-4181-8df7-7186614d05c4"
+            }
+        },
+        {
+            "apiVersion": "v1",
+            "data": {
+                "ROLLOUT": "canary"
+            },
+            "kind": "ConfigMap",
+            "metadata": {
+                "annotations": {
+                    "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"v1\",\"data\":{\"ROLLOUT\":\"canary\"},\"kind\":\"ConfigMap\",\"metadata\":{\"annotations\":{},\"name\":\"tkm-flags\",\"namespace\":\"tern-test-mc\"}}\n"
+                },
+                "creationTimestamp": "2026-11-02T20:18:37Z",
+                "name": "tkm-flags",
+                "namespace": "tern-test-mc",
+                "resourceVersion": "720433",
+                "uid": "80e2c11b-57d1-446e-955c-a2ba34a344c4"
+            }
+        },
+        {
+            "apiVersion": "v1",
+            "data": {
+                "password": "czNjcmV0LUE=",
+                "username": "YWRtaW4="
+            },
+            "kind": "Secret",
+            "metadata": {
+                "annotations": {
+                    "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"v1\",\"kind\":\"Secret\",\"metadata\":{\"annotations\":{},\"name\":\"tkm-secret\",\"namespace\":\"tern-test-mc\"},\"stringData\":{\"password\":\"s3cret-A\",\"username\":\"admin\"},\"type\":\"Opaque\"}\n"
+                },
+                "creationTimestamp": "2026-11-02T20:18:37Z",
+                "name": "tkm-secret",
+                "namespace": "tern-test-mc",
+                "resourceVersion": "720432",
+                "uid": "f4bb2757-55f4-4b8f-96c5-3afdeb852eeb"
+            },
+            "type": "Opaque"
+        },
+        {
+            "apiVersion": "v1",
+            "kind": "Service",
+            "metadata": {
+                "annotations": {
+                    "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"v1\",\"kind\":\"Service\",\"metadata\":{\"annotations\":{},\"name\":\"tkm-web\",\"namespace\":\"tern-test-mc\"},\"spec\":{\"ports\":[{\"port\":80,\"targetPort\":80}],\"selector\":{\"app\":\"tkm-web\"}}}\n"
+                },
+                "creationTimestamp": "2026-11-02T20:18:37Z",
+                "name": "tkm-web",
+                "namespace": "tern-test-mc",
+                "resourceVersion": "720423",
+                "uid": "736e8696-fadc-4c42-af66-e5957ecb175d"
+            },
+            "spec": {
+                "clusterIP": "10.96.241.11",
+                "clusterIPs": [
+                    "10.96.241.11"
+                ],
+                "internalTrafficPolicy": "Cluster",
+                "ipFamilies": [
+                    "IPv4"
+                ],
+                "ipFamilyPolicy": "SingleStack",
+                "ports": [
+                    {
+                        "port": 80,
+                        "protocol": "TCP",
+                        "targetPort": 80
+                    }
+                ],
+                "selector": {
+                    "app": "tkm-web"
+                },
+                "sessionAffinity": "None",
+                "type": "ClusterIP"
+            },
+            "status": {
+                "loadBalancer": {}
+            }
+        },
+        {
+            "apiVersion": "apps/v1",
+            "kind": "Deployment",
+            "metadata": {
+                "annotations": {
+                    "deployment.kubernetes.io/revision": "1",
+                    "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"apps/v1\",\"kind\":\"Deployment\",\"metadata\":{\"annotations\":{},\"labels\":{\"app\":\"tkm-api\"},\"name\":\"tkm-api\",\"namespace\":\"tern-test-mc\"},\"spec\":{\"replicas\":1,\"selector\":{\"matchLabels\":{\"app\":\"tkm-api\"}},\"template\":{\"metadata\":{\"labels\":{\"app\":\"tkm-api\"}},\"spec\":{\"containers\":[{\"image\":\"nginx:1.27-alpine\",\"name\":\"web\",\"ports\":[{\"containerPort\":80}]}]}}}}\n"
+                },
+                "creationTimestamp": "2026-11-02T20:18:37Z",
+                "generation": 1,
+                "labels": {
+                    "app": "tkm-api"
+                },
+                "name": "tkm-api",
+                "namespace": "tern-test-mc",
+                "resourceVersion": "720465",
+                "uid": "8c248aa5-1d3c-419c-a79a-786713733dca"
+            },
+            "spec": {
+                "progressDeadlineSeconds": 600,
+                "replicas": 1,
+                "revisionHistoryLimit": 10,
+                "selector": {
+                    "matchLabels": {
+                        "app": "tkm-api"
+                    }
+                },
+                "strategy": {
+                    "rollingUpdate": {
+                        "maxSurge": "25%",
+                        "maxUnavailable": "25%"
+                    },
+                    "type": "RollingUpdate"
+                },
+                "template": {
+                    "metadata": {
+                        "labels": {
+                            "app": "tkm-api"
+                        }
+                    },
+                    "spec": {
+                        "containers": [
+                            {
+                                "image": "nginx:1.27-alpine",
+                                "imagePullPolicy": "IfNotPresent",
+                                "name": "web",
+                                "ports": [
+                                    {
+                                        "containerPort": 80,
+                                        "protocol": "TCP"
+                                    }
+                                ],
+                                "resources": {},
+                                "terminationMessagePath": "/dev/termination-log",
+                                "terminationMessagePolicy": "File"
+                            }
+                        ],
+                        "dnsPolicy": "ClusterFirst",
+                        "restartPolicy": "Always",
+                        "schedulerName": "default-scheduler",
+                        "securityContext": {},
+                        "terminationGracePeriodSeconds": 30
+                    }
+                }
+            },
+            "status": {
+                "availableReplicas": 1,
+                "conditions": [
+                    {
+                        "lastTransitionTime": "2026-11-02T20:18:38Z",
+                        "lastUpdateTime": "2026-11-02T20:18:38Z",
+                        "message": "Deployment has minimum availability.",
+                        "reason": "MinimumReplicasAvailable",
+                        "status": "True",
+                        "type": "Available"
+                    },
+                    {
+                        "lastTransitionTime": "2026-11-02T20:18:37Z",
+                        "lastUpdateTime": "2026-11-02T20:18:38Z",
+                        "message": "ReplicaSet \"tkm-api-7c754c9546\" has successfully progressed.",
+                        "reason": "NewReplicaSetAvailable",
+                        "status": "True",
+                        "type": "Progressing"
+                    }
+                ],
+                "observedGeneration": 1,
+                "readyReplicas": 1,
+                "replicas": 1,
+                "terminatingReplicas": 0,
+                "updatedReplicas": 1
+            }
+        },
+        {
+            "apiVersion": "apps/v1",
+            "kind": "Deployment",
+            "metadata": {
+                "annotations": {
+                    "deployment.kubernetes.io/revision": "1",
+                    "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"apps/v1\",\"kind\":\"Deployment\",\"metadata\":{\"annotations\":{},\"labels\":{\"app\":\"tkm-only-a\"},\"name\":\"tkm-only-a\",\"namespace\":\"tern-test-mc\"},\"spec\":{\"replicas\":1,\"selector\":{\"matchLabels\":{\"app\":\"tkm-only-a\"}},\"template\":{\"metadata\":{\"labels\":{\"app\":\"tkm-only-a\"}},\"spec\":{\"containers\":[{\"image\":\"nginx:1.27-alpine\",\"name\":\"web\",\"ports\":[{\"containerPort\":80}]}]}}}}\n"
+                },
+                "creationTimestamp": "2026-11-02T20:18:37Z",
+                "generation": 1,
+                "labels": {
+                    "app": "tkm-only-a"
+                },
+                "name": "tkm-only-a",
+                "namespace": "tern-test-mc",
+                "resourceVersion": "720463",
+                "uid": "865ac8f7-41e4-47ba-acdb-e66490e19f05"
+            },
+            "spec": {
+                "progressDeadlineSeconds": 600,
+                "replicas": 1,
+                "revisionHistoryLimit": 10,
+                "selector": {
+                    "matchLabels": {
+                        "app": "tkm-only-a"
+                    }
+                },
+                "strategy": {
+                    "rollingUpdate": {
+                        "maxSurge": "25%",
+                        "maxUnavailable": "25%"
+                    },
+                    "type": "RollingUpdate"
+                },
+                "template": {
+                    "metadata": {
+                        "labels": {
+                            "app": "tkm-only-a"
+                        }
+                    },
+                    "spec": {
+                        "containers": [
+                            {
+                                "image": "nginx:1.27-alpine",
+                                "imagePullPolicy": "IfNotPresent",
+                                "name": "web",
+                                "ports": [
+                                    {
+                                        "containerPort": 80,
+                                        "protocol": "TCP"
+                                    }
+                                ],
+                                "resources": {},
+                                "terminationMessagePath": "/dev/termination-log",
+                                "terminationMessagePolicy": "File"
+                            }
+                        ],
+                        "dnsPolicy": "ClusterFirst",
+                        "restartPolicy": "Always",
+                        "schedulerName": "default-scheduler",
+                        "securityContext": {},
+                        "terminationGracePeriodSeconds": 30
+                    }
+                }
+            },
+            "status": {
+                "availableReplicas": 1,
+                "conditions": [
+                    {
+                        "lastTransitionTime": "2026-11-02T20:18:38Z",
+                        "lastUpdateTime": "2026-11-02T20:18:38Z",
+                        "message": "Deployment has minimum availability.",
+                        "reason": "MinimumReplicasAvailable",
+                        "status": "True",
+                        "type": "Available"
+                    },
+                    {
+                        "lastTransitionTime": "2026-11-02T20:18:37Z",
+                        "lastUpdateTime": "2026-11-02T20:18:38Z",
+                        "message": "ReplicaSet \"tkm-only-a-5f7b9dd9b4\" has successfully progressed.",
+                        "reason": "NewReplicaSetAvailable",
+                        "status": "True",
+                        "type": "Progressing"
+                    }
+                ],
+                "observedGeneration": 1,
+                "readyReplicas": 1,
+                "replicas": 1,
+                "terminatingReplicas": 0,
+                "updatedReplicas": 1
+            }
+        },
+        {
+            "apiVersion": "apps/v1",
+            "kind": "Deployment",
+            "metadata": {
+                "annotations": {
+                    "deployment.kubernetes.io/revision": "1",
+                    "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"apps/v1\",\"kind\":\"Deployment\",\"metadata\":{\"annotations\":{},\"labels\":{\"app\":\"tkm-web\",\"tier\":\"frontend\"},\"name\":\"tkm-web\",\"namespace\":\"tern-test-mc\"},\"spec\":{\"replicas\":2,\"selector\":{\"matchLabels\":{\"app\":\"tkm-web\"}},\"template\":{\"metadata\":{\"labels\":{\"app\":\"tkm-web\"}},\"spec\":{\"containers\":[{\"image\":\"nginx:1.27-alpine\",\"name\":\"web\",\"ports\":[{\"containerPort\":80}]}]}}}}\n"
+                },
+                "creationTimestamp": "2026-11-02T20:18:37Z",
+                "generation": 1,
+                "labels": {
+                    "app": "tkm-web",
+                    "tier": "frontend"
+                },
+                "name": "tkm-web",
+                "namespace": "tern-test-mc",
+                "resourceVersion": "720461",
+                "uid": "6fbf8ced-f8bb-406f-b0af-59a567e8d8b2"
+            },
+            "spec": {
+                "progressDeadlineSeconds": 600,
+                "replicas": 2,
+                "revisionHistoryLimit": 10,
+                "selector": {
+                    "matchLabels": {
+                        "app": "tkm-web"
+                    }
+                },
+                "strategy": {
+                    "rollingUpdate": {
+                        "maxSurge": "25%",
+                        "maxUnavailable": "25%"
+                    },
+                    "type": "RollingUpdate"
+                },
+                "template": {
+                    "metadata": {
+                        "labels": {
+                            "app": "tkm-web"
+                        }
+                    },
+                    "spec": {
+                        "containers": [
+                            {
+                                "image": "nginx:1.27-alpine",
+                                "imagePullPolicy": "IfNotPresent",
+                                "name": "web",
+                                "ports": [
+                                    {
+                                        "containerPort": 80,
+                                        "protocol": "TCP"
+                                    }
+                                ],
+                                "resources": {},
+                                "terminationMessagePath": "/dev/termination-log",
+                                "terminationMessagePolicy": "File"
+                            }
+                        ],
+                        "dnsPolicy": "ClusterFirst",
+                        "restartPolicy": "Always",
+                        "schedulerName": "default-scheduler",
+                        "securityContext": {},
+                        "terminationGracePeriodSeconds": 30
+                    }
+                }
+            },
+            "status": {
+                "availableReplicas": 2,
+                "conditions": [
+                    {
+                        "lastTransitionTime": "2026-11-02T20:18:38Z",
+                        "lastUpdateTime": "2026-11-02T20:18:38Z",
+                        "message": "Deployment has minimum availability.",
+                        "reason": "MinimumReplicasAvailable",
+                        "status": "True",
+                        "type": "Available"
+                    },
+                    {
+                        "lastTransitionTime": "2026-11-02T20:18:37Z",
+                        "lastUpdateTime": "2026-11-02T20:18:38Z",
+                        "message": "ReplicaSet \"tkm-web-86d89c94d\" has successfully progressed.",
+                        "reason": "NewReplicaSetAvailable",
+                        "status": "True",
+                        "type": "Progressing"
+                    }
+                ],
+                "observedGeneration": 1,
+                "readyReplicas": 2,
+                "replicas": 2,
+                "terminatingReplicas": 0,
+                "updatedReplicas": 2
+            }
+        }
+    ],
+    "kind": "List",
+    "metadata": {
+        "resourceVersion": ""
+    }
+}
