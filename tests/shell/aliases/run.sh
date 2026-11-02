@@ -18,7 +18,7 @@ trap 'rm -rf "$root"' EXIT
 HOME=$root/home
 mkdir -p "$HOME"
 export HOME
-unset ZDOTDIR XDG_CONFIG_HOME TKUBE_ALIASES_TIMEOUT
+unset ZDOTDIR XDG_CONFIG_HOME TKUBE_ALIASES_TIMEOUT TERN_EXE
 TERN_BIN=$root/no-such-tern
 export TERN_BIN
 # A minimal PATH (plus wherever the probed shells live) so commands installed
@@ -322,6 +322,22 @@ expect_out 'not installed' "not installed message"
 TERN_BIN=$root/no-such-tern
 run --shell bash list
 expect_status 2 "no tern"
+expect_out 'TERN_EXE' "no tern message names TERN_EXE"
+
+case_name="plugin dir via TERN_EXE"
+mkdir -p "$root/plugins/tern-kube"
+cp "$src_manifest" "$root/plugins/tern-kube/plugin.toml"
+unset TERN_BIN
+TERN_EXE=$root/tern
+export TERN_EXE
+run --shell bash add k
+expect_status 0 "TERN_EXE finds the installed plugin"
+block "$root/plugins/tern-kube/plugin.toml" | grep -q '"k get"' && ok || bad "TERN_EXE: installed manifest not edited"
+TERN_BIN=$root/no-such-tern
+export TERN_BIN
+run --shell bash list
+expect_status 2 "TERN_BIN wins over TERN_EXE"
+unset TERN_EXE
 
 case_name="foreign HOME"
 if [ "$(id -u)" = 0 ]; then

@@ -54,13 +54,20 @@ fail) exit 3 ;;
 esac
 EOF
 chmod +x "$root/ed"
-PATH=$here/bin:$root/shellbin:/usr/bin:/bin:/usr/sbin:/sbin
+# A tern reachable only through TERN_EXE/TERN_BIN, and a PATH without any
+# tern: where `tern remote setup` installs is often missing from login PATHs.
+mkdir -p "$root/exe" "$root/kbin"
+cp "$here/bin/tern" "$root/exe/tern"
+ln -s "$here/bin/kubectl" "$root/kbin/kubectl"
+guard_path=$here/bin:$root/shellbin:/usr/bin:/bin:/usr/sbin:/sbin
+no_tern_path=$root/kbin:$root/shellbin:/usr/bin:/bin:/usr/sbin:/sbin
+PATH=$guard_path
 HOME=$root/home
 XDG_CONFIG_HOME=$root/home/.config
 XDG_DATA_HOME=$root/home/.local/share
 XDG_CACHE_HOME=$root/home/.cache
 export PATH HOME XDG_CONFIG_HOME XDG_DATA_HOME XDG_CACHE_HOME
-unset KUBECONFIG TERN_BIN TKUBE_GUARD_TIMEOUT ZDOTDIR FAKE_READ_STDIN BASH_ENV ENV PROMPT_COMMAND \
+unset KUBECONFIG TERN_BIN TERN_EXE TKUBE_GUARD_TIMEOUT ZDOTDIR FAKE_READ_STDIN BASH_ENV ENV PROMPT_COMMAND \
 	KUBE_EDITOR EDITOR TKUBE_EDIT_DIR TKUBE_EDIT_REAL
 FAKE_DIR=$root/fake
 export FAKE_DIR
@@ -105,7 +112,7 @@ fresh() {
 	TKUBE_SPOOL=$root/spool
 	TMPDIR=$root/tmp
 	export TERM_PROGRAM TERN_PANE TKUBE_SPOOL TMPDIR
-	unset KUBECONFIG TKUBE_GUARD_TIMEOUT TERN_BIN FAKE_READ_STDIN KUBE_EDITOR EDITOR TKUBE_EDIT_DIR
+	unset KUBECONFIG TKUBE_GUARD_TIMEOUT TERN_BIN TERN_EXE FAKE_READ_STDIN KUBE_EDITOR EDITOR TKUBE_EDIT_DIR
 	cd "$root/work" || exit 2
 	: >"$root/out"
 }
@@ -136,6 +143,14 @@ kcode() {
 	zsh | bash) printf '%s' 'source "$TKG_SNIP"; kubectl "$@"' ;;
 	fish) printf '%s' 'source $TKG_SNIP; kubectl $argv' ;;
 	dash) printf '%s' '"$TKG_CORE" kubectl "$@"' ;;
+	esac
+}
+
+# run_status SHELL: `tern-kube-guard status` from SHELL.
+run_status() {
+	case $1 in
+	fish) run_code fish '$TKG_CORE status' ;;
+	*) run_code "$1" '"$TKG_CORE" status' ;;
 	esac
 }
 
@@ -445,6 +460,55 @@ core_cases() {
 	expect_status 1 "tern missing"
 	expect_out "failed \\(exit 127\\)" "tern missing message"
 	expect_not_run "tern missing"
+	expect_out 'TERN_EXE' "tern missing names TERN_EXE"
+
+	fresh "$sh TERN_EXE when tern is not on PATH"
+	mode approve
+	TERN_EXE=$root/exe/tern
+	export TERN_EXE
+	PATH=$no_tern_path
+	run_k "$sh" delete pod x
+	PATH=$guard_path
+	expect_status 0 "TERN_EXE approval"
+	expect_ran "TERN_EXE approval" delete pod x
+	if grep -q '^open --wait ' "$FAKE_DIR/tern-calls" 2>/dev/null; then ok; else bad "TERN_EXE tern was not invoked"; fi
+
+	fresh "$sh TERN_BIN wins over TERN_EXE"
+	mode approve
+	TERN_EXE=$root/no-such-tern
+	TERN_BIN=$root/exe/tern
+	export TERN_EXE TERN_BIN
+	PATH=$no_tern_path
+	run_k "$sh" delete pod x
+	PATH=$guard_path
+	expect_status 0 "TERN_BIN over TERN_EXE"
+	expect_ran "TERN_BIN over TERN_EXE" delete pod x
+
+	fresh "$sh broken TERN_EXE is named in the refusal"
+	TERN_EXE=$root/no-such-tern
+	export TERN_EXE
+	run_k "$sh" delete pod x
+	expect_status 1 "broken TERN_EXE"
+	expect_out 'tern from TERN_EXE' "refusal names TERN_EXE as the source"
+	expect_not_run "broken TERN_EXE"
+
+	for src in PATH TERN_EXE TERN_BIN; do
+		fresh "$sh status names the tern source: $src"
+		case $src in
+		TERN_EXE) TERN_EXE=$root/exe/tern want=$root/exe/tern ;;
+		TERN_BIN) TERN_EXE=$root/no-such-tern TERN_BIN=$root/exe/tern want=$root/exe/tern ;;
+		*) want=$here/bin/tern ;;
+		esac
+		if [ "$src" != PATH ]; then export TERN_EXE; fi
+		if [ "$src" = TERN_BIN ]; then export TERN_BIN; fi
+		run_status "$sh"
+		if grep -qxF "tern: $want ($src)" "$root/out"; then ok; else bad "status line for $src"; fi
+	done
+	fresh "$sh status: TERN_EXE not found"
+	TERN_EXE=$root/no-such-tern
+	export TERN_EXE
+	run_status "$sh"
+	expect_out "^tern: $root/no-such-tern not found \\(TERN_EXE;" "status for a missing TERN_EXE"
 
 	for v in TERM_PROGRAM TERN_PANE TKUBE_SPOOL; do
 		fresh "$sh outside Tern: no $v"

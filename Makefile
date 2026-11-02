@@ -84,6 +84,10 @@ test-shell-guard: guard-flags-check
 test-shell-drift:
 	@LUAU=$(LUAU) sh tests/shell/drift/run.sh
 
+.PHONY: test-shell-login
+test-shell-login:
+	@LUAU=$(LUAU) sh tests/shell/login/run.sh
+
 .PHONY: shots-optimize
 OXIPNG = $(BIN)/oxipng
 PNGQUANT = $(BIN)/pngquant

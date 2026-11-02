@@ -46,6 +46,30 @@ Put the line after anything that sets up `PATH` for `kubectl`, and after
 other prompt hooks if their order matters to you (bash: the hook is appended
 to `PROMPT_COMMAND`, never replacing it).
 
+Tern panes run login shells. fish reads `config.fish` for login and
+interactive shells alike, so the line above works with fish as the login
+shell too.
+
+### On a remote host
+
+Panes on a host added with `tern remote setup` run that host's login shell,
+so the guard must be installed there. Install the plugin on the remote host
+from a pane there (same syntax in fish, bash and zsh):
+
+```sh
+"$TERN_EXE" plugin install github.com/contrafy/tern-kube
+```
+
+and source the snippet from the installed package, for example in fish:
+
+```fish
+source ~/.config/tern/plugins/tern-kube/shell/tern-kube.fish
+```
+
+`tern remote setup` installs `tern` under `~/.local/bin`, which login shells
+often lack on `PATH`; the guard does not need it there (see `TERN_EXE`
+below).
+
 ## Conflicts
 
 If `kubectl` is already an alias or function in your shell (fish: also an
@@ -65,9 +89,10 @@ tern-kube-guard-status
 ```
 
 prints whether `kubectl` is the guard function, whether the pane env hook is
-installed, the core's path, the `kubectl` and `tern` it will use, the
-approval timeout, and what a guarded verb would do in this shell (ask for
-approval, or be refused and why).
+installed, the core's path, the `kubectl` and `tern` it will use (with the
+source that chose `tern`: `TERN_BIN`, `TERN_EXE` or `PATH`), the approval
+timeout, and what a guarded verb would do in this shell (ask for approval,
+or be refused and why).
 
 ## kubectl edit
 
@@ -89,7 +114,9 @@ before your editor opens.
 
 - `TKUBE_GUARD_TIMEOUT`: seconds to wait for a decision (default 600).
   On timeout the request is withdrawn and nothing runs.
-- `TERN_BIN`: the `tern` executable to call (default `tern` on `PATH`).
+- `TERN_BIN`: the `tern` executable to call. Default: `$TERN_EXE`, which Tern
+  sets in every pane (local or remote) to the binary serving that pane; else
+  `tern` on `PATH`. `scripts/tern-kube-aliases` picks `tern` the same way.
 
 ## Bypass
 
@@ -162,3 +189,10 @@ record".
 `kubectl`; no Tern or cluster is needed. It also checks that the embedded
 flag table matches `plugin/lib/kubectl/flags.luau` (regenerate with
 `make guard-flags`).
+
+`make test-shell-login` runs `tests/shell/login/run.sh`: for each installed
+shell of sh, dash, bash, zsh and fish, a temp `HOME` whose rc files add
+`PATH` and `KUBECONFIG` the usual way, then the plugin's own PATH probe, a
+quick-action split line (context and kubeconfig with quotes, `$(...)` and
+backticks; exact argv through a fake `kubectl`) and, for fish, the guard
+snippet sourced from `config.fish`. Missing shells are reported as skipped.

@@ -29,7 +29,8 @@ lens as `kubectl get pods`.
 options:
   --shell SH        shell to probe (default: basename of $SHELL)
   --plugin-dir DIR  package directory holding plugin.toml (default: the
-                    installed or linked tern-kube under `tern plugin dir`)
+                    installed or linked tern-kube under `tern plugin dir`;
+                    tern is $TERN_BIN, else $TERN_EXE, else tern on PATH)
   --force           also accept shell functions and wrapper executables;
                     their behavior is opaque to this script
   -h, --help        this help
@@ -136,8 +137,10 @@ trap 'exit 143' TERM
 
 resolve_manifest() {
 	if [ -z "$plugin_dir" ]; then
-		tern_bin=${TERN_BIN:-tern}
-		command -v "$tern_bin" >/dev/null 2>&1 || die "tern not found; pass --plugin-dir DIR"
+		# TERN_EXE: set in every Tern pane (local or remote) to the binary
+		# serving it, which login shells often lack on PATH.
+		tern_bin=${TERN_BIN:-${TERN_EXE:-tern}}
+		command -v "$tern_bin" >/dev/null 2>&1 || die "tern not found ($tern_bin; set TERN_BIN, or run inside a Tern pane where TERN_EXE is set); pass --plugin-dir DIR"
 		pdir=$("$tern_bin" plugin dir 2>/dev/null) || die "\`$tern_bin plugin dir\` failed; pass --plugin-dir DIR"
 		[ -n "$pdir" ] || die "\`$tern_bin plugin dir\` printed nothing; pass --plugin-dir DIR"
 		if [ -f "$pdir/tern-kube.path" ]; then
