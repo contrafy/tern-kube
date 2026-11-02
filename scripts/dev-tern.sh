@@ -23,16 +23,22 @@
 #   unlink            remove the link and reload
 #   reload            reload the sandbox daemon's plugins
 #   list              plugins of the sandbox daemon
-#   ctl ARGS...       tern ctl against the sandbox control socket
+#   ctl ARGS...       tern ctl against the sandbox control socket, killed
+#                     after TK_CTL_TIMEOUT seconds (default 60)
 #   wait-ready [SECS] wait until the window answers `ready` (default 30 s)
 #   run LINE          type LINE and Enter into the focused pane
 #   expect TEXT       wait until a plugin surface shows TEXT
 #   shot NAME [DEST]  screenshot the window; prints the PNG path (copied to
 #                     DEST when given)
 #   logs [daemon|window]  print the sandbox log path
-#   stop              quit the sandbox window and its daemon
+#   pids window|daemon  pids of the sandbox window or daemon
+#   stop              quit the sandbox window and its daemon (TERM, then
+#                     KILL, whatever does not exit)
 #   clean             stop, then delete the sandbox
 #   env               print the sandbox environment as shell assignments
+#
+# start writes <sandbox>/cfg/omp/state.json with omp management off, so a
+# fresh sandbox never offers to install omp.
 
 set -eu
 
@@ -62,8 +68,42 @@ kubeconfig="$repo/.sandbox/kubeconfig"
 fake_bin="$repo/tests/bin"
 zdot="$sb/zsh"
 
+# bounded SECS CMD...: CMD, sent TERM after SECS. A window that is quitting
+# can accept control connections and never answer; no caller may hang on it.
+bounded() {
+	_b_secs=$1
+	shift
+	"$@" &
+	_b_pid=$!
+	(
+		trap 'kill "$_b_sleep" 2>/dev/null; exit 0' TERM
+		sleep "$_b_secs" &
+		_b_sleep=$!
+		wait "$_b_sleep"
+		kill -s TERM "$_b_pid" 2>/dev/null
+	) >/dev/null 2>&1 &
+	_b_watch=$!
+	_b_rc=0
+	wait "$_b_pid" || _b_rc=$?
+	kill "$_b_watch" 2>/dev/null || true
+	wait "$_b_watch" 2>/dev/null || true
+	return $_b_rc
+}
+
+# Every control call is bounded (default 60 s, TK_CTL_TIMEOUT): `ctl expect`
+# and `ctl ready` wait up to 20 s on their own.
+ctl_within() { # SECS ARGS...
+	_c_secs=$1
+	shift
+	bounded "$_c_secs" "$tern_bin" ctl --control "$ctl_sock" "$@" || {
+		_c_rc=$?
+		[ $_c_rc = 143 ] && echo "dev-tern: tern ctl $* gave no answer within ${_c_secs}s" >&2
+		return $_c_rc
+	}
+}
+
 ctl() {
-	"$tern_bin" ctl --control "$ctl_sock" "$@"
+	ctl_within "${TK_CTL_TIMEOUT:-60}" "$@"
 }
 
 # `tern ctl` joins its words into one scenario line; a quoted string keeps
@@ -78,8 +118,49 @@ quoted() {
 	printf '"%s"' "$1"
 }
 
+# Pids of the sandbox window (`tern --control <sb>/ctl.sock DIR`, not the
+# `tern ctl --control ...` clients) and of its daemon (`tern daemon --socket
+# <sb>/d.sock`). Anchored so a caller whose command line names the sandbox
+# never matches.
+window_pids() {
+	pgrep -f -- "^[^ ]*tern --control $ctl_sock( |\$)" 2>/dev/null | tr '\n' ' ' | sed 's/ $//'
+}
+
 daemon_pids() {
-	pgrep -f -- "$sb/d.sock" 2>/dev/null || true
+	pgrep -f -- "^[^ ]*tern daemon --socket $sb/d.sock\$" 2>/dev/null | tr '\n' ' ' | sed 's/ $//'
+}
+
+# wait_gone LISTER STEPS: until LISTER prints nothing, at most STEPS x 0.25 s.
+wait_gone() {
+	_w=0
+	while [ -n "$($1)" ] && [ $_w -lt "$2" ]; do
+		sleep 0.25
+		_w=$((_w + 1))
+	done
+}
+
+# terminate LISTER WHAT: TERM, then KILL, waiting up to 10 s after each.
+terminate() {
+	for _sig in TERM KILL; do
+		_p=$($1)
+		[ -n "$_p" ] || return 0
+		# shellcheck disable=SC2086
+		kill -s $_sig $_p 2>/dev/null || true
+		wait_gone "$1" 40
+	done
+	_p=$($1)
+	[ -z "$_p" ] && return 0
+	echo "dev-tern: $2 $_p did not exit" >&2
+	return 1
+}
+
+# Tern offers to install and manage omp (a 200 MB download, then a link
+# where the user's shell finds omp) in every fresh config dir. The state
+# file is what Settings > General > omp > "Managed by Tern" off writes.
+seed_omp_state() {
+	mkdir -p "$TERN_CONFIG_DIR/omp"
+	printf '{\n  "managed": false,\n  "checked": 0,\n  "no_build": false,\n  "offered": true\n}\n' \
+		>"$TERN_CONFIG_DIR/omp/state.json"
 }
 
 # A neutral interactive zsh: no user rc files (they may reorder PATH, define
@@ -196,6 +277,7 @@ start)
 		echo "$tern_bin --control $ctl_sock $repo  (cwd $sb)"
 		exit 0
 	fi
+	seed_omp_state
 	# Shots land in <cwd>/target/shots: keep them in the sandbox.
 	cd "$sb"
 	exec "$tern_bin" --control "$ctl_sock" "$repo"
@@ -204,32 +286,42 @@ link)
 	mkdir -p "$TERN_CONFIG_DIR/plugins"
 	dir=$(CDPATH= cd -- "${1:-$repo}" && pwd)
 	printf '%s\n' "$dir" >"$TERN_CONFIG_DIR/plugins/tern-kube.path"
-	"$tern_bin" plugin reload
+	bounded 30 "$tern_bin" plugin reload
 	;;
 unlink)
 	rm -f "$TERN_CONFIG_DIR/plugins/tern-kube.path"
-	"$tern_bin" plugin reload
+	bounded 30 "$tern_bin" plugin reload
 	;;
 reload)
-	"$tern_bin" plugin reload "$@"
+	bounded 30 "$tern_bin" plugin reload "$@"
 	;;
 list)
-	"$tern_bin" plugin list "$@"
+	bounded 30 "$tern_bin" plugin list "$@"
 	;;
 ctl)
 	ctl "$@"
 	;;
 wait-ready)
 	limit=${1:-30}
-	i=0
-	until ctl ready >/dev/null 2>&1; do
-		i=$((i + 1))
-		if [ $i -ge $((limit * 4)) ]; then
+	end=$(($(date +%s) + limit))
+	until ctl_within 25 ready >/dev/null 2>&1; do
+		if [ "$(date +%s)" -ge $end ]; then
 			echo "dev-tern: window not ready after ${limit}s" >&2
 			exit 1
 		fi
 		sleep 0.25
 	done
+	;;
+pids)
+	case ${1:-} in
+	window) window_pids ;;
+	daemon) daemon_pids ;;
+	*)
+		echo "dev-tern: pids window|daemon" >&2
+		exit 2
+		;;
+	esac
+	echo
 	;;
 run)
 	ctl run "$(quoted "$*")"
@@ -269,29 +361,14 @@ stop)
 	# The daemon outlives its windows (it keeps their panes for the next
 	# one), and a new window attaches to whatever daemon holds the socket,
 	# with that daemon's environment: a restart (--gui-path) is only real
-	# once the old daemon is gone, so stop it and wait for it.
-	ctl quit >/dev/null 2>&1 || true
-	i=0
-	while ctl ready >/dev/null 2>&1 && [ $i -lt 40 ]; do
-		sleep 0.25
-		i=$((i + 1))
-	done
-	for sig in TERM KILL; do
-		pids=$(daemon_pids)
-		[ -n "$pids" ] || break
-		# shellcheck disable=SC2086
-		kill -s $sig $pids 2>/dev/null || true
-		i=0
-		while [ -n "$(daemon_pids)" ] && [ $i -lt 40 ]; do
-			sleep 0.25
-			i=$((i + 1))
-		done
-	done
-	pids=$(daemon_pids)
-	if [ -n "$pids" ]; then
-		echo "dev-tern: daemon $pids did not exit" >&2
-		exit 1
-	fi
+	# once the old daemon is gone, so stop it and wait for it. A window
+	# that ignores `quit` (or never answers it) is terminated.
+	[ -n "$(window_pids)" ] && { ctl_within 5 quit >/dev/null 2>&1 || true; }
+	wait_gone window_pids 40
+	rc=0
+	terminate window_pids window || rc=1
+	terminate daemon_pids daemon || rc=1
+	exit $rc
 	;;
 clean)
 	"$0" stop
@@ -302,7 +379,7 @@ env)
 		"$TERN_CONFIG_DIR" "$TERN_DAEMON_SOCKET" "$STENCIL_LOG_DIR" "$window_log" "$kubeconfig"
 	;;
 *)
-	sed -n '2,35p' "$0" | sed 's/^# \{0,1\}//'
+	sed -n '2,41p' "$0" | sed 's/^# \{0,1\}//'
 	[ -z "$cmd" ] && exit 0
 	exit 2
 	;;

@@ -137,12 +137,10 @@ reset_pane() {
 restart_window() {
 	reset_pane
 	old=$(daemon_pids)
-	dev stop >/dev/null 2>&1 || {
-		fail "the old daemon ($old) did not stop"
+	dev stop >/dev/null || {
+		fail "the old window or daemon ($old) did not stop"
 		return 1
 	}
-	gone() { ! ctl ready && [ -z "$(daemon_pids)" ]; }
-	E2E_WAIT=15 wait_for "the old window and daemon to quit" gone || return 1
 	dev start "$@" >"$E2E_SB/window.out" 2>&1 &
 	E2E_WAIT=30 wait_for "the sandbox window" ctl ready || {
 		cat "$E2E_SB/window.out" >&2
@@ -163,9 +161,8 @@ restart_window() {
 	reset_pane
 }
 
-# Pids of the sandbox daemon (its argv names the socket).
 daemon_pids() {
-	pgrep -f -- "$E2E_SB/d.sock" 2>/dev/null | tr '\n' ' '
+	dev pids daemon
 }
 
 # Text of the lens blocks, raw output included (raw text is not grid text).
