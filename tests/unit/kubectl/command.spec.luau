@@ -87,6 +87,104 @@ describe("kubectl command", function()
 			kubeconfig = "/k/it's",
 		})
 	end)
+
+	local function params(url: string): { [string]: string }
+		local out: { [string]: string } = {}
+		for _, p in Command.parseQuery(url) do
+			out[p.key] = p.value
+		end
+		return out
+	end
+
+	local function inv(line: string)
+		local args = {}
+		for word in string.gmatch(line, "%S+") do
+			table.insert(args, word)
+		end
+		return Argv.parse("kubectl", args)
+	end
+
+	-- The Explore logs/events routes (track 2) open from lens chips; Explore
+	-- validates every parameter, so only set ones travel.
+	it("explore URL carries the logs and events route parameters", function()
+		local url = Command.exploreUrl(inv("--context kind get pods"), ref("Pod", "p", "x"), {
+			route = "logs",
+			container = "app",
+			previous = true,
+			since = "5m",
+			tail = "100",
+			search = true,
+		})
+		expect(params(url)).toEqual({
+			kind = "Pod",
+			name = "p",
+			namespace = "x",
+			context = "kind",
+			route = "logs",
+			container = "app",
+			previous = "1",
+			since = "5m",
+			tail = "100",
+			search = "1",
+		})
+		local warnings = Command.exploreUrl(inv("events -n x"), ref("Pod", "p", "x"), {
+			route = "events",
+			types = "Warning",
+			previous = false,
+			search = false,
+		})
+		expect(params(warnings)).toEqual({
+			kind = "Pod",
+			name = "p",
+			namespace = "x",
+			route = "events",
+			types = "Warning",
+		})
+	end)
+
+	it("explore URL without an object is scoped to the command's namespace, * for -A", function()
+		expect(params(Command.exploreUrl(inv("events -n web"), nil, { route = "events" }))).toEqual({
+			namespace = "web",
+			route = "events",
+		})
+		expect(params(Command.exploreUrl(inv("events -A"), nil, { route = "events" }))).toEqual({
+			namespace = "*",
+			route = "events",
+		})
+		expect(params(Command.exploreUrl(inv("logs -l app=x -n web"), nil, { route = "logs", selector = "app=x" }))).toEqual({
+			namespace = "web",
+			route = "logs",
+			selector = "app=x",
+		})
+	end)
+
+	it("logsSource reads the pod, TYPE/NAME or selector and the flags a rerun keeps", function()
+		local pod = Command.logsSource(inv("--context kind logs p -n x -c app -p --since=5m --tail=20 --timestamps"))
+		expect(pod.ref and pod.ref.kind).toBe("Pod")
+		expect(pod.ref and pod.ref.name).toBe("p")
+		expect(pod.ref and pod.ref.namespace).toBe("x")
+		expect(pod.ref and pod.ref.clusterContext).toBe("kind")
+		expect(pod.container).toBe("app")
+		expect(pod.previous).toBe(true)
+		expect(pod.since).toBe("5m")
+		expect(pod.tail).toBe("20")
+		expect(pod.timestamps).toBe(true)
+		expect(pod.prefix).toBe(false)
+		expect(pod.selector).toBeNil()
+
+		local deploy = Command.logsSource(inv("logs deploy/web --all-containers --prefix -c app"))
+		expect(deploy.ref and deploy.ref.kind).toBe("Deployment")
+		expect(deploy.ref and deploy.ref.group).toBe("apps")
+		expect(deploy.allContainers).toBe(true)
+		-- --all-containers wins over -c in kubectl, so a rerun must not pin one.
+		expect(deploy.container).toBeNil()
+		expect(deploy.prefix).toBe(true)
+
+		local sel = Command.logsSource(inv("logs -l app=web -f"))
+		expect(sel.ref).toBeNil()
+		expect(sel.selector).toBe("app=web")
+		expect(sel.previous).toBe(false)
+	end)
 end)
 
 return nil

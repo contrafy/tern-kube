@@ -1,0 +1,36 @@
+/* Logs lens (lib/logs/render.luau) and Warning rows of the events table.
+   Error and warning lines are marked so they stand out in a long log; Wrap
+   lets long lines break instead of ending in an ellipsis. */
+
+.tk-grid .tk-lvl-error .tk-c {
+	background: var(--bad-fill);
+}
+
+.tk-grid .tk-lvl-warn .tk-c:first-child {
+	box-shadow: inset 3px 0 0 var(--warn);
+}
+
+.tk-logs.tk-lwrap .tk-c {
+	white-space: normal;
+}
+
+.tk-logs.tk-lwrap .tk-c .sf-text {
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+}
+
+.tk-grid .tk-divider {
+	grid-column: 1 / -1;
+	padding: 6px 6px 2px;
+	color: var(--t3);
+	border-top: 1px solid var(--l2);
+}
+
+[data-role="tern-kube.logs-actions"] .sf-act,
+[data-role="tern-kube.context"] .sf-act {
+	cursor: pointer;
+}
+
+[data-role="tern-kube.chip-off"] {
+	opacity: 0.6;
+}

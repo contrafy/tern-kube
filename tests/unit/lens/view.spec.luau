@@ -1,6 +1,7 @@
 --!strict
 -- What the lens block shows for each kind of run: native view with a
 -- snapshot header, or nil so Tern shows the raw output.
+local Argv = require("../../../plugin/lib/kubectl/argv")
 local Capture = require("../../../plugin/lib/lens/capture")
 local View = require("../../../plugin/lib/lens/view")
 local json = require("../../lib/json")
@@ -162,6 +163,46 @@ describe("lens view", function()
 		expect(next.sort).toBe("AGE")
 		local withHelp = View.render(build("ns-apps/get_pods"), next) :: any
 		expect(nodes.text(nodes.find(withHelp, nodes.role("tern-kube.help")) :: any)).toContain("Click a column header")
+	end)
+
+	-- Track 2 plan 5: event listings render through the table pipeline.
+	it("kubectl events renders natively with ×N notes and a Warning count", function()
+		local node = View.render(build("ns-apps/events"), vsm.default()) :: any
+		assert(node, "events rendered nil")
+		local text = nodes.text(node)
+		expect(text).toContain("×12 over 4h30m")
+		expect(nodes.text(nodes.find(node, nodes.role("tern-kube.summary")) :: any)).toContain("warning")
+	end)
+
+	-- A watch ends in Ctrl-C (status 130): that is how the user stops it, not
+	-- a failure.
+	it("a watch stopped with Ctrl-C says stopped instead of exit 130", function()
+		local f = runs.load("ns-logs/get_events_-w_--request-timeout=8s")
+		local lines = table.clone(f.lines)
+		table.insert(lines, "^C")
+		local node = View.render(Capture.build(f.run, lines, 130, { decode = json.decode }), vsm.default()) :: any
+		local h = header(node)
+		expect(nodes.find(h, nodes.role("tern-kube.exit"))).toBeNil()
+		expect(nodes.text(nodes.find(h, nodes.role("tern-kube.stopped")) :: any)).toBe("stopped (Ctrl-C)")
+	end)
+
+	it("header notes appear under the bar", function()
+		local node = View.render(build("ns-apps/events"), vsm.default(), { notes = { "trails" } }) :: any
+		expect(nodes.text(nodes.find(header(node), nodes.role("tern-kube.note")) :: any)).toBe("trails")
+	end)
+
+	-- Plan 4.4/5 running policy: while an event watch runs Raw is live and a
+	-- plugin view trails it (Tern hands lines over late), so raw is the default.
+	it("event watches stay raw while running unless streaming_view is native", function()
+		local function inv(line: string)
+			local r = runs.run(line)
+			return Argv.parse(r.program, r.args)
+		end
+		expect(View.rawWhileRunning(inv("kubectl get events -w"), "raw")).toBe(true)
+		expect(View.rawWhileRunning(inv("kubectl events -w -n x"), "raw")).toBe(true)
+		expect(View.rawWhileRunning(inv("kubectl get events -w"), "native")).toBe(false)
+		expect(View.rawWhileRunning(inv("kubectl get events"), "raw")).toBe(false)
+		expect(View.rawWhileRunning(inv("kubectl get pods"), "raw")).toBe(false)
 	end)
 end)
 

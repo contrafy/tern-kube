@@ -5,6 +5,7 @@
 
 local Argv = require("../kubectl/argv")
 local Describe = require("../parse/describe")
+local EventsModel = require("../events/model")
 local Json = require("../parse/json")
 local Kinds = require("../kubectl/kinds")
 local Mutation = require("../parse/mutation")
@@ -16,6 +17,12 @@ local Values = require("../model/values")
 local Yaml = require("../parse/yaml")
 
 export type Mode = "table" | "json" | "yaml" | "describe" | "mutation" | "name" | "raw"
+
+-- The events overlay on a table capture (`kubectl events`, `get events`,
+-- their watches): row refs are the involved objects; `notes` holds the
+-- `×N over D` part of a LAST SEEN cell by row key (the cell keeps the age,
+-- so it sorts as a duration).
+export type EventsInfo = { notes: { [string]: string } }
 
 export type Capture = {
 	invocation: Types.Invocation,
@@ -40,6 +47,9 @@ export type Capture = {
 	policy: Redact.Policy,
 	-- The native view hides at least one value of the raw output.
 	masked: boolean,
+	-- The output ended in the `^C` of a Ctrl-C (a stopped watch).
+	interrupted: boolean,
+	events: EventsInfo?,
 }
 
 export type Run = { program: string, args: { string } }
@@ -79,7 +89,7 @@ local function modeFor(inv: Invocation, supported: boolean): Mode
 		return "describe"
 	elseif verb ~= nil and MUTATION_VERBS[verb] then
 		return "mutation"
-	elseif verb == "get" or verb == "top" then
+	elseif verb == "get" or verb == "top" or verb == "events" then
 		return "table"
 	end
 	return "raw"
@@ -331,27 +341,182 @@ local function confidenceOf(unparsed: number): Types.Confidence
 	return if unparsed > 0 then "partial" else "high"
 end
 
+local EVENT_TYPES: { [string]: boolean } = { Normal = true, Warning = true }
+local WATCH_EVENTS: { [string]: boolean } =
+	{ ADDED = true, MODIFIED = true, DELETED = true, BOOKMARK = true, ERROR = true }
+
+-- Each watch batch gets its own tabwriter, so later rows may not line up
+-- with the header: a span cut can then succeed with shifted cells. Known
+-- value sets catch that.
+local function eventCellsOk(headers: { string }, cells: { string }): boolean
+	for i, h in headers do
+		local v = cells[i] or ""
+		if h == "TYPE" and not EVENT_TYPES[v] then
+			return false
+		elseif h == "EVENT" and not WATCH_EVENTS[v] then
+			return false
+		elseif h == "LAST SEEN" and not (string.find(v, "^%S+$") or string.find(v, "^%S+ %(x%d+ over %S+%)$")) then
+			return false
+		end
+	end
+	return true
+end
+
+-- Splits on runs of 2+ spaces into exactly `count` cells, the last taking
+-- the rest of the line (a MESSAGE may itself hold double spaces).
+local function tolerantCells(line: string, count: number): { string }?
+	local cells: { string } = {}
+	local pos = 1
+	while #cells < count - 1 do
+		local s = string.find(line, "%S", pos)
+		if s == nil then
+			return nil
+		end
+		local gap = string.find(line, "  ", s, true)
+		if gap == nil then
+			return nil
+		end
+		table.insert(cells, string.sub(line, s, gap - 1))
+		pos = gap
+	end
+	local s = string.find(line, "%S", pos)
+	if s == nil then
+		return nil
+	end
+	table.insert(cells, (string.gsub(string.sub(line, s), "%s+$", "")))
+	return cells
+end
+
+-- Re-cuts misaligned watch rows and recovers the ones the span and split
+-- cuts rejected; rows no cut makes sense of become unparsed. Returns the
+-- line numbers recovered from unparsed.
+local function realignEvents(parsed: ParsedTable, lines: { string }): { [number]: boolean }
+	local headers: { string } = table.create(#parsed.columns)
+	for i, col in parsed.columns do
+		headers[i] = col.name
+	end
+	local n = #headers
+	local recovered: { [number]: boolean } = {}
+	local rows: { Types.TableRow } = {}
+	local kept: { Types.RawLine } = {}
+	for _, row in parsed.rows do
+		if eventCellsOk(headers, row.cells) then
+			table.insert(rows, row)
+			continue
+		end
+		local text = lines[row.line] or ""
+		local cells = tolerantCells(text, n)
+		if cells and eventCellsOk(headers, cells) then
+			table.insert(rows, { cells = cells, line = row.line })
+		else
+			table.insert(kept, { line = row.line, text = text })
+		end
+	end
+	local reordered = false
+	for _, u in parsed.unparsed do
+		local cells = tolerantCells(u.text, n)
+		if cells and eventCellsOk(headers, cells) then
+			recovered[u.line] = true
+			reordered = true
+			table.insert(rows, { cells = cells, line = u.line })
+		else
+			table.insert(kept, u)
+		end
+	end
+	if reordered then
+		table.sort(rows, function(a, b)
+			return a.line < b.line
+		end)
+	end
+	table.sort(kept, function(a, b)
+		return a.line < b.line
+	end)
+	parsed.rows = rows
+	parsed.unparsed = kept
+	return recovered
+end
+
+local function eventsTable(
+	inv: Invocation,
+	parsed: ParsedTable,
+	tableIndex: number,
+	seen: { [string]: number },
+	notes: { [string]: string }
+): SnapshotTable
+	local headers: { string } = table.create(#parsed.columns)
+	for i, col in parsed.columns do
+		headers[i] = col.name
+	end
+	local seenCol = indexOf(headers, "LAST SEEN")
+	local rows: { ResourceRow } = table.create(#parsed.rows)
+	local cellRows: { { string } } = table.create(#parsed.rows)
+	for i, row in parsed.rows do
+		local ev = EventsModel.fromRow(headers, row.cells, inv)
+		local cells = row.cells
+		local note: string? = nil
+		if seenCol then
+			local cell = EventsModel.lastSeenCell(cells[seenCol] or "")
+			if cell.count then
+				cells = table.clone(cells)
+				cells[seenCol] = cell.age
+				note = string.format("×%d over %s", cell.count, cell.over or "?")
+			end
+		end
+		local ref = ev.object
+		if ref then
+			ref = table.clone(ref)
+			ref.clusterContext = inv.context
+		end
+		local key = uniqueKey(seen, if ref then Resource.key(ref) else "t" .. tableIndex .. "#" .. i)
+		if note then
+			notes[key] = note
+		end
+		cellRows[i] = cells
+		rows[i] = { key = key, ref = ref, cells = cells, rawLines = { row.line }, warnings = {} }
+	end
+	return { kind = "Event", group = nil, headers = headers, types = columnTypes(headers, cellRows), rows = rows }
+end
+
 local function buildTable(inv: Invocation, lines: { string }, status: number?, capture: Capture)
 	local result = parseTables(inv, lines)
 	local seen: { [string]: number } = {}
 	local tables: { SnapshotTable } = table.create(#result.tables)
 	local unparsed = 0
+	local events: EventsInfo? = if Argv.isEventsListing(inv) then { notes = {} } else nil
+	local recovered: { [number]: boolean } = {}
 	for i, parsed in result.tables do
-		tables[i] = snapshotTable(inv, parsed, i, seen)
+		if events then
+			for line in realignEvents(parsed, lines) do
+				recovered[line] = true
+			end
+			tables[i] = eventsTable(inv, parsed, i, seen, events.notes)
+		else
+			tables[i] = snapshotTable(inv, parsed, i, seen)
+		end
 		unparsed += #parsed.unparsed
 	end
-	for _, d in result.diagnostics do
+	local diagnostics = result.diagnostics
+	if next(recovered) then
+		diagnostics = {}
+		for _, d in result.diagnostics do
+			if not (d.line and recovered[d.line] and d.severity == "warning") then
+				table.insert(diagnostics, d)
+			end
+		end
+	end
+	for _, d in diagnostics do
 		if isUnrecognised(d) then
 			unparsed += 1
 		end
 	end
-	capture.diagnostics = result.diagnostics
+	capture.events = events
+	capture.diagnostics = diagnostics
 	capture.unparsed = unparsed
 	capture.snapshot = {
 		invocation = inv,
 		exitCode = status,
 		tables = tables,
-		diagnostics = result.diagnostics,
+		diagnostics = diagnostics,
 		truncated = false,
 		confidence = confidenceOf(unparsed),
 		reason = nil,
@@ -639,6 +804,8 @@ function M.build(run: Run, rawLines: { string }, status: number?, deps: Deps): C
 		sensitive = false,
 		policy = deps.policy or Redact.DEFAULT,
 		masked = false,
+		interrupted = #lines < #rawLines,
+		events = nil,
 	}
 	if mode == "table" then
 		buildTable(inv, lines, status, capture)

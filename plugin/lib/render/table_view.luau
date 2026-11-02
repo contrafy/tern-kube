@@ -104,10 +104,19 @@ local function facet(tables: { SnapshotTable }, col: string): Facet?
 	return f
 end
 
-local function facets(tables: { SnapshotTable }): { Facet }
+-- Events tables also split by REASON and, for `--output-watch-events`, by
+-- EVENT (ADDED/MODIFIED).
+local EVENT_FACETS = { "EVENT", "REASON" }
+
+local function facets(tables: { SnapshotTable }, events: boolean): { Facet }
 	local out: { Facet } = {}
 	local cols = table.clone(FACET_COLUMNS)
 	table.insert(cols, 3, Query.KIND)
+	if events then
+		for _, c in EVENT_FACETS do
+			table.insert(cols, c)
+		end
+	end
 	for _, col in cols do
 		local f = facet(tables, col)
 		if f then
@@ -129,7 +138,7 @@ local function problemCount(tables: { SnapshotTable }): number
 	return n
 end
 
-local function chipsNode(tables: { SnapshotTable }, vs: ViewState): Node?
+local function chipsNode(tables: { SnapshotTable }, vs: ViewState, events: boolean): Node?
 	local groups: { Node } = {}
 	local problems = problemCount(tables)
 	if problems > 0 or vs.problems then
@@ -144,7 +153,7 @@ local function chipsNode(tables: { SnapshotTable }, vs: ViewState): Node?
 			)
 		)
 	end
-	for _, f in facets(tables) do
+	for _, f in facets(tables, events) do
 		local items: { Node } = { ui.text({ ui.span(f.col, "muted") }) }
 		local shown = 0
 		local active: { [string]: boolean } = {}
@@ -319,6 +328,16 @@ local function actionChips(
 				actions = { click = "explore-route=diff|" .. row.key },
 			})
 		)
+		if capture.events then
+			local label = string.lower(ref.kind) .. "/" .. ref.name
+			table.insert(
+				out,
+				ui.badge("Events for " .. label, "accent", {
+					title = "The events timeline of " .. label .. " in Explore (runs kubectl get events)",
+					actions = { click = "explore-route=events|" .. row.key },
+				})
+			)
+		end
 		for _, n in quickChips(capture, tbl, row, ref, mutations) do
 			table.insert(out, n)
 		end
@@ -354,11 +373,16 @@ local function actionChips(
 	return out
 end
 
-local function cellItems(tbl: SnapshotTable, row: ResourceRow): { { { ui.SpanLike } } }
+local function cellItems(capture: Capture, tbl: SnapshotTable, row: ResourceRow): { { { ui.SpanLike } } }
 	local items: { { { ui.SpanLike } } } = table.create(#tbl.headers)
+	local note = if capture.events then capture.events.notes[row.key] else nil
 	for i, h in tbl.headers do
 		local v = row.cells[i] or ""
-		items[i] = { { ui.span(h, "muted") }, { if Values.isPlaceholder(v) then ui.span(v, "muted") else ui.span(v) } }
+		local value: { ui.SpanLike } = { if Values.isPlaceholder(v) then ui.span(v, "muted") else ui.span(v) }
+		if note and h == "LAST SEEN" then
+			table.insert(value, ui.span(" " .. note, "muted"))
+		end
+		items[i] = { { ui.span(h, "muted") }, value }
 	end
 	return items
 end
@@ -371,7 +395,7 @@ local function inspector(
 	mutations: boolean
 ): Node
 	return ui.col({
-		ui.kv(cellItems(tbl, row)),
+		ui.kv(cellItems(capture, tbl, row)),
 		ui.row(actionChips(capture, tbl, row, vs, mutations), { wrap = true }),
 	}, { role = "tern-kube.inspector" })
 end
@@ -403,7 +427,7 @@ function M.inspectView(capture: Capture, tbl: SnapshotTable, row: ResourceRow, v
 	local children: { Node } = {
 		crumbs,
 		ui.row(actionChips(capture, tbl, row, vs, mutations == true), { key = "actions", wrap = true }),
-		ui.section({ "Columns" }, { ui.kv(cellItems(tbl, row)) }, { key = "cells" }),
+		ui.section({ "Columns" }, { ui.kv(cellItems(capture, tbl, row)) }, { key = "cells" }),
 	}
 	local source = sourceLines(capture, row)
 	if source then
@@ -476,7 +500,8 @@ function M.render(capture: Capture, vs: ViewState, opts: Options?): (Node?, Coun
 	local budget = size
 
 	local children: { Node } = {}
-	local chips = chipsNode(tables, vs)
+	local events = capture.events
+	local chips = chipsNode(tables, vs, events ~= nil)
 	if chips then
 		table.insert(children, chips)
 	end
@@ -519,15 +544,20 @@ function M.render(capture: Capture, vs: ViewState, opts: Options?): (Node?, Coun
 		if count == 0 then
 			continue
 		end
+		local typeCol = if events then columnIndex(tbl, "TYPE") else nil
+		local seenCol = if events then columnIndex(tbl, "LAST SEEN") else nil
 		local gridRows: { Grid.GridRow } = table.create(count)
 		for i = from, to do
 			local row = rows[i]
 			local open = vs.open == row.key
+			local note = if events and seenCol then events.notes[row.key] else nil
 			gridRows[i - from + 1] = {
 				key = row.key,
 				cells = row.cells,
 				action = Viewstate.action(Viewstate.opened(vs, row.key)),
 				open = open,
+				class = if typeCol and row.cells[typeCol] == "Warning" then "tk-lvl-warn" else nil,
+				notes = if note and seenCol then { [seenCol] = note } else nil,
 			}
 		end
 		table.insert(

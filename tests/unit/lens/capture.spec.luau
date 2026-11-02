@@ -210,14 +210,27 @@ describe("lens capture", function()
 		expect((c.snapshot :: any).confidence).toBe("partial")
 	end)
 
-	it("unsupported commands are raw with kubectl's reason (watch, jsonpath, logs)", function()
-		for _, command in
-			{ "kubectl get pods -w", "kubectl get pods -o jsonpath={.items}", "kubectl -n x logs pod get" }
-		do
+	it("unsupported commands are raw with kubectl's reason (watch, jsonpath)", function()
+		for _, command in { "kubectl get pods -w", "kubectl get pods -o jsonpath={.items}" } do
 			local c = fromLines(command, { "NAME   READY", "a      1/1" }, 0)
 			expect(c.mode).toBe("raw")
 			expect(type(c.support.reason)).toBe("string")
 		end
+	end)
+
+	-- host.luau sends logs to its own records view; the table pipeline must
+	-- never read log lines (even over-claimed ones) as a table.
+	it("logs output is never a table capture", function()
+		local c = fromLines("kubectl -n x logs pod get", { "NAME   READY", "a      1/1" }, 0)
+		expect(c.mode).toBe("raw")
+		expect(c.snapshot).toBeNil()
+	end)
+
+	it("knows when output ended in a Ctrl-C, so the header can say stopped", function()
+		expect(fromLines("kubectl get events -w", { "LAST SEEN   TYPE", "1s          Normal", "^C" }, 130).interrupted).toBe(
+			true
+		)
+		expect(fromLines("kubectl get pods", { "NAME   READY", "a      1/1" }, 0).interrupted).toBe(false)
 	end)
 
 	it("drops the ^C a watch leaves when interrupted", function()
@@ -441,6 +454,113 @@ describe("lens capture redaction policy", function()
 			{ "Name:         s", "Namespace:    n", "", "Type:  Opaque", "", "Data", "====", "password:  12 bytes" }
 		local c = withPolicy("kubectl describe secret s -n n", lines, STRICT)
 		expect(c.masked).toBe(false)
+	end)
+end)
+
+-- Events listings (track 2 plan 5): the table pipeline with every row
+-- standing for its involved object, so the inspector's object chips work.
+describe("lens capture events overlay", function()
+	local function tableOf(c: Capture.Capture): any
+		return (c.snapshot :: any).tables[1]
+	end
+
+	local function dataLines(id: string): number
+		local n = 0
+		for i, l in runs.load(id).lines do
+			if i > 1 and string.find(l, "%S") then
+				n += 1
+			end
+		end
+		return n
+	end
+
+	it("kubectl events is a table whose rows are the involved objects", function()
+		local c = build("ns-apps/events")
+		expect(c.mode).toBe("table")
+		expect(c.events ~= nil).toBe(true)
+		local tbl = tableOf(c)
+		expect(tbl.kind).toBe("Event")
+		expect(#tbl.rows).toBe(dataLines("ns-apps/events"))
+		local first = tbl.rows[1]
+		expect(first.ref.kind).toBe("Pod")
+		expect(first.ref.name).toBe("pending")
+		expect(first.ref.namespace).toBe("tern-test-apps")
+		expect(first.key).toBe("/Pod/tern-test-apps/pending")
+		expect(c.unparsed).toBe(0)
+	end)
+
+	-- `11m (x12 over 4h30m)` does not sort as an age; the cell keeps the age
+	-- and the count/first-seen part becomes a note.
+	it("splits LAST SEEN into a sortable age and a ×N over D note", function()
+		local c = build("ns-apps/events")
+		local tbl = tableOf(c)
+		local row = tbl.rows[1]
+		expect(row.cells[1]).toBe("11m")
+		expect(tbl.types[1]).toBe("duration")
+		expect((c.events :: any).notes[row.key]).toBe("×12 over 4h30m")
+	end)
+
+	it("get events (lowercase OBJECT) and -o wide resolve the same object kinds", function()
+		local plain = tableOf(build("ns-apps/get_events"))
+		expect(plain.rows[1].ref.kind).toBe("Pod")
+		local wide = tableOf(build("ns-apps/get_events_-o_wide"))
+		-- -o wide prints the Event NAME; the row still stands for the pod.
+		expect(wide.rows[1].ref.kind).toBe("Pod")
+		expect(wide.rows[1].ref.name).toBe("broken-image-6869879767-8fqd7")
+		local count = table.find(wide.headers, "COUNT") :: number
+		expect(wide.types[count]).toBe("number")
+	end)
+
+	it("events -A takes each row's namespace from the NAMESPACE column", function()
+		local tbl = tableOf(build("ns-apps/events_-A"))
+		expect(tbl.rows[1].ref.namespace).toBe("tern-test-mc")
+		expect(tbl.rows[1].ref.kind).toBe("Deployment")
+		expect(tbl.rows[1].ref.group).toBe("apps")
+	end)
+
+	-- Each watch batch gets a new tabwriter: `6s (x2 over 26s)` rows are wider
+	-- than the header's LAST SEEN span and would cut into shifted cells.
+	it("re-cuts misaligned watch rows instead of shifting their cells", function()
+		local id = "ns-logs/events_-w_--request-timeout=8s"
+		local c = build(id)
+		local tbl = tableOf(c)
+		expect(#tbl.rows).toBe(dataLines(id))
+		expect(c.unparsed).toBe(0)
+		local wide = 0
+		for _, row in tbl.rows do
+			expect(row.cells[2] == "Normal" or row.cells[2] == "Warning").toBe(true)
+			if (c.events :: any).notes[row.key] then
+				wide += 1
+			end
+		end
+		expect(wide > 0).toBe(true)
+	end)
+
+	it("recovers a row whose MESSAGE holds double spaces and keeps arrival order", function()
+		local lines = {
+			"LAST SEEN   TYPE     REASON      OBJECT      MESSAGE",
+			"5s          Normal   Pulled      Pod/a       first",
+			"6s (x2 over 26s)   Warning   BackOff   Pod/b   Back-off  restarting  twice",
+			"7s          Normal   Started     Pod/c       last",
+		}
+		local c = fromLines("kubectl events -w -n ns", lines, 130)
+		local tbl = tableOf(c)
+		expect(#tbl.rows).toBe(3)
+		expect(tbl.rows[2].cells).toEqual({ "6s", "Warning", "BackOff", "Pod/b", "Back-off  restarting  twice" })
+		expect(tbl.rows[3].ref.name).toBe("c")
+		expect(c.unparsed).toBe(0)
+		expect(#c.diagnostics).toBe(0)
+	end)
+
+	it("keeps the EVENT column of --output-watch-events", function()
+		local tbl = tableOf(build("ns-logs/get_events_-w_--output-watch-events_--request-timeout=8s"))
+		expect(tbl.headers[1]).toBe("EVENT")
+		expect(tbl.rows[1].cells[1]).toBe("ADDED")
+		expect(tbl.rows[1].ref.kind).toBe("Pod")
+	end)
+
+	it("tables of other kinds get no events overlay", function()
+		expect(build("ns-apps/get_pods").events).toBeNil()
 	end)
 end)
 

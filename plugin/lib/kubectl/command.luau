@@ -136,20 +136,63 @@ function M.urldecode(s: string): string
 	)
 end
 
-local EXPLORE_FIELDS = { "kind", "group", "name", "namespace", "context", "kubeconfig", "route", "cwd" }
+local EXPLORE_FIELDS = {
+	"kind",
+	"group",
+	"name",
+	"namespace",
+	"context",
+	"kubeconfig",
+	"route",
+	"cwd",
+	"container",
+	"previous",
+	"selector",
+	"since",
+	"tail",
+	"q",
+	"types",
+	"search",
+}
 
--- `route` opens a GitOps view on top of the object (`manifest`, `diff`);
--- `cwd` is where the manifest index is built (the lensed shell's directory).
-function M.exploreUrl(inv: Invocation, ref: Ref, extra: { route: string?, cwd: string? }?): string
+export type ExploreExtra = {
+	route: string?,
+	cwd: string?,
+	container: string?,
+	previous: boolean?,
+	selector: string?,
+	since: string?,
+	tail: string?,
+	q: string?,
+	types: string?,
+	-- Land on the logs route with its `/` filter focused.
+	search: boolean?,
+}
+
+-- `route` opens a view on top of the object (`manifest`, `diff`, `logs`,
+-- `events`); `cwd` is where the manifest index is built (the lensed shell's
+-- directory). Without `ref` the route is scoped to the invocation's
+-- namespace (`*` for -A): a namespace events timeline or `logs -l`.
+function M.exploreUrl(inv: Invocation, ref: Ref?, extra: ExploreExtra?): string
+	local e: ExploreExtra = extra or {}
+	local namespace = if ref then ref.namespace elseif inv.allNamespaces then "*" else inv.namespace
 	local values: { [string]: string? } = {
-		kind = ref.kind,
-		group = ref.group,
-		name = ref.name,
-		namespace = ref.namespace,
+		kind = ref and ref.kind,
+		group = ref and ref.group,
+		name = ref and ref.name,
+		namespace = namespace,
 		context = inv.context,
 		kubeconfig = inv.kubeconfig,
-		route = extra and extra.route,
-		cwd = extra and extra.cwd,
+		route = e.route,
+		cwd = e.cwd,
+		container = e.container,
+		previous = if e.previous then "1" else nil,
+		selector = e.selector,
+		since = e.since,
+		tail = e.tail,
+		q = e.q,
+		types = e.types,
+		search = if e.search then "1" else nil,
 	}
 	local parts: { string } = {}
 	for _, k in EXPLORE_FIELDS do
@@ -159,6 +202,59 @@ function M.exploreUrl(inv: Invocation, ref: Ref, extra: { route: string?, cwd: s
 		end
 	end
 	return "tern-kube://explore?" .. table.concat(parts, "&")
+end
+
+export type LogsSource = {
+	ref: Ref?,
+	selector: string?,
+	container: string?,
+	previous: boolean,
+	since: string?,
+	tail: string?,
+	prefix: boolean,
+	timestamps: boolean,
+	allContainers: boolean,
+}
+
+local function lastFlag(inv: Invocation, name: string): string?
+	local list = inv.flags[name]
+	return if list then list[#list] else nil
+end
+
+local function flagOn(inv: Invocation, name: string): boolean
+	local v = lastFlag(inv, name)
+	return v ~= nil and v ~= "false"
+end
+
+-- What a `kubectl logs` invocation reads from: the pod or TYPE/NAME (nil
+-- with -l) and the flags a rerun (Explore, a split) must keep.
+function M.logsSource(inv: Invocation): LogsSource
+	local first = inv.resources[1]
+	local ref: Ref? = nil
+	if inv.selector == nil and first and first.name and first.name ~= "" then
+		ref = {
+			clusterContext = inv.context,
+			namespace = inv.namespace,
+			group = first.group,
+			version = nil,
+			kind = first.kind,
+			name = first.name,
+			uid = nil,
+			source = "snapshot",
+		}
+	end
+	local allContainers = flagOn(inv, "all-containers")
+	return {
+		ref = ref,
+		selector = inv.selector,
+		container = if allContainers then nil else lastFlag(inv, "container"),
+		previous = flagOn(inv, "previous"),
+		since = lastFlag(inv, "since"),
+		tail = lastFlag(inv, "tail"),
+		prefix = flagOn(inv, "prefix"),
+		timestamps = flagOn(inv, "timestamps"),
+		allContainers = allContainers,
+	}
 end
 
 -- Query parameters of a tern-kube:// URL, in order of appearance.

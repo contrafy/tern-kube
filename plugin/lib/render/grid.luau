@@ -16,7 +16,20 @@ local ui = require("../ui")
 type ColumnType = Types.ColumnType
 type Node = ui.Node
 
-export type GridRow = { key: string, cells: { string }, action: string, open: boolean? }
+export type GridRow = {
+	key: string,
+	cells: { string },
+	action: string,
+	open: boolean?,
+	-- Extra row classes (`tk-lvl-error`), styled per row in the sheets.
+	class: string?,
+	-- Prebuilt cell nodes by column index, used instead of `cell`.
+	nodes: { [number]: Node }?,
+	-- Muted suffix appended to a text cell, by column index.
+	notes: { [number]: string }?,
+	-- A full-width separator drawn above the row (a date change).
+	divider: string?,
+}
 
 export type Spec = {
 	key: string,
@@ -28,6 +41,12 @@ export type Spec = {
 	sortAction: (col: string) -> string,
 	inspector: ((rowKey: string) -> Node?)?,
 	cell: ((col: string, columnType: ColumnType, value: string, finished: boolean) -> Node)?,
+	-- false: headers are labels only (rows keep their order, e.g. a log).
+	sortable: boolean?,
+	-- Extra classes on the grid element.
+	class: string?,
+	-- Columns never hidden on narrow windows (a log's LEVEL and MESSAGE).
+	keep: { [string]: boolean }?,
 }
 
 local M = {}
@@ -83,12 +102,12 @@ function M.priority(header: string, index: number): number
 	return 2
 end
 
-local function columnClasses(headers: { string }): ({ string }, string)
+local function columnClasses(headers: { string }, keep: { [string]: boolean }?): ({ string }, string)
 	local n = math.min(#headers, M.MAX_COLUMNS)
 	local hide = { 0, 0, 0 }
 	local classes: { string } = table.create(n)
 	for i = 1, n do
-		local p = M.priority(headers[i], i)
+		local p = if keep and keep[headers[i]] then 0 else M.priority(headers[i], i)
 		classes[i] = "tk-p" .. p
 		if p >= 1 then
 			hide[3] += 1
@@ -114,7 +133,7 @@ function M.grid(spec: Spec): Node
 	local headers = spec.headers
 	local types = spec.types
 	local ncol = math.min(#headers, M.MAX_COLUMNS)
-	local classes, gridClass = columnClasses(headers)
+	local classes, gridClass = columnClasses(headers, spec.keep)
 	local cellFn: (string, ColumnType, string, boolean) -> Node = spec.cell or Cells.cell
 	local numeric = Cells.NUMERIC
 	local cellClass: { string } = table.create(ncol)
@@ -122,43 +141,65 @@ function M.grid(spec: Spec): Node
 		cellClass[i] = if numeric[types[i] or "text"] then "tk-c tk-num " .. classes[i] else "tk-c " .. classes[i]
 	end
 
+	local sortable = spec.sortable ~= false
 	local children: { Node } = table.create(ncol + #spec.rows + 1)
 	for i = 1, ncol do
 		local h = headers[i]
-		local sorted = spec.sortCol == h
+		local sorted = sortable and spec.sortCol == h
 		local label = if sorted then h .. (if spec.desc then " ▼" else " ▲") else h
-		children[i] = {
-			k = "el",
-			p = {
-				tag = "div",
-				key = "h" .. i,
-				class = if sorted then "tk-h tk-sorted " .. classes[i] else "tk-h " .. classes[i],
-				text = label,
-				title = "Sort by " .. h,
-				actions = { click = spec.sortAction(h) },
-			},
+		local p: { [string]: any } = {
+			tag = "div",
+			key = "h" .. i,
+			class = if sorted then "tk-h tk-sorted " .. classes[i] else "tk-h " .. classes[i],
+			text = label,
 		}
+		if sortable then
+			p.title = "Sort by " .. h
+			p.actions = { click = spec.sortAction(h) }
+		end
+		children[i] = { k = "el", p = p }
 	end
 
 	local inspector = spec.inspector
 	for _, row in spec.rows do
+		if row.divider then
+			table.insert(children, {
+				k = "el",
+				p = { tag = "div", key = row.key .. "/div", class = "tk-divider", text = row.divider },
+			})
+		end
 		local cells: { Node } = table.create(ncol)
 		local values = row.cells
+		local prebuilt = row.nodes
+		local notes = row.notes
 		local finished = Cells.rowFinished(types, values)
 		for i = 1, ncol do
 			local v = values[i] or ""
+			local node = if prebuilt and prebuilt[i]
+				then prebuilt[i]
+				else cellFn(headers[i], types[i] or "text", v, finished)
+			local note = if notes then notes[i] else nil
+			if note and node.k == "text" and node.p then
+				local spans = table.clone(node.p.spans)
+				table.insert(spans, { t = " " .. note, s = "muted" })
+				node = { k = "text", p = { spans = spans } }
+			end
 			cells[i] = {
 				k = "el",
-				p = { tag = "div", class = cellClass[i], title = v },
-				c = { cellFn(headers[i], types[i] or "text", v, finished) },
+				p = { tag = "div", class = cellClass[i], title = if note then v .. " " .. note else v },
+				c = { node },
 			}
+		end
+		local rowClass = if row.open then "tk-r tk-open" else "tk-r"
+		if row.class then
+			rowClass ..= " " .. row.class
 		end
 		table.insert(children, {
 			k = "el",
 			p = {
 				tag = "div",
 				key = row.key,
-				class = if row.open then "tk-r tk-open" else "tk-r",
+				class = rowClass,
 				actions = { click = row.action },
 			},
 			c = cells,
@@ -176,7 +217,10 @@ function M.grid(spec: Spec): Node
 	end
 
 	return ui.el("div", { key = spec.key, class = "tk-wrap" }, {
-		ui.el("div", { class = gridClass, role = "tern-kube.grid" }, children),
+		ui.el("div", {
+			class = if spec.class then gridClass .. " " .. spec.class else gridClass,
+			role = "tern-kube.grid",
+		}, children),
 	})
 end
 
