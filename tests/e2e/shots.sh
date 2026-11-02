@@ -1,10 +1,11 @@
 # Screenshots for docs/screenshots/m1-<view>-<theme>-<size>.png,
 # m2-<view>-<theme>-wide.png, m3-{result,guard,diff-expanded}-<theme>-wide.png,
 # m3b-<view>-<theme>-wide.png, m4-settings-<theme>-wide.png,
-# t1-{label-diff,drain-preview,undo-diff,edit-approve}-dark-wide.png and
+# t1-{label-diff,drain-preview,undo-diff,edit-approve}-dark-wide.png,
 # t2-{logs,logs-multi,logs-context,events-lens,explore-events,explore-logs}-dark-wide.png
+# and t3-{releases,values-defaults,revision-diff,rollback,lens-chip}-dark-wide.png
 # (sourced by scripts/e2e.sh --shots). E2E_SHOTS limits the groups
-# (space-separated: m1 m2 m3 m3b m4 t1 t2; default all). Every shot is of the
+# (space-separated: m1 m2 m3 m3b m4 t1 t2 t3; default all). Every shot is of the
 # live sandbox window with the plugin loaded; check each PNG by eye before
 # committing.
 
@@ -347,8 +348,87 @@ shots_t2() {
 	reset_pane
 }
 
+t3_shot() { # t3_shot VIEW
+	dev shot "t3-$1-$theme-wide" "$shots_dir/t3-$1-$theme-wide.png" >/dev/null || fail "shot t3 $1"
+}
+
+# t3_release DEPLOYMENT: Explore of a Helm world Deployment, H opens its
+# release.
+t3_release() {
+	lens "kubectl --context kind-tern-kube-dev get deploy -n $HNS"
+	native
+	click_text "$1" '.tk-grid .tk-c'
+	click_text 'Explore live'
+	explore_open || return 1
+	xwait "Object deployment/$1"
+	xkey H
+	xwait 'rev '
+}
+
+# The Helm views on the tests/e2e/helm.sh world, as scenarios 50-54: the
+# releases route, shop-a's values against the chart defaults, web-b's
+# masked revision diff, a rollback preview (cancelled) and the lens chip.
+shots_t3() {
+	. "$E2E_REPO/tests/e2e/helm.sh"
+	helm_world || return
+	reset_pane
+	lens "kubectl --context kind-tern-kube-dev get deploy -n $HNS"
+	native
+	click_text web-b-web '.tk-grid .tk-c'
+	click_text 'Explore live'
+	explore_open || return
+	xwait 'Object deployment/web-b-web'
+	xkey escape
+	xwait 'web-b-web' '.tk-grid *'
+	xkey :
+	xwait 'Kinds'
+	xkey /
+	ctl type helm >/dev/null
+	xkey enter
+	xwait 'helm releases' '.tk-grid *'
+	xkey enter
+	xwait '4 releases'
+	t3_shot releases
+	explore_close_all
+
+	t3_release shop-a-shop || return
+	xkey v
+	xwait 'Values shop-a (changed)'
+	# changed mode: each overridden key beside its chart default.
+	E2E_WAIT=20 xwait 'image.tag' '.tk-grid *' || return
+	t3_shot values-defaults
+	explore_close_all
+
+	t3_release web-b-web || return
+	xkey h
+	xwait '3 revisions'
+	xkey G =
+	xwait 'Diff web-b rev 1..3'
+	E2E_WAIT=20 xwait 'MODIFY Secret' || return
+	t3_shot revision-diff
+	explore_close_all
+
+	t3_release shop-a-shop || return
+	xkey h
+	xwait '3 revisions'
+	xkey G ctrl+r
+	approve_open || return
+	E2E_WAIT=40 a_ready || return
+	ctl zoom >/dev/null
+	sleep 0.8
+	t3_shot rollback
+	xkey escape
+	approve_closed
+	explore_close_all
+
+	lens "kubectl --context kind-tern-kube-dev describe deploy shop-a-shop -n $HNS"
+	native
+	t3_shot lens-chip
+	reset_pane
+}
+
 wants() {
-	case " ${E2E_SHOTS:-m1 m2 m3 m3b m4 t1 t2} " in *" $1 "*) true ;; *) false ;; esac
+	case " ${E2E_SHOTS:-m1 m2 m3 m3b m4 t1 t2 t3} " in *" $1 "*) true ;; *) false ;; esac
 }
 
 echo "SHOTS -> $shots_dir"
@@ -371,6 +451,7 @@ for theme in light dark; do
 			if [ $theme = dark ]; then
 				wants t1 && shots_t1
 				wants t2 && shots_t2
+				wants t3 && shots_t3
 			fi
 		fi
 	done

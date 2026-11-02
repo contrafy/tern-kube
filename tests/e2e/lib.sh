@@ -477,3 +477,50 @@ config_reset() {
 	E2E_WAIT=10 wait_for "the config stub" test -f "$E2E_CFG"
 	sleep 0.5
 }
+
+# --- Helm (track 3) ----------------------------------------------------------------
+# The Helm scenarios source tests/e2e/helm.sh for their releases; these two
+# namespaces hold them and nothing else.
+
+HNS=tern-test-helm-e2e
+HNS2=tern-test-helm-e2e-b
+
+helm_world_down() {
+	kc delete namespace "$HNS" "$HNS2" --ignore-not-found --wait=false >/dev/null 2>&1
+}
+
+# hsel_has TEXT: the selected Explore row contains TEXT.
+hsel_has() {
+	case $(texts "$EX .tk-sel .tk-c" | jq -r 'join(" ")') in *"$1"*) true ;; *) false ;; esac
+}
+
+# hcol N COLUMNS: cell N of every visible row of the Explore grid (JSON array).
+hcol() {
+	texts "$EX .tk-grid .tk-r .tk-c" | jq -c --argjson n "$1" --argjson w "$2" '[range($n - 1; length; $w) as $i | .[$i]]'
+}
+
+# explore_close_all: esc through a deep Helm route stack until Explore closes.
+explore_close_all() {
+	i=0
+	while has "$EX" && [ $i -lt 20 ]; do
+		ctl key escape >/dev/null
+		sleep 0.3
+		i=$((i + 1))
+	done
+	lacks "$EX" || fail "Explore block did not close"
+}
+
+# xselect TEXT: move the Explore selection down (from the top) to the first
+# row containing TEXT.
+xselect() {
+	xkey g g
+	i=0
+	until hsel_has "$1"; do
+		i=$((i + 1))
+		[ $i -le 40 ] || {
+			fail "no Explore row with \"$1\""
+			return 1
+		}
+		xkey j
+	done
+}
