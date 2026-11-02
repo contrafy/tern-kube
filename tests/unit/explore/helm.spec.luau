@@ -197,6 +197,22 @@ describe("explore helm: release routes and keys", function()
 		expect((Helm.extrasLoad(s.helm, r, 3) :: any).status).toBe("ok")
 	end)
 
+	-- The release header summarizes the values (overridden, same as default,
+	-- unknown keys); without these reads it would say "loading" forever.
+	it("the release route also reads the computed values and the defaults its summary compares", function()
+		local s, trace = webB()
+		local r = top(s)
+		local found = false
+		for _, e in helmRuns(trace.runs) do
+			if string.find(line(e), "get values web-b -n tern-test-helm --revision 3 --all -o json", 1, true) then
+				found = true
+			end
+		end
+		expect(found).toBe(true)
+		expect((Helm.defaultsLoad(s.helm, r, 3) :: any).status).toBe("ok")
+		expect(Helm.valuesCompare(s.helm, State.helmCtx(s), r) ~= nil).toBe(true)
+	end)
+
 	it("h opens the history newest first; shift+h is the global H, not history", function()
 		local s = webB()
 		local hist = W.helmKeys(s, { "h" })
@@ -207,16 +223,12 @@ describe("explore helm: release routes and keys", function()
 	end)
 
 	it("v opens values (changed mode); v again cycles the mode in place", function()
+		-- The release route already read the computed values; v reuses them.
 		local s, trace = W.helmKeys((webB()), { "v" })
 		local r = top(s)
 		expect(r.kind).toBe("helm-values")
-		local found = false
-		for _, e in helmRuns(trace.runs) do
-			if string.find(line(e), "get values web-b -n tern-test-helm --revision 3 --all -o json", 1, true) then
-				found = true
-			end
-		end
-		expect(found).toBe(true)
+		expect(#helmRuns(trace.runs)).toBe(0)
+		expect((Helm.computedLoad(s.helm, r, 3) :: any).status).toBe("ok")
 		expect((Helm.defaultsLoad(s.helm, r, 3) :: any).status).toBe("ok")
 		expect(Helm.valuesCompare(s.helm, State.helmCtx(s), r) ~= nil).toBe(true)
 		local depth = #s.stack

@@ -84,6 +84,8 @@ export E2E_REAL_KUBECTL="$real_kubectl" E2E_KUBECONFIG="$kubeconfig"
 cleanup() {
 	clip_restore
 	if [ $keep = 0 ]; then
+		# Built by the Helm scenarios (tests/e2e/helm.sh) on first use.
+		[ -d "$E2E_SB/helm" ] && helm_world_down
 		dev stop >/dev/null 2>&1
 		i=0
 		while [ -n "${window_pid:-}" ] && kill -0 "$window_pid" 2>/dev/null && [ $i -lt 40 ]; do

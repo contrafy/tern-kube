@@ -489,6 +489,17 @@ describe("explore render: helm", function()
 		expect(#nodes.findAll(m, nodes.role("tern-kube.gitops-diff"))).toBe(2)
 	end)
 
+	-- shop-a r1 had no user values; r3 sets plain ones. A value that is
+	-- shown as it is must not be labelled masked (only secrets are).
+	it("the user values diff marks only masked values as masked", function()
+		local s = W.helmKeys(openRelease("shop-a"), { "h" })
+		s = W.helmAction(s, "sel", "1")
+		s = W.helmKeys(s, { "=" })
+		local text = nodes.text(main(s))
+		expect(text).toContain("replicaCount")
+		expect((string.find(text, "values changed (masked)", 1, true))).toBeNil()
+	end)
+
 	it("resources list manifest objects with their live state and open them", function()
 		local s = W.helmKeys(openRelease("shop-a"), { "R" })
 		expect(route(s)).toBe("helm-resources")

@@ -20,14 +20,21 @@ original output one click away (**Raw**).
   document list, and `apply` / `delete` / `scale` / `rollout restart` as a
   result summary (a result, never a preview).
 - Secret values are masked in the native view.
-- Output it cannot render faithfully (`-w`, `-o jsonpath`, very large
-  output) stays raw.
+- `kubectl logs` renders as records: level, source, time and parsed JSON,
+  klog or logfmt fields, level and source chips, **First error**, a row
+  inspector with copy chips, and variants (other container, `--previous`)
+  run in a split. `kubectl events` and `get events` link each row to its
+  object.
+- `logs -f` and event watches show raw while they run and turn native when
+  they stop; other watches, `-o jsonpath` and very large tables stay raw.
 
 It claims `kubectl` and `kubecolor` running `get`, `describe`, `top`,
-`apply`, `delete`, `rollout restart` and `scale`, also after global flags
-(`kubectl --context prod -n web get pods`), and takes over from Tern's
-built-in `kubectl get` lens. Pipelines and redirected output are never
-lensed.
+`logs`, `events`, `apply`, `delete`, `rollout restart` and `scale`, also
+after global flags (`kubectl --context prod -n web get pods`), and takes
+over from Tern's built-in `kubectl get` and `kubectl logs` lenses.
+Pipelines and redirected output are never lensed.
+
+![Logs lens](docs/screenshots/t2-logs-dark-wide.png)
 
 | `get all` | `describe` |
 | --- | --- |
@@ -45,7 +52,8 @@ context came from, and only refreshes when you ask.
 | --- | --- |
 | `j` `k` `gg` `G` `enter` `esc` | move, open, back |
 | `/` | filter |
-| `d` `y` `L` `R` | describe, object, last logs, relations |
+| `d` `y` `L` `R` | describe, object, logs, relations |
+| `v` `V` | namespace events, events of the focused object |
 | `s` `l` `shift+f` | shell, follow logs, port-forward in a split |
 | `c` `n` `:` | context, namespace, kind |
 | `ctrl+d` `ctrl+r` `shift+s` | delete, rollout restart, scale |
@@ -53,7 +61,18 @@ context came from, and only refreshes when you ask.
 | `t` `T` `X` | label, annotate, patch |
 | `U` `p` `P` | rollout undo, pause, resume |
 | `C` `u` `D` | cordon, uncordon, drain |
+| `H` | Helm releases (palette: **Tern Kube: Helm releases**); on a Helm-managed object, its release |
 | `r` `Y` `?` | refresh, copy the command, help |
+
+In logs (`L`): `]` `[` next/previous error, `x` level floor, `a` container,
+`o` previous instance, `w` wrap, `/` search, `enter` inspector. In events
+(`v` `V`): `x` Warnings only, `]` `[` next/previous Warning, `/` filter,
+`enter` opens the object. In Helm views (`H`): `h` history, `v` values
+(again: next mode), `M` manifest, `N` notes, `K` hooks, `R` resources, `=`
+revision diff, `space` marks a revision to diff against, `ctrl+r` rollback,
+`ctrl+g` drift of the detected chart. Secret values stay masked.
+
+![Helm releases with status badges](docs/screenshots/t3-releases-dark-wide.png)
 
 Inside the GitOps views (drift, export, git), a view's own keys take
 precedence: there `t`, `X`, `e`, `p` and `P` keep their view meaning.
@@ -71,6 +90,9 @@ first: server dry run, `kubectl diff` or a before/after object diff per
 resource, then a confirmation scaled to the risk. Edit (`e` or the Edit
 chip) opens `kubectl edit` in a split; after you save, the approval block
 shows the diff before kubectl applies it. Deletes and other broad changes need the target typed.
+Helm rollback (`ctrl+r` on a release or revision) shows the recorded change
+between the two revisions and the live `kubectl diff`, then needs the release
+name typed.
 Nothing runs if the preview fails or the inputs or target change before
 you confirm.
 
@@ -87,10 +109,12 @@ bypass it. Setup: [shell/README.md](shell/README.md).
 
 Explore knows the git repository you ran the command in: `m` opens an
 object's manifest at its line, `=` diffs it against the live object,
-`ctrl+g` reports drift for a directory, Kustomization, Helm release or a
+`ctrl+g` reports drift for a directory, Kustomization, Helm chart or a
 locally checked out Argo CD / Flux app (changed, missing, unmanaged), and
 `E` exports live objects as clean manifests, optionally onto a new branch
-and commit. Push and pull requests are off unless you turn them on.
+and commit. Chart directories are matched to deployed releases on their
+own and rendered with the deployed values or a values file next to them.
+Push and pull requests are off unless you turn them on.
 
 ![Drift report](docs/screenshots/m3b-drift-dark-wide.png)
 
@@ -144,14 +168,14 @@ v1.0 is when every row reads done. Release history: [CHANGELOG.md](CHANGELOG.md)
 | `describe` cards with events; YAML list; JSON tree | done |
 | Secrets masked; raw fallback for watches, jsonpath, huge output | done |
 | Narrow-window columns; view state survives plugin reload | done |
-| Native `kubectl logs` lens | planned |
+| Native `kubectl logs` lens | done |
 | **Explore** | |
 | Live block with pinned context and its provenance | done |
 | k9s-style keys; context, namespace and kind pickers | done |
-| Describe, object, last 500 log lines | done |
+| Describe, object, parsed logs (`explore.logs_tail` lines) | done |
 | Relations graph with provenance | done |
-| Namespace events timeline | planned |
-| Helm releases with history | planned |
+| Namespace events timeline | done |
+| Helm releases with history | done |
 | Compare one object across contexts | planned |
 | **Quick actions** | |
 | Pod shell; workloads pick a ready pod | done |
@@ -167,21 +191,21 @@ v1.0 is when every row reads done. Release history: [CHANGELOG.md](CHANGELOG.md)
 | JSON-lines audit log | done |
 | Before/after object diffs for `patch`, `label`, `annotate`, `rollout undo`/`pause`/`resume` | done |
 | `cordon`, `uncordon`, `drain` with eviction and PodDisruptionBudget preview; `edit` as preview then apply | done |
-| Helm rollback through the approve block | planned |
+| Helm rollback through the approve block | done |
 | **Shell guard** | |
 | Opt-in for zsh, bash and fish; one POSIX `sh` core | done |
 | Guards `apply`, `delete`, `scale`, `rollout restart` | done |
 | Fails closed outside Tern, on timeout or mismatch | done |
 | Guards `rollout undo`/`pause`/`resume`, `patch`, `label`, `annotate`, `cordon`, `uncordon`, `drain`, `edit` | done |
 | **GitOps** | |
-| Manifest index: YAML, Kustomize, configured Helm releases | done |
+| Manifest index: YAML, Kustomize, configured or auto-detected Helm releases | done |
 | Open manifest at its line; diff vs live object | done |
 | Drift report: changed, missing, unmanaged; apply via approve | done |
 | Argo CD / Flux owner, sync and health status | done |
 | Export clean manifests; Secrets as placeholders | done |
 | Branch and commit; push and `gh pr create` opt-in | done |
 | `tern-kube-drift` CLI (text, Markdown, JSON) and CI example | done |
-| Helm values diff and chart auto-detect | planned |
+| Helm values diff and chart auto-detect | done |
 | Compare one source against several clusters | planned |
 | **Settings and config** | |
 | Versioned JSON at `~/.config/tern-kube/config.json`, with a JSON Schema | done |
@@ -211,7 +235,7 @@ v1.0 is when every row reads done. Release history: [CHANGELOG.md](CHANGELOG.md)
 | Secrets | done | partial | - | - | - | done | - | done | done |
 | Events | done | - | - | - | - | - | - | - | - |
 | Custom resources | done | partial | - | - | - | done | - | done | done |
-| Helm releases | - | planned | - | - | - | - | - | - | partial |
+| Helm releases | - | done | - | - | - | - | - | - | partial |
 
 `-`: not applicable or outside v1.0. partial: Nodes, ConfigMaps and Secrets
 appear only as relations of Pods; custom resources show owners only; Helm

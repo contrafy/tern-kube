@@ -74,12 +74,9 @@ export type ListData = { kind: string?, headers: { string }, types: { ColumnType
 export type NamesData = { names: { string } }
 -- masked: the object view hides at least one value of the fetched object.
 export type DetailData = { object: any, masked: boolean }
--- order: every kept record, merged by kubelet time (each source keeps its
--- own order); memo: the last filtered view of it, so moving the selection
--- does not re-filter.
+-- memo: the last filtered view, so moving the selection does not re-filter.
 export type LogsData = {
 	store: LogsStore.Store,
-	order: { number },
 	memo: { key: string, indices: { number } }?,
 }
 -- events: newest first; root: the scoped object (nil = the whole
@@ -652,26 +649,13 @@ function M.logIndices(route: Route, data: LogsData, text: string): { number }
 	if memo and memo.key == memoKey then
 		return memo.indices
 	end
-	local indices = data.order
-	if text ~= "" or route.floor ~= nil then
-		local store = data.store
-		local hits = LogsQuery.apply(
-			store,
-			{ text = text, minLevel = route.floor, merge = false },
-			1,
-			math.max(1, LogsStore.size(store))
-		)
-		local hit: { [number]: boolean } = {}
-		for _, i in hits.indices do
-			hit[i] = true
-		end
-		indices = {}
-		for _, i in data.order do
-			if hit[i] then
-				table.insert(indices, i)
-			end
-		end
-	end
+	local store = data.store
+	local indices = LogsQuery.apply(
+		store,
+		{ text = text, minLevel = route.floor, merge = true },
+		1,
+		math.max(1, LogsStore.size(store))
+	).indices
 	data.memo = { key = memoKey, indices = indices }
 	return indices
 end
@@ -2965,8 +2949,7 @@ function M.logsData(stdout: string, stderr: string, decode: Decode, limits: Logs
 			table.insert(store.notices, n)
 		end
 	end
-	local order = LogsQuery.apply(store, { merge = true }, 1, math.max(1, LogsStore.size(store))).indices
-	return { store = store, order = order, memo = nil }
+	return { store = store, memo = nil }
 end
 
 local function onResult(s: State, msg: Msg, effects: { Effect }): boolean

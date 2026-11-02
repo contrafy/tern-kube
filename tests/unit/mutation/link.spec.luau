@@ -48,6 +48,11 @@ describe("mutate links", function()
 		expect(Link.argv(r, KUBECTL)).toEqual({ "kubectl", "apply", "-k", "/w/over" })
 	end)
 
+	it("an apply namespace becomes -n: rendered charts omit metadata.namespace", function()
+		local r = Link.decode("tern-kube://mutate?op=apply&file=%2Fw%2Fb.yaml&namespace=shop") :: Link.Request
+		expect(Link.argv(r, KUBECTL)).toEqual({ "kubectl", "apply", "-f", "/w/b.yaml", "-n", "shop" })
+	end)
+
 	it("rejects anything that is not a plain target", function()
 		local cases = {
 			"tern-kube://mutate?op=exec&kind=pod&name=x",

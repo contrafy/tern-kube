@@ -182,6 +182,9 @@ file like `-f`: hashed into the fingerprint, re-hashed before kubectl runs.
   toggle, lens rehydration after reload) under Tern's own retention; Kube
   Lens cannot redact or purge it. Run `kubectl get secret -o yaml` only where
   you would print it anyway.
+- Logs are not redacted: the logs lens and Explore logs show what
+  `kubectl logs` prints, including any secret a workload logs, and Copy
+  line/JSON copy it verbatim.
 - GitOps export writes placeholders instead of Secret values
   (`plugin/lib/gitops/clean.luau`).
 - Test fixtures never contain Secret data: capture scripts list Secrets with
@@ -203,6 +206,18 @@ in the typed tier because it creates a privileged pod in the node's host
 namespaces (`plugin/lib/mutation/risk.luau`). A link without `confirm`
 opens the approve block; one whose grant is unknown, expired, used or
 minted for different fields runs nothing ("Tern Kube: not confirmed").
+
+**Run in split** (logs lens variants) types a read-only `kubectl logs` line
+at the prompt of a new interactive split, so the lens renders it there. The
+line is rebuilt from validated link fields only (`Quick.typedLine`,
+`plugin/lib/actions/quick.luau`), never from URL text: words outside
+`[A-Za-z0-9-._/:=,@]` are single-quoted, and a value holding a quote,
+backslash or control character is never typed (the line is copied and a
+toast says so), because no quoting is literal in zsh, bash and fish alike.
+It carries the lensed command's `--context`/`--kubeconfig` (or the pane's
+recorded `KUBECONFIG`); without them it runs against the new shell's current
+context, as the command it varies did. The line lands in that shell's
+history.
 
 ## No credentials stored
 

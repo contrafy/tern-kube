@@ -68,22 +68,50 @@ pod=$(k get pods -n "$NS" -l app=tk-logmix -o name | LC_ALL=C sort | head -n 1)
 pod=${pod#pod/}
 [ -n "$pod" ] || die "no tk-logmix pod"
 
-WORK=$(mktemp -d "${TMPDIR:-/tmp}/tern-kube-logs-check.XXXXXX")
+# The generated driver must sit next to check.luau (luau resolves requires
+# relative to the requiring file). The output is embedded, not passed as
+# arguments: a long-running tk-logmix prints more than ARG_MAX.
+WORK=$(mktemp -d "$ROOT/tests/integration/logs/.work.XXXXXX")
 trap 'rm -rf "$WORK"' EXIT INT TERM
+
+# Long-bracket level that cannot occur in the text, as scripts/fixtures/embed.sh does.
+embed() {
+	eq="="
+	while grep -qF "]$eq" "$1"; do
+		eq="$eq="
+	done
+	printf '[%s[\n' "$eq"
+	cat "$1"
+	printf ']%s]' "$eq"
+}
 
 fails=0
 n=0
 # run NAME EXPECT kubectl-args...
 run() {
-	name=$1
-	expect=$2
-	shift 2
 	n=$((n + 1))
+	printf '%s' "$1" >"$WORK/name"
+	printf '%s' "$2" >"$WORK/expect"
+	shift 2
 	set +e
 	k "$@" >"$WORK/out" 2>"$WORK/err"
 	status=$?
 	set -e
-	if ! "$LUAU" "$CHECK" -a "$name" "$expect" "$status" "kubectl $*" "$(cat "$WORK/out")" "$(cat "$WORK/err")"; then
+	printf '%s' "$status" >"$WORK/status"
+	printf '%s' "kubectl $*" >"$WORK/argv"
+	{
+		printf -- '--!strict\n'
+		printf 'local check = require("../check")\n'
+		printf 'check({\n'
+		for part in name expect status argv out err; do
+			printf '\t'
+			embed "$WORK/$part"
+			printf ',\n'
+		done
+		printf '})\n'
+		printf 'return nil\n'
+	} >"$WORK/main.luau"
+	if ! "$LUAU" "$WORK/main.luau"; then
 		fails=$((fails + 1))
 	fi
 }

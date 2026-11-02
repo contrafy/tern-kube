@@ -7,6 +7,46 @@ versions may break).
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-02
+
+### Added
+
+- Explore Helm views: `H` (or the kinds picker row `helm releases`, or **Tern Kube: Helm releases** in the palette) lists releases in the Explore namespace scope with status badges (failed, pending, stuck), chart, version and app version; on a Helm-managed object `H` opens its release. A release shows its header, a values summary (overridden, same as default, unknown keys), notes and hooks; `h` history (latest and running revision marked), `v` values in five modes (changed, user-supplied, computed, chart defaults, defaults → computed), `M` manifest, `N` notes, `K` hooks with their last run, `R` resources with live presence. Every helm call pins the context and `HELM_DRIVER`.
+- Revision diffs: `=` diffs a revision against the latest (or one marked with `space`): chart and app version change, user values that changed, hooks added or removed, and per-object diffs.
+- Helm rollback through the approve block (`ctrl+r` on a release or a history row): the recorded change between the two revisions, the live `kubectl diff` against the target manifest, a dry run, options (wait, cleanup on fail, force), and the typed release name. Pending releases, forced rollbacks and deletions carry their reason; the rollback is refused when the release moved since the preview. Audit records carry the release and both revisions.
+- Secret masking for Helm values, notes, manifests, hooks and diffs: key names, value shapes (PEM, JWT, bearer tokens, URL passwords) and echoes of masked values in other text; `security.show_secret_values` turns it off.
+- Chart auto-detect for drift: a chart directory in the repository whose name and version match a deployed release becomes a drift source, rendered with the release's deployed values (written 0600, removed after the render) or a values file next to the chart. **Copy as gitops.helm entry** copies the config for it.
+- Objects managed by Helm name their release (revision, status, chart) in Explore detail and relations, with a chip to the release; the lens shows a **Helm release ns/X** chip on `describe`, `get -o yaml`, `get -o json` and tables with `--show-labels`.
+- Settings section `helm`: program, storage driver, list and history limits, auto-detect, chart sources, rollback defaults.
+
+### Changed
+
+- End-to-end scenarios 50-55 cover the Helm views, revision diffs, rollback, relations and chart auto-detect against kind; `tests/integration/helm/template-compat.sh` (run in CI) checks the release extras template against the pinned helm, and the mutation integration suite gains Helm rollback scenarios.
+- The test sandbox points `HELM_CONFIG_HOME`, `HELM_CACHE_HOME` and `HELM_DATA_HOME` at the sandbox.
+
+### Fixed
+
+- Drift of a Helm source diffs the render in the release namespace: objects without `metadata.namespace` were compared in kubectl's default namespace and reported missing.
+- Drift of a Helm source ignores objects of other Helm releases and Helm hook objects in the same namespace instead of listing them as unmanaged.
+- **Apply source** (`A`) and **Apply** (`a`) on a Helm drift source apply the render with `-n <release namespace>`: objects without `metadata.namespace` would have been applied to kubectl's default namespace. Documents of different releases, or renders mixed with plain manifests, are refused.
+
+## [0.3.0] - 2026-11-02
+
+### Added
+
+- Native `kubectl logs` lens (also `kubecolor`, after global flags): records with level, source, time and message, parsed from JSON, klog, logfmt and plain lines, with `--prefix` and `--timestamps` honoured and stack traces folded into one record. Level and source chips with counts, **First error** with a small context view and Prev/Next error, Wrap, By time (merges per-pod blocks when `--timestamps` was given), a row inspector with Copy line, Copy message and Copy JSON, and pages with the newest first. `Found N pods` and `Defaulted container` lines are notices, not rows.
+- Logs lens actions: **Follow in split** (raw, live), **Open in Explore**, **Search…**, and **Run in split** variants (other container, `--previous`, `--all-containers --prefix`, `--timestamps --prefix`) typed into a new interactive split so the lens renders them there. A variant whose values would need shell quoting is copied instead, with a toast. The typed line lands in that shell's history.
+- `kubectl events` and `kubectl get events` render as native tables: each row stands for its involved object (inspector chips, Explore live, **Events for**), LAST SEEN sorts by age and shows `×N over D`, TYPE and REASON are facets, Warning rows are marked.
+- Explore events timeline: `v` opens the namespace's events, `V` the focused object's (workloads include the objects they own), grouped by recency with toned reasons; `x` Warnings only, `]` `[` next/previous Warning, `/` filter, `enter` opens the object. Palette command **Tern Kube: Events**.
+- Settings `general.streaming_view` (`raw` or `native`: what `logs -f` and event watches show while they run) and `explore.logs_tail`.
+
+### Changed
+
+- Explore `L` shows parsed records (level badges, sources, inspector) with `]` `[` errors, `x` level floor, `a` container, `o` previous instance, `w` wrap and `/` search; the tail is `explore.logs_tail` (default 500) instead of a fixed 500.
+- Follow in split works from a label selector (`logs -f -l ... --prefix`).
+- `kubectl logs -f`, `get events -w` and `kubectl events -w` show raw while they run and turn native after Ctrl-C or when they end.
+- End-to-end scenarios 40-49 and integration checks `tests/integration/logs/check.sh` and `tests/integration/events/check.sh` (run in CI) cover logs and events against kind.
+
 ## [0.2.0] - 2026-11-02
 
 ### Added
@@ -126,7 +166,9 @@ First public beta.
 - Docs: SDK capability matrix, configuration, performance, architecture,
   security model, testing, releasing.
 
-[Unreleased]: https://github.com/contrafy/tern-kube/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/contrafy/tern-kube/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/contrafy/tern-kube/compare/v0.3.0...v0.4.0
+[0.3.0]: https://github.com/contrafy/tern-kube/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/contrafy/tern-kube/compare/v0.1.3...v0.2.0
 [0.1.3]: https://github.com/contrafy/tern-kube/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/contrafy/tern-kube/compare/v0.1.1...v0.1.2

@@ -127,6 +127,18 @@ describe("logs render raw rules (plan 4.6)", function()
 		local s, inv2 = fixture("ns-logs/logs_" .. POD .. "_-p_-c_crashy")
 		expect(view(s, inv2) ~= nil).toBe(true)
 	end)
+
+	-- `logs -p` of a previous instance whose log the kubelet already removed
+	-- prints only kubectl's own line, on stdout, with exit 0. A native view
+	-- would be an empty grid under a notice; raw is what the terminal shows.
+	it("kubectl's own error with exit 0 and no records stays raw", function()
+		local s, inv = storeOf("kubectl logs p -p -c crashy", {
+			'unable to retrieve container logs for containerd://0123abcd: log "/var/log/pods/x/crashy/3.log" not found',
+		}, 0)
+		expect(view(s, inv)).toBeNil()
+		local defaulted, inv2 = storeOf("kubectl logs p", { 'Defaulted container "app" out of: app, side' }, 0)
+		expect(view(defaulted, inv2) ~= nil).toBe(true)
+	end)
 end)
 
 describe("logs render running policy", function()
@@ -322,6 +334,19 @@ describe("logs render inspector and copies", function()
 		expect(string.sub(Render.podOf(s, s.first) :: string, 1, 10)).toBe("tk-logmix-")
 		local single = storeOf("kubectl logs mypod", { "hello" }, 0)
 		expect(Render.podOf(single, 1)).toBe("mypod")
+	end)
+
+	-- kubectl prints no Defaulted line for a single-container pod, so the
+	-- container is unknown; the inspector names what is known instead of
+	-- showing a placeholder that reads like data.
+	it("the inspector names the pod alone when the container is unknown", function()
+		local s, inv = storeOf("kubectl logs big-0", { '{"level":"info","msg":"hello"}' }, 0)
+		local all: Render.Options = { pageSize = 100000, running = false, streamingView = "raw" }
+		local open = decodeAction(nodes.action(rows(rendered(s, inv, nil, nil, all))[1]))
+		local insp = nodes.find(rendered(s, inv, open, nil, all), nodes.role("tern-kube.inspector")) :: any
+		local text = nodes.text(insp)
+		expect(text).toContain("pod/big-0")
+		expect((string.find(text, "?", 1, true))).toBeNil()
 	end)
 end)
 
