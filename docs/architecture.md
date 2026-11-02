@@ -27,8 +27,9 @@ plugin.toml            manifest at the repository root (the package root):
                        lens "kubectl" (claim globs), blocks "explore",
                        "approve" and "settings", styles; entries under plugin/
 plugin/
-  host.luau            daemon half: lens "kubectl", spawn hook
-                       (TKUBE_SPOOL), registers the blocks below
+  host.luau            daemon half: lens "kubectl" (logs branch and table/
+                       describe branch), spawn hook (TKUBE_SPOOL), registers
+                       the blocks below
   window.luau          window half: route.link (every tern-kube:// URL),
                        route.open (guard requests), palette commands
   config_host.luau     reads/caches $XDG_CONFIG_HOME/tern-kube/config.json
@@ -48,11 +49,17 @@ plugin/
                        view (dispatch)
     render/            grid, table/describe/yaml/objtree/mutation views,
                        header, summary
+    logs/              parse (JSON, klog, logfmt, plain; prefix, kubelet
+                       time, continuations), store (incremental ring of
+                       records), query (filters, pages, context, next
+                       error), viewstate (`lv=` action values), render
+    events/            model (EventList and table rows -> events), timeline
+                       (sort, filter, time groups, ownerReferences closure)
     explore/           state (Elm-style core), gitops (manifest, diff,
                        drift, export and git routes), render, query (pinned
                        argv), relations, label selectors
     actions/quick.luau shell, logs, port-forward, debug, CronJob run-now
-                       links and the commands they launch
+                       links, the commands they launch and typed logs lines
     mutation/          plan, steps, diffseg, objdiff (before/after diffs),
                        drain, rollout, edit, risk, confirm, fingerprint,
                        audit, link (mutate links + grants), session (approve
@@ -73,13 +80,20 @@ bin/tern-kube-drift    POSIX sh drift report for CI (no Tern)
       v
  host.luau lens "kubectl"
    open/line/finish: record argv, lines, exit status only
-   view:  lib/lens/capture -> lib/parse/* -> lib/lens/view -> lib/render/*
-   event: "v=<state>" re-render | copy | explore | act
+                     (logs: Store.push per line, pure state)
+   view:  logs   -> lib/logs/{query,render}
+          other  -> lib/lens/capture -> lib/parse/* -> lib/lens/view
+                    -> lib/render/*  (events tables: lib/events/model rows)
+   event: "v=<state>" | "lv=<state>" re-render | copy | explore | act
       |  cx:open("tern-kube://...")
       v
  window.luau route.link  (claims every tern-kube:// URL, pcall-wrapped)
-   act/<shell|logs|port-forward>  -> lib/actions/quick -> layout:split,
+   act/<shell|logs-follow|port-forward> -> lib/actions/quick -> layout:split,
                                      new pane runs a visible kubectl line
+   act/logs (Run in split)        -> lib/actions/quick typedLine ->
+                                     split(pane, dir, {}) + cx:run(line):
+                                     an interactive shell, so the lens
+                                     claims the typed line in the new pane
    act/<debug-*|cronjob-run>      -> needs a confirm grant, else approve block
    mutate?...                     -> block "approve"  (mutate_host)
    anything else                  -> block "explore"  (explore_host)
@@ -102,12 +116,25 @@ bin/tern-kube-drift    POSIX sh drift report for CI (no Tern)
 - Claims are broad, views strict: globs such as `kubectl -* get *`
   over-claim, so `view` re-derives the verb from argv
   (`plugin/lib/kubectl/argv.luau`) and returns nil (raw output) for anything
-  it cannot render faithfully: watches, `-o jsonpath`, empty output, output
-  over `general.max_rows` lines or `general.max_capture_bytes`.
+  it cannot render faithfully: watches other than event listings,
+  `-o jsonpath`, empty output, tables over `general.max_rows` lines or
+  `general.max_capture_bytes`.
 - Mutation verbs (`apply`, `delete`, `scale`, `patch`, `label`, `annotate`,
   `cordon`, `uncordon`, `rollout restart|undo|pause|resume`) render as a
   result summary (`plugin/lib/render/mutation_view.luau`); by the time a lens
   sees them the change has happened.
+- `logs` keeps its own state (`plugin/lib/logs/store.luau`): records are
+  parsed per `line` callback, so `view` is O(page) while a stream runs. A log
+  is append-only, so past `general.max_rows` it keeps the newest records and
+  says how many are only in Raw, instead of falling back to raw. A running
+  `logs -f` (and `get events -w`, `events -w`) shows raw unless
+  `general.streaming_view` is `native`: Tern hands lines to a plugin lens
+  late (see the capability matrix), and raw is live. A pointer cannot scroll
+  the pane, so **First error** and **Show in context** render a small
+  context view (20 records either side) instead of jumping.
+- Event listings (`kubectl events`, `get events`) go through the table
+  pipeline; each row's ref is the involved object, so the inspector chips
+  act on it.
 
 ### Rehydration
 
@@ -117,8 +144,10 @@ replays `open`, `line` and `finish`, then calls `view`. Therefore:
 - `open`, `line` and `finish` are side-effect free (`plugin/host.luau`);
 - every clickable carries the whole view state in its action value
   (`v=sort:STATUS;desc:1;f:STATUS~Running;open:<key>`,
-  `plugin/lib/lens/viewstate.luau`), so a click on a rehydrated lens restores
-  sort, filters and the open inspector;
+  `plugin/lib/lens/viewstate.luau`; logs `lv=lvl:error;src:1;open:42`,
+  `plugin/lib/logs/viewstate.luau`, record indices are arrival ordinals so
+  a replay rebuilds the same store), so a click on a rehydrated lens
+  restores sort, filters and the open inspector;
 - parsers use no clock: ages are shown as kubectl printed them.
 
 Running blocks (Explore, approve) are not re-initialized by a reload; their

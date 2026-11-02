@@ -9,8 +9,12 @@
 ST="[data-surface='plugin.tern-kube.settings']"
 CFG=$E2E_SB/xdg/tern-kube/config.json
 cp "$CFG" "$E2E_SB/config.before-edit"
+# Lenses use the config cached at the last read (docs/configuration.md), so
+# the restored file only reaches later scenarios' lenses after a reload
+# (max_rows 777 would cap scenario 40's logs).
 edit_cleanup() {
 	cp "$E2E_SB/config.before-edit" "$CFG"
+	dev reload >/dev/null 2>&1
 	e2e_objects_delete
 }
 trap edit_cleanup EXIT

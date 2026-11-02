@@ -90,6 +90,27 @@ Memory: at most 5.0 MB per 1000-row capture plus rendered view (heap growth
 while holding 10 of them, divided by 10; includes uncollected garbage, so an
 upper bound), limit 64 MB.
 
+### Logs (0.3.0)
+
+Measured 2026-11-02, same machine, standalone luau, 30 runs. The logs lens
+parses each line in its `line` callback (`plugin/lib/logs/store.luau`), so a
+`view` only filters and renders one page:
+
+| Case | p50 ms | p95 ms | Limit (p95) |
+| --- | --- | --- | --- |
+| 20 000 mixed lines (JSON, klog, logfmt, plain): push | 58.91 (2.95 us/line) | 66.46 | 300 |
+| 20 000 `--prefix --timestamps` lines: push | 74.60 (3.73 us/line) | 81.35 | 300 |
+| 20 000 lines: filter + newest page | 0.41 | 0.57 | 20 |
+| 20 000 lines: Errors + page | 0.38 | 0.39 | 20 |
+| 20 000 lines: warn+ and one source | 0.98 | 1.11 | 20 |
+| 20 000 lines: text filter + page | 6.00 | 7.52 | 20 |
+| 20 000 lines: By time merge | 6.47 | 7.96 | 20 |
+
+Past `general.max_rows` (20 000) the store keeps the newest records and
+counts the rest as only in Raw; it never falls back to raw for size. In the
+window (e2e `44-logs-large`, a 25 000-line fake log), the slowest finished
+logs `view` took 4.8 and 6.2 ms in two full runs (bound 250 ms).
+
 ## Methodology and reproduction
 
 ```sh

@@ -101,6 +101,13 @@ function M.showsRaw(store: Store, opts: Options): boolean
 	if opts.running or (store.status ~= nil and store.status ~= 0) then
 		return true
 	end
+	-- kubectl's own error alone (`logs -p` after the kubelet removed the
+	-- previous log exits 0) is what the terminal already shows.
+	for _, n in store.notices do
+		if n.kind == "error" then
+			return true
+		end
+	end
 	return #store.notices == 0
 end
 
@@ -156,7 +163,14 @@ local function sourceTitle(store: Store, index: number): string
 	if src == nil then
 		return "Lines kubectl printed without a pod/container prefix"
 	end
-	return "pod/" .. (src.pod or "?") .. " container " .. (src.container or "?")
+	local parts: { string } = {}
+	if src.pod then
+		table.insert(parts, "pod/" .. src.pod)
+	end
+	if src.container then
+		table.insert(parts, "container " .. src.container)
+	end
+	return table.concat(parts, " ")
 end
 
 -- HH:MM:SS.mmm of a kubelet or payload time; nil when it has no clock.
