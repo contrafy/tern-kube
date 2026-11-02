@@ -541,6 +541,18 @@ describe("explore state: visible window", function()
 		expect(State.viewport(200, 50)).toBe(50)
 	end)
 
+	-- Measured on Tern 0.9.8 with `tern ctl dump` at window heights 600, 800
+	-- and 1000 px: blocks of 33, 45 and 58 lines fit 7, 16 and 26 grid rows
+	-- under the chrome. With 18 chrome lines the window held 11, 20 and 30,
+	-- so G and j put the selected row below the visible area.
+	it("never sizes the window past the rows that fit (measured)", function()
+		for _, m in { { 33, 7 }, { 45, 16 }, { 58, 26 } } do
+			local size = State.viewport(m[1], 500)
+			expect(size <= m[2]).toBe(true)
+			expect(size >= m[2] - 1).toBe(true)
+		end
+	end)
+
 	it("G puts the last row in the window", function()
 		local s = W.keys(small(), { "G" })
 		local first, last = shown(s)

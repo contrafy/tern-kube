@@ -165,9 +165,11 @@ M.QUICK_TAG = "quick"
 -- window.luau routes it to the Settings block with the kubectl key selected.
 M.SETTINGS_URL = "tern-kube://settings?key=kubectl"
 M.MAX_RELATION_QUERIES = 60
--- Lines of a block that are not grid rows (header, crumbs, filter, count,
--- column heads, dock); a grid row is about 4/3 of a line tall.
-M.CHROME_LINES = 18
+-- Lines of a block that are not grid rows: header, target banner, crumbs,
+-- filter, count, column heads, both overflow lines and the dock. Measured on
+-- Tern 0.9.8 (`tern ctl dump`, lines of 16.2 px): 384 px of chrome, grid rows
+-- 21 px, so a row is about 4/3 of a line and the chrome 24 lines.
+M.CHROME_LINES = 24
 M.SCROLLOFF = 2
 M.SAVE_VERSION = 1
 
