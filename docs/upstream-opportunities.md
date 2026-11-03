@@ -3,8 +3,9 @@
 SDK gaps observed while building tern-kube against Tern 0.6.2 (4b3ed42),
 each checked again against Tern 0.9.8 (pinned types `78ba204` and the 0.9
 docs, 2026-11-02): all ten are still open. Items 11-13 come from the logs
-lens and events timeline (0.3.0, Tern 0.9.8), items 14-16 from remote hosts
-(0.5.0, Tern 0.9.8 window, 0.9.10 host).
+lens and events timeline (0.3.0, Tern 0.9.8), item 14 from the Explore block
+(0.4.0, Tern 0.9.8), items 15-17 from remote hosts (0.5.0, Tern 0.9.8 window,
+0.9.10 host).
 Evidence is in `docs/sdk-capability-matrix.md`; each item lists the impact,
 the current workaround and a minimal reproduction. Anything not directly
 observed is marked `[not observed]`.
@@ -171,7 +172,30 @@ observed is marked `[not observed]`.
 - Reproduction `[not observed]`: no node prop or call in the 0.9.8 types
   scrolls a pane; a lens re-render keeps the pane's scroll position.
 
-## 14. Pane environment for remote panes
+## 14. Pane sizes do not reach the daemon while the window is in the background
+
+- Impact: a block opened while its window is in the background (behind other
+  apps' windows, never activated) reads Tern's spawn size 80x24 in `cx.cols`
+  and `cx.rows`, and its `resize` hook is not called, until the window is
+  activated; window resizes, splits, zoom and closed panes in the meantime
+  change only the window's layout. Terminal PTYs keep stale sizes the same way.
+  A plugin cannot tell this from a real 80x24 pane: Explore sized its lists to
+  3 rows in a 45-row pane, and e2e runs in a background window failed (matrix
+  "Block size"). Why activation flushes the sizes (a frame drawn, or the
+  activation event itself) is `[not observed]`.
+- Workaround: tern-kube reads exactly 80x24 as "not sent yet" and sizes lists
+  for a pane of Tern's default 1280x800 window (`plugin/lib/blocksize.luau`);
+  the real size replaces it once Tern sends it.
+- Ask: send pane sizes to the daemon on every layout change (including
+  `tern ctl resize`), in the background or not, or create a block with its
+  pane's size (`cx.rows` nil while unknown).
+- Reproduction: a sandbox window behind another app's window;
+  `tern ctl split right`, then type `stty size` in the new pane: `24 80`
+  while `tern ctl state` gives the pane 78x45. In a block, log `cx.rows` in
+  `view`: 24 until the window's process is asked to come to the front
+  (System Events `set frontmost`), then `resize` fires with the pane's size.
+
+## 15. Pane environment for remote panes
 
 - Impact: a quick action from a remote pane cannot pin the pane's
   `KUBECONFIG`: the per-pane record lives in the remote spool, the window
@@ -184,7 +208,7 @@ observed is marked `[not observed]`.
 - Reproduction `[not observed]`: `export KUBECONFIG=/tmp/other` in a remote
   pane, click Shell on a lens row; the split uses the login environment.
 
-## 15. `route.link` cannot await
+## 16. `route.link` cannot await
 
 - Impact: the window cannot run a process (here: 16 bytes of
   `/dev/urandom` for a grant token) before deciding what a link does.
@@ -195,7 +219,7 @@ observed is marked `[not observed]`.
 - Reproduction: `route.link` is synchronous in the 0.9.8 types; a
   `tern.process.run` result arrives in a later callback.
 
-## 16. `tern.fs.read` of character devices
+## 17. `tern.fs.read` of character devices
 
 - Impact: no in-VM randomness for capability tokens in the window half.
 - Workaround: `od -An -tx1 -N16 /dev/urandom` through `tern.process.run`

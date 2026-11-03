@@ -37,9 +37,16 @@ helm_world() {
 	}
 	mkdir -p "$E2E_SB/helm"
 	[ -f "$E2E_CFG" ] && grep -q "$HELM_BIN" "$E2E_CFG" || set_config "$HELM_E2E_CONFIG"
-	helm_world_ok && return 0
+	# A world left by another run may be older than 15 minutes (stuck-d then
+	# reads "stuck?", helm/parse.luau STUCK_AFTER_S) or sit in namespaces that
+	# run's cleanup is still deleting.
+	[ -f "$E2E_SB/helm/world" ] && helm_world_ok && return 0
 	note "building the Helm world in $HNS"
-	kc delete namespace "$HNS" "$HNS2" --ignore-not-found --wait=true --timeout=180s >/dev/null 2>&1
+	kc delete namespace "$HNS" "$HNS2" --ignore-not-found --wait=true --timeout=300s >/dev/null 2>&1
+	if kc get namespace "$HNS" "$HNS2" -o name 2>/dev/null | grep -q .; then
+		fail "$HNS / $HNS2 still terminating after 300 s"
+		return 1
+	fi
 	kc create namespace "$HNS" >/dev/null && kc create namespace "$HNS2" >/dev/null || {
 		fail "cannot create $HNS / $HNS2"
 		return 1
@@ -62,6 +69,7 @@ helm_world() {
 		fail "the Helm world does not look as built: $(hm list -a -A -o json 2>&1)"
 		return 1
 	}
+	: >"$E2E_SB/helm/world"
 }
 
 # hm ARGS...: the pinned helm against kind, release namespace $HNS (a later
