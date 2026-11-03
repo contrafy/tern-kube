@@ -75,12 +75,14 @@ versions may break).
 
 - End-to-end scenarios 50-55 cover the Helm views, revision diffs, rollback, relations and chart auto-detect against kind; `tests/integration/helm/template-compat.sh` (run in CI) checks the release extras template against the pinned helm, and the mutation integration suite gains Helm rollback scenarios.
 - The test sandbox points `HELM_CONFIG_HOME`, `HELM_CACHE_HOME` and `HELM_DATA_HOME` at the sandbox.
+- End-to-end runs restart `tk-logmix` when its pods are older than 4 hours (the logs lens keeps the newest 20 000 lines, so scenario 40 lost the container's first lines), build the Helm world afresh in every run instead of reusing one another run left or is still deleting, and wait until kubectl can read crashy's previous instance before scenario 49 asks for it.
 
 ### Fixed
 
 - Drift of a Helm source diffs the render in the release namespace: objects without `metadata.namespace` were compared in kubectl's default namespace and reported missing.
 - Drift of a Helm source ignores objects of other Helm releases and Helm hook objects in the same namespace instead of listing them as unmanaged.
 - **Apply source** (`A`) and **Apply** (`a`) on a Helm drift source apply the render with `-n <release namespace>`: objects without `metadata.namespace` would have been applied to kubectl's default namespace. Documents of different releases, or renders mixed with plain manifests, are refused.
+- Explore and Settings lists keep a full window of rows when the block opens while the Tern window is in the background (behind other windows): Tern reports such a block as 80x24 until the window is activated, and Explore cut its lists to 3 rows.
 
 ## [0.3.0] - 2026-11-02
 

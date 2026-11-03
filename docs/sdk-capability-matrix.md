@@ -72,6 +72,24 @@ view.
 | F12 | `ui.spark` / `ui.bars` | Unverified | In the 0.9.8 types; not rendered. | Not used. |
 | F13 | `ui.lines` with a role and keyed children | Unsupported (silent) | The logs view's notices (`Found 2 pods`, `Defaulted container`) as `ui.lines` of keyed `ui.text` children with `{ key, role = "tern-kube.notices" }`: Tern dropped the whole native view and showed raw, logged nothing, and the block's Native/Raw toggle disappeared (e2e `41-logs-multi`, `logs deploy/tk-logmix`). The same children in `ui.col` render. `ui.lines` of unkeyed `ui.text` children without a role (the table header's info line) renders; whether the role or the child keys trigger the fallback was not isolated. | Notices use `ui.col` (`plugin/lib/logs/render.luau`). Use `ui.col` for keyed or roled line lists. |
 
+### Block size
+
+Probed on Tern 0.9.8 (f21d9a3) in sandboxes `/tmp/tk-tern-t3rows-e2e` and
+`/tmp/tk-tern-t3rows-dev`, with a temporary log line in the Explore block's
+`init`, `view`, `key`, `event` (and, for one run, a `resize` hook) printing
+`cx.pane`, `cx.cols`, `cx.rows`. The sandbox window was fully covered by other
+apps' windows and never activated, as in a background e2e run.
+
+| Capability | Status | Evidence (Tern 0.9.8) | tern-kube |
+| --- | --- | --- | --- |
+| Block size while the window is in the background | Tern behaviour | A block opened in a split (lens **Explore live**, or the palette's `new_block(..., "beside")`) read `cols=80 rows=24` in `init` and in every later `view`, `key` and `event`, and a `resize` hook was never called, while `ctl state` gave its pane 78x45. `ctl resize 1200 760`, `ctl zoom` (pane 160x45), closing the neighbour pane and splitting changed only `ctl state`. Terminal panes too: `stty size` in a new `ctl split right` pane printed `24 80` (pane 78x45), and `24 80` again after `ctl resize 1000 600` (pane 60x33). A System Events `set frontmost` request for the sandbox window's process (Teams stayed frontmost and in front of the window) delivered the sizes at once: `resize(78x45)` with `cx.rows=45`, then `view`; without a `resize` hook the next `view` came with `cx.rows=45`; the left terminal's `stty size` became `45 78`. After a further `ctl resize` the sizes were stale again. A fresh window's first pane did get its size (`45 160`). | `plugin/lib/blocksize.luau`: Explore and Settings read exactly 80x24 as "not sent yet" and size their lists for a pane of Tern's default 1280x800 window (45 lines). Before, Explore cut its lists to 3 rows and e2e 14, 15, 49, 50 and 51 failed whenever the window stayed behind other windows. No `resize` hook: Tern already re-renders with the new `cx.rows` once it sends the size. Upstream item 14. |
+
+Reproduction (no plugin needed): start a sandbox window
+(`TK_TERN_SANDBOX=/tmp/tk-tern-x scripts/dev-tern.sh start`) and keep it
+behind another app's window; `dev-tern.sh ctl split right`, then
+`dev-tern.sh run 'stty size >/tmp/sz'`: `/tmp/sz` says `24 80` while
+`dev-tern.sh ctl state` gives the pane 78x45.
+
 ## Tern 0.6.2 (M0, M2 quick actions)
 
 | Capability | Status | Evidence (Tern 0.6.2) | Notes / fallback |

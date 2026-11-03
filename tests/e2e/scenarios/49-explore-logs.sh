@@ -61,6 +61,13 @@ xkey a a
 xwait '--tail=500' '[data-role="tern-kube.logs-summary"] *'
 
 # o: the crashy container restarts; its previous instance has the panic.
+# For about 80 s after each crashy exit kubectl's --previous answers "unable
+# to retrieve container logs" (the kubelet already removed the older
+# instance), so o waits until kubectl returns the panic itself.
+crashy_previous() {
+	kc -n "$ns" logs "$pod" -c crashy --previous --tail=5 2>/dev/null | grep -q panic
+}
+E2E_WAIT=120 wait_for "crashy's previous instance" crashy_previous || return
 xkey o
 xwait 'previous instance' '[data-role="tern-kube.logs-summary"] *'
 contains "previous crashy logs" "$(xtext '.tk-grid *')" "panic"

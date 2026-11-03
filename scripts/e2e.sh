@@ -84,6 +84,7 @@ KUBECONFIG=$kubeconfig "$real_kubectl" --request-timeout=5s get --raw /readyz >/
 KUBECONFIG=$kubeconfig "$real_kubectl" --request-timeout=5s get pod crashloop -n tern-test-apps >/dev/null 2>&1 ||
 	need "the tern-test-* world is missing: sh scripts/fixtures/capture.sh --world-only"
 export E2E_REAL_KUBECTL="$real_kubectl" E2E_KUBECONFIG="$kubeconfig"
+logmix_fresh || need "tk-logmix in tern-test-logs did not come back after a restart"
 
 mc=${E2E_MC:-0}
 if [ "$mc" = 1 ]; then

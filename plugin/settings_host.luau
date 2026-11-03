@@ -5,6 +5,7 @@
 -- the config file (through a temporary file in the same directory, renamed
 -- over it with mv).
 
+local Blocksize = require("./lib/blocksize")
 local ConfigHost = require("./config_host")
 local EnvHost = require("./env_host")
 local PaneEnv = require("./lib/actions/pane_env")
@@ -315,10 +316,11 @@ function M.register()
 			return h
 		end,
 		view = function(h: Host, cx: BlockCx): BlockView
-			if cx.rows ~= h.s.rows then
-				dispatch(h, { t = "resize", rows = cx.rows })
+			local rows = Blocksize.rows(cx.cols, cx.rows)
+			if rows ~= h.s.rows then
+				dispatch(h, { t = "resize", rows = rows })
 			end
-			local ok, v = pcall(Render.view, h.s, cx.cols, cx.rows)
+			local ok, v = pcall(Render.view, h.s, cx.cols, rows)
 			if not ok then
 				warnOnce(h, "view", v)
 				return errorView(v)

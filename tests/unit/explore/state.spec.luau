@@ -2,6 +2,7 @@
 -- Explore's pure core: keys and pointer actions become routes and effects,
 -- the cluster target is resolved once and then pinned, late results are
 -- ignored, and nothing the cluster returned is ever persisted.
+local Blocksize = require("../../../plugin/lib/blocksize")
 local State = require("../../../plugin/lib/explore/state")
 local W = require("../../lib/explore")
 local t = require("../../lib/test")
@@ -628,6 +629,15 @@ describe("explore state: visible window", function()
 			expect(size <= m[2]).toBe(true)
 			expect(size >= m[2] - 1).toBe(true)
 		end
+	end)
+
+	-- A block opened while the Tern window is in the background still reads
+	-- 80x24 (see tests/unit/blocksize): its list gets the rows of Tern's
+	-- default window, not the 3-row floor of a 24-line block.
+	it("a block still at Tern's 80x24 spawn size keeps a full window", function()
+		local size = State.viewport(Blocksize.rows(80, 24), 500)
+		expect(size).toBe(State.viewport(45, 500))
+		expect(size >= 15).toBe(true)
 	end)
 
 	it("G puts the last row in the window", function()
