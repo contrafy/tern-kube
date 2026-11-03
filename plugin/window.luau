@@ -1,8 +1,10 @@
 --!strict
 local Command = require("./lib/kubectl/command")
 local ConfigHost = require("./config_host")
+local Entropy = require("./lib/env/entropy")
 local Link = require("./lib/mutation/link")
 local PaneEnv = require("./lib/actions/pane_env")
+local PaneHost = require("./lib/env/panehost")
 local Quick = require("./lib/actions/quick")
 local Shellenv = require("./lib/env/shellenv")
 
@@ -15,6 +17,38 @@ local SETTINGS_URL = "tern-kube://settings"
 local SPOOL = tern.plugin.data .. "/spool"
 -- The shell guard core ships in the installed package; native edit runs it.
 local GUARD_CORE = tern.plugin.dir .. "/shell/tern-kube-guard"
+
+-- Which host `pane` is on; a window without the hosts API is local.
+local function paneHost(cx: WindowCx, pane: number?): PaneHost.PaneHost
+	local ok, result = pcall(function(): PaneHost.PaneHost
+		local rows: { PaneHost.HostRow } = {}
+		for _, h in cx.hosts:list() do
+			table.insert(rows, { kind = h.kind, name = h.name, address = h.address, panes = h.panes })
+		end
+		local cur = cx.hosts:current()
+		return PaneHost.of(rows, pane, { kind = cur.kind, name = cur.name, address = cur.address, panes = cur.panes })
+	end)
+	if not ok then
+		log.debug("tern-kube hosts listing failed", tostring(result))
+		return { remote = false }
+	end
+	return result
+end
+
+-- The split runs on the remote host: its login environment and loopback.
+-- The display name is the ssh spelling (`tk@localhost:2222`); the address
+-- may be an iroh endpoint id, which ssh cannot reach.
+local function remoteOf(host: PaneHost.PaneHost): Quick.Remote?
+	if not host.remote then
+		return nil
+	end
+	local name = host.name or host.address or "the remote host"
+	local ssh = PaneHost.sshDestination(name)
+	if ssh == nil and host.address then
+		ssh = PaneHost.sshDestination(host.address)
+	end
+	return { name = name, ssh = ssh }
+end
 
 -- The KUBECONFIG the shell in `pane` had at its last prompt, when the opt-in
 -- shell snippet recorded one (shell/PROTOCOL.md "Pane env record").
@@ -41,21 +75,25 @@ local function quickProgram(configValue: string): string
 	return if explicit then explicit.value else "kubectl"
 end
 
-local function launch(link: LinkRequest, req: Quick.Request, cx: WindowCx)
+-- This machine's config governs only what a link does not carry (`place`,
+-- `tail` come from the pane host's config) and the window-scoped shell
+-- command. A remote pane resolves bare kubectl on its own PATH.
+local function launch(link: LinkRequest, req: Quick.Request, cx: WindowCx, host: PaneHost.PaneHost)
 	local cfg = ConfigHost.load().config
-	local target =
-		{ context = req.target.context, kubeconfig = req.target.kubeconfig, program = quickProgram(cfg.kubectl) }
+	local program = if host.remote then "kubectl" else quickProgram(cfg.kubectl)
+	local target = { context = req.target.context, kubeconfig = req.target.kubeconfig, program = program }
 	local cmd, cerr = Quick.command(req.action, target, req.ref, req.opts, {
 		shellCommand = cfg.quick_actions.shell_command,
 		logsTail = cfg.quick_actions.logs_tail,
 		debugImage = cfg.quick_actions.debug_image,
 		guardCore = GUARD_CORE,
+		remote = remoteOf(host),
 	})
 	if cmd == nil then
 		cx:toast("error", "Tern Kube: invalid quick action", cerr)
 		return
 	end
-	local place = Quick.placement(cfg.quick_actions.placement)
+	local place = Quick.placement(req.opts.place or cfg.quick_actions.placement)
 	local pane: number?
 	if place.how == "tab" then
 		pane = cx.layout:new_tab({ command = cmd.line })
@@ -87,7 +125,7 @@ local function launchTyped(link: LinkRequest, req: Quick.Request, cx: WindowCx)
 	-- A relative --kubeconfig resolves where the lensed command ran.
 	local info = cx.session:pane(link.pane)
 	local cwd = if info and info.cwd and string.sub(info.cwd, 1, 1) == "/" then info.cwd else nil
-	local place = Quick.placement(ConfigHost.load().config.quick_actions.placement)
+	local place = Quick.placement(req.opts.place or ConfigHost.load().config.quick_actions.placement)
 	local pane: number?
 	if place.how == "tab" then
 		pane = cx.layout:new_tab({ cwd = cwd })
@@ -103,30 +141,66 @@ local function launchTyped(link: LinkRequest, req: Quick.Request, cx: WindowCx)
 	cx:run(pane, typed.line .. "\r")
 end
 
+-- The grant token authorizes running the mutation, so it comes from
+-- /dev/urandom (read by a process: route.link cannot wait, so the approve
+-- block opens from the process callback). No clean read, no grant and no
+-- approve block: fail closed.
+local function openApprove(url: string, base: string)
+	tern.process.run(Entropy.ARGV, { timeout_ms = Entropy.TIMEOUT_MS }, function(result: ProcessResult, cx: WindowCx?)
+		if cx == nil then
+			log.warn("tern-kube quick action: no window to open the approve block in")
+			return
+		end
+		local token = Entropy.token(result)
+		if token == nil then
+			log.warn("tern-kube quick action: no randomness for a grant", tostring(result.status), result.stderr)
+			cx:toast("error", "Tern Kube: cannot confirm", "reading /dev/urandom failed; nothing was started")
+			return
+		end
+		local grants, err = Link.mintGrant(tern.kv.get(Link.GRANTS_KEY), token, base, os.time(), Link.GRANT_TTL)
+		if grants == nil then
+			cx:toast("error", "Tern Kube: cannot confirm", err)
+			return
+		end
+		tern.kv.set(Link.GRANTS_KEY, grants)
+		if cx:new_block(APPROVE, { url, token }, "beside") == nil then
+			local rest = table.clone(grants)
+			rest[token] = nil
+			tern.kv.set(Link.GRANTS_KEY, rest)
+			cx:toast("error", "Tern Kube is not loaded on this host")
+		end
+	end)
+end
+
 -- Quick actions open a new split (or tab) running a kubectl command rebuilt
 -- from the link's validated fields; the URL never supplies the command.
--- Mutating ones go to the approve block first; it re-opens the link with a
--- single-use `confirm` token once the user confirmed the preview. Edit opens
--- directly: the guard in the split asks for approval after the user saves.
+-- Mutating ones go to the approve block first, with a single-use grant token
+-- minted here (window kv: the approve block may run on another host). It
+-- re-opens the link with `confirm=<token>` once the user confirmed the
+-- preview. Edit opens directly: the guard in the split asks for approval
+-- after the user saves.
 local function quickAction(link: LinkRequest, cx: WindowCx): RouteDecision?
 	local req, err = Quick.decode(link.url)
 	if req == nil then
 		cx:toast("error", "Tern Kube: invalid quick action", err)
 		return nil
 	end
+	local host = paneHost(cx, link.pane)
 	local confirm = req.opts.confirm
 	if confirm ~= nil then
-		local ok, rest, why =
-			Link.consumeGrant(tern.kv.get(Link.GRANTS_KEY), confirm, Link.quickBase(req) or "", os.time())
+		local ok, rest, why = Link.consumeGrant(tern.kv.get(Link.GRANTS_KEY), confirm, req, os.time())
 		tern.kv.set(Link.GRANTS_KEY, rest)
 		if not ok then
 			cx:toast("error", "Tern Kube: not confirmed", why)
 			return nil
 		end
-		launch(link, req, cx)
+		launch(link, req, cx, host)
 		return nil
 	end
-	if req.target.kubeconfig == nil then
+	-- Pane records live in this machine's spool; a remote pane's record is
+	-- on its host and its id is not comparable, so the split falls back to
+	-- the remote login environment (and says so).
+	if req.target.kubeconfig == nil and not host.remote then
 		local kubeconfig = paneKubeconfig(link.pane)
 		if kubeconfig then
 			req.target = { context = req.target.context, kubeconfig = kubeconfig }
@@ -137,7 +211,9 @@ local function quickAction(link: LinkRequest, cx: WindowCx): RouteDecision?
 		return nil
 	end
 	local gate = Quick.gate(req.action)
-	if gate == "editor" then
+	-- On a remote pane the host half offered the chip under its own config,
+	-- and the split runs that host's guard.
+	if gate == "editor" and not host.remote then
 		if not ConfigHost.load().config.mutations.enabled then
 			cx:toast("error", "Mutations are disabled", "mutations.enabled is false in the config")
 			return nil
@@ -149,9 +225,15 @@ local function quickAction(link: LinkRequest, cx: WindowCx): RouteDecision?
 		end
 	elseif gate == "approve" then
 		local url = Quick.encode(req.action, req.target, req.ref, req.opts)
-		return { block = APPROVE, args = { url or link.url } }
+		local base = Link.quickBase(req)
+		if url == nil or base == nil then
+			cx:toast("error", "Tern Kube: invalid quick action", "the link does not encode")
+			return nil
+		end
+		openApprove(url, base)
+		return nil
 	end
-	launch(link, req, cx)
+	launch(link, req, cx, host)
 	return nil
 end
 
@@ -250,6 +332,8 @@ tern.command({
 
 -- The approve block asks for the path; relative paths resolve against the
 -- focused pane's working directory, and its recorded KUBECONFIG is pinned.
+-- On a remote pane this machine's HOME and pane records do not apply: the
+-- approve block (on that host) falls back to its own HOME and environment.
 tern.command({
 	id = "apply",
 	title = "Tern Kube: Apply file or directory",
@@ -257,13 +341,19 @@ tern.command({
 	run = function(cx: WindowCx)
 		local focused = cx.session:focused()
 		local info = if focused then cx.session:pane(focused) else nil
-		local cwd = if info and info.cwd and string.sub(info.cwd, 1, 1) == "/" then info.cwd else tern.getenv("HOME")
+		local remote = paneHost(cx, focused).remote
+		local cwd = if info
+				and info.cwd
+				and string.sub(info.cwd, 1, 1) == "/"
+			then info.cwd
+			elseif remote then nil
+			else tern.getenv("HOME")
 		local url, err = Link.encode({
 			op = "apply",
 			recursive = false,
 			overwrite = false,
-			cwd = cwd or "/",
-			kubeconfig = paneKubeconfig(focused),
+			cwd = cwd,
+			kubeconfig = if remote then nil else paneKubeconfig(focused),
 		})
 		if url == nil then
 			cx:toast("error", "Tern Kube: cannot apply from here", err)

@@ -33,7 +33,7 @@ local transcript = (require :: any)("./.transcripts/" .. work)
 
 local init = transcript.init
 local s, effects = Session.init({
-	args = { unhex(init.arg) },
+	args = if init.grant then { unhex(init.arg), unhex(init.grant) } else { unhex(init.arg) },
 	now = init.now,
 	config = {
 		mutations = {
@@ -170,8 +170,6 @@ for i, e in all do
 		print(string.format("tk_effect %d read %s %d -- %s", i, q(e.tag :: string), e.gen :: number, words(e.paths)))
 	elseif t == "audit" or t == "copy" then
 		print(string.format("tk_effect %d %s %s", i, t, q(e.line or e.text or "")))
-	elseif t == "grant" then
-		print(string.format("tk_effect %d grant %s %s %d", i, q(e.token :: string), q(e.url :: string), e.expires or 0))
 	elseif t == "open" then
 		print(string.format("tk_effect %d open %s", i, q(e.url :: string)))
 	elseif t == "remove" then

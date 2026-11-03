@@ -7,6 +7,26 @@ versions may break).
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-11-02
+
+### Added
+
+- Remote hosts (`tern remote setup`): lenses, Explore, approvals, Settings and the shell guard work in panes on the remote host, against its `kubectl`, kubeconfig and config file; quick actions from a remote pane open their split on that host with a bare `kubectl` and the remote `quick_actions.placement` and `logs_tail`; port-forward prints the ssh tunnel to run locally. Verified on Debian 13 with fish, bash and zsh login shells. See [docs/remote-hosts.md](docs/remote-hosts.md).
+- fish as login shell, locally and on remote hosts: `PATH` probe through `fish -l -c`, quick-action lines quoted so fish parses them (contexts and kubeconfig paths with quotes included).
+- The shell guard and `tern-kube-aliases` find Tern through `TERN_EXE` (set by Tern in every pane) when `TERN_BIN` is unset and `tern` is not on `PATH`; `tern-kube-guard status` names the source.
+- `make test-shell-login`: login-shell suite for sh, dash, bash, zsh and fish; CI job `linux-shells` runs the shell suites in a Debian 13 container as a fish login user.
+- `scripts/remote-host.sh` (disposable Debian 13 remote host) and `scripts/e2e.sh --remote` with end-to-end scenarios 60-69; `scripts/dev-tern.sh start --shell zsh|fish|bash`.
+
+### Changed
+
+- Quick-action confirmation grants are minted by the window half (random token from `/dev/urandom`, passed to the approve block, valid 600 s, single use) so approvals work when the approve block runs on another host. The approve block refuses a quick action opened without a token: install the same tern-kube version on the window machine and every remote host.
+- Explore `e` (edit) splits on a remote host run that host's guard core, named by `TKUBE_GUARD_CORE` in its panes.
+
+### Known limitations
+
+- Quick actions from remote panes use the remote login shell's `KUBECONFIG`: there is no per-pane record on remote panes.
+- The Linux desktop window is the same window half but was not verified locally.
+
 ## [0.4.0] - 2026-11-02
 
 ### Added
@@ -168,7 +188,8 @@ First public beta.
 - Docs: SDK capability matrix, configuration, performance, architecture,
   security model, testing, releasing.
 
-[Unreleased]: https://github.com/contrafy/tern-kube/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/contrafy/tern-kube/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/contrafy/tern-kube/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/contrafy/tern-kube/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/contrafy/tern-kube/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/contrafy/tern-kube/compare/v0.1.3...v0.2.0

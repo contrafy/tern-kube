@@ -4,7 +4,8 @@ SDK gaps observed while building tern-kube against Tern 0.6.2 (4b3ed42),
 each checked again against Tern 0.9.8 (pinned types `78ba204` and the 0.9
 docs, 2026-11-02): all ten are still open. Items 11-13 come from the logs
 lens and events timeline (0.3.0, Tern 0.9.8), item 14 from the Explore block
-(0.4.0, Tern 0.9.8).
+(0.4.0, Tern 0.9.8), items 15-17 from remote hosts (0.5.0, Tern 0.9.8 window,
+0.9.10 host).
 Evidence is in `docs/sdk-capability-matrix.md`; each item lists the impact,
 the current workaround and a minimal reproduction. Anything not directly
 observed is marked `[not observed]`.
@@ -193,3 +194,36 @@ observed is marked `[not observed]`.
   while `tern ctl state` gives the pane 78x45. In a block, log `cx.rows` in
   `view`: 24 until the window's process is asked to come to the front
   (System Events `set frontmost`), then `resize` fires with the pane's size.
+
+## 15. Pane environment for remote panes
+
+- Impact: a quick action from a remote pane cannot pin the pane's
+  `KUBECONFIG`: the per-pane record lives in the remote spool, the window
+  cannot read it, and `LinkRequest` carries no pane environment.
+- Workaround: the remote split uses the remote login shell's `KUBECONFIG`
+  and prints `tern-kube: <host>: kubeconfig from the login environment`
+  ([remote-hosts.md](remote-hosts.md#limitations)).
+- Ask: the originating pane's environment (or selected variables) on
+  `LinkRequest`, or an env option on `Launch`.
+- Reproduction `[not observed]`: `export KUBECONFIG=/tmp/other` in a remote
+  pane, click Shell on a lens row; the split uses the login environment.
+
+## 16. `route.link` cannot await
+
+- Impact: the window cannot run a process (here: 16 bytes of
+  `/dev/urandom` for a grant token) before deciding what a link does.
+- Workaround: return `{handled = true}` at once and open the approve block
+  from the `tern.process.run` callback with `cx:new_block`, which lands on
+  the window's current host rather than the link's pane host.
+- Ask: an async `route.link`, or `new_block` on a given pane's host.
+- Reproduction: `route.link` is synchronous in the 0.9.8 types; a
+  `tern.process.run` result arrives in a later callback.
+
+## 17. `tern.fs.read` of character devices
+
+- Impact: no in-VM randomness for capability tokens in the window half.
+- Workaround: `od -An -tx1 -N16 /dev/urandom` through `tern.process.run`
+  (`plugin/lib/env/entropy.luau`), failing closed without a clean read.
+- Ask: allow capped reads of `/dev/urandom`, or a `tern.random.bytes(n)`.
+- Reproduction: a capped `tern.fs.read` of `/dev/urandom` in the window half
+  is refused (device file).

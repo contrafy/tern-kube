@@ -28,7 +28,8 @@ export type Counts = { shown: number, matched: number, total: number }
 -- pageSize: rows drawn per page (config general.max_rendered_rows).
 -- mutations: config mutations.enabled; offers the mutating chips (Delete,
 -- Restart, Scale, debug, CronJob run-now), each previewed in the approve block.
-export type Options = { pageSize: number?, mutations: boolean? }
+-- quick: this host's quick_actions settings, written into quick-action links.
+export type Options = { pageSize: number?, mutations: boolean?, quick: Quick.Settings? }
 
 local M = {}
 
@@ -227,7 +228,8 @@ local function quickChips(
 	tbl: SnapshotTable,
 	row: ResourceRow,
 	ref: Types.ResourceRef,
-	mutations: boolean
+	mutations: boolean,
+	quick: Quick.Settings?
 ): { Node }
 	local ports: { number }? = nil
 	local index = columnIndex(tbl, "PORT(S)")
@@ -241,7 +243,7 @@ local function quickChips(
 			source = "lens",
 			ports = ports,
 			allowMutations = mutations,
-		})
+		}, quick)
 	do
 		table.insert(
 			out,
@@ -315,7 +317,8 @@ local function actionChips(
 	tbl: SnapshotTable,
 	row: ResourceRow,
 	vs: ViewState,
-	mutations: boolean
+	mutations: boolean,
+	quick: Quick.Settings?
 ): { Node }
 	local out: { Node } = {}
 	if not vs.full then
@@ -361,7 +364,7 @@ local function actionChips(
 		if helm then
 			table.insert(out, helm)
 		end
-		for _, n in quickChips(capture, tbl, row, ref, mutations) do
+		for _, n in quickChips(capture, tbl, row, ref, mutations, quick) do
 			table.insert(out, n)
 		end
 		if mutations then
@@ -415,11 +418,12 @@ local function inspector(
 	tbl: SnapshotTable,
 	row: ResourceRow,
 	vs: ViewState,
-	mutations: boolean
+	mutations: boolean,
+	quick: Quick.Settings?
 ): Node
 	return ui.col({
 		ui.kv(cellItems(capture, tbl, row)),
-		ui.row(actionChips(capture, tbl, row, vs, mutations), { wrap = true }),
+		ui.row(actionChips(capture, tbl, row, vs, mutations, quick), { wrap = true }),
 	}, { role = "tern-kube.inspector" })
 end
 
@@ -437,7 +441,14 @@ local function sourceLines(capture: Capture, row: ResourceRow): string?
 	return if #out > 0 then table.concat(out, "\n") else nil
 end
 
-function M.inspectView(capture: Capture, tbl: SnapshotTable, row: ResourceRow, vs: ViewState, mutations: boolean?): Node
+function M.inspectView(
+	capture: Capture,
+	tbl: SnapshotTable,
+	row: ResourceRow,
+	vs: ViewState,
+	mutations: boolean?,
+	quick: Quick.Settings?
+): Node
 	local back = Viewstate.action(Viewstate.back(vs))
 	local name = if row.ref then row.ref.name else row.cells[1] or row.key
 	local crumbs = ui.row({
@@ -449,7 +460,7 @@ function M.inspectView(capture: Capture, tbl: SnapshotTable, row: ResourceRow, v
 	}, { key = "crumbs", role = "tern-kube.breadcrumb" })
 	local children: { Node } = {
 		crumbs,
-		ui.row(actionChips(capture, tbl, row, vs, mutations == true), { key = "actions", wrap = true }),
+		ui.row(actionChips(capture, tbl, row, vs, mutations == true, quick), { key = "actions", wrap = true }),
 		ui.section({ "Columns" }, { ui.kv(cellItems(capture, tbl, row)) }, { key = "cells" }),
 	}
 	local source = sourceLines(capture, row)
@@ -493,6 +504,7 @@ end
 function M.render(capture: Capture, vs: ViewState, opts: Options?): (Node?, Counts)
 	local size = if opts and opts.pageSize and opts.pageSize >= 1 then opts.pageSize else M.PAGE_SIZE
 	local mutations = opts ~= nil and opts.mutations == true
+	local quick = if opts then opts.quick else nil
 	local snapshot = capture.snapshot
 	local tables: { SnapshotTable } = if snapshot then snapshot.tables else {}
 	local total = 0
@@ -506,7 +518,7 @@ function M.render(capture: Capture, vs: ViewState, opts: Options?): (Node?, Coun
 	if vs.full and vs.open then
 		local row, tbl = Capture.findRow(capture, vs.open)
 		if row and tbl then
-			return M.inspectView(capture, tbl, row, vs, mutations), { shown = 1, matched = 1, total = total }
+			return M.inspectView(capture, tbl, row, vs, mutations, quick), { shown = 1, matched = 1, total = total }
 		end
 	end
 
@@ -595,7 +607,7 @@ function M.render(capture: Capture, vs: ViewState, opts: Options?): (Node?, Coun
 				sortAction = sortAction,
 				inspector = function(rowKey: string): Node?
 					local row = Capture.findRow(capture, rowKey)
-					return if row then inspector(capture, tbl, row, vs, mutations) else nil
+					return if row then inspector(capture, tbl, row, vs, mutations, quick) else nil
 				end,
 			})
 		)

@@ -29,7 +29,25 @@ end
 local function unquoteLine(line: string): string
 	local body = string.match(line, "^sh %-c '(.*)'$")
 	assert(body, "line is not sh -c '<script>': " .. line)
-	return (string.gsub(body, "'\\''", "'"))
+	body = string.gsub(body, "'\"'\"'", "'")
+	return (string.gsub(body, "'\\\\'", "\\"))
+end
+
+-- fish (a login shell Tern may run the line with) reads backslash escapes
+-- even inside single quotes; the line must hold none there.
+local function backslashInQuotes(line: string): boolean
+	local quote: string? = nil
+	for i = 1, #line do
+		local c = string.sub(line, i, i)
+		if quote == nil and (c == "'" or c == '"') then
+			quote = c
+		elseif c == quote then
+			quote = nil
+		elseif c == "\\" and quote ~= nil then
+			return true
+		end
+	end
+	return false
 end
 
 describe("quick actions", function()
@@ -352,11 +370,13 @@ describe("quick actions", function()
 			expect(script).toContain("'/opt/k bin/kubectl' exec -it --kubeconfig '/tmp/a b/c'\\''d'")
 			expect(script).toContain("--context 'it'\\''s $(id) `x`; y'")
 			expect(script).toContain("'tern-kube shell ns/p @ it'\\''s $(id) `x`; y'")
-			-- The whole script is one single-quoted word: every quote inside is an
-			-- escaped `'\''`, so nothing expands in the user's login shell.
+			-- The whole script is one word: every quote or backslash inside is
+			-- written between single-quoted runs (`'"'"'`, `'\\'`), so nothing
+			-- expands in the user's login shell.
 			local body = string.match(l.line, "^sh %-c '(.*)'$")
 			assert(body, "sh -c line")
-			expect((string.find((string.gsub(body, "'\\''", "")), "'", 1, true))).toBeNil()
+			local rest = string.gsub(string.gsub(body, "'\"'\"'", ""), "'\\\\'", "")
+			expect((string.find(rest, "'", 1, true))).toBeNil()
 		end)
 
 		it("follows pod logs across containers unless one is chosen", function()
@@ -747,6 +767,131 @@ describe("quick actions", function()
 			expect(d.argv).toContain("--image=busybox:1.36")
 			local s = Quick.command("shell", PINNED, POD, {}) :: Quick.Launch
 			expect(s.argv[#s.argv]).toBe("command -v bash >/dev/null 2>&1 && exec bash || exec sh")
+		end)
+	end)
+
+	-- On a remote host the split runs there, so the host's quick_actions
+	-- config must govern it: the host half writes placement and the logs
+	-- tail into the link (`place`, `tail`), validated like every field. The
+	-- shell command stays window-scoped: a URL never supplies a command.
+	describe("host settings in links", function()
+		local POD = ref("Pod", "web-0", "apps")
+		it("round-trips place on every action", function()
+			for _, action in { "shell", "logs-follow", "edit" } do
+				local url = Quick.encode(action, PINNED, POD, { place = "tab" }) :: string
+				expect(url).toContain("place=tab")
+				expect((Quick.decode(url) :: Quick.Request).opts.place).toBe("tab")
+			end
+		end)
+		it("rejects a place outside right, down and tab", function()
+			for _, bad in { "left", "tab%3Bid", "" } do
+				expect((Quick.decode("tern-kube://act/shell?kind=Pod&name=p&place=" .. bad))).toBeNil()
+			end
+		end)
+		it("takes a logs-follow tail of 1 to 100000 lines and runs it over the window's", function()
+			local url = Quick.encode("logs-follow", PINNED, POD, { tail = "500" }) :: string
+			local req = Quick.decode(url) :: Quick.Request
+			expect(req.opts.tail).toBe("500")
+			local l = Quick.command("logs-follow", PINNED, POD, req.opts, { logsTail = 50 }) :: Quick.Launch
+			expect(l.argv).toContain("--tail=500")
+			for _, bad in { "0", "-1", "100001", "1e9", "5%3Bid" } do
+				expect((Quick.decode("tern-kube://act/logs-follow?kind=Pod&name=p&tail=" .. bad))).toBeNil()
+			end
+			expect((Quick.decode("tern-kube://act/shell?kind=Pod&name=p&tail=5"))).toBeNil()
+		end)
+		it("keeps the logs variant's own tail meaning (-1 = all)", function()
+			expect(Quick.decode("tern-kube://act/logs?kind=Pod&name=p&tail=-1") ~= nil).toBe(true)
+		end)
+		it("quotes the line so fish reads it like sh: no backslash inside single quotes", function()
+			local target = { context = "it's $(id) `x`; y", kubeconfig = "/tmp/a b/c'd\\e" }
+			for _, action in { "shell", "logs-follow", "port-forward", "edit" } do
+				local l = Quick.command(action, target, POD, {}, { guardCore = "/g/tern-kube-guard" }) :: Quick.Launch
+				expect(backslashInQuotes(l.line)).toBe(false)
+				expect(unquoteLine(l.line)).toContain("'it'\\''s $(id) `x`; y'")
+			end
+		end)
+		it("never takes a shell command from a URL", function()
+			expect((Quick.decode("tern-kube://act/shell?kind=Pod&name=p&command=bash"))).toBeNil()
+		end)
+		it("withHost writes place and, for logs-follow, tail from host settings", function()
+			local s: Quick.Settings = { placement = "down", logsTail = 75 }
+			expect(Quick.withHost("logs-follow", {}, s)).toEqual({ place = "down", tail = "75" })
+			expect(Quick.withHost("shell", { container = "c" }, s)).toEqual({ container = "c", place = "down" })
+			expect(Quick.withHost("logs-follow", { tail = "9" }, s).tail).toBe("9")
+			expect(Quick.withHost("shell", {}, { placement = "left" :: any, logsTail = 0 })).toEqual({})
+			expect(Quick.withHost("shell", {}, nil)).toEqual({})
+		end)
+		it("chipsFor carries the host settings in every link", function()
+			local chips = Quick.chipsFor("Pod", POD, PINNED, nil, { placement = "tab", logsTail = 50 })
+			expect(#chips).toBe(3)
+			for _, c in chips do
+				expect(c.url).toContain("place=tab")
+			end
+			expect(chips[2].url).toContain("tail=50")
+			for _, c in Quick.chipsFor("Pod", POD, PINNED) do
+				expect((string.find(c.url, "place=", 1, true))).toBeNil()
+			end
+		end)
+	end)
+
+	-- A remote pane's split runs in that host's login shell: its KUBECONFIG
+	-- is not the one a local pane record would pin, and port-forward listens
+	-- on the remote loopback. The split says so instead of implying local.
+	describe("remote panes", function()
+		local POD = ref("Pod", "web-0", "apps")
+		local REMOTE: Quick.Settings = { remote = { name = "tk@localhost:2222", ssh = "-p 2222 tk@localhost" } }
+		it("says the kubeconfig comes from the remote login environment when the link has none", function()
+			local l = Quick.command("logs-follow", { context = "c" }, POD, {}, REMOTE) :: Quick.Launch
+			expect(unquoteLine(l.line)).toContain(
+				"printf 'tern-kube: %s: kubeconfig from the login environment\\n' tk@localhost:2222"
+			)
+			local p = Quick.command("logs-follow", PINNED, POD, {}, REMOTE) :: Quick.Launch
+			expect((string.find(p.line, "login environment", 1, true))).toBeNil()
+			local loc = Quick.command("logs-follow", { context = "c" }, POD, {}) :: Quick.Launch
+			expect((string.find(loc.line, "login environment", 1, true))).toBeNil()
+		end)
+		it("keeps the program bare so the remote PATH resolves it", function()
+			local l = Quick.command("shell", { context = "c", program = "kubectl" }, POD, {}, REMOTE) :: Quick.Launch
+			expect(l.argv[1]).toBe("kubectl")
+		end)
+		it("prints where a known port-forward listens and the ssh tunnel to reach it", function()
+			local l = Quick.command("port-forward", PINNED, POD, { port = 80 }, REMOTE) :: Quick.Launch
+			local script = unquoteLine(l.line)
+			expect(script).toContain(
+				"printf 'tern-kube: forwarding localhost:%s -> %s on %s\\n' 8080 80 tk@localhost:2222"
+			)
+			expect(script).toContain(
+				"printf 'tern-kube: from this machine: ssh -N -L %s:localhost:%s %s\\n' 8080 8080 '-p 2222 tk@localhost'"
+			)
+		end)
+		it("prints the hint with the port resolved at run time", function()
+			local l = Quick.command("port-forward", PINNED, POD, {}, REMOTE) :: Quick.Launch
+			local script = unquoteLine(l.line)
+			expect(script).toContain(
+				'printf \'tern-kube: forwarding localhost:%s -> %s on %s\\n\' "$l" "$p" tk@localhost:2222'
+			)
+			expect(script).toContain('ssh -N -L %s:localhost:%s %s\\n\' "$l" "$l" \'-p 2222 tk@localhost\'')
+			expect((string.find(script, "printf 'tern-kube: forwarding localhost:%s -> %s\\n'", 1, true))).toBeNil()
+		end)
+		it("omits the ssh line when the host name is not an ssh destination", function()
+			local s: Quick.Settings = { remote = { name = "tk@9831a117" } }
+			local l = Quick.command("port-forward", PINNED, POD, { port = 80 }, s) :: Quick.Launch
+			expect(unquoteLine(l.line)).toContain("on %s\\n' 8080 80 tk@9831a117")
+			expect((string.find(l.line, "ssh -N", 1, true))).toBeNil()
+		end)
+		it("quotes a hostile host name", function()
+			local s: Quick.Settings = { remote = { name = "x'; id" } }
+			local l = Quick.command("logs-follow", { context = "c" }, POD, {}, s) :: Quick.Launch
+			expect(unquoteLine(l.line)).toContain("environment\\n' 'x'\\''; id'")
+		end)
+		it("runs edit through the remote host's guard, not this machine's path", function()
+			local s: Quick.Settings = { guardCore = "/Users/me/tern/plugins/tern-kube/shell/tern-kube-guard" }
+			s.remote = REMOTE.remote
+			local l = Quick.command("edit", PINNED, POD, {}, s) :: Quick.Launch
+			local script = unquoteLine(l.line)
+			expect((string.find(script, "/Users/me", 1, true))).toBeNil()
+			expect(script).toContain('exec "$TKUBE_GUARD_CORE" kubectl edit')
+			expect(script).toContain('[ -x "${TKUBE_GUARD_CORE:-}" ]')
 		end)
 	end)
 end)

@@ -502,21 +502,44 @@ describe("approve session: quick-action mutations", function()
 		expect((s.requirements :: any).typed).toBe("worker-1")
 	end)
 
-	it("grants a single-use token bound to the pinned link and opens it", function()
-		local s = ready(NODE)
+	-- The window minted the token (args[2]) in its own kv: the block may run
+	-- on another host, so it only hands the token back in the pinned link.
+	it("opens the pinned link once with the window's token, without storing a grant", function()
+		local s, first = ready(NODE)
 		A.typeText(s, "worker-1", A.cluster())
 		local d = A.send(s, A.key("enter"), A.cluster())
-		local grant = A.find(d.effects, "grant") :: Effect
+		local opens = 0
+		for _, e in d.effects do
+			if e.t == "open" then
+				opens += 1
+			end
+		end
+		expect(opens).toBe(1)
 		local open = A.find(d.effects, "open") :: Effect
-		expect(grant.token).toBe(A.TOKEN)
 		expect(open.url).toContain("confirm=" .. A.TOKEN)
 		local req = Quick.decode(open.url :: string) :: Quick.Request
 		expect(req.target.context).toBe("kind-dev")
 		expect(req.target.kubeconfig).toBe("/k/config")
 		expect(req.opts.image).toBe(Quick.DEFAULT_IMAGE)
-		expect(Link.quickBase(req)).toBe(grant.url)
+		local grants = Link.mintGrant(nil, A.TOKEN, NODE, 1000) :: Link.Grants
+		expect((Link.consumeGrant(grants, A.TOKEN, req, 1010))).toBe(true)
+		expect(A.find(d.effects, "grant")).toBeNil()
+		expect(A.find(first.runs, "run", "nonce")).toBeNil()
+		expect(A.find(d.runs, "run", "nonce")).toBeNil()
 		expect(A.find(d.runs, "run", "exec")).toBeNil()
+		present(A.find(d.effects, "audit"))
 		present(A.find(d.effects, "exit"))
+	end)
+
+	it("fails closed without a well-formed token from the window (version skew)", function()
+		local cases: { string | boolean } = { false, "short", string.upper(A.TOKEN) }
+		for _, token in cases do
+			local s, effects = A.init(NODE, { token = token })
+			expect(s.phase).toBe("error")
+			expect(s.errors[1]).toContain("without a confirmation token")
+			expect(s.errors[1]).toContain("same version")
+			expect(#effects).toBe(0)
+		end
 	end)
 
 	it("refuses links that already carry a token or do not mutate", function()

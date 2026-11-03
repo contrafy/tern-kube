@@ -103,7 +103,8 @@ bin/tern-kube-drift    POSIX sh drift report for CI (no Tern)
                                      split(pane, dir, {}) + cx:run(line):
                                      an interactive shell, so the lens
                                      claims the typed line in the new pane
-   act/<debug-*|cronjob-run>      -> needs a confirm grant, else approve block
+   act/<debug-*|cronjob-run>      -> with a valid confirm grant: split;
+                                     else mint a grant, approve block
    mutate?...                     -> block "approve"  (mutate_host)
    anything else                  -> block "explore"  (explore_host)
 
@@ -119,6 +120,30 @@ bin/tern-kube-drift    POSIX sh drift report for CI (no Tern)
       -> preview, confirm, block writes resp-<nonce>.env, exits 0
       -> guard verifies nonce, context, fingerprint -> exec kubectl "$@"
 ```
+
+### Where each half runs
+
+The host half runs on the machine of the pane (local, or a host added with
+`tern remote setup`): lenses, Explore, approve and Settings blocks, their
+kubectl calls, config file and audit log. The window half always runs on
+the desktop: `route.link` finds the clicked pane's host in
+`ManagedHost.panes` and splits there, while blocks it opens with
+`cx:new_block` land on the window's current host. Details and limits:
+[remote-hosts.md](remote-hosts.md).
+
+### Quick-action grants
+
+The window, not the approve block, mints the grant: on a mutating quick
+action without a valid `confirm`, it reads 16 bytes of `/dev/urandom`
+through a short process (`env/entropy.luau`; `tern.fs.read` refuses device
+files and `route.link` cannot await, so the block opens from the process
+callback), stores the token with the exact link in the window kv
+(`Link.mintGrant`, 600 s) and opens the approve block with `{url, token}`.
+On confirm the block, possibly on another host with its own kv, emits one
+`open` of the link with `confirm=<token>`; the window consumes the token once
+(`Link.consumeGrant`): every minted field must come back unchanged and only
+resolved fields (`context`, `kubeconfig`, `image`, `suffix`) may be added.
+No randomness, no grant, no block: fail closed.
 
 ### Lens
 
@@ -166,7 +191,7 @@ timers and pending callbacks are dropped.
 
 Explore and the approve block are Elm-style cores: `init`/`update` return
 the next state and a list of effects (`run`, `read`, `write`, `remove`,
-`audit`, `grant`, `open`, `focus`, ...). The host executes them and delivers
+`audit`, `open`, `focus`, ...). The host executes them and delivers
 results as messages on a later tick, never re-entering `update`.
 `tern.process.run` has no kill handle: every load carries a generation and a
 late result for an older generation is dropped. A spawned native mutation
@@ -200,8 +225,9 @@ palette), quick (mutating quick actions) and guard (spool request).
    are advisory);
 6. confirm (`confirm.luau`): re-read digests, fingerprint, server, inferred
    context and, for `rollout undo`, the revision list; any change refuses;
-7. native: run the pinned argv; quick: grant a single-use token and open
-   the action link; guard: write `resp-<nonce>.env`, exit 0;
+7. native: run the pinned argv; quick: open the action link with
+   `confirm=<window-minted token>` (see Quick-action grants); guard: write
+   `resp-<nonce>.env`, exit 0;
 8. append one JSON line to `<plugin data>/audit.log` (`audit.luau`: argv,
    previewed objects, input file digests).
 

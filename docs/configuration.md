@@ -83,6 +83,16 @@ and reads the target with the same cap. Until that finishes (milliseconds
 after plugin load) the defaults apply. A link to anything other than a
 regular file is rejected.
 
+### Remote hosts
+
+With panes on a host added by `tern remote setup`, each machine reads its
+own file ([remote-hosts.md](remote-hosts.md)). Host-scoped (the pane's
+machine): every key the lens, Explore, approve and Settings blocks read,
+including `quick_actions.placement`, `logs_tail` and `debug_image`, which
+travel in the quick-action link. Window-scoped (your desktop):
+`quick_actions.shell_command`, never read from a link. **Tern Kube:
+Settings** opened on a remote host edits the remote file.
+
 ## Errors and diagnostics
 
 A bad config never stops tern-kube. Each problem produces a diagnostic, and

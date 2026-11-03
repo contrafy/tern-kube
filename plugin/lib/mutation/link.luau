@@ -6,11 +6,13 @@
 -- them, so a crafted URL can at most ask for a preview of an ordinary
 -- guarded verb.
 --
--- Grants: after the user confirms a mutating quick action (debug-pod,
--- debug-node, cronjob-run) the approve block stores `{url, expires}` under a
--- random token in tern.kv and opens the action link with `confirm=<token>`;
--- window.luau consumes the token (one use, expiry, exact link match) before
--- it opens the split.
+-- Grants: the window mints a random token for a mutating quick action
+-- (debug-pod, debug-node, cronjob-run), stores `{url, expires}` under it in
+-- its own tern.kv and hands it to the approve block as args[2]. The block may
+-- run on another host (no shared kv): after confirmation it only opens the
+-- pinned action link with `confirm=<token>`, and the window consumes the
+-- token (one use, expiry, the minted link extended only by resolved fields)
+-- before it opens the split.
 local Command = require("../kubectl/command")
 local HelmTypes = require("../helm/types")
 local Kinds = require("../kubectl/kinds")
@@ -77,8 +79,13 @@ local M = {}
 
 M.SCHEME = "tern-kube://mutate?"
 M.GRANTS_KEY = "quick_confirm_grants"
--- Seconds between the confirmation and the window opening the split.
-M.GRANT_TTL = 60
+-- Seconds from mint (window) to consume: preview plus review, the guard's
+-- default approval timeout.
+M.GRANT_TTL = 600
+-- Fields the approve block resolves and shows before confirming; the only
+-- ones a confirmed link may add to the minted one.
+M.RESOLVED_FIELDS =
+	table.freeze({ context = true, kubeconfig = true, image = true, suffix = true } :: { [string]: boolean })
 M.MAX_REPLICAS = 100000
 M.MAX_INPUT_BYTES = 65536
 M.MAX_DRAIN_TIMEOUT_MS = 3600000
@@ -571,9 +578,6 @@ local function validate(f: { [string]: string }): (Request?, string?)
 		if r.file and r.kustomize then
 			return nil, "apply needs exactly one of file or kustomize"
 		end
-		if r.file == nil and r.kustomize == nil and r.cwd == nil then
-			return nil, "apply needs a file, a kustomize directory, or a cwd to prompt for one"
-		end
 		if r.kind or r.name then
 			return nil, "apply takes no kind or name"
 		end
@@ -853,12 +857,13 @@ end
 local DRAIN_HINT = "--ignore-daemonsets --delete-emptydir-data --force --disable-eviction "
 	.. "--grace-period=N --timeout=DURATION --pod-selector=SELECTOR --skip-wait-for-delete-timeout=N"
 
-function M.prompt(r: Request): Prompt
+-- `home`: the approve host's HOME, where an apply without cwd resolves.
+function M.prompt(r: Request, home: string?): Prompt
 	local t = target(r)
 	local op = r.op
 	if op == "apply" then
 		return {
-			text = "Apply a file or directory relative to " .. (r.cwd or "/"),
+			text = "Apply a file or directory relative to " .. (r.cwd or home or "/"),
 			hint = "path; -k DIR for a kustomization, -R to recurse",
 			prefill = "",
 		}
@@ -1309,19 +1314,58 @@ local function live(grants: any, now: number): Grants
 	return out
 end
 
--- Stored grants plus a new one; expired and malformed entries are dropped.
-function M.addGrant(grants: any, token: string, url: string, now: number, ttl: number?): (Grants?, string?)
+-- Action and query fields of a quick-action link; nil when a field repeats.
+local function quickFields(url: string): (string?, { [string]: string }?)
+	local action = string.match(url, "^" .. string.gsub(Quick.SCHEME, "%p", "%%%0") .. "([^?]+)")
+	local out: { [string]: string } = {}
+	for _, p in Command.parseQuery(url) do
+		if out[p.key] ~= nil then
+			return nil, nil
+		end
+		out[p.key] = p.value
+	end
+	return action, out
+end
+
+-- Stored grants plus one for `base`, the unconfirmed quick-action link the
+-- window hands the approve block; expired and malformed entries are dropped.
+function M.mintGrant(grants: any, token: string, base: string, now: number, ttl: number?): (Grants?, string?)
 	if not isToken(token) then
 		return nil, "grant token must be 32 lowercase hex characters"
 	end
+	local req = Quick.decode(base)
+	if req == nil or req.opts.confirm ~= nil then
+		return nil, "a grant needs a quick-action link without a confirmation"
+	end
 	local out = live(grants, now)
-	out[token] = { url = url, expires = now + (ttl or M.GRANT_TTL) }
+	out[token] = { url = base, expires = now + (ttl or M.GRANT_TTL) }
 	return out, nil
+end
+
+-- The approve block may add only what it resolved for the preview; every
+-- field the window minted must come back unchanged.
+local function extends(base: string, confirmed: string): boolean
+	local action, fields = quickFields(base)
+	local cAction, cFields = quickFields(confirmed)
+	if action == nil or fields == nil or cFields == nil or action ~= cAction then
+		return false
+	end
+	for k, v in fields do
+		if cFields[k] ~= v then
+			return false
+		end
+	end
+	for k in cFields do
+		if fields[k] == nil and not M.RESOLVED_FIELDS[k] then
+			return false
+		end
+	end
+	return true
 end
 
 -- One use: the token is removed whether or not it matches, so a guessed or
 -- replayed token never succeeds twice. Returns the remaining grants.
-function M.consumeGrant(grants: any, token: string?, url: string, now: number): (boolean, Grants, string?)
+function M.consumeGrant(grants: any, token: string?, confirmed: Quick.Request, now: number): (boolean, Grants, string?)
 	local rest = live(grants, now)
 	if not isToken(token) then
 		return false, rest, "the confirmation token is malformed"
@@ -1331,7 +1375,8 @@ function M.consumeGrant(grants: any, token: string?, url: string, now: number): 
 	if g == nil then
 		return false, rest, "the confirmation expired or was already used; confirm again"
 	end
-	if g.url ~= url then
+	local url = M.quickBase(confirmed)
+	if url == nil or not extends(g.url, url) then
 		return false, rest, "the confirmation was given for a different action"
 	end
 	return true, rest, nil

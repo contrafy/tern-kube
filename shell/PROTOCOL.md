@@ -148,7 +148,7 @@ Length prefixes make values containing spaces or newlines unambiguous.
 
 ## Waiting
 
-The guard runs `${TERN_BIN:-tern} open --wait <req path>` (stdin
+The guard runs `${TERN_BIN:-${TERN_EXE:-tern}} open --wait <req path>` (stdin
 `/dev/null`) in the background under a watchdog of
 `$TKUBE_GUARD_TIMEOUT` seconds (default 600):
 
@@ -208,7 +208,7 @@ editor round, instead of before it runs.
 
 Before any editor opens (no lost work), `tern-kube-guard kubectl edit ...`
 checks the preconditions above plus: no flag unknown to the `edit` table,
-`${TERN_BIN:-tern}` found, a sha256 tool, `${TMPDIR:-/tmp}` absolute and
+`${TERN_BIN:-${TERN_EXE:-tern}}` found, a sha256 tool, `${TMPDIR:-/tmp}` absolute and
 free of whitespace (kubectl splits `KUBE_EDITOR` on spaces, and the hook
 lives there), and `TKUBE_EDIT_DIR` unset (no nested guarded edits). It
 resolves the context as for any request, then:

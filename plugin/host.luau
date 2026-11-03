@@ -25,6 +25,7 @@ type Invocation = ModelTypes.Invocation
 type StreamingView = "raw" | "native"
 
 local SPOOL = tern.plugin.data .. "/spool"
+local GUARD_CORE = tern.plugin.dir .. "/shell/tern-kube-guard"
 
 pcall(tern.fs.mkdir, tern.plugin.data)
 pcall(tern.fs.mkdir, SPOOL)
@@ -213,6 +214,13 @@ local function helmAction(state: CaptureState, value: string, cx: EffectCx)
 	cx:open(url)
 end
 
+-- This host's quick_actions settings travel in quick-action links: the
+-- window opens the split, but this host's config governs its panes.
+local function hostQuick(): Quick.Settings
+	local qa = ConfigHost.current().quick_actions
+	return { placement = qa.placement, logsTail = qa.logs_tail }
+end
+
 -- Logs branch ---------------------------------------------------------------------
 
 local function programOf(inv: Invocation): string
@@ -243,7 +251,7 @@ local function logsLinks(state: LogsState): LogsRender.Links
 			followOpts.selector = scoped.selector
 			followOpts.namespace = scoped.namespace
 		end
-		links.follow = Quick.encode("logs-follow", target, ref, followOpts)
+		links.follow = Quick.encode("logs-follow", target, ref, Quick.withHost("logs-follow", followOpts, hostQuick()))
 		local extra: Command.ExploreExtra = {
 			route = "logs",
 			cwd = cwdOf(state.run),
@@ -276,7 +284,7 @@ local function logsLinks(state: LogsState): LogsRender.Links
 		}
 	end
 	local function add(label: string, opts: Quick.Opts)
-		local url = Quick.encode("logs", target, ref, opts)
+		local url = Quick.encode("logs", target, ref, Quick.withHost("logs", opts, hostQuick()))
 		if url == nil then
 			return
 		end
@@ -399,10 +407,10 @@ local function captureView(state: CaptureState): Node?
 	end
 	local notes = if state.watch and state.status == nil then { LogsRender.TRAILS } else nil
 	return View.render(
-			capture,
-			state.view,
-			{ pageSize = state.pageSize, mutations = state.mutations, notes = notes }
-		) :: any
+		capture,
+		state.view,
+		{ pageSize = state.pageSize, mutations = state.mutations, notes = notes, quick = hostQuick() }
+	) :: any
 end
 
 tern.lens.define("kubectl", {
@@ -540,5 +548,8 @@ require("./env_host").start()
 
 tern.on("spawn", function(spec: SpawnSpec): SpawnSpec?
 	spec.env.TKUBE_SPOOL = SPOOL
+	-- A remote pane's edit split runs this host's guard; the window only
+	-- knows its own plugin path.
+	spec.env.TKUBE_GUARD_CORE = GUARD_CORE
 	return spec
 end)

@@ -65,7 +65,12 @@ export type Info = {
 	allowMutations: boolean?,
 }
 
+-- Where the window opens the split; the host half writes it from the host's
+-- quick_actions.placement so a remote host's config governs its panes.
+export type Place = "right" | "down" | "tab"
+
 export type Opts = {
+	place: Place?,
 	container: string?,
 	pod: string?,
 	selector: string?,
@@ -77,6 +82,7 @@ export type Opts = {
 	suffix: string?,
 	confirm: string?,
 	-- `logs` variant flags; program is the lensed one (kubectl or kubecolor).
+	-- `tail` is also logs-follow's line count (1-100000, host logs_tail).
 	previous: boolean?,
 	since: string?,
 	tail: string?,
@@ -86,9 +92,22 @@ export type Opts = {
 	program: string?,
 }
 
--- Local quick_actions config; nil or invalid fields keep the defaults.
+-- The host a remote pane is on (window hosts listing) and the ssh words
+-- reaching it, when its name is an ssh destination.
+export type Remote = { name: string, ssh: string? }
+
+-- quick_actions config; nil or invalid fields keep the defaults.
 -- guardCore: absolute path of the plugin's shell/tern-kube-guard (edit).
-export type Settings = { shellCommand: { string }?, logsTail: number?, debugImage: string?, guardCore: string? }
+-- placement: written into links by withHost. remote: the split runs on that
+-- host (its login environment, its loopback, its guard via TKUBE_GUARD_CORE).
+export type Settings = {
+	shellCommand: { string }?,
+	logsTail: number?,
+	debugImage: string?,
+	guardCore: string?,
+	placement: Place?,
+	remote: Remote?,
+}
 
 -- ref is nil only for selector-only logs (opts.selector, opts.namespace).
 export type Request = { action: ActionId, target: Target, ref: Ref?, opts: Opts }
@@ -165,7 +184,7 @@ local SPECS: { [string]: Spec } = {
 		key = "l",
 		mutates = false,
 		kinds = set({ "Pod", "Deployment", "StatefulSet", "DaemonSet", "ReplicaSet", "Job" }),
-		params = set({ "container", "selector" }),
+		params = set({ "container", "selector", "tail" }),
 	},
 	["port-forward"] = {
 		label = "Port-forward",
@@ -249,8 +268,9 @@ local FIELDS = {
 	"context",
 	"kubeconfig",
 	"confirm",
+	"place",
 }
-local COMMON = set({ "kind", "name", "namespace", "context", "kubeconfig" })
+local COMMON = set({ "kind", "name", "namespace", "context", "kubeconfig", "place" })
 -- Actions that may name pods by selector alone.
 local SELECTOR_ONLY = set({ "logs-follow", "logs" })
 
@@ -360,7 +380,16 @@ local CHECKS: { [string]: (string) -> string? } = {
 	program = function(v)
 		return if v == "kubectl" or v == "kubecolor" then nil else "program must be kubectl or kubecolor"
 	end,
+	place = function(v)
+		return if v == "right" or v == "down" or v == "tab" then nil else "place must be right, down or tab"
+	end,
 }
+
+-- logs-follow's tail is a count of lines, not the logs variant's kubectl flag.
+local function followTail(v: string): string?
+	local n = if string.find(v, "^[1-9]%d?%d?%d?%d?%d?$") then tonumber(v) else nil
+	return if n and n <= 100000 then nil else "tail must be 1-100000 lines"
+end
 for _, k in { "previous", "timestamps", "prefix", "allcontainers" } do
 	CHECKS[k] = function(v)
 		return if v == "1" then nil else k .. " must be 1"
@@ -411,6 +440,7 @@ local function fieldsOf(action: string, target: Target, ref: Ref?, opts: Opts): 
 	put("context", target.context)
 	put("kubeconfig", target.kubeconfig)
 	put("confirm", opts.confirm)
+	put("place", opts.place)
 	return f
 end
 
@@ -439,7 +469,7 @@ local function validateAny(action: string, f: { [string]: string }): (Request?, 
 		action = action :: ActionId,
 		target = { context = f.context, kubeconfig = f.kubeconfig },
 		ref = ref,
-		opts = {},
+		opts = { place = (f.place :: any) :: Place? },
 	},
 		nil
 end
@@ -454,6 +484,7 @@ local function optsOf(f: { [string]: string }): Opts
 		image = f.image,
 		suffix = f.suffix,
 		confirm = f.confirm,
+		place = (f.place :: any) :: Place?,
 		previous = if f.previous then true else nil,
 		since = f.since,
 		tail = f.tail,
@@ -477,7 +508,10 @@ local function validate(action: string, f: { [string]: string }, group: string?)
 		if not noControl(v) then
 			return nil, k .. " contains control characters"
 		end
-		local check: ((string) -> string?)? = if k == "name" and spec.anyKind then objectName else CHECKS[k]
+		local check: ((string) -> string?)? = if k == "name" and spec.anyKind
+			then objectName
+			elseif k == "tail" and action ~= "logs" then followTail
+			else CHECKS[k]
 		if check then
 			local err = check(v)
 			if err then
@@ -662,6 +696,13 @@ local function append(argv: { string }, words: { string })
 	end
 end
 
+-- The line meets the login shell (sh, bash, zsh or fish). fish reads `\'`
+-- and `\\` as escapes even inside single quotes, so no backslash or quote
+-- may sit inside them: both are written between quoted runs instead.
+local function anyShellQuote(s: string): string
+	return "'" .. string.gsub(s, "[\\']", { ["\\"] = "'\\\\'", ["'"] = "'\"'\"'" }) .. "'"
+end
+
 local DEFAULT_SHELL: { string } = { "sh", "-c", "command -v bash >/dev/null 2>&1 && exec bash || exec sh" }
 
 local function shellWords(words: { string }?): { string }
@@ -709,7 +750,7 @@ end
 -- the guard runs `command kubectl`.
 local function editCommand(req: Request, target: Target, s: Settings): (Launch?, string?)
 	local core = s.guardCore
-	if core == nil or core == "" or string.sub(core, 1, 1) ~= "/" or not noControl(core) then
+	if s.remote == nil and (core == nil or core == "" or string.sub(core, 1, 1) ~= "/" or not noControl(core)) then
 		return nil, "shell/tern-kube-guard is missing from the plugin directory"
 	end
 	local r = req.ref :: Ref
@@ -734,8 +775,43 @@ local function editCommand(req: Request, target: Target, s: Settings): (Launch?,
 		table.insert(script, "PATH=" .. Command.quote(dir) .. ":$PATH")
 		table.insert(script, "export PATH")
 	end
-	table.insert(script, "exec " .. Command.quote(core) .. " " .. Command.format(argv))
-	return { argv = argv, line = "sh -c " .. Command.quote(table.concat(script, "; ")), title = title }, nil
+	if s.remote then
+		-- This machine's plugin path means nothing there; the host's spawn
+		-- hook exports its own guard core.
+		table.insert(
+			script,
+			"[ -x \"${TKUBE_GUARD_CORE:-}\" ] || { printf 'tern-kube: %s has no TKUBE_GUARD_CORE; is tern-kube the same version there?\\n' "
+				.. Command.quote(s.remote.name)
+				.. " >&2; exit 1; }"
+		)
+		table.insert(script, 'exec "$TKUBE_GUARD_CORE" ' .. Command.format(argv))
+	else
+		table.insert(script, "exec " .. Command.quote(core :: string) .. " " .. Command.format(argv))
+	end
+	return { argv = argv, line = "sh -c " .. anyShellQuote(table.concat(script, "; ")), title = title }, nil
+end
+
+-- kubectl on a remote host listens on that host's loopback; say where, and
+-- how to reach it from this machine when the host name is an ssh target.
+-- `l` and `p` are shell words (numbers or "$l"/"$p").
+local function remoteForward(remote: Remote, l: string, p: string): { string }
+	local out = {
+		"printf 'tern-kube: forwarding localhost:%s -> %s on %s\\n' " .. l .. " " .. p .. " " .. Command.quote(
+			remote.name
+		),
+	}
+	if remote.ssh then
+		table.insert(
+			out,
+			"printf 'tern-kube: from this machine: ssh -N -L %s:localhost:%s %s\\n' "
+				.. l
+				.. " "
+				.. l
+				.. " "
+				.. Command.quote(remote.ssh)
+		)
+	end
+	return out
 end
 
 -- Following by selector: every matching pod, attributed by --prefix.
@@ -782,7 +858,7 @@ function M.command(action: string, target: Target, ref: Ref?, opts: Opts?, setti
 
 	if r == nil then
 		-- validate() admits no object only for a selector-only follow here.
-		append(argv, { "logs", "-f", "--tail=" .. tailOf(s.logsTail) })
+		append(argv, { "logs", "-f", "--tail=" .. (o.tail or tailOf(s.logsTail)) })
 		append(argv, conn)
 		append(argv, ns)
 		append(argv, followSelector(o))
@@ -803,7 +879,7 @@ function M.command(action: string, target: Target, ref: Ref?, opts: Opts?, setti
 			.. (if o.container then ":" .. o.container else "")
 		title = "shell " .. where
 	elseif action == "logs-follow" then
-		append(argv, { "logs", "-f", "--tail=" .. tailOf(s.logsTail) })
+		append(argv, { "logs", "-f", "--tail=" .. (o.tail or tailOf(s.logsTail)) })
 		append(argv, conn)
 		append(argv, ns)
 		if r.kind == "Pod" then
@@ -843,9 +919,17 @@ function M.command(action: string, target: Target, ref: Ref?, opts: Opts?, setti
 					.. " >&2; exit 1;; esac"
 			)
 			table.insert(pre, 'if [ "$p" -gt 1024 ]; then l=$p; else l=$((8000 + p)); fi')
-			table.insert(pre, 'printf \'tern-kube: forwarding localhost:%s -> %s\\n\' "$l" "$p"')
+			if s.remote then
+				append(pre, remoteForward(s.remote, '"$l"', '"$p"'))
+			else
+				table.insert(pre, 'printf \'tern-kube: forwarding localhost:%s -> %s\\n\' "$l" "$p"')
+			end
 			table.insert(argv, "$l:$p")
 			title = "port-forward " .. where
+		end
+		if o.port and s.remote then
+			local l = string.format("%d", o.localPort or M.localPort(o.port))
+			append(pre, remoteForward(s.remote, l, string.format("%d", o.port)))
 		end
 	elseif action == "debug-pod" then
 		append(argv, { "debug", "-it" })
@@ -877,6 +961,12 @@ function M.command(action: string, target: Target, ref: Ref?, opts: Opts?, setti
 	title = "tern-kube " .. title .. " @ " .. (ctx or "current context")
 
 	local script: { string } = { "printf '\\033]0;%s\\007' " .. Command.quote(title) }
+	if s.remote and req.target.kubeconfig == nil then
+		table.insert(
+			script,
+			"printf 'tern-kube: %s: kubeconfig from the login environment\\n' " .. Command.quote(s.remote.name)
+		)
+	end
 	if ctx == nil then
 		local current = { program }
 		append(current, connection({ kubeconfig = req.target.kubeconfig }))
@@ -894,7 +984,7 @@ function M.command(action: string, target: Target, ref: Ref?, opts: Opts?, setti
 	else
 		table.insert(script, "exec " .. run)
 	end
-	return { argv = argv, line = "sh -c " .. Command.quote(table.concat(script, "; ")), title = title }, nil
+	return { argv = argv, line = "sh -c " .. anyShellQuote(table.concat(script, "; ")), title = title }, nil
 end
 
 -- Placement from config `quick_actions.placement`; anything else is the
@@ -996,6 +1086,31 @@ function M.typedLine(target: Target, ref: Ref?, opts: Opts): (TypedLaunch?, stri
 	return { argv = argv, line = table.concat(words, " "), title = title }, nil
 end
 
+-- `opts` plus the host settings a link carries: placement for every action,
+-- the logs tail for logs-follow (unless the link already names one).
+-- Invalid settings are left out, so the window's own config applies.
+function M.withHost(action: string, opts: Opts, settings: Settings?): Opts
+	local o = table.clone(opts)
+	if settings == nil then
+		return o
+	end
+	if CHECKS.place(settings.placement or "") == nil then
+		o.place = settings.placement
+	end
+	local n = settings.logsTail
+	if
+		action == "logs-follow"
+		and o.tail == nil
+		and type(n) == "number"
+		and n == math.floor(n)
+		and n >= 1
+		and n <= 100000
+	then
+		o.tail = string.format("%d", n)
+	end
+	return o
+end
+
 export type Chip = { label: string, url: string, title: string }
 
 -- Pointer chips for a resource: one per available action whose link
@@ -1017,6 +1132,7 @@ function M.chipsFor(kind: string, ref: Ref, target: Target, info: Info?, setting
 		elseif a.id == "port-forward" then
 			o.port = opts.port
 		end
+		o = M.withHost(a.id, o, settings)
 		local url = M.encode(a.id, target, ref, o)
 		local launch = if url then M.command(a.id, target, ref, o, settings) else nil
 		if url and M.gate(a.id) == "editor" then

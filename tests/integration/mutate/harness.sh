@@ -11,7 +11,8 @@
 #
 # Inputs (env): TK_KUBECONFIG (host kubeconfig the block resolves),
 # TK_PREVIEW_MS, TK_EXEC_MS, TK_MUTATIONS_ENABLED (true|false),
-# TK_SHOW_SECRETS (true|false), TK_REQUEST (guard request file), TK_PANES,
+# TK_SHOW_SECRETS (true|false), TK_REQUEST (guard request file), TK_GRANT
+# (window-minted grant token, args[2] of a quick action), TK_PANES,
 # TK_HELM (helm program; "none" = not found), TK_HELM_TIMEOUT_S, TK_HELM_WAIT.
 
 TK_REPO=${TK_REPO:?}
@@ -65,11 +66,16 @@ tk_begin() { # NAME ARG
 	if [ -n "${TK_REQUEST:-}" ]; then
 		req="request = \"$(tk_hex <"$TK_REQUEST")\","
 	fi
+	tk_grant=
+	if [ -n "${TK_GRANT:-}" ]; then
+		tk_grant="grant = \"$(printf '%s' "$TK_GRANT" | tk_hex)\","
+	fi
 	panes=${TK_PANES:-'"7"'}
 	cat >"$TK_W/head.part" <<EOF
 local T = { init = {
 	arg = "$(printf '%s' "$2" | tk_hex)",
 	now = $(date +%s),
+	$tk_grant
 	kubectl = "$(printf '%s' "$(command -v kubectl)" | tk_hex)",
 	$(if [ "${TK_HELM:-}" != none ]; then printf 'helm = "%s",' "$(printf '%s' "${TK_HELM:-$TK_REPO/.tools/bin/helm}" | tk_hex)"; fi)
 	helmTimeoutS = ${TK_HELM_TIMEOUT_S:-60},

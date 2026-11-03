@@ -81,6 +81,44 @@ jobs:
             echo "skipped: tests/shell/drift/run.sh is not on this branch"
           fi
 
+      - name: make test-shell-login
+        run: |
+          if [ -f tests/shell/login/run.sh ]; then
+            make test-shell-login
+          else
+            echo "skipped: tests/shell/login/run.sh is not on this branch"
+          fi
+
+  # Debian 13 userland: fish 4 as the login shell, dash as /bin/sh, mawk.
+  linux-shells:
+    name: linux-shells (debian 13, fish login)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    container:
+      image: debian:trixie-slim@sha256:f6b08b09a05725f9431502d3b5714f5c4576e82c1a84fa1debe0c24a7e0c3ec4
+    steps:
+      - name: Install shells and tools
+        run: |
+          apt-get update -q
+          apt-get install -y -q --no-install-recommends \
+            fish zsh bash dash perl git curl unzip bzip2 ca-certificates make procps file jq
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Cache .tools
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .tools
+          key: tools-debian-trixie-${{ hashFiles('scripts/bootstrap.sh') }}
+
+      - name: Shell suites as a fish login user
+        run: |
+          useradd -m -s /usr/bin/fish tk
+          chown -R tk .
+          runuser -u tk -- sh -c 'make bootstrap && make test-shell-guard test-shell-drift test-shell-aliases test-shell-login'
+
   integration:
     name: integration (kind)
     runs-on: ubuntu-24.04

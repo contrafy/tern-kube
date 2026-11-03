@@ -591,11 +591,30 @@ tkg_on_signal() {
 	exit "$tkg_sig_status"
 }
 
+# The tern binary: TERN_BIN, else TERN_EXE (set by the daemon in every pane,
+# local or remote, to the binary serving it; `tern remote setup` installs into
+# ~/.local/bin, which login shells often lack on PATH), else `tern` on PATH.
+# Sets tkg_tern and tkg_tern_src.
+tkg_tern_pick() {
+	if [ -n "${TERN_BIN-}" ]; then
+		tkg_tern=$TERN_BIN tkg_tern_src=TERN_BIN
+	elif [ -n "${TERN_EXE-}" ]; then
+		tkg_tern=$TERN_EXE tkg_tern_src=TERN_EXE
+	else
+		tkg_tern=tern tkg_tern_src=PATH
+	fi
+}
+
 tkg_status() {
+	tkg_tern_pick
 	printf 'tern-kube guard core: %s\n' "$0"
 	printf 'flag table: %s\n' "$(sed -n 's/^# BEGIN generated flags.*\(kubectl v[^;]*\);.*/\1/p' "$0")"
 	printf 'kubectl: %s\n' "$(command -v kubectl 2>/dev/null || echo 'not found on PATH')"
-	printf 'tern: %s\n' "$(command -v "${TERN_BIN:-tern}" 2>/dev/null || echo 'not found on PATH')"
+	if tkg_t=$(command -v "$tkg_tern" 2>/dev/null); then
+		printf 'tern: %s (%s)\n' "$tkg_t" "$tkg_tern_src"
+	else
+		printf 'tern: %s not found (%s; TERN_EXE is set in Tern panes, TERN_BIN overrides)\n' "$tkg_tern" "$tkg_tern_src"
+	fi
 	printf 'approval timeout: %ss\n' "${TKUBE_GUARD_TIMEOUT:-600}"
 	printf 'guarded verbs: annotate, apply, cordon, delete, drain, edit (after you save), label, patch, rollout restart, rollout undo, rollout pause, rollout resume, scale, uncordon\n'
 	if [ "${TERM_PROGRAM-}" != tern ] || [ -z "${TERN_PANE-}" ]; then
@@ -669,7 +688,8 @@ tkg_request_approval() {
 	tkg_write_request "$@" || tkg_refuse "cannot write $tkg_req."
 
 	tkg_err "waiting for approval in Tern (context $tkg_ctx; Ctrl-C cancels)..."
-	"${TERN_BIN:-tern}" open --wait "$tkg_req" </dev/null >/dev/null &
+	tkg_tern_pick
+	"$tkg_tern" open --wait "$tkg_req" </dev/null >/dev/null &
 	tkg_tpid=$!
 	(
 		trap 'kill "$tkg_s" 2>/dev/null; exit 0' TERM
@@ -691,7 +711,7 @@ tkg_request_approval() {
 	fi
 	if [ "$tkg_st" != 0 ]; then
 		tkg_mark_cancel
-		tkg_refuse "'tern open --wait' failed (exit $tkg_st); is Tern running?"
+		tkg_refuse "'$tkg_tern open --wait' failed (exit $tkg_st); is Tern running? (tern from $tkg_tern_src; in a Tern pane TERN_EXE names the tern binary, TERN_BIN overrides it)"
 	fi
 	[ -e "$tkg_resp" ] ||
 		tkg_refuse "Tern returned without an approval response; the tern-kube approve block did not handle the request (plugin not loaded or disabled? It may have opened in an editor instead)."
@@ -825,8 +845,9 @@ tkg_edit() {
 	[ -z "${TKUBE_EDIT_DIR-}" ] ||
 		tkg_refuse "kubectl edit is already running under the guard here (TKUBE_EDIT_DIR is set); nested edits are not supported."
 	tkg_preflight
-	command -v "${TERN_BIN:-tern}" >/dev/null 2>&1 ||
-		tkg_refuse "${TERN_BIN:-tern} is not on PATH; kubectl edit needs it to ask for approval after you save."
+	tkg_tern_pick
+	command -v "$tkg_tern" >/dev/null 2>&1 ||
+		tkg_refuse "$tkg_tern ($tkg_tern_src) is not on PATH; kubectl edit needs it to ask for approval after you save. In a Tern pane TERN_EXE names the tern binary; set TERN_BIN to override."
 	tkg_tmpdir
 	case $tkg_tmp in
 	/*) ;;

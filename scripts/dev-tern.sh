@@ -3,12 +3,16 @@
 # sandbox (default /tmp/tk-tern, override with TK_TERN_SANDBOX) and never
 # touches the default Tern config, daemon socket or logs.
 #
-#   start [--fake | --gui-path] [--print]
+#   start [--fake | --gui-path] [--shell zsh|fish|bash] [--print]
 #                     run the sandbox window in the foreground (keep it in a
 #                     long-lived terminal/service). Shells and the daemon
 #                     always get KUBECONFIG=.sandbox/kubeconfig and a neutral
-#                     zsh (sandbox ZDOTDIR, no user rc files); the daemon reads
-#                     tern-kube config from <sandbox>/xdg, never the user's.
+#                     login shell, zsh by default (sandbox ZDOTDIR, no user
+#                     rc files); --shell fish reads only <sandbox>/xdg/fish/
+#                     config.fish (no history), --shell bash runs a wrapper
+#                     that skips the profile files for <sandbox>/bash/bashrc.
+#                     The daemon reads tern-kube config from <sandbox>/xdg,
+#                     never the user's.
 #                     Default: the real kubectl, refused unless that
 #                     kubeconfig's context is kind-tern-kube-dev. --fake puts
 #                     tests/bin (fake kubectl and kubecolor) first on PATH. In
@@ -16,9 +20,9 @@
 #                     --gui-path starts the window and daemon with the PATH
 #                     a Dock/Finder (launchd) start has,
 #                     /usr/bin:/bin:/usr/sbin:/sbin, and no TKUBE_KUBECTL;
-#                     panes still get the sandbox zsh rc. --print shows the
+#                     panes still get the sandbox rc. --print shows the
 #                     environment. TK_DEV_KUBE_EDITOR sets KUBE_EDITOR in
-#                     every pane and split (sandbox zshenv)
+#                     every pane and split (sandbox rc files)
 #   link [DIR]        point <sandbox>/cfg/plugins/tern-kube.path at the repo root
 #                     (or DIR, e.g. a snapshot copy) and reload the daemon
 #   unlink            remove the link and reload
@@ -215,6 +219,115 @@ EOF
 	fi
 }
 
+# The same for fish (--shell fish): fish reads $XDG_CONFIG_HOME/fish/
+# config.fish in every instance, login, interactive and `-c` alike, and the
+# sandbox XDG_CONFIG_HOME hides the user's. History would still go to the
+# user's data dir, so it is off.
+write_fish_config() { # $1 = 1 to start in fake mode, $2 = kubectl for Explore
+	mkdir -p "$sb/xdg/fish"
+	cat >"$sb/xdg/fish/config.fish" <<EOF
+set -g fish_history ''
+set -g fish_greeting
+set -gx KUBECONFIG '$kubeconfig'
+set -gx KUBERC off
+set -e KUBECTL_EXTERNAL_DIFF
+set -gx TKUBE_KUBECTL '$2'
+function fish_prompt
+	printf '%s > ' (basename \$PWD)
+end
+function tk_real
+	set -e TKUBE_FAKE_FIXTURES TKUBE_FAKE_ROWS
+	while set -l i (contains -i -- '$fake_bin' \$PATH)
+		set -e PATH[\$i]
+	end
+end
+function tk_fake
+	tk_real
+	test -n "\$argv[1]"; and set -gx TKUBE_FAKE_FIXTURES \$argv[1]
+	set -gx PATH '$fake_bin' \$PATH
+end
+EOF
+	if [ -n "${TK_DEV_KUBE_EDITOR:-}" ]; then
+		echo "set -gx KUBE_EDITOR '$TK_DEV_KUBE_EDITOR'" >>"$sb/xdg/fish/config.fish"
+	fi
+	if [ "$1" = 1 ]; then
+		echo "tk_fake" >>"$sb/xdg/fish/config.fish"
+	else
+		echo "tk_real" >>"$sb/xdg/fish/config.fish"
+	fi
+}
+
+# The same for bash (--shell bash). A login bash reads only the user's
+# profile files, so SHELL is a wrapper that drops -l/--login and runs bash
+# with the sandbox rc instead: --rcfile for interactive shells (panes, the
+# PATH probe's -l -i -c), BASH_ENV for -c (quick-action splits); the rc
+# unsets BASH_ENV so scripts started from the pane do not read it again.
+# Panes start as `bash --posix -l` with ENV naming Tern's shell integration
+# (POSIX mode reads ENV), but macOS's /bin/bash 3.2 ignores ENV there: the
+# wrapper drops --posix and the rc sources the integration last, with
+# KITTY_BASH_INJECT=no-rc so it does not read the rc again.
+write_bash_rc() { # $1 = 1 to start in fake mode, $2 = kubectl for Explore
+	mkdir -p "$sb/bash"
+	cat >"$sb/bash/bashrc" <<EOF
+unset BASH_ENV
+HISTFILE='$sb/bash/history'
+PS1='\W \\$ '
+export KUBECONFIG='$kubeconfig'
+export KUBERC=off
+unset KUBECTL_EXTERNAL_DIFF
+export TKUBE_KUBECTL='$2'
+tk_real() {
+	unset TKUBE_FAKE_FIXTURES TKUBE_FAKE_ROWS
+	PATH=\$(printf '%s' "\$PATH" | tr ':' '\n' | grep -vxF '$fake_bin' | paste -sd: -)
+	hash -r
+}
+tk_fake() {
+	tk_real
+	[ -n "\${1:-}" ] && export TKUBE_FAKE_FIXTURES="\$1"
+	PATH='$fake_bin':\$PATH
+	hash -r
+}
+EOF
+	if [ -n "${TK_DEV_KUBE_EDITOR:-}" ]; then
+		echo "export KUBE_EDITOR='$TK_DEV_KUBE_EDITOR'" >>"$sb/bash/bashrc"
+	fi
+	if [ "$1" = 1 ]; then
+		echo "tk_fake" >>"$sb/bash/bashrc"
+	else
+		echo "tk_real" >>"$sb/bash/bashrc"
+	fi
+	cat >>"$sb/bash/bashrc" <<'EOF'
+if [ -n "${TK_DEV_KSI:-}" ]; then
+	_tk_ksi=$TK_DEV_KSI
+	unset TK_DEV_KSI
+	. "$_tk_ksi"
+	unset _tk_ksi
+fi
+EOF
+	cat >"$sb/bash/bash" <<EOF
+#!/bin/sh
+posix=0
+n=\$#
+while [ \$n -gt 0 ]; do
+	a=\$1
+	shift
+	n=\$((n - 1))
+	case \$a in
+	-l | --login) ;;
+	--posix) posix=1 ;;
+	*) set -- "\$@" "\$a" ;;
+	esac
+done
+export BASH_SILENCE_DEPRECATION_WARNING=1
+if [ \$posix = 1 ]; then
+	export TK_DEV_KSI="\${ENV:-}" KITTY_BASH_INJECT=no-rc
+	unset ENV
+fi
+BASH_ENV='$sb/bash/bashrc' exec /bin/bash --noprofile --rcfile '$sb/bash/bashrc' "\$@"
+EOF
+	chmod 0755 "$sb/bash/bash"
+}
+
 # The real kubectl: first on PATH outside tests/bin.
 real_kubectl() {
 	PATH=$(printf '%s' "$PATH" | tr ':' '\n' | grep -v "^$fake_bin\$" | paste -sd: -) command -v kubectl || true
@@ -228,17 +341,37 @@ start)
 	fake=0
 	print=0
 	gui=0
-	for a in "$@"; do
-		case $a in
+	shell=zsh
+	while [ $# -gt 0 ]; do
+		case $1 in
 		--fake) fake=1 ;;
 		--gui-path) gui=1 ;;
 		--print) print=1 ;;
+		--shell)
+			shell=${2:-}
+			[ $# -gt 1 ] && shift
+			;;
 		*)
-			echo "dev-tern: start [--fake | --gui-path] [--print]" >&2
+			echo "dev-tern: start [--fake | --gui-path] [--shell zsh|fish|bash] [--print]" >&2
 			exit 2
 			;;
 		esac
+		shift
 	done
+	case $shell in
+	zsh) login_shell=/bin/zsh ;;
+	fish)
+		login_shell=$(command -v fish) || {
+			echo "dev-tern: --shell fish: fish is not on PATH" >&2
+			exit 1
+		}
+		;;
+	bash) login_shell="$sb/bash/bash" ;;
+	*)
+		echo "dev-tern: --shell must be zsh, fish or bash, not '$shell'" >&2
+		exit 2
+		;;
+	esac
 	if [ $fake = 1 ] && [ $gui = 1 ]; then
 		echo "dev-tern: --gui-path runs the real kubectl found the way a Dock launch would; it cannot be combined with --fake" >&2
 		exit 2
@@ -252,7 +385,7 @@ start)
 	mkdir -p "$XDG_CONFIG_HOME/tern-kube"
 	unset KUBECTL_EXTERNAL_DIFF TKUBE_FAKE_FIXTURES TKUBE_FAKE_ROWS
 	export ZDOTDIR="$zdot"
-	export SHELL=/bin/zsh
+	export SHELL="$login_shell"
 	if [ $fake = 1 ]; then
 		# The window, its daemon and its shells see the fake kubectl first;
 		# the Explore block honors TKUBE_KUBECTL, so nothing in the
@@ -260,6 +393,8 @@ start)
 		export TKUBE_KUBECTL="$fake_bin/kubectl"
 		export PATH="$fake_bin:$PATH"
 		write_zdotdir 1 "$TKUBE_KUBECTL"
+		write_fish_config 1 "$TKUBE_KUBECTL"
+		write_bash_rc 1 "$TKUBE_KUBECTL"
 	else
 		# Real kubectl, but only against the disposable kind cluster.
 		real=$(real_kubectl)
@@ -274,11 +409,13 @@ start)
 		}
 		export TKUBE_KUBECTL="$real"
 		write_zdotdir 0 "$real"
+		write_fish_config 0 "$real"
+		write_bash_rc 0 "$real"
 	fi
 	if [ $gui = 1 ]; then
 		# Tern started from the Dock/Finder: launchd's minimal PATH and no
 		# TKUBE_KUBECTL; tern-kube must find kubectl through the login shell
-		# (the sandbox zsh rc, via ZDOTDIR) or the common install dirs.
+		# (the sandbox rc of the login shell) or the common install dirs.
 		# KUBECONFIG stays: without it a failed shell read would fall back
 		# to the user's ~/.kube/config. (A sandbox HOME is not an option:
 		# Tern then asks to sign in.)
@@ -393,7 +530,7 @@ env)
 		"$TERN_CONFIG_DIR" "$TERN_DAEMON_SOCKET" "$STENCIL_LOG_DIR" "$window_log" "$kubeconfig"
 	;;
 *)
-	sed -n '2,41p' "$0" | sed 's/^# \{0,1\}//'
+	sed -n '2,46p' "$0" | sed 's/^# \{0,1\}//'
 	[ -z "$cmd" ] && exit 0
 	exit 2
 	;;

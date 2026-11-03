@@ -3,6 +3,7 @@
 -- scripted responder, records every other effect, and offers a fake cluster
 -- whose answers follow the argv the session built (context, names).
 local Fingerprint = require("../../plugin/lib/mutation/fingerprint")
+local Quick = require("../../plugin/lib/actions/quick")
 local Session = require("../../plugin/lib/mutation/session")
 local json = require("./json")
 
@@ -89,12 +90,19 @@ export type Opts = {
 	-- helm program (default "helm"); `noHelm` = helm not found.
 	helm: string?,
 	noHelm: boolean?,
+	-- Quick links get the window-minted grant token as args[2] (M.TOKEN);
+	-- `token = false` opens without one, a string replaces it.
+	token: (string | boolean)?,
 }
 
 function M.init(arg: string, opts: Opts?): (State, { Effect })
 	local o: Opts = opts or {}
+	local args = { arg }
+	if string.sub(arg, 1, #Quick.SCHEME) == Quick.SCHEME and o.token ~= false then
+		table.insert(args, if type(o.token) == "string" then o.token else M.TOKEN)
+	end
 	return Session.init({
-		args = { arg },
+		args = args,
 		now = o.now or 1000,
 		config = o.config or M.config(),
 		kubectl = "kubectl",
@@ -189,8 +197,6 @@ function M.cluster(world: World?): (Effect) -> Result?
 			return { status = w.diffExit or 1, stdout = w.diff or "", stderr = "", timed_out = false }
 		elseif tag == "exec" then
 			return M.ok('deployment.apps "web" deleted\n')
-		elseif tag == "nonce" then
-			return M.ok(M.TOKEN)
 		elseif tag == "respond" then
 			return M.ok()
 		end
