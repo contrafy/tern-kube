@@ -50,7 +50,9 @@ plugin/
                        sort), viewstate (state encoded in action values),
                        view (dispatch)
     render/            grid, table/describe/yaml/objtree/mutation views,
-                       header, summary, helm_chip (lens "Helm release" chip)
+                       header, summary, helm_chip (lens "Helm release" chip),
+                       segcard (diff segment card shared by GitOps, Helm
+                       and compare views)
     logs/              parse (JSON, klog, logfmt, plain; prefix, kubelet
                        time, continuations), store (incremental ring of
                        records), query (filters, pages, context, next
@@ -58,9 +60,16 @@ plugin/
     events/            model (EventList and table rows -> events), timeline
                        (sort, filter, time groups, ownerReferences closure)
     explore/           state (Elm-style core), gitops (manifest, diff,
-                       drift, export and git routes), helm (Helm routes:
-                       loads, keys, rollback links), render, query (pinned
-                       argv), relations, label selectors
+                       drift, export, git and drift matrix routes), helm
+                       (Helm routes: loads, keys, rollback links), compare
+                       (compare routes: per-side loads, queue, keys),
+                       render, query (pinned argv), relations, label
+                       selectors
+    compare/           contexts (kubeconfig contexts, picker choices,
+                       short labels), normalize (strip what differs between
+                       clusters), model (pairing, paths, object diff, list
+                       matrix, filters, max_parallel queue), view (picker,
+                       fan-out, matrix, pairwise diff)
     helm/              types, query (pinned helm argv, extras template),
                        parse (list/history/status/values/extras), owner
                        (object -> release), values (defaults vs user vs
@@ -73,7 +82,9 @@ plugin/
                        rollout, edit, risk, confirm, fingerprint, audit, link
                        (mutate links + grants), session (approve block
                        core), render
-    gitops/            index, controllers, clean, emit, export, drift, view
+    gitops/            index, controllers, clean, emit, export, drift,
+                       matrix (drift reports of several contexts -> one
+                       matrix), view
     settings/          settings block core and view
     config.luau        config schema, validation, defaults
 shell/                 tern-kube-guard (POSIX sh core) + zsh/bash/fish
@@ -291,6 +302,42 @@ before any text reaches a node, so copies and toasts see masked text too.
 helm runs with `HELM_DRIVER` from `helm.driver` and the pinned
 `--kube-context`/`--kubeconfig` (a kubeconfig path list goes into the
 environment instead).
+
+### Compare across contexts
+
+```
+ Explore x (object or list) / lens chip explore-route=compare
+   -> picker: kubectl [--kubeconfig K] config view -o json -> Contexts.choices
+   -> per side (base first): kubectl --context C get <plural.version.group>
+      --field-selector metadata.name=N -o json  (object)
+      or get <resource> (-n NS | -A) -o json   (list)
+      at most compare.max_parallel in flight (Model.queue)
+   -> every side answered: Normalize -> Model.objectDiff / listMatrix
+      -> pair (base vs one context), fan-out (one row per context) or
+         matrix (rows = objects, columns = contexts)
+ GitOps x (drift report or item)
+   -> same picker -> one drift report per context (startDrift, target
+      pinned to C, namespace explicit) -> GitopsMatrix.fromReports
+```
+
+`plugin/lib/explore/compare.luau` is a sub-core like the Helm one: one load
+per target, subject and choice, a generation per side (tag
+`compare|side|<i>|<load>`; a stale result is dropped), and `r` refetches
+every side. Only when every side has settled does it build the matrix. At
+that point it computes the pairwise diffs that involve a Secret (masked by
+`Objdiff` with the redaction policy) and drops the raw Secrets. Other
+objects are kept per column so `enter` on a row diffs without a new query.
+`compare/normalize.luau` runs `gitops/clean.luau` with
+`secretValues = "keep"` and `skipDefaults = false`, so equal Secrets compare
+equal and nothing is skipped. `Objdiff` labels the two sides with their
+contexts instead of live/merged.
+
+Drift loads in `explore/gitops.luau` are keyed `kubeconfig@context|source`.
+A matrix column is the ordinary drift load of that context, so the drift
+item view opened from a cell reads the same load. Compare and matrix routes
+are not saved across reloads, and both are read-only: the Explore core
+refuses quick actions, mutations and export there, and GitOps refuses apply,
+export and delete on any context but the block's own.
 
 ### GitOps
 

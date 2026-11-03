@@ -13,9 +13,11 @@ three; e2e needs Tern, which is closed beta, and stays local.
 ## Safety rules
 
 - The real `kubectl` only ever runs with `KUBECONFIG=.sandbox/kubeconfig`,
-  context `kind-tern-kube-dev`. `scripts/cluster.sh` refuses any other
-  `KUBECONFIG` and verifies that the file holds exactly that context and
-  that its API server is the local kind endpoint.
+  context `kind-tern-kube-dev`, or for the multi-cluster suites with
+  `.sandbox/kubeconfig-dev2` (`kind-tern-kube-dev2`) and the merged
+  `.sandbox/kubeconfig-mc` (both contexts). `scripts/cluster.sh` refuses any
+  other `KUBECONFIG` and verifies that each file holds exactly its contexts
+  and that every API server is the local kind endpoint kind reports.
 - Mutations only in `tern-test-*` namespaces (plus cluster-scoped objects
   named `tern-test-*` where a test needs them, and the kind node, which e2e
   scenarios 27 and 29 cordon and always uncordon on exit). Never a real
@@ -78,6 +80,9 @@ sh tests/integration/gitops/roundtrip.sh
 sh tests/integration/logs/check.sh
 sh tests/integration/events/check.sh
 sh tests/integration/helm/template-compat.sh
+sh scripts/cluster.sh create-peer   # tern-kube-dev2, .sandbox/kubeconfig-{dev2,mc}
+sh tests/integration/compare/run.sh [explore] [cli]   # make test-integration-compare
+sh scripts/cluster.sh delete-peer
 sh scripts/cluster.sh delete
 ```
 
@@ -111,6 +116,20 @@ sh scripts/cluster.sh delete
   changes Go quoting, the release fields read, or what `--reuse-values`
   stores as chart defaults fails here. Evidence: `.sandbox/helm-compat/`;
   the namespace is deleted on exit unless `KEEP=1`.
+- `compare/run.sh` (0.6.0) needs both clusters and talks to them only
+  through `.sandbox/kubeconfig-mc`. It recreates `tern-test-mc` in both
+  from `tests/integration/manifests/compare/{a,b}.yaml`. `explore`:
+  `driver.luau` runs Explore's compare core with no window, prints the exact
+  pinned argv it wants, and `run.sh` answers each with the real kubectl
+  (read-only verbs only, with a timeout) until the driver needs nothing
+  more. It covers an object that differs, objects that are the same, a
+  missing object, a masked Secret, the list matrix, and All contexts with an
+  unreachable third context (a private kubeconfig copy, server
+  `127.0.0.1:1`) that becomes an error cell while the others compare.
+  `cli`: `bin/tern-kube-drift` on `manifests/compare/source` against both
+  contexts in the three formats, one context equal to the single-context
+  output, exit codes 1 and 2. Finally every object's `resourceVersion` in
+  both clusters is checked unchanged. Evidence: `.sandbox/compare-it/`.
 
 In CI each script runs only when it exists on the branch; on failure the
 evidence (without kubeconfigs) and `kind export logs` are uploaded.
@@ -153,12 +172,25 @@ changes (52), rollback through the approve block, the stale refusal and the
 typed pending-release preview (53; shop-a is rebuilt on exit), object to
 release relations and the lens Helm chip (54), and chart auto-detect drift
 in a throwaway git repository (55). The runner deletes both namespaces
-unless `--keep`. Scenarios that need
+unless `--keep`. 70-79 cover compare across contexts (0.6.0) and run only
+with `E2E_MC=1` after `scripts/cluster.sh create-peer` (otherwise each
+prints a skip line); the runner applies the compare world to both
+clusters first and the lenses use `.sandbox/kubeconfig-mc`: an object diff
+with both provenance lines and `Y` copying both pinned commands (70),
+missing on either side (71), a Secret masked, and shown with
+`show_secret_values` (72), the list matrix, `f` and a drill-in that runs
+no kubectl (73), All contexts with an unreachable third context and
+`compare.max_contexts` disabling it (74), the lens inspector chip (75), the
+drift matrix of a throwaway repository with drill-in and the read-only
+refusal (76), the `compare.contexts` preset with an unknown name (77), no
+refresh until `r` after the peer is scaled outside Tern (78; scaled back
+on exit), and help rows and short labels with a legend in a narrow window
+(79). Scenarios that need
 output a read-only cluster cannot produce switch the pane to the fake
 `tests/bin/kubectl`. `--shots` regenerates `docs/screenshots/`
 (`E2E_SHOTS="m3b m4"` limits it to some groups; `t1` is the 0.2.0 verbs and
-`t2` the 0.3.0 logs and events views, `t3` the 0.4.0 Helm views, all dark
-only) and then runs
+`t2` the 0.3.0 logs and events views, `t3` the 0.4.0 Helm views and `m6`
+the 0.6.0 compare views, all dark only; `m6` needs `E2E_MC=1`) and then runs
 `make shots-optimize` (pngquant quality floor 95, then lossless oxipng;
 idempotent, only `docs/screenshots/*.png`), `--perf`
 prints timings for [performance.md](performance.md). It exits 0 with
@@ -218,6 +250,7 @@ files).
 | `tests/fixtures/real/mutate-preview/` | `scripts/fixtures/capture-mutate-preview.sh` | none (diff, server dry run) |
 | `tests/fixtures/kubectl/track1/` | `scripts/fixtures/capture-track1.sh` | creates and deletes `tern-test-t1` (second revisions via `set image`); everything captured is a read, a dry run or `patch --local` |
 | `tests/fixtures/drift/` | `scripts/fixtures/capture-drift.sh` | recreates `tern-test-drift`, `tern-test-gitops` |
+| `tests/fixtures/real/compare/` | `scripts/fixtures/capture-compare.sh` (needs `create-peer`) | recreates `tern-test-mc` in both clusters |
 | `tests/fixtures/gitops/captured/` | `scripts/fixtures/capture-gitops.sh` | none (kustomize/helm render) |
 | `tests/fixtures/synthetic/` | `scripts/fixtures/synth.sh` | none (deterministic seed) |
 | `tests/fixtures/logs/` | `.tools/bin/luau scripts/fixtures/synth.luau -a logs 200 20261102 [prefix]` (see its header) | none (deterministic seed) |

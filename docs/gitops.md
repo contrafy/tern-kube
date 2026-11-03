@@ -109,6 +109,52 @@ then to [`helm.chart_sources`](configuration.md#helm), a list of
 `{chart, ref}` entries (`oci://...`, `repo/name` or a path) read with
 `helm show values`.
 
+### Across clusters
+
+`x` on a drift report or a drift item compares the same source against
+other contexts of the block's kubeconfig (`kubectl config view -o json`).
+The picker offers each other context with its API server, **All contexts
+(N)** (N counts the block's own) and, when
+[`compare.contexts`](configuration.md#compare) is set, **Configured: a,
+b**. A context on the block's API server is marked, a configured name the
+kubeconfig lacks is listed as such, and a choice with more than
+`compare.max_contexts` other contexts is disabled with the reason.
+
+Each context gets its own drift report of the source, made as above but
+pinned to that context: `kubectl --context C diff`
+(`mutations.preview_timeout_ms`) and the live listing for unmanaged
+objects (`explore.query_timeout_ms`). Every context uses the same explicit
+namespace (the block's, else `default`) so the rows line up; the header
+says which. The manifest index is shared. At most `compare.max_parallel`
+contexts run at once, the block's own report is reused unless it failed or
+ran with another namespace, and nothing reruns on its own: `r` reruns every
+column.
+
+The matrix has one row per resource over all contexts and one column per
+context, the block's own first. Above it, each context's line gives its API
+server, fetch time and a summary (`2 changed, 1 missing, 1 unmanaged`).
+
+| Cell | Meaning |
+| --- | --- |
+| `in sync` | declared, and applying it would change nothing |
+| `changed +A -R` | declared, applying it would change the live object |
+| `missing` | declared, not in that cluster |
+| `unmanaged` | live, of a kind the source uses, declared nowhere |
+| `-` | neither declared for nor live in that context |
+| `error` | that context's report failed (its counts line gives the reason) |
+| `pending` | waiting for a `compare.max_parallel` slot or for kubectl |
+
+`f` cycles all / drifted anywhere / differs between contexts, `[` `]` select
+a column, `enter` on a changed, missing or unmanaged cell opens that
+context's drift item (its diff, manifests and Argo CD / Flux owner), `Y`
+copies every pinned command and `x` chooses the contexts again.
+
+Views of another context are read-only: on the matrix and on another
+context's drift item, `a`, `A`, `E`, `X` and `ctrl+d` only say `Switch to
+<ctx> (c) to change it`. The approve block always acts on the block's own
+context. Outside Tern, the CLI makes the same comparison:
+[Several contexts](#several-contexts).
+
 ### Export
 
 `E` turns live objects into manifests: status, server-set metadata and

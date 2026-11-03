@@ -190,6 +190,43 @@ file like `-f`: hashed into the fingerprint, re-hashed before kubectl runs.
 - Test fixtures never contain Secret data: capture scripts list Secrets with
   `-o name` only (`scripts/fixtures/capture-json.sh`).
 
+## Compare across contexts
+
+Explore compare and the GitOps drift matrix read several clusters at once,
+so a mistake there could show data from, or act on, the wrong one.
+
+- Pinning: every side is its own kubectl run with `--context C` (and
+  `--kubeconfig` when known), built from validated route fields
+  (`plugin/lib/explore/query.luau`, `plugin/lib/explore/gitops.luau`).
+  Only contexts listed by the block's own kubeconfig are offered or run; a
+  name from `compare.contexts` that is not in it is shown, never run. Each
+  side is labelled with its context, API server and fetch time, and
+  contexts that share the base's API server are marked, so two names for
+  one cluster are not mistaken for two clusters.
+- Read-only: compare and matrix views never change anything. In them the
+  Explore core refuses quick actions, mutations and export (`Compare views
+  are read-only`), and on another context's drift item or the matrix
+  `a`, `A`, `E`, `X` and `ctrl+d` only say `Switch to <ctx> (c) to change
+  it`. The approve block stays single-target: the only way to change
+  another cluster is to switch the block to it with `c`, which resolves and
+  shows the new context as for any other change.
+- Secrets: values must take part in the comparison (two Secrets that differ
+  only in a value are not the same), so each side fetches the raw object.
+  Raw Secrets are held only in a transient field until every side of that
+  compare has answered; the diffs are then computed with the redaction
+  policy (`<redacted>` / `<redacted, changed>`, key names visible), and the
+  raw objects are dropped, also on error and on `r`
+  (`plugin/lib/explore/compare.luau`). They never reach a node, a copy, the
+  saved state or a log. `security.show_secret_values` shows the values
+  (base64, as kubectl prints `data`);
+  `security.sensitive_output_strict_mode` masks the same keys it masks in
+  the object view. `last-applied-configuration` is dropped before
+  comparing.
+- Budgets: `compare.max_contexts` caps the contexts one action can reach,
+  `compare.max_parallel` the runs in flight, `compare.max_objects` the list
+  size, and every run carries `explore.query_timeout_ms` (drift diffs:
+  `mutations.preview_timeout_ms`). Nothing refreshes on its own.
+
 ## Quick actions: exec never prompts
 
 By explicit user decision, the read-style quick actions (shell, follow logs,

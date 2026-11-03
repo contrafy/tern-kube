@@ -62,6 +62,7 @@ context came from, and only refreshes when you ask.
 | `U` `p` `P` | rollout undo, pause, resume |
 | `C` `u` `D` | cordon, uncordon, drain |
 | `H` | Helm releases (palette: **Tern Kube: Helm releases**); on a Helm-managed object, its release |
+| `x` | compare across contexts: the focused object, or the list in view |
 | `r` `Y` `?` | refresh, copy the command, help |
 
 In logs (`L`): `]` `[` next/previous error, `x` level floor, `a` container,
@@ -73,6 +74,19 @@ revision diff, `space` marks a revision to diff against, `ctrl+r` rollback,
 `ctrl+g` drift of the detected chart. Secret values stay masked.
 
 ![Helm releases with status badges](docs/screenshots/t3-releases-dark-wide.png)
+
+Compare (`x`) reads the object or list from other contexts of the same
+kubeconfig (one, all, or a configured set), each run pinned with
+`--context`, and shows where each side came from and when. One object gives
+a diff; a list gives one row per object and one column per context
+(present, same, changed, missing, extra). There `[` `]` pick the other
+context, `f` filters, `enter` opens an object's diff and `r` refetches
+every side; nothing refreshes on its own. Compare views are read-only (`c`
+switches context first), and Secret values stay masked.
+
+| One object across contexts | A list across contexts |
+| --- | --- |
+| ![Compare one object](docs/screenshots/m6-compare-object-dark-wide.png) | ![Compare a list](docs/screenshots/m6-compare-list-dark-wide.png) |
 
 Inside the GitOps views (drift, export, git), a view's own keys take
 precedence: there `t`, `X`, `e`, `p` and `P` keep their view meaning.
@@ -114,12 +128,17 @@ locally checked out Argo CD / Flux app (changed, missing, unmanaged), and
 `E` exports live objects as clean manifests, optionally onto a new branch
 and commit. Chart directories are matched to deployed releases on their
 own and rendered with the deployed values or a values file next to them.
-Push and pull requests are off unless you turn them on.
+Push and pull requests are off unless you turn them on. `x` on a drift
+report compares the same source against several clusters at once, one
+column per context.
 
 ![Drift report](docs/screenshots/m3b-drift-dark-wide.png)
 
+![One source against two clusters](docs/screenshots/m6-compare-drift-dark-wide.png)
+
 Outside Tern, [`bin/tern-kube-drift`](bin/tern-kube-drift) produces the same
-report for CI ([example workflow](examples/ci/github-actions-drift.yml)).
+report for CI, also for several contexts at once
+([example workflow](examples/ci/github-actions-drift.yml)).
 Details: [docs/gitops.md](docs/gitops.md).
 
 ## Install
@@ -190,7 +209,7 @@ v1.0 is when every row reads done. Release history: [CHANGELOG.md](CHANGELOG.md)
 | Relations graph with provenance | done |
 | Namespace events timeline | done |
 | Helm releases with history | done |
-| Compare one object across contexts | planned |
+| Compare one object across contexts | done |
 | **Quick actions** | |
 | Pod shell; workloads pick a ready pod | done |
 | Follow logs; workloads by selector, all containers | done |
@@ -220,7 +239,7 @@ v1.0 is when every row reads done. Release history: [CHANGELOG.md](CHANGELOG.md)
 | Branch and commit; push and `gh pr create` opt-in | done |
 | `tern-kube-drift` CLI (text, Markdown, JSON) and CI example | done |
 | Helm values diff and chart auto-detect | done |
-| Compare one source against several clusters | planned |
+| Compare one source against several clusters | done |
 | **Settings and config** | |
 | Versioned JSON at `~/.config/tern-kube/config.json`, with a JSON Schema | done |
 | **Tern Kube: Settings**: validation, reset, status checks | done |
