@@ -2,12 +2,13 @@
 # m2-<view>-<theme>-wide.png, m3-{result,guard,diff-expanded}-<theme>-wide.png,
 # m3b-<view>-<theme>-wide.png, m4-settings-<theme>-wide.png,
 # t1-{label-diff,drain-preview,undo-diff,edit-approve}-dark-wide.png,
-# t2-{logs,logs-multi,logs-context,events-lens,explore-events,explore-logs}-dark-wide.png
-# and t3-{releases,values-defaults,revision-diff,rollback,lens-chip}-dark-wide.png
+# t2-{logs,logs-multi,logs-context,events-lens,explore-events,explore-logs}-dark-wide.png,
+# t3-{releases,values-defaults,revision-diff,rollback,lens-chip}-dark-wide.png
+# and m6-compare-{object,list,drift}-dark-wide.png
 # (sourced by scripts/e2e.sh --shots). E2E_SHOTS limits the groups
-# (space-separated: m1 m2 m3 m3b m4 t1 t2 t3; default all). Every shot is of the
-# live sandbox window with the plugin loaded; check each PNG by eye before
-# committing.
+# (space-separated: m1 m2 m3 m3b m4 t1 t2 t3 m6; default all; m6 needs
+# E2E_MC=1). Every shot is of the live sandbox window with the plugin
+# loaded; check each PNG by eye before committing.
 
 shots_dir="$E2E_REPO/docs/screenshots"
 
@@ -427,8 +428,61 @@ shots_t3() {
 	reset_pane
 }
 
+m6_shot() { # m6_shot VIEW
+	dev shot "m6-compare-$1-$theme-wide" "$shots_dir/m6-compare-$1-$theme-wide.png" >/dev/null || fail "shot m6 $1"
+}
+
+# Compare across contexts on both kind clusters, as scenarios 70, 73 and 76:
+# tkm-web's pairwise diff, the Deployments list matrix of tern-test-mc and
+# the drift matrix of tests/integration/manifests/compare/source in a
+# throwaway git repository. Read-only.
+shots_m6() {
+	if [ "${E2E_MC:-0}" != 1 ]; then
+		echo "skip m6 shots (no peer cluster: scripts/cluster.sh create-peer, then E2E_MC=1)"
+		return 0
+	fi
+	. "$E2E_REPO/tests/e2e/compare.sh"
+	reset_pane
+	mc_object "$MCA" deploy tkm-web deployment || return
+	mc_pick_first || return
+	E2E_WAIT=20 xwait differs '[data-role="tern-kube.compare-status"] *' || return
+	m6_shot object
+	explore_close_all
+
+	mc_object "$MCA" deploy tkm-web deployment || return
+	xkey escape
+	xwait tkm-api '.tk-grid *' || return
+	mc_pick_first || return
+	E2E_WAIT=20 xwait changed "[data-role='tern-kube.compare-matrix'] *" || return
+	m6_shot list
+	explore_close_all
+
+	m6repo=$E2E_SB/m6-repo
+	rm -rf "$m6repo"
+	mkdir -p "$m6repo/apps"
+	cp "$E2E_REPO/tests/integration/manifests/compare/source/app.yaml" "$m6repo/apps/"
+	git -C "$m6repo" init -q -b main
+	git -C "$m6repo" -c user.name=e2e -c user.email=e2e@example.invalid add -A
+	git -C "$m6repo" -c user.name=e2e -c user.email=e2e@example.invalid commit -q -m init
+	sh_line "cd '$m6repo'"
+	mc_object "$MCA" deploy tkm-web deployment || return
+	xkey ctrl+g
+	E2E_WAIT=30 xwait "Drift sources" || return
+	xkey enter
+	E2E_WAIT=30 xwait "Drift of" || return
+	xkey x
+	E2E_WAIT=15 xwait "All contexts (2)" "[data-role='tern-kube.compare-picker'] *" || return
+	xkey G enter
+	E2E_WAIT=40 xwait "changed +4 -3" || return
+	m6_shot drift
+	explore_close_all
+	sh_line "cd '$E2E_REPO'"
+	rm -rf "$m6repo"
+	reset_pane
+}
+
 wants() {
-	case " ${E2E_SHOTS:-m1 m2 m3 m3b m4 t1 t2 t3} " in *" $1 "*) true ;; *) false ;; esac
+	case " ${E2E_SHOTS:-m1 m2 m3 m3b m4 t1 t2 t3 m6} " in *" $1 "*) true ;; *) false ;; esac
 }
 
 echo "SHOTS -> $shots_dir"
@@ -452,6 +506,7 @@ for theme in light dark; do
 				wants t1 && shots_t1
 				wants t2 && shots_t2
 				wants t3 && shots_t3
+				wants m6 && shots_m6
 			fi
 		fi
 	done
