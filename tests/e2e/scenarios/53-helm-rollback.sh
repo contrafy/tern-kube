@@ -53,7 +53,8 @@ eq "enter without the token" "$(latest)" "3/deployed/Upgrade complete"
 ctl type shop-a >/dev/null
 xkey enter
 E2E_WAIT=200 a_done || return
-contains "result card" "$(atext)" "shop-a is now at revision 4 (deployed): Rollback to 1"
+# The result line appears after the post-run history read, not with done.
+E2E_WAIT=30 wait_for "the rollback result line" a_has "shop-a is now at revision 4 (deployed): Rollback to 1"
 eq "helm history" "$(latest)" "4/deployed/Rollback to 1"
 entry=$(tail -n +"$((lines + 1))" "$AUDIT" | grep '"decision":"executed"' | tail -1)
 eq "audit family" "$(printf '%s' "$entry" | jq -r .family)" helm-rollback
