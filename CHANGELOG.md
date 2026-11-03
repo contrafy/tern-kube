@@ -2,10 +2,28 @@
 
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
-[Semantic Versioning](https://semver.org/spec/v2.0.0.html) (pre-1.0: minor
-versions may break).
+[Semantic Versioning](https://semver.org/spec/v2.0.0.html): from 1.0.0, config
+keys, link formats and the guard protocol change incompatibly only in a major
+release (0.x minor versions could break them).
 
 ## [Unreleased]
+
+## [1.0.0] - 2026-11-03
+
+Every feature on the v1.0 list is done; no code changes since 0.6.0.
+
+### Changed
+
+- Stable release: config keys, `tern-kube://` link formats and the guard protocol (version 1) now follow SemVer, so an incompatible change needs a major version.
+
+### Since the first public beta (0.1.0)
+
+- 0.1.3: Tern 0.9 support with native text editing in block fields.
+- 0.2.0: guarded `rollout undo`/`pause`/`resume`, `patch`, `label`, `annotate`, `cordon`, `uncordon`, `drain` (eviction and PodDisruptionBudget preview) and `edit` as preview then apply.
+- 0.3.0: native `kubectl logs` lens, `kubectl events` tables, Explore logs records and events timeline.
+- 0.4.0: Helm releases in Explore (history, values against chart defaults, revision diffs with masked secrets), guarded `helm rollback`, chart auto-detect in GitOps.
+- 0.5.0: remote SSH hosts, Linux hosts (Debian 13) and fish as login shell; approval grants minted by the window.
+- 0.6.0: compare objects and lists across contexts; one GitOps source against several clusters; `tern-kube-drift --context` repeatable.
 
 ## [0.6.0] - 2026-11-02
 
@@ -220,7 +238,8 @@ First public beta.
 - Docs: SDK capability matrix, configuration, performance, architecture,
   security model, testing, releasing.
 
-[Unreleased]: https://github.com/contrafy/tern-kube/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/contrafy/tern-kube/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/contrafy/tern-kube/compare/v0.6.0...v1.0.0
 [0.6.0]: https://github.com/contrafy/tern-kube/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/contrafy/tern-kube/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/contrafy/tern-kube/compare/v0.3.0...v0.4.0

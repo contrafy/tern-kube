@@ -6,7 +6,7 @@ original output one click away (**Raw**).
 
 ![Pods with the inline inspector open](docs/screenshots/m1-inspector-dark-wide.png)
 
-> Public beta, in active development. See [Features](#features) for what is done and what v1.0 adds.
+> Stable since 1.0.0. See [Features](#features) for what it covers.
 
 - **Click a column** to sort. Ages, quantities, ratios and restarts sort by
   value, not text.
@@ -188,7 +188,7 @@ both. Limits and troubleshooting: [remote hosts](docs/remote-hosts.md).
 
 ## Features
 
-v1.0 is when every row reads done. Release history: [CHANGELOG.md](CHANGELOG.md).
+Everything below is in 1.0. Release history: [CHANGELOG.md](CHANGELOG.md).
 
 | Feature | Status |
 | --- | --- |

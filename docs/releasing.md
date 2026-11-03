@@ -2,9 +2,9 @@
 
 ## Versioning
 
-- [SemVer](https://semver.org). Before 1.0.0 a minor bump (`0.y.0`) may
-  break config keys, link formats or the guard protocol; patch releases
-  (`0.y.z`) only fix.
+- [SemVer](https://semver.org). From 1.0.0 an incompatible change to config
+  keys, link formats or the guard protocol needs a major bump (`X.0.0`);
+  minor releases (`1.y.0`) add features, patch releases (`1.y.z`) only fix.
 - The plugin version is `version` in `plugin.toml` (Tern shows it in
   `tern plugin list`). Tags are `v<version>`.
 - `bin/tern-kube-drift` carries its own `VERSION` (it is also installed
