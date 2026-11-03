@@ -7,6 +7,38 @@ versions may break).
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-11-02
+
+### Added
+
+- Explore compare across contexts: `x` on an object (or the **Compare across contexts** chip in Explore and the lens inspector) compares it with other contexts of the same kubeconfig; on a list, `x` (or **Compare list**) compares the whole list. A picker offers each other context with its API server, **All contexts (N)** and, with `compare.contexts`, a **Configured** preset; contexts on the base's API server are marked, configured names missing from the kubeconfig are listed as such, and choices above `compare.max_contexts` are disabled with the reason. Every side is one pinned `kubectl --context C get ... -o json` (the version is pinned for objects, so both sides read the same apiVersion), the base included, so both sides are snapshots of the same moment.
+- Pairwise object diff: both sides' context, API server and fetch time, a status line (`same`, `differs (+a -r)`, `missing in <ctx>`), the differing paths (`spec.replicas 2 -> 3`) and the diff card. All contexts: one row per context (same, changed, missing, error, with the first paths) and `enter` opens its diff. A list: one row per object and one column per context (`present`, `same`, `changed`, `missing`, `extra`, `error`), per-column counts, short context labels with a legend, `f` all / differs / missing or extra, `[` `]` select the other context, and `enter` opens the object diff from the lists already fetched (no new query). `r` refetches every side, `Y` copies every pinned command.
+- Both sides are normalized before comparing: status, server-set metadata, ownerReferences, last-applied and rollout annotations, Service cluster IPs, Pod `nodeName` and the injected token volume, PVC `volumeName`. Secret values take part in the comparison but show as `<redacted>` / `<redacted, changed>` unless `security.show_secret_values` is on (then as kubectl prints `data`, base64).
+- GitOps across clusters: `x` on a drift report or drift item compares the source against other contexts (one, all, or the configured preset). The matrix has one row per resource and one column per context (server and fetch time, a summary such as `2 changed, 1 missing, 1 unmanaged`); cells `in sync`, `changed +a -r`, `missing`, `unmanaged`, `-`, `error`; `f` all / drifted anywhere / differs between contexts; `enter` opens that context's drift item. Every context gets the same explicit namespace. See [docs/gitops.md](docs/gitops.md#across-clusters).
+- `tern-kube-drift` 0.2.0: `--context` is repeatable and `--all-contexts` takes every context of the kubeconfig; two or more contexts give one combined report (text and Markdown matrix, JSON `version: 2`). A failing context is reported as an error column while the others still run; exit 2 if any context failed (report still printed), else 1 if any drifted. With one context the output is byte-identical to 0.1.0 (JSON `version: 1`). The CI example takes several `--context` per `DRIFT_SOURCES` line.
+- Settings section `compare` (shared by Explore and GitOps): `contexts`, `max_contexts` (8), `max_parallel` (4 queries or contexts in flight), `max_objects` (500 per side in a list compare).
+- `scripts/cluster.sh create-peer|delete-peer|mc-kubeconfig-path`: a second kind cluster `tern-kube-dev2` and the merged `.sandbox/kubeconfig-mc`; `tests/integration/compare/run.sh` (`make test-integration-compare`, in CI) drives compare and the CLI against both clusters with real kubectl and proves nothing was written; end-to-end scenarios 70-79 with `E2E_MC=1`; `make bench` times a 500-object list compare.
+
+### Changed
+
+- `x` is an Explore key on every route (compare); in the logs and events views it keeps its meaning (level floor, Warnings only).
+- The drift item view names its context; a drift item of another context hints that `c` switches.
+
+### Fixed
+
+- Drift reports are kept per kubeconfig and context: after `c`, the report of the previous context is no longer shown as the new context's.
+
+### Security
+
+- Compare and matrix views are read-only: quick actions, mutations, export, apply and delete are refused there (`Compare views are read-only`, `Switch to <ctx> (c) to change it`); the approve block stays single-target.
+- Raw Secret objects of a compare are held only until every side has answered; the diffs are then computed with values masked and the raw Secrets dropped.
+
+### Known limitations
+
+- Only contexts of the block's kubeconfig, and the same namespace on every side.
+- Drift and matrix runs do not check `explore.allow_live_queries` (drift reports never did); Explore compare does.
+- `/` does not filter the drift matrix picker.
+
 ## [0.5.0] - 2026-11-02
 
 ### Added
@@ -186,7 +218,8 @@ First public beta.
 - Docs: SDK capability matrix, configuration, performance, architecture,
   security model, testing, releasing.
 
-[Unreleased]: https://github.com/contrafy/tern-kube/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/contrafy/tern-kube/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/contrafy/tern-kube/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/contrafy/tern-kube/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/contrafy/tern-kube/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/contrafy/tern-kube/compare/v0.2.0...v0.3.0
