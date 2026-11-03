@@ -21,6 +21,7 @@ local Owner = require("./owner")
 local Parse = require("./parse")
 local Redact = require("../model/redact")
 local RevDiff = require("./revdiff")
+local SegCard = require("../render/segcard")
 local T = require("../explore/types")
 local Types = require("../model/types")
 local Values = require("./values")
@@ -1478,7 +1479,7 @@ local function diffBody(v: Ctx): { Node }
 		if result.masked[seg.key] and not hasHunk(seg) then
 			table.insert(out, maskedCard(seg, key))
 		else
-			table.insert(out, GitopsView.segmentCard(seg, key, false))
+			table.insert(out, SegCard.card(seg, key, false))
 			if result.masked[seg.key] then
 				table.insert(out, ui.muted(RevDiff.MASKED_NOTE, { key = key .. "-masked" }))
 			end

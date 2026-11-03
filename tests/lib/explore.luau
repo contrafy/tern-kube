@@ -133,6 +133,12 @@ function M.objectToken(resource: string, name: string, ns: string?): string?
 	return nil
 end
 
+-- Hands `value` over as kubectl stdout: M.decode resolves the token.
+function M.token(name: string, value: any): string
+	tokens[name] = value
+	return name
+end
+
 -- The default world: two contexts, current-context = M.CTX.
 function M.responder(argv: { string }): (Result?, string?)
 	local cmd = command(argv)

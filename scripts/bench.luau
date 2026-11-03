@@ -5,11 +5,14 @@
 -- fails on gross regressions only; docs/performance.md has the measured
 -- numbers and the in-window ones.
 local Capture = require("../plugin/lib/lens/capture")
+local CompareModel = require("../plugin/lib/compare/model")
+local CompareView = require("../plugin/lib/compare/view")
 local LogsQuery = require("../plugin/lib/logs/query")
 local LogsStore = require("../plugin/lib/logs/store")
 local LogsTypes = require("../plugin/lib/logs/types")
 local Query = require("../plugin/lib/lens/query")
 local View = require("../plugin/lib/lens/view")
+local fixtures = require("../tests/lib/fixtures")
 local json = require("../tests/lib/json")
 local runs = require("../tests/lib/runs")
 local synth = require("./fixtures/synth")
@@ -107,6 +110,68 @@ local function applyCase(name: string, filter: LogsQuery.Filter): Case
 	}
 end
 
+-- List compare (0.6.0): COMPARE_OBJECTS Deployments per context, copies of
+-- the captured tkm-web. Every other context lacks the first 10, has 10 of
+-- its own and scales every 10th: same, changed, missing and extra rows.
+local COMPARE_OBJECTS = 500
+local deployTemplate = json.decode(fixtures.read("real/compare/a-deployments-list.json")).items[1]
+
+local function deepCopy(v: any): any
+	if type(v) ~= "table" then
+		return v
+	end
+	local out = {}
+	for k, x in v do
+		out[k] = deepCopy(x)
+	end
+	return out
+end
+
+local function deployments(base: boolean): { any }
+	local out = table.create(COMPARE_OBJECTS)
+	for i = 1, COMPARE_OBJECTS do
+		local n = if base then i else i + 10
+		local d = deepCopy(deployTemplate)
+		d.metadata.name = string.format("tkm-%03d", n)
+		if not base and n % 10 == 0 then
+			d.spec.replicas = 5
+		end
+		out[i] = d
+	end
+	return out
+end
+
+local compareSides: { { any }? } = { deployments(true) }
+for i = 2, 4 do
+	compareSides[i] = deployments(false)
+end
+
+local function compareColumns(n: number): { CompareModel.Column }
+	local out: { CompareModel.Column } = {}
+	for i = 1, n do
+		out[i] = { context = "kind-tern-kube-c" .. i, label = "c" .. i, status = "ok" }
+	end
+	return out
+end
+
+local COMPARE_OPTS: CompareModel.ListOptions =
+	{ policy = { showSecrets = false, strict = false }, maxPaths = 3, maxObjects = COMPARE_OBJECTS }
+
+local function listMatrix(n: number): CompareModel.Matrix
+	return CompareModel.listMatrix(compareColumns(n), table.move(compareSides, 1, n, 1, {}), COMPARE_OPTS)
+end
+
+local matrix2 = listMatrix(2)
+-- A degenerate matrix (nothing paired, nothing changed) would time the wrong work.
+assert(
+	#matrix2.rows == COMPARE_OBJECTS + 10
+		and matrix2.rows[1].cells[2].state == "missing"
+		and matrix2.rows[20].cells[2].state == "changed"
+		and matrix2.rows[21].cells[2].state == "same"
+		and matrix2.rows[#matrix2.rows].cells[2].state == "extra",
+	"compare bench: unexpected synthetic matrix"
+)
+
 local cases: { Case } = {
 	{ name = "100 rows: build + render", run = buildAndRender(T100, vsm.default()), p95Limit = 50 },
 	{
@@ -179,6 +244,32 @@ local cases: { Case } = {
 	applyCase("20 000 lines: apply warn+ 1 source", { merge = false, minLevel = "warn", sources = { [1] = true } }),
 	applyCase("20 000 lines: apply text + page", { merge = false, text = "Checkout" }),
 	applyCase("20 000 lines: apply merge by time", { merge = true }),
+	{
+		name = "compare 500 deploys x 2 ctx: matrix",
+		run = function()
+			listMatrix(2)
+		end,
+		p95Limit = 200,
+	},
+	{
+		name = "compare 500 deploys x 4 ctx: matrix",
+		run = function()
+			listMatrix(4)
+		end,
+		p95Limit = 400,
+	},
+	{
+		name = "compare 500 deploys x 2 ctx: render",
+		run = function()
+			CompareView.matrix(matrix2, nil, {
+				narrow = true,
+				filter = "all",
+				title = "510 objects across 2 contexts",
+				window = { first = 1, last = #matrix2.rows },
+			})
+		end,
+		p95Limit = 100,
+	},
 }
 
 local failures: { string } = {}

@@ -58,5 +58,11 @@
     "rollback_wait_for_jobs": false,
     "rollback_cleanup_on_fail": false,
     "rollback_timeout_s": 240
+  },
+  "compare": {
+    "contexts": [],
+    "max_contexts": 8,
+    "max_parallel": 4,
+    "max_objects": 500
   }
 }

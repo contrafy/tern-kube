@@ -207,8 +207,28 @@ jobs:
             echo "skipped: tests/integration/events/check.sh is not on this branch"
           fi
 
-      # Evidence only: kubeconfigs (.sandbox/kubeconfig, .sandbox/rbac,
-      # .sandbox/drift-rbac, the harness HOME) are never copied or uploaded.
+      - name: Create peer kind cluster
+        id: peer
+        if: ${{ !cancelled() && steps.cluster.outcome == 'success' }}
+        run: |
+          if [ -f tests/integration/compare/run.sh ]; then
+            sh scripts/cluster.sh create-peer
+          else
+            echo "skipped: tests/integration/compare/run.sh is not on this branch"
+          fi
+
+      - name: Multi-cluster compare
+        if: ${{ !cancelled() && steps.peer.outcome == 'success' }}
+        run: |
+          if [ -f tests/integration/compare/run.sh ]; then
+            sh tests/integration/compare/run.sh
+          else
+            echo "skipped: tests/integration/compare/run.sh is not on this branch"
+          fi
+
+      # Evidence only: kubeconfigs (.sandbox/kubeconfig*, .sandbox/rbac,
+      # .sandbox/drift-rbac, the harness HOME, .sandbox/compare-it/kubeconfig-3)
+      # are never copied or uploaded.
       - name: Collect logs
         if: failure()
         run: |
@@ -221,9 +241,18 @@ jobs:
           if [ -d .sandbox/helm-compat ]; then
             cp -R .sandbox/helm-compat "$logs/helm-compat"
           fi
+          if [ -d .sandbox/compare-it ]; then
+            cp -R .sandbox/compare-it "$logs/compare-it"
+            rm -f "$logs/compare-it/kubeconfig-3"
+          fi
           .tools/bin/kind export logs --name tern-kube-dev "$logs/kind" || true
           kubectl --kubeconfig .sandbox/kubeconfig get events -A --sort-by=.lastTimestamp \
             >"$logs/events.txt" 2>&1 || true
+          if [ -f .sandbox/kubeconfig-dev2 ]; then
+            .tools/bin/kind export logs --name tern-kube-dev2 "$logs/kind-dev2" || true
+            kubectl --kubeconfig .sandbox/kubeconfig-dev2 get events -A --sort-by=.lastTimestamp \
+              >"$logs/events-dev2.txt" 2>&1 || true
+          fi
 
       - name: Upload logs
         if: failure()

@@ -169,6 +169,39 @@ describe("gitops.clean", function()
 		expect((obj :: any).metadata.finalizers).toEqual({ "x/y" })
 		expect(codes(notes)).toEqual({ "finalizers" })
 	end)
+
+	-- Cross-cluster compare needs the real values to tell equal Secrets from
+	-- different ones (Objdiff masks them afterwards); the last-applied copy
+	-- still goes, it would leak them in clear text.
+	it("keeps Secret values with secretValues = keep, still dropping last-applied", function()
+		local live = {
+			apiVersion = "v1",
+			kind = "Secret",
+			type = "Opaque",
+			metadata = {
+				name = "s",
+				namespace = "n",
+				annotations = { ["kubectl.kubernetes.io/last-applied-configuration"] = '{"stringData":{"p":"x"}}' },
+			},
+			data = { password = "aHVudGVyMg==" },
+		}
+		local obj, notes = Clean.clean(live, { secretValues = "keep" })
+		local s = obj :: any
+		expect(s.data).toEqual({ password = "aHVudGVyMg==" })
+		expect(s.stringData).toBeNil()
+		expect(s.metadata.annotations).toBeNil()
+		expect(codes(notes)).toEqual({})
+	end)
+
+	-- kube-root-ca.crt differs per cluster and is exactly what a compare
+	-- should show; export keeps skipping it.
+	it("keeps objects Kubernetes creates on its own with skipDefaults = false", function()
+		local root = { apiVersion = "v1", kind = "ConfigMap", metadata = { name = "kube-root-ca.crt" } }
+		local obj, notes = Clean.clean(root, { skipDefaults = false })
+		expect((obj :: any).metadata.name).toBe("kube-root-ca.crt")
+		expect(codes(notes)).toEqual({})
+		expect((Clean.clean(root))).toBeNil()
+	end)
 end)
 
 return nil

@@ -153,6 +153,38 @@ function M.currentContext(program: string, kubeconfig: string?): { string }
 	return append(kubeconfigArgs(program, kubeconfig), "config", "current-context")
 end
 
+-- Every context with its cluster and server; kubectl replaces credentials
+-- with DATA+OMITTED (no --raw), and nothing goes over the network.
+function M.contextsInfo(program: string, kubeconfig: string?): { string }
+	return append(kubeconfigArgs(program, kubeconfig), "config", "view", "-o", "json")
+end
+
+-- `deployments.v1.apps`: the version the base object was read at keeps
+-- every side of a compare on one apiVersion. Core kinds have only v1, and
+-- an unknown version leaves each side at its preferred one.
+function M.pinnedResource(ref: Ref): string
+	local info = Kinds.normalize(if ref.group and ref.group ~= "" then ref.kind .. "." .. ref.group else ref.kind)
+	local plural = if info.known then info.plural else string.lower(ref.kind)
+	local group = ref.group
+	if group == nil or group == "" then
+		return plural
+	end
+	if ref.version and ref.version ~= "" then
+		return plural .. "." .. ref.version .. "." .. group
+	end
+	return plural .. "." .. group
+end
+
+-- One object as a list: absence is `items: []` (exit 0), not a NotFound
+-- error to parse.
+function M.compareObject(program: string, target: Target, ref: Ref): { string }
+	local argv = M.base(program, target)
+	if ref.namespace and ref.namespace ~= "" then
+		append(argv, "-n", ref.namespace)
+	end
+	return append(argv, "get", M.pinnedResource(ref), "--field-selector", "metadata.name=" .. ref.name, "-o", "json")
+end
+
 function M.namespaces(program: string, target: Target): { string }
 	return append(M.base(program, target), "get", "namespaces", "-o", "name")
 end

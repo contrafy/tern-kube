@@ -124,6 +124,43 @@ counts the rest as only in Raw; it never falls back to raw for size. In the
 window (e2e `44-logs-large`, a 25 000-line fake log), the slowest finished
 logs `view` took 4.8 and 6.2 ms in two full runs (bound 250 ms).
 
+### Compare across contexts (0.6.0)
+
+Every side of a compare is one kubectl run, so time is bounded by the
+cluster round trips, not by the plugin:
+
+| Budget | Default | Effect |
+| --- | --- | --- |
+| `explore.query_timeout_ms` | 10 000 | each `get` side (and each drift listing) is killed after this |
+| `mutations.preview_timeout_ms` | 30 000 | each `kubectl diff` of a drift matrix column |
+| `compare.max_parallel` | 4 | runs (Explore) or whole contexts (drift matrix) in flight |
+| `compare.max_contexts` | 8 | other contexts one compare may reach |
+| `compare.max_objects` | 500 | objects per side of a list compare; more is refused with a message |
+
+Worst case for an Explore compare: `ceil(sides / max_parallel) x
+query_timeout_ms`, so 9 sides (base + 8) wait at most 30 s with the
+defaults. A context that fails or times out becomes an error cell; the
+others still finish. Nothing refreshes on its own: `r` refetches every
+side. On the two kind clusters (2026-11-02, kubectl v1.34.1), one object
+side (`get deployments.v1.apps --field-selector metadata.name=tkm-web -o
+json`) took p50 82 ms / max 174 ms on `kind-tern-kube-dev` and p50 77 ms /
+max 91 ms on `kind-tern-kube-dev2`
+(10 runs each, outside Tern).
+
+When every side has answered, the plugin normalizes, pairs and diffs once.
+Standalone luau, same machine, 30 runs; 500 Deployments per context (copies
+of the captured `tkm-web`; the other contexts lack 10, add 10 and scale
+every 10th, so 510 rows):
+
+| Case | p50 ms | p95 ms | Limit (p95) |
+| --- | --- | --- | --- |
+| list matrix, 2 contexts (normalize, pair, paths) | 4.84 | 10.08 | 200 |
+| list matrix, 4 contexts | 10.93 | 19.46 | 400 |
+| render the 510-row matrix (2 contexts) | 0.66 | 4.39 | 100 |
+
+Explore renders at most `general.max_rendered_rows` matrix rows at once;
+`enter` on a row diffs the objects already fetched, without a new query.
+
 ## Methodology and reproduction
 
 ```sh

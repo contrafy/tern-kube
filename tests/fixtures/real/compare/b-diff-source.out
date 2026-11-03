@@ -1,0 +1,57 @@
+diff -u -N /tmp/LIVE-3773028202/apps.v1.Deployment.tern-test-mc.tkm-web /tmp/MERGED-3504949783/apps.v1.Deployment.tern-test-mc.tkm-web
+--- /tmp/LIVE-3773028202/apps.v1.Deployment.tern-test-mc.tkm-web	2026-11-02 14:18:39
++++ /tmp/MERGED-3504949783/apps.v1.Deployment.tern-test-mc.tkm-web	2026-11-02 14:18:39
+@@ -6,16 +6,17 @@
+     kubectl.kubernetes.io/last-applied-configuration: |
+       {"apiVersion":"apps/v1","kind":"Deployment","metadata":{"annotations":{},"labels":{"app":"tkm-web"},"name":"tkm-web","namespace":"tern-test-mc"},"spec":{"replicas":3,"selector":{"matchLabels":{"app":"tkm-web"}},"template":{"metadata":{"labels":{"app":"tkm-web"}},"spec":{"containers":[{"image":"nginx:1.28-alpine","name":"web","ports":[{"containerPort":80}]}]}}}}
+   creationTimestamp: "2026-11-02T20:18:37Z"
+-  generation: 1
++  generation: 2
+   labels:
+     app: tkm-web
++    tier: frontend
+   name: tkm-web
+   namespace: tern-test-mc
+   resourceVersion: "23550"
+   uid: b18d2663-2842-4e02-a2b5-23e84a374375
+ spec:
+   progressDeadlineSeconds: 600
+-  replicas: 3
++  replicas: 2
+   revisionHistoryLimit: 10
+   selector:
+     matchLabels:
+@@ -31,7 +32,7 @@
+         app: tkm-web
+     spec:
+       containers:
+-      - image: nginx:1.28-alpine
++      - image: nginx:1.27-alpine
+         imagePullPolicy: IfNotPresent
+         name: web
+         ports:
+diff -u -N /tmp/LIVE-3773028202/v1.ConfigMap.tern-test-mc.tkm-config /tmp/MERGED-3504949783/v1.ConfigMap.tern-test-mc.tkm-config
+--- /tmp/LIVE-3773028202/v1.ConfigMap.tern-test-mc.tkm-config	2026-11-02 14:18:39
++++ /tmp/MERGED-3504949783/v1.ConfigMap.tern-test-mc.tkm-config	2026-11-02 14:18:39
+@@ -1,7 +1,7 @@
+ apiVersion: v1
+ data:
+   FEATURE_X: "on"
+-  LOG_LEVEL: debug
++  LOG_LEVEL: info
+ kind: ConfigMap
+ metadata:
+   annotations:
+diff -u -N /tmp/LIVE-3773028202/v1.ConfigMap.tern-test-mc.tkm-flags /tmp/MERGED-3504949783/v1.ConfigMap.tern-test-mc.tkm-flags
+--- /tmp/LIVE-3773028202/v1.ConfigMap.tern-test-mc.tkm-flags	2026-11-02 14:18:39
++++ /tmp/MERGED-3504949783/v1.ConfigMap.tern-test-mc.tkm-flags	2026-11-02 14:18:39
+@@ -0,0 +1,9 @@
++apiVersion: v1
++data:
++  ROLLOUT: canary
++kind: ConfigMap
++metadata:
++  creationTimestamp: "2026-11-02T20:18:39Z"
++  name: tkm-flags
++  namespace: tern-test-mc
++  uid: d32b5d84-10b7-442f-9c53-41d71bb43091

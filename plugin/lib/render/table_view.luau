@@ -350,6 +350,13 @@ local function actionChips(
 				actions = { click = "explore-route=diff|" .. row.key },
 			})
 		)
+		table.insert(
+			out,
+			ui.badge("Compare across contexts", "accent", {
+				title = "This object in another context of the kubeconfig, side by side (Explore, read-only)",
+				actions = { click = "explore-route=compare|" .. row.key },
+			})
+		)
 		if capture.events then
 			local label = string.lower(ref.kind) .. "/" .. ref.name
 			table.insert(

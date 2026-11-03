@@ -109,6 +109,52 @@ then to [`helm.chart_sources`](configuration.md#helm), a list of
 `{chart, ref}` entries (`oci://...`, `repo/name` or a path) read with
 `helm show values`.
 
+### Across clusters
+
+`x` on a drift report or a drift item compares the same source against
+other contexts of the block's kubeconfig (`kubectl config view -o json`).
+The picker offers each other context with its API server, **All contexts
+(N)** (N counts the block's own) and, when
+[`compare.contexts`](configuration.md#compare) is set, **Configured: a,
+b**. A context on the block's API server is marked, a configured name the
+kubeconfig lacks is listed as such, and a choice with more than
+`compare.max_contexts` other contexts is disabled with the reason.
+
+Each context gets its own drift report of the source, made as above but
+pinned to that context: `kubectl --context C diff`
+(`mutations.preview_timeout_ms`) and the live listing for unmanaged
+objects (`explore.query_timeout_ms`). Every context uses the same explicit
+namespace (the block's, else `default`) so the rows line up; the header
+says which. The manifest index is shared. At most `compare.max_parallel`
+contexts run at once, the block's own report is reused unless it failed or
+ran with another namespace, and nothing reruns on its own: `r` reruns every
+column.
+
+The matrix has one row per resource over all contexts and one column per
+context, the block's own first. Above it, each context's line gives its API
+server, fetch time and a summary (`2 changed, 1 missing, 1 unmanaged`).
+
+| Cell | Meaning |
+| --- | --- |
+| `in sync` | declared, and applying it would change nothing |
+| `changed +A -R` | declared, applying it would change the live object |
+| `missing` | declared, not in that cluster |
+| `unmanaged` | live, of a kind the source uses, declared nowhere |
+| `-` | neither declared for nor live in that context |
+| `error` | that context's report failed (its counts line gives the reason) |
+| `pending` | waiting for a `compare.max_parallel` slot or for kubectl |
+
+`f` cycles all / drifted anywhere / differs between contexts, `[` `]` select
+a column, `enter` on a changed, missing or unmanaged cell opens that
+context's drift item (its diff, manifests and Argo CD / Flux owner), `Y`
+copies every pinned command and `x` chooses the contexts again.
+
+Views of another context are read-only: on the matrix and on another
+context's drift item, `a`, `A`, `E`, `X` and `ctrl+d` only say `Switch to
+<ctx> (c) to change it`. The approve block always acts on the block's own
+context. Outside Tern, the CLI makes the same comparison:
+[Several contexts](#several-contexts).
+
 ### Export
 
 `E` turns live objects into manifests: status, server-set metadata and
@@ -138,7 +184,7 @@ repository for CI.
 
 ```sh
 tern-kube-drift (-f PATH [-R] | -k DIR | --helm CHART --release R [-f VALUES]...)
-                [--context C] [--kubeconfig K] [-n NS]
+                [--context C... | --all-contexts] [--kubeconfig K] [-n NS]
                 [--format text|markdown|json] [--max-diff-lines N] [--max-bytes N]
                 [--unmanaged KINDS|auto]
 ```
@@ -151,7 +197,9 @@ tern-kube-drift (-f PATH [-R] | -k DIR | --helm CHART --release R [-f VALUES]...
 
 With `--helm`, `-f` and `--values` name values files, as in Helm.
 `--context`, `--kubeconfig` and `-n` are passed to every kubectl call. The
-`KUBECTL` and `HELM` environment variables select the binaries.
+`KUBECTL` and `HELM` environment variables select the binaries. Give
+`--context` more than once, or `--all-contexts`, to compare one source
+against several clusters (see [Several contexts](#several-contexts)).
 
 `kubectl diff` sends each manifest to the API server as a server-side dry
 run, so admission webhooks and defaulting apply and nothing is written.
@@ -206,13 +254,63 @@ service-account token and Helm release Secrets, events, endpoints,
 endpoint slices, leases, `default` and `kube-*` namespaces and built-in
 `system:` / bootstrap RBAC objects.
 
+### Several contexts
+
+`--context` is repeatable: `--context prod-eu --context prod-us` diffs the
+same source against each context in that order, one after the other.
+`--all-contexts` takes every context of the kubeconfig
+(`kubectl config get-contexts -o name`) and cannot be combined with
+`--context`; there is no cap. Naming a context twice is a usage error. The
+mode follows the number of contexts: exactly one (also a kubeconfig with a
+single context under `--all-contexts`) gives the report above, byte for
+byte, JSON `version: 1`; two or more give a combined report.
+
+Per context the CLI runs the same `kubectl diff`, the declared-object
+listing `kubectl apply --dry-run=client` (always, so objects the diff does
+not mention can be shown as in sync) and, with `--unmanaged`, the
+unmanaged listing. Helm charts are rendered once. A context that fails
+(unreachable, unknown, Forbidden) becomes an error entry with kubectl's
+last stderr line; the other contexts still run. kubectl's stderr is
+printed with a `[context]` prefix. Secret last-applied lines are redacted
+in every context.
+
+The combined report has one row per object over all contexts and one
+column per context. Cells: `in sync` (declared, no diff), `modify +A -R`,
+`create`, `delete`, `unknown`, `unmanaged`, `-` (not in that context's
+source or live listing) and `error`.
+
+- text: `Drift: LABEL across N contexts (namespace NS)`, the matrix
+  (`RESOURCE  NAMESPACE  ctx1  ctx2 ...`), one result line per context
+  (`ctx: 3 resources drifted (...)`, `ctx: no drift.`, `ctx: error: ...`),
+  notes tagged `[ctx]`, then the diffs as
+  `=== [ctx] modify Deployment.apps shop/web (+4 -3)`.
+- markdown: heading, `**D of N contexts drifted**`, the matrix table, a
+  `Context | Result` table, then one `<details>` block per context and
+  resource (`[ctx] modify ...`). Escaping and fences as above.
+- json, `version: 2`: `version`, `source`, `namespace`, `drift` (any
+  context drifted), `summary` (`contexts`, `drifted`, `errors`),
+  `contexts` (in order: `context`, `status` `"ok"` or `"error"`, `error`,
+  then the version 1 fields `drift`, `summary`, `resources`, `unmanaged`,
+  `notes`; an error entry has `null` for `drift`, `summary`, `unmanaged`
+  and empty `resources` and `notes`) and `matrix` (`key`, `group`,
+  `version`, `kind`, `namespace`, `name`, `cells`: one
+  `{context, state, added, removed}` per context in the same order, `state`
+  one of `insync`, `create`, `modify`, `delete`, `unknown`, `unmanaged`,
+  `absent`, `error`; `added`/`removed` are `null` except for diffed
+  states).
+
+With `--max-bytes`, the matrix and the per-context results are always
+kept; whole diffs are added in context order until one does not fit, so
+they are dropped from the last context backwards. Budget for N contexts
+when posting a comment.
+
 ### Exit status
 
 | Status | Meaning |
 | --- | --- |
 | 0 | no drift |
-| 1 | drift: at least one resource differs, or an unmanaged object was found |
-| 2 | error: bad arguments, kubectl or helm failed (their message is on stderr) |
+| 1 | drift: at least one resource differs, or an unmanaged object was found (several contexts: in any context) |
+| 2 | error: bad arguments, kubectl or helm failed (their message is on stderr); several contexts: any context failed, the report is still printed |
 
 ## CI
 
@@ -229,7 +327,8 @@ a weekday schedule and on demand:
   at the end; fork pull requests receive no secrets and skip the check.
 
 Set `DRIFT_SOURCES` (one CLI source per line, for example
-`-k deploy/overlays/production` or `-R -f k8s -n web`) and copy
+`-k deploy/overlays/production` or `-R -f k8s -n web`; a line may add
+several `--context C` to report on several clusters at once) and copy
 `bin/tern-kube-drift` to `.github/tern-kube-drift`. The workflow pins
 `kubectl` by version and SHA-256 and `actions/checkout` by commit.
 

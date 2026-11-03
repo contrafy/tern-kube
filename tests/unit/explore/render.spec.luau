@@ -266,14 +266,15 @@ describe("explore render: other views", function()
 		local seen: { [string]: string } = {}
 		for _, k in Render.KEYS do
 			local desc = k[2]
-			-- Route-local rows (GitOps views, logs and events, Helm views) may
-			-- reuse keys: inside their view they win.
+			-- Route-local rows (GitOps views, logs and events, Helm views,
+			-- compare views) may reuse keys: inside their view they win.
 			if
 				string.find(desc, "^Drift:")
 				or string.find(desc, "^Export:")
 				or string.find(desc, "^Git:")
 				or string.find(desc, "^Logs:")
 				or string.find(desc, "^Helm:")
+				or string.find(desc, "^Compare:")
 			then
 				continue
 			end

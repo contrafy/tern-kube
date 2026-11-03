@@ -502,6 +502,14 @@ describe("table view events overlay", function()
 		local node = render(build("ns-apps/get_pods"), vsm.opened(vsm.default(), "/Pod/tern-test-apps/db-0"))
 		expect(nodes.find(node, nodes.hasText("Events for"))).toBeNil()
 	end)
+
+	-- Track 5 plan 1/2.6: the lens opens the context picker of Explore's
+	-- compare route for the row, so one object can be checked across clusters.
+	it("every object row offers Compare across contexts", function()
+		local node = render(build("ns-apps/get_pods"), vsm.opened(vsm.default(), "/Pod/tern-test-apps/db-0"))
+		local insp = nodes.find(node, nodes.role("tern-kube.inspector")) :: any
+		expect(chipAction(insp, "Compare across contexts")).toBe("explore-route=compare|/Pod/tern-test-apps/db-0")
+	end)
 end)
 
 -- Plan 7: rows of Helm-managed objects link their release. `-o json` rows

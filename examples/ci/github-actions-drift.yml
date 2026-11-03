@@ -33,13 +33,19 @@ concurrency:
 env:
   # One tern-kube-drift source per line (-f PATH [-R] | -k DIR |
   # --helm CHART --release R [-f VALUES]...), plus optional -n NS.
+  # A line may name its own contexts (--context C, repeatable, or
+  # --all-contexts): with two or more it reports one matrix across them.
   # Words are split on spaces: no quoting, no spaces in paths.
   DRIFT_SOURCES: |
     -k deploy/overlays/production
-  # Context inside the kubeconfig; empty = its current-context.
+  # Context inside the kubeconfig for lines without --context; empty = its
+  # current-context.
   DRIFT_CONTEXT: ""
   MAX_DIFF_LINES: "200"
-  # GitHub rejects comments over 65536 characters.
+  # GitHub rejects comments over 65536 characters. The budget is split
+  # evenly over the source lines; a line with several contexts shares its
+  # part between them (matrix first, then diffs until the budget is spent),
+  # so raise it or lower MAX_DIFF_LINES for many contexts.
   MAX_COMMENT_BYTES: "60000"
   TKUBE_DRIFT: .github/tern-kube-drift
   KUBECTL_VERSION: v1.34.1
@@ -95,12 +101,19 @@ jobs:
             set -f
             set -- $line
             set +f
-            sh "$TKUBE_DRIFT" "$@" ${DRIFT_CONTEXT:+--context "$DRIFT_CONTEXT"} --kubeconfig "$KUBECONFIG" \
+            case " $line " in
+            *" --context "* | *" --context="* | *" --all-contexts "*) ctx= ;;
+            *) ctx=$DRIFT_CONTEXT ;;
+            esac
+            sh "$TKUBE_DRIFT" "$@" ${ctx:+--context "$ctx"} --kubeconfig "$KUBECONFIG" \
               --format markdown --max-diff-lines "$MAX_DIFF_LINES" --max-bytes "$budget" >"$RUNNER_TEMP/one.md"
             rc=$?
             if [ "$rc" -gt 1 ]; then
               echo "::error::tern-kube-drift failed for: $line"
-              printf '### Drift: %s\n\ntern-kube-drift failed (exit %s); see the workflow log.\n' "$line" "$rc" >"$RUNNER_TEMP/one.md"
+              # With several contexts a failed context is part of the report.
+              if [ ! -s "$RUNNER_TEMP/one.md" ]; then
+                printf '### Drift: %s\n\ntern-kube-drift failed (exit %s); see the workflow log.\n' "$line" "$rc" >"$RUNNER_TEMP/one.md"
+              fi
             fi
             cat "$RUNNER_TEMP/one.md" >>"$report"
             printf '\n' >>"$report"

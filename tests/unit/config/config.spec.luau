@@ -572,6 +572,58 @@ describe("config invalid JSON", function()
 	end)
 end)
 
+-- One `compare` section serves Explore compare and the GitOps matrix: the
+-- budgets bound how many clusters one keystroke may query, so bad values
+-- fall back to the defaults and the preset never silently drops a name.
+describe("config compare", function()
+	it("defaults to no preset and bounded fan-out", function()
+		local cfg = parse(nil)
+		expect(cfg.compare).toEqual({ contexts = {}, max_contexts = 8, max_parallel = 4, max_objects = 500 })
+	end)
+
+	it("reads the preset contexts and budgets", function()
+		local cfg, diags =
+			parse([[{"compare": {"contexts": ["kind-tern-kube-dev2", "arn:aws:eks:eu-west-1:1:cluster/prod"],
+			"max_contexts": 2, "max_parallel": 1, "max_objects": 5000}}]])
+		expect(diags).toEqual({})
+		expect(cfg.compare.contexts).toEqual({ "kind-tern-kube-dev2", "arn:aws:eks:eu-west-1:1:cluster/prod" })
+		expect(cfg.compare.max_contexts).toBe(2)
+		expect(cfg.compare.max_parallel).toBe(1)
+		expect(cfg.compare.max_objects).toBe(5000)
+	end)
+
+	-- Context names reach kubectl argv after --context: empty, control
+	-- characters or a leading dash never get there; duplicates would run the
+	-- same cluster twice.
+	it("drops bad preset entries one by one with an error", function()
+		local cfg, diags = parse([[{"compare": {"contexts": ["a", "", "-x", "a", 7, "b\u0001", "b"]}}]])
+		expect(cfg.compare.contexts).toEqual({ "a", "b" })
+		for _, path in { "compare.contexts[2]", "compare.contexts[3]", "compare.contexts[4]", "compare.contexts[5]" } do
+			expect(find(diags, path).level).toBe("error")
+		end
+		expect(find(diags, "compare.contexts[6]").level).toBe("error")
+	end)
+
+	it("rejects a preset above 32 names and budgets out of range", function()
+		local names = {}
+		for i = 1, 33 do
+			table.insert(names, string.format('"c%d"', i))
+		end
+		local cfg, diags = parse(
+			string.format(
+				[[{"compare": {"contexts": [%s], "max_contexts": 0, "max_parallel": 17, "max_objects": 5001}}]],
+				table.concat(names, ",")
+			)
+		)
+		expect(cfg.compare).toEqual(Config.defaults().compare)
+		for _, path in { "compare.contexts", "compare.max_contexts", "compare.max_parallel", "compare.max_objects" } do
+			expect(find(diags, path).level).toBe("error")
+		end
+		local _, notList = parse([[{"compare": {"contexts": "prod"}}]])
+		expect(find(notList, "compare.contexts").level).toBe("error")
+	end)
+end)
+
 describe("config path", function()
 	it("prefers an absolute XDG_CONFIG_HOME", function()
 		expect(Config.path({ XDG_CONFIG_HOME = "/x/cfg", HOME = "/Users/me" })).toBe("/x/cfg/tern-kube/config.json")

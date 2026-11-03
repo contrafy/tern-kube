@@ -164,6 +164,24 @@ describe("mutation.objdiff compute", function()
 		expect(result.summary.segments[1].key).toBe("v1.ConfigMap.tern-test-t1.cm")
 		expect(result.summary.segments[2].key).toBe("v1.ConfigMap.tern-test-t1.cm2")
 	end)
+
+	-- Comparing two clusters, the headers name the contexts instead of
+	-- live/merged; Diffseg still reads the object key from the new side.
+	it("names both sides with the paths option", function()
+		local cm = objects("get-cm-json.txt")
+		local changed = table.clone(cm[1])
+		changed.data = { k = "other" }
+		local result = Objdiff.compute(Objdiff.pair({ cm[1] }, { changed }), {
+			showSecretValues = false,
+			null = json.null,
+			paths = { "kind-tern-kube-dev", "arn:aws:eks:x:1:cluster/prod" },
+		})
+		local seg = result.summary.segments[1]
+		expect(seg.lines[1]).toBe("--- kind-tern-kube-dev/v1.ConfigMap.tern-test-t1.cm")
+		expect(seg.lines[2]).toBe("+++ arn:aws:eks:x:1:cluster/prod/v1.ConfigMap.tern-test-t1.cm")
+		expect(seg.key).toBe("v1.ConfigMap.tern-test-t1.cm")
+		expect(seg.name).toBe("cm")
+	end)
 end)
 
 return nil

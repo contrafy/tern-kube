@@ -6,6 +6,10 @@
 
 local Cells = require("../render/cells")
 local Command = require("../kubectl/command")
+local Compare = require("./compare")
+local CompareModel = require("../compare/model")
+local CompareView = require("../compare/view")
+local Contexts = require("../compare/contexts")
 local DescribeView = require("../render/describe_view")
 local EventsModel = require("../events/model")
 local Gitops = require("./gitops")
@@ -96,6 +100,7 @@ local ROUTE_TITLE: { [string]: string } = {
 	contexts = "Contexts",
 	namespaces = "Namespaces",
 	kinds = "Kinds",
+	compare = "Compare",
 }
 
 local function chip(text: string, action: string, props: { [string]: any }?): Node
@@ -202,6 +207,25 @@ local function targetNodes(s: State): { Node }
 	return out
 end
 
+-- `Compare deployment/web · dev2`, a drill-in `web vs dev2`.
+local function compareCrumb(route: Route): string
+	if route.item then
+		local name = string.match(route.item, "([^/]+)$") or route.item
+		return name .. " vs " .. (route.context or "?")
+	end
+	local ref = route.ref
+	local label = "Compare " .. (if ref then string.lower(ref.kind) .. "/" .. ref.name else route.resource or "pods")
+	local across = route.across
+	if across == "*" then
+		return label .. " · all contexts"
+	elseif across == "@" then
+		return label .. " · configured"
+	elseif across then
+		return label .. " · " .. string.sub(across, 2)
+	end
+	return label
+end
+
 local function crumbLabel(s: State, route: Route): string
 	if route.kind == "list" then
 		return route.resource or "pods"
@@ -211,6 +235,9 @@ local function crumbLabel(s: State, route: Route): string
 	end
 	if Helm.isRoute(route.kind) then
 		return HelmView.crumb(route)
+	end
+	if Compare.isRoute(route.kind) then
+		return compareCrumb(route)
 	end
 	local title = ROUTE_TITLE[route.kind] or route.kind
 	local ref = route.ref
@@ -460,8 +487,19 @@ local function pagedGrid(
 	})
 end
 
+-- Rows first..last of a matrix over the route's items. Sized by
+-- general.max_rendered_rows alone, not the block height: the counts, notes
+-- and legend above a matrix vary with its columns, so CHROME_LINES cannot
+-- predict them and a height-sized window hid rows on a half-empty pane.
+local function itemWindow(s: State): CompareView.Window
+	local items = State.items(s)
+	local size = s.config.general.max_rendered_rows
+	local first, last = State.window(State.selectedIndex(s, items), #items, s.offset[State.currentKey(s)], size)
+	return { first = first, last = last }
+end
+
 -- What the GitOps views need: the shared paged grid and chip builders.
-local function gitopsView(s: State, route: Route, object: any?): GitopsView.Ctx
+local function gitopsView(s: State, route: Route, object: any?, cols: number?): GitopsView.Ctx
 	local selected = State.selectedItem(s)
 	return {
 		g = s.gitops,
@@ -473,6 +511,8 @@ local function gitopsView(s: State, route: Route, object: any?): GitopsView.Ctx
 		end,
 		chip = chip,
 		object = object,
+		width = cols,
+		window = if route.kind == "matrix" then itemWindow(s) else nil,
 	}
 end
 
@@ -537,7 +577,15 @@ local function listBody(s: State, route: Route, load: Load?): { Node }
 	if f ~= "" then
 		summary ..= string.format(" · %d match /%s", #rows, f)
 	end
-	local out: { Node } = { ui.text({ ui.span(summary, "muted") }, { key = "count" }) }
+	local out: { Node } = {
+		ui.row({
+			ui.text({ ui.span(summary, "muted") }, { key = "count" }),
+			chip("Compare list (x)", "nav=compare", {
+				key = "compare",
+				title = "This list in other contexts of the kubeconfig: present, same, changed, missing (read-only)",
+			}),
+		}, { key = "count-row", wrap = true, role = "tern-kube.chips" }),
+	}
 	if #rows == 0 then
 		table.insert(out, ui.muted("Nothing matches the filter. Esc clears it.", { key = "empty" }))
 		return out
@@ -577,6 +625,10 @@ local function actionChips(s: State, ref: Ref): Node
 		chip("Describe (d)", "nav=describe", { key = "a-describe" }),
 		chip("Object (y)", "nav=detail", { key = "a-detail" }),
 		chip("Relations (R)", "nav=relations", { key = "a-relations" }),
+		chip("Compare across contexts (x)", "nav=compare", {
+			key = "a-compare",
+			title = "This object in other contexts of the kubeconfig, side by side (read-only)",
+		}),
 	}
 	local workload = ref.kind == "Pod"
 		or ref.kind == "Deployment"
@@ -773,7 +825,7 @@ local function detailBody(s: State, route: Route, load: Load?): { Node }
 		table.insert(out, ui.row(owners, { key = "owners", wrap = true, role = "tern-kube.chips" }))
 	end
 	table.insert(out, actionChips(s, ref))
-	local controller = GitopsView.controllerLine(gitopsView(s, route, obj), obj)
+	local controller = GitopsView.controllerLine(gitopsView(s, route, obj, nil), obj)
 	if controller then
 		table.insert(out, controller)
 	end
@@ -1433,7 +1485,161 @@ local function namesBody(s: State, route: Route, load: Load?): { Node }
 	return out
 end
 
-local function body(s: State): Node
+-- Compare ----------------------------------------------------------------------
+
+local function compareSubject(s: State, route: Route): string
+	local ref = route.ref
+	if ref then
+		return string.lower(ref.kind) .. "/" .. ref.name .. (if ref.namespace then " in " .. ref.namespace else "")
+	end
+	local sc = Compare.scope(State.compareCtx(s), route)
+	local where = if sc.all
+		then "all namespaces"
+		elseif sc.namespace then sc.namespace
+		else "the context default namespace"
+	return (route.resource or "pods") .. " in " .. where
+end
+
+-- The notice a compare carries: Secret values masked (or shown), strict mode.
+local function compareNotice(s: State, secret: boolean): string?
+	local policy = Redact.fromConfig(s.config)
+	if secret then
+		return if policy.showSecrets then Redact.REVEALED else M.SENSITIVE
+	end
+	return if policy.strict then Redact.STRICT else nil
+end
+
+local function compareChips(s: State, route: Route, l: Compare.Load): Node
+	local out: { Node } = {}
+	if l.ref == nil and route.item == nil then
+		local f = Compare.filter(s.compare, State.compareCtx(s), route)
+		table.insert(
+			out,
+			chip("Show: " .. CompareView.FILTER_TEXT[f] .. " (f)", "compare-key=f", {
+				key = "c-filter",
+				tone = if f == "all" then "neutral" else "accent",
+				title = "All objects / only those that differ / only missing or extra",
+			})
+		)
+	end
+	if #l.columns > 2 then
+		table.insert(out, chip("Next context (])", "compare-key=]", { key = "c-next" }))
+	end
+	table.insert(out, chip("Pick again (x)", "compare-key=x", { key = "c-pick" }))
+	table.insert(out, chip("Copy commands (Y)", "copy=cmd", { key = "c-copy" }))
+	return ui.row(out, { key = "c-chips", wrap = true, role = "tern-kube.chips" })
+end
+
+local function compareBody(s: State, route: Route): { Node }
+	if not s.config.explore.allow_live_queries then
+		return { ui.muted("Live queries are disabled (explore.allow_live_queries = false).", { key = "off" }) }
+	end
+	local cctx = State.compareCtx(s)
+	local out: { Node } = {
+		ui.text({ ui.span("Comparing " .. compareSubject(s, route), "strong") }, { key = "head" }),
+	}
+	local cl = Compare.contextsLoad(s.compare, cctx)
+	if cl == nil or cl.status == "loading" then
+		table.insert(
+			out,
+			ui.muted(
+				if cl
+					then "Running " .. typed(cl.argv) .. " …"
+					elseif State.resolved(s) then "Not loaded. Press r."
+					else "Resolving the cluster context …",
+				{ key = "loading" }
+			)
+		)
+		return out
+	elseif cl.status == "error" then
+		table.insert(out, errorNode(cl.error or "kubectl config view failed"))
+		return out
+	end
+	local selected = State.selectedItem(s)
+	local sel = if selected then selected.key else nil
+	if route.across == nil then
+		local f = string.lower(s.filter[State.currentKey(s)] or "")
+		local choices: { Contexts.Choice } = {}
+		for _, ch in Compare.choices(s.compare, cctx) do
+			if f == "" or string.find(string.lower(ch.label), f, 1, true) then
+				table.insert(choices, ch)
+			end
+		end
+		for _, n in CompareView.picker(choices, sel) do
+			table.insert(out, n)
+		end
+		return out
+	end
+	local l = Compare.load(s.compare, cctx, route)
+	if l == nil then
+		table.insert(out, ui.muted("Not loaded. Press r.", { key = "idle" }))
+		return out
+	elseif l.error then
+		table.insert(out, errorNode(l.error))
+		table.insert(out, ui.muted("x picks another context.", { key = "again" }))
+		return out
+	end
+	table.insert(out, compareChips(s, route, l))
+	if l.matrix == nil then
+		local lines: { Node } = {}
+		for i, c in l.columns do
+			local state = if c.status == "running"
+				then "fetching …"
+				elseif c.status == "pending" then "waiting (compare.max_parallel)"
+				elseif c.status == "ok" then "done"
+				else "error: " .. (c.error or "kubectl failed")
+			table.insert(lines, ui.muted(c.context .. ": " .. state, { key = "w" .. i }))
+		end
+		table.insert(out, ui.col(lines, { key = "progress", role = "tern-kube.compare-progress" }))
+		return out
+	end
+	local notice = compareNotice(s, l.secret)
+	if Compare.isPair(s.compare, cctx, route) then
+		local p, pcols = Compare.pair(s.compare, cctx, route)
+		if p == nil or pcols == nil or #pcols < 2 then
+			table.insert(out, ui.muted("No other context to diff with.", { key = "none" }))
+			return out
+		end
+		for _, n in CompareView.pair(p.cell, p.result, pcols, notice) do
+			table.insert(out, n)
+		end
+		return out
+	end
+	if notice then
+		table.insert(out, ui.muted(notice, { key = "notice", role = "tern-kube.notice" }))
+	end
+	local m = l.matrix :: CompareModel.Matrix
+	local opts: CompareView.MatrixOpts = {
+		-- Short labels and a legend at every width: the block's reported
+		-- columns did not follow the split on Tern 0.9.8, and full context
+		-- names were cut by the grid either way.
+		narrow = true,
+		filter = Compare.filter(s.compare, cctx, route),
+		title = if l.ref
+			then string.format("%d contexts", #m.columns)
+			else string.format("%d objects across %d contexts", #m.rows, #m.columns),
+		context = route.context,
+		window = nil,
+		empty = nil,
+	}
+	local nodes: { Node }
+	if l.ref then
+		nodes = CompareView.fanout(m, sel, opts)
+	else
+		opts.window = itemWindow(s)
+		nodes = CompareView.matrix(
+			Compare.visible(s.compare, cctx, route, s.filter[State.currentKey(s)]) :: CompareModel.Matrix,
+			sel,
+			opts
+		)
+	end
+	for _, n in nodes do
+		table.insert(out, n)
+	end
+	return out
+end
+
+local function body(s: State, cols: number?): Node
 	local route = s.stack[#s.stack]
 	local load = State.currentLoad(s)
 	local children: { Node }
@@ -1451,9 +1657,11 @@ local function body(s: State): Node
 		children = eventsBody(s, route, load)
 	elseif Gitops.isRoute(route.kind) then
 		local ref = route.ref
-		children = GitopsView.body(gitopsView(s, route, if ref then State.findObject(s, ref) else nil))
+		children = GitopsView.body(gitopsView(s, route, if ref then State.findObject(s, ref) else nil, cols))
 	elseif Helm.isRoute(route.kind) then
 		children = HelmView.body(helmView(s, route))
+	elseif Compare.isRoute(route.kind) then
+		children = compareBody(s, route)
 	else
 		children = namesBody(s, route, load)
 	end
@@ -1472,7 +1680,17 @@ local HINTS: { [string]: string } = {
 	contexts = "j/k move · enter choose · / filter · esc back",
 	namespaces = "j/k move · enter choose · / filter · esc back",
 	kinds = "j/k move · enter list · / filter · esc back",
+	["compare-pick"] = "j/k move · enter pick · / filter · esc back",
+	compare = "j/k move · enter diff · f filter · [ ] context · x pick again · r refetch all · Y copy commands · esc back",
+	["compare-pair"] = "[ ] other context · x pick again · r refetch all · Y copy commands · esc back",
 }
+
+local function compareHint(s: State, route: Route): string
+	if route.across == nil then
+		return HINTS["compare-pick"]
+	end
+	return HINTS[if Compare.isPair(s.compare, State.compareCtx(s), route) then "compare-pair" else "compare"]
+end
 
 local function dock(s: State): Node
 	local route = s.stack[#s.stack]
@@ -1500,6 +1718,7 @@ local function dock(s: State): Node
 		local hint = if Gitops.isRoute(route.kind)
 			then GitopsView.hint(route)
 			elseif Helm.isRoute(route.kind) then HelmView.hint(route)
+			elseif Compare.isRoute(route.kind) then compareHint(s, route)
 			else HINTS[route.kind]
 		spans = { ui.span(hint or "? help", "muted") }
 	end
@@ -1527,6 +1746,15 @@ M.KEYS = {
 	{ "v / V", "Events timeline of the namespace / of the focused object (with what it owns)", "Events" },
 	{ "] / [", "Logs: next / previous error; events: next / previous Warning", "Next error" },
 	{ "x", "Logs: level floor (all, warnings+, errors+); events: Warning only", "Level chips" },
+	{
+		"x",
+		"Compare across contexts: the list in view, or the focused object; pick one context, all, or the configured set",
+		"Compare across contexts",
+	},
+	{ "[ / ]", "Compare: previous / next other context (column, or the other side of the diff)", "Next context" },
+	{ "f", "Compare: show all objects / only what differs / only missing or extra", "Show chip" },
+	{ "enter", "Compare: pick the context; open the pairwise diff of a row (no new query)", "Click a row" },
+	{ "r / Y", "Compare: refetch every context / copy every pinned command, one per line", "Copy commands" },
 	{ "w / o / a", "Logs: wrap long lines, previous instance, cycle the container", "Wrap, previous, containers" },
 	{ "enter", "Logs: inspect the selected line (fields, stack, copy line / message / JSON)", "Click a line" },
 	{ "s", "Shell in a new split (workloads: a ready pod)", "Shell" },
@@ -1588,7 +1816,7 @@ end
 
 -- View -----------------------------------------------------------------------
 
-function M.view(s: State, _cols: number, _rows: number): View
+function M.view(s: State, cols: number, _rows: number): View
 	local route = s.stack[#s.stack]
 	local children: { Node } = { header(s) }
 	if s.targetError and route.kind ~= "contexts" then
@@ -1613,7 +1841,7 @@ function M.view(s: State, _cols: number, _rows: number): View
 	for _, n in GitopsView.inputs(s.gitops, route, editing, if editing then s.input else nil) do
 		table.insert(children, n)
 	end
-	table.insert(children, body(s))
+	table.insert(children, body(s, cols))
 	return {
 		main = ui.col(children, { role = "tern-kube.explore" }),
 		dock = dock(s),

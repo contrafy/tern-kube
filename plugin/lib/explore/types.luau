@@ -31,6 +31,8 @@ export type RouteKind =
 	| "helm-hooks"
 	| "helm-resources"
 	| "helm-diff"
+	| "compare"
+	| "matrix"
 
 export type Route = {
 	kind: RouteKind,
@@ -79,6 +81,12 @@ export type Route = {
 	against: number?,
 	-- helm-values: changed | user | computed | defaults | diff (nil = changed).
 	mode: string?,
+	-- compare/matrix: the other side(s); nil shows the picker, `=<ctx>` one
+	-- context, `*` every context of the kubeconfig, `@` compare.contexts.
+	across: string?,
+	-- compare/matrix: the selected other context ([ and ]); matrix drill-in
+	-- (drift): the context whose load the item is read from.
+	context: string?,
 }
 
 export type Item = { key: string, ref: Ref?, value: string? }

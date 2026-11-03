@@ -1,0 +1,117 @@
+# Cluster A (kind-tern-kube-dev) of the multi-cluster compare world.
+# Differs from b.yaml in tkm-web (replicas, image, label tier), tkm-config
+# (LOG_LEVEL), tkm-secret (password; test values only), tkm-only-a and
+# tkm-flags (A only); tkm-api and the Service are identical.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: tern-test-mc
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tkm-web
+  namespace: tern-test-mc
+  labels:
+    app: tkm-web
+    tier: frontend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: tkm-web
+  template:
+    metadata:
+      labels:
+        app: tkm-web
+    spec:
+      containers:
+      - name: web
+        image: nginx:1.27-alpine
+        ports:
+        - containerPort: 80
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tkm-api
+  namespace: tern-test-mc
+  labels:
+    app: tkm-api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: tkm-api
+  template:
+    metadata:
+      labels:
+        app: tkm-api
+    spec:
+      containers:
+      - name: web
+        image: nginx:1.27-alpine
+        ports:
+        - containerPort: 80
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tkm-only-a
+  namespace: tern-test-mc
+  labels:
+    app: tkm-only-a
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: tkm-only-a
+  template:
+    metadata:
+      labels:
+        app: tkm-only-a
+    spec:
+      containers:
+      - name: web
+        image: nginx:1.27-alpine
+        ports:
+        - containerPort: 80
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: tkm-web
+  namespace: tern-test-mc
+spec:
+  selector:
+    app: tkm-web
+  ports:
+  - port: 80
+    targetPort: 80
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: tkm-config
+  namespace: tern-test-mc
+data:
+  LOG_LEVEL: info
+  FEATURE_X: "on"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: tkm-secret
+  namespace: tern-test-mc
+type: Opaque
+stringData:
+  username: admin
+  password: s3cret-A
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: tkm-flags
+  namespace: tern-test-mc
+data:
+  ROLLOUT: canary

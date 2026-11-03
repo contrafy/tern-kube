@@ -679,7 +679,8 @@ main() {
 	build_world
 
 	log "capturing into $OUT"
-	find "$OUT" -mindepth 1 -maxdepth 1 ! -name README.md ! -name json-world ! -name mutate-preview -exec rm -rf {} + 2>/dev/null || true
+	find "$OUT" -mindepth 1 -maxdepth 1 ! -name README.md ! -name json-world ! -name mutate-preview ! -name compare \
+		-exec rm -rf {} + 2>/dev/null || true
 	mkdir -p "$OUT"
 	printf 'scenario\tkey\targv\texit\tkubectl_version\tserver_version\n' >"$MANIFEST"
 

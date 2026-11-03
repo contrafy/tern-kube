@@ -387,6 +387,46 @@
         }
       },
       "additionalProperties": false
+    },
+    "compare": {
+      "description": "Comparing objects and GitOps sources across contexts",
+      "type": "object",
+      "properties": {
+        "contexts": {
+          "description": "Contexts of the Configured preset in the compare and matrix pickers",
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "type": "string",
+            "maxLength": 1024,
+            "pattern": "^[^-\\x00-\\x1F\\x7F][^\\x00-\\x1F\\x7F]*$"
+          },
+          "default": [],
+          "uniqueItems": true
+        },
+        "max_contexts": {
+          "description": "Most other contexts in one compare or matrix",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 32,
+          "default": 8
+        },
+        "max_parallel": {
+          "description": "kubectl queries (Explore) or contexts (drift matrix) in flight at once",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 16,
+          "default": 4
+        },
+        "max_objects": {
+          "description": "Objects per context in a list compare; more is refused",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 5000,
+          "default": 500
+        }
+      },
+      "additionalProperties": false
     }
   },
   "additionalProperties": false

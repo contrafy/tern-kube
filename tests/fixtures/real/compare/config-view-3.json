@@ -1,0 +1,66 @@
+{
+    "kind": "Config",
+    "apiVersion": "v1",
+    "clusters": [
+        {
+            "name": "kind-tern-kube-dev",
+            "cluster": {
+                "server": "https://127.0.0.1:52725",
+                "certificate-authority-data": "DATA+OMITTED"
+            }
+        },
+        {
+            "name": "kind-tern-kube-dev2",
+            "cluster": {
+                "server": "https://127.0.0.1:59680",
+                "certificate-authority-data": "DATA+OMITTED"
+            }
+        },
+        {
+            "name": "kind-tern-kube-down",
+            "cluster": {
+                "server": "https://127.0.0.1:1"
+            }
+        }
+    ],
+    "users": [
+        {
+            "name": "kind-tern-kube-dev",
+            "user": {
+                "client-certificate-data": "DATA+OMITTED",
+                "client-key-data": "DATA+OMITTED"
+            }
+        },
+        {
+            "name": "kind-tern-kube-dev2",
+            "user": {
+                "client-certificate-data": "DATA+OMITTED",
+                "client-key-data": "DATA+OMITTED"
+            }
+        }
+    ],
+    "contexts": [
+        {
+            "name": "kind-tern-kube-dev",
+            "context": {
+                "cluster": "kind-tern-kube-dev",
+                "user": "kind-tern-kube-dev"
+            }
+        },
+        {
+            "name": "kind-tern-kube-dev2",
+            "context": {
+                "cluster": "kind-tern-kube-dev2",
+                "user": "kind-tern-kube-dev2"
+            }
+        },
+        {
+            "name": "kind-tern-kube-down",
+            "context": {
+                "cluster": "kind-tern-kube-down",
+                "user": ""
+            }
+        }
+    ],
+    "current-context": "kind-tern-kube-dev"
+}

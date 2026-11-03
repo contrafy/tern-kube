@@ -178,6 +178,15 @@ describe("drift.report over a whole source (kubectl diff -R -f drift)", function
 	it("counts what is in sync", function()
 		expect(full().counts).toEqual({ changed = 4, missing = 3, unmanaged = 1, ignored = 2, inSync = 2, docs = 9 })
 	end)
+
+	-- The cross-context matrix shows an "in sync" cell per declared object:
+	-- a count alone cannot tell which rows those are.
+	it("lists the keys of the declared objects that are in sync", function()
+		expect(full().inSync).toEqual({
+			"/Service/tern-test-drift/web",
+			"/ServiceAccount/tern-test-drift/web",
+		})
+	end)
 end)
 
 describe("drift.report per scenario", function()

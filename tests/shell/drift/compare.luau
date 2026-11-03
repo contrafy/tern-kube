@@ -3,9 +3,10 @@
 -- diffseg.parse on the same `kubectl diff` output, so the CI report and the
 -- Tern views never disagree about which object a line belongs to or whether
 -- it is a create, modify or delete. Usage (args after -a):
---   compare DIFF JSON   DIFF = raw diff text + "\n#END" sentinel (keeps
+--   compare DIFF JSON [N]  DIFF = raw diff text + "\n#END" sentinel (keeps
 --                       trailing blank lines through `$(cat ...)`),
---                       JSON = the CLI's --format json output.
+--                       JSON = the CLI's --format json output; with N, a
+--                       version 2 report whose contexts[N] is checked.
 -- Prints one line per mismatch; exit 1 on any. The one deliberate
 -- difference: the CLI redacts the last-applied-configuration line of core
 -- Secrets (it holds the applied data in clear); `expected` mirrors that.
@@ -48,6 +49,9 @@ local text = string.sub(raw, 1, -#sentinel - 1)
 
 local want = Diffseg.parse(text)
 local got = Json.decode(args[2])
+if args[3] then
+	got = got.contexts[assert(tonumber(args[3]), "N must be a number")]
+end
 
 check("segment count", #want.segments, #got.resources)
 check("create", want.create, got.summary.create)

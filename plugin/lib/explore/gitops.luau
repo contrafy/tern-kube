@@ -12,7 +12,9 @@
 -- the plugin data directory; diff inputs are removed after the diff, the
 -- deployed values of an auto-detected chart right after its render.
 
+local Command = require("../kubectl/command")
 local Config = require("../config")
+local Contexts = require("../compare/contexts")
 local Controllers = require("../gitops/controllers")
 local Detect = require("../helm/detect")
 local Diffseg = require("../mutation/diffseg")
@@ -24,6 +26,8 @@ local HelmTypes = require("../helm/types")
 local Index = require("../gitops/index")
 local Jsonv = require("../parse/jsonv")
 local Link = require("../mutation/link")
+local Matrix = require("../gitops/matrix")
+local Model = require("../compare/model")
 local Query = require("./query")
 local Resource = require("../model/resource")
 local T = require("./types")
@@ -37,6 +41,7 @@ type Item = T.Item
 type Doc = Index.ManifestDoc
 type Segment = Diffseg.Segment
 type ProcessResult = T.ProcessResult
+type ColumnStatus = "pending" | "running" | "ok" | "error"
 
 export type Ctx = {
 	target: Query.Target,
@@ -128,7 +133,12 @@ export type DriftLoad = {
 	status: "index" | "running" | "ok" | "error",
 	gen: number,
 	source: SourceEntry,
+	-- The target the report runs against: the block's, or one context of a
+	-- matrix (same kubeconfig, explicit namespace).
+	target: Query.Target,
 	argv: { string }?,
+	-- The live listings (`get <kinds> -n <ns>`) of the last run.
+	liveArgv: { { string } },
 	tmp: string?,
 	-- Auto sources: the render step running ("values": reading the
 	-- deployed values, "template": helm template); nil once rendered.
@@ -145,6 +155,30 @@ export type DriftLoad = {
 	error: string?,
 	filter: Filter,
 	at: number?,
+}
+
+-- `kubectl config view -o json` of one kubeconfig: the matrix picker.
+export type ContextsLoad = {
+	status: "loading" | "ok" | "error",
+	gen: number,
+	list: { Contexts.ContextInfo },
+	error: string?,
+}
+
+-- One source against several contexts. Each context's drift is an
+-- ordinary drift load (keyed per target); `queued` contexts wait for a
+-- slot of compare.max_parallel.
+export type MatrixState = {
+	status: "contexts" | "ok" | "error",
+	source: string,
+	across: string,
+	-- The block's target with the namespace every column uses.
+	base: Query.Target,
+	-- Columns, base first.
+	contexts: { string },
+	queued: { [string]: boolean },
+	filter: Matrix.Filter,
+	error: string?,
 }
 
 export type ExportStatus = "index" | "reading" | "ok" | "writing" | "written" | "error"
@@ -222,7 +256,12 @@ export type G = {
 	status: { [string]: Index.GitFileStatus },
 	ctl: Ctl,
 	diffs: { [string]: DiffLoad },
+	-- Keyed by M.driftId (target and source).
 	drifts: { [string]: DriftLoad },
+	-- Keyed by kubeconfig ("" for the default one).
+	contexts: { [string]: ContextsLoad },
+	-- Keyed by M.matrixId.
+	matrices: { [string]: MatrixState },
 	export: ExportState?,
 	git: GitState?,
 	bundle: Bundle?,
@@ -248,7 +287,8 @@ M.NO_CWD = "No working directory: open Explore from a pane inside the repository
 M.WRITE_SCRIPT = 'umask 077 && mkdir -p -- "${1%/*}" && cat >"$1"'
 M.MAX_STEP_OUTPUT = 4000
 
-local GITOPS_KINDS: { [string]: boolean } = { manifest = true, diff = true, drift = true, export = true, git = true }
+local GITOPS_KINDS: { [string]: boolean } =
+	{ manifest = true, diff = true, drift = true, export = true, git = true, matrix = true }
 
 function M.isRoute(kind: string): boolean
 	return GITOPS_KINDS[kind] == true
@@ -414,6 +454,8 @@ function M.new(cwd: string?): G
 		ctl = { status = "idle", gen = 0, pending = {}, lists = {}, set = nil },
 		diffs = {},
 		drifts = {},
+		contexts = {},
+		matrices = {},
 		export = nil,
 		git = nil,
 		bundle = nil,
@@ -1404,6 +1446,74 @@ local function setDrift(g: G, id: string, load: DriftLoad)
 	g.drifts = drifts
 end
 
+-- Same identity as the block's cache keys (state.luau): kubeconfig@context.
+function M.targetId(t: Query.Target): string
+	return (t.kubeconfig or "") .. "@" .. (t.context or "?")
+end
+
+-- Drift loads are per target: a report of one context never answers for
+-- another (after `c`, or in a matrix column).
+function M.driftId(t: Query.Target, source: string): string
+	return M.targetId(t) .. "|" .. source
+end
+
+local function withTarget(ctx: Ctx, target: Query.Target): Ctx
+	local c = table.clone(ctx)
+	c.target = target
+	return c
+end
+
+-- Whether a drift route reads another context than the block's (a matrix
+-- cell): those views are read-only.
+function M.foreign(ctx: Ctx, route: Route): boolean
+	return route.context ~= nil and route.context ~= ctx.target.context
+end
+
+-- The target of one matrix column: the block's kubeconfig, the column's
+-- context, the namespace every column shares.
+local function columnTarget(block: Query.Target, context: string): Query.Target
+	if context == block.context then
+		return block
+	end
+	return {
+		kubeconfig = block.kubeconfig,
+		context = context,
+		contextSource = "chosen",
+		namespace = block.namespace,
+		allNamespaces = false,
+		confirmed = false,
+		inferredAt = nil,
+	}
+end
+
+-- The block's target with an explicit namespace, so every column of a
+-- matrix resolves namespace-less manifests the same way.
+local function matrixBase(ctx: Ctx): Query.Target
+	local t = table.clone(ctx.target)
+	t.namespace = t.namespace or "default"
+	t.allNamespaces = false
+	return t
+end
+
+-- The target a drift route shows: the block's, or the route's context.
+local function routeTarget(ctx: Ctx, route: Route): Query.Target
+	if M.foreign(ctx, route) then
+		return columnTarget(matrixBase(ctx), route.context :: string)
+	end
+	return ctx.target
+end
+
+function M.routeDriftId(ctx: Ctx, route: Route): string
+	return M.driftId(routeTarget(ctx, route), route.source or "")
+end
+
+function M.driftLoad(g: G, ctx: Ctx, route: Route): DriftLoad?
+	if route.source == nil then
+		return nil
+	end
+	return g.drifts[M.routeDriftId(ctx, route)]
+end
+
 local function renderedText(g: G, source: Index.Source): string
 	local parts: { string } = {}
 	for _, d in (g.index :: Index.Index).docs do
@@ -1535,19 +1645,14 @@ local function compare(g: G, ctx: Ctx, id: string, load: DriftLoad, effects: { E
 		end
 	end
 	load.argv = argv
+	load.liveArgv = {}
 	if #scope.kinds > 0 then
 		local kinds = table.concat(scope.kinds, ",")
 		for _, ns in scope.namespaces do
+			local get = push(base(ctx), "get", kinds, "-n", ns, "-o", "json")
 			load.livePending[ns] = true
-			table.insert(
-				effects,
-				runEffect(
-					liveTag(ns),
-					load.gen,
-					push(base(ctx), "get", kinds, "-n", ns, "-o", "json"),
-					queryTimeout(ctx)
-				)
-			)
+			table.insert(load.liveArgv, get)
+			table.insert(effects, runEffect(liveTag(ns), load.gen, get, queryTimeout(ctx)))
 		end
 	end
 	if helmText then
@@ -1558,9 +1663,11 @@ local function compare(g: G, ctx: Ctx, id: string, load: DriftLoad, effects: { E
 	finishDrift(g, ctx, id, load)
 end
 
-function startDrift(g: G, ctx: Ctx, id: string, effects: { Effect })
+-- `id` is the load's M.driftId; it runs against the load's target.
+function startDrift(g: G, blockCtx: Ctx, id: string, effects: { Effect })
 	local load = table.clone(g.drifts[id])
-	local entry = M.findSource(g, ctx, id) or load.source
+	local ctx = withTarget(blockCtx, load.target)
+	local entry = M.findSource(g, ctx, load.source.id) or load.source
 	load.source = entry
 	load.status = "running"
 	load.render = nil
@@ -1581,8 +1688,24 @@ function startDrift(g: G, ctx: Ctx, id: string, effects: { Effect })
 	end
 end
 
--- Opens (or re-runs) the drift report of source `id`.
-function M.startDriftReport(g: G, ctx: Ctx, id: string, force: boolean, effects: { Effect })
+-- A source entry by id: from the chooser's listing, else from any drift
+-- load of it (an auto source the listing no longer offers).
+local function knownEntry(g: G, ctx: Ctx, source: string): SourceEntry?
+	local found = M.findSource(g, ctx, source)
+	if found then
+		return found
+	end
+	for _, load in g.drifts do
+		if load.source.id == source then
+			return load.source
+		end
+	end
+	return nil
+end
+
+-- Opens (or re-runs) the drift report of `source` against ctx.target.
+function M.startDriftReport(g: G, ctx: Ctx, source: string, force: boolean, effects: { Effect })
+	local id = M.driftId(ctx.target, source)
 	local existing = g.drifts[id]
 	if existing and not force and existing.status ~= "error" then
 		return
@@ -1590,10 +1713,7 @@ function M.startDriftReport(g: G, ctx: Ctx, id: string, force: boolean, effects:
 	if not ctx.resolved then
 		return
 	end
-	local entry = M.findSource(g, ctx, id)
-	if entry == nil and existing then
-		entry = existing.source
-	end
+	local entry = knownEntry(g, ctx, source)
 	if entry == nil then
 		return
 	end
@@ -1601,6 +1721,8 @@ function M.startDriftReport(g: G, ctx: Ctx, id: string, force: boolean, effects:
 		status = "index",
 		gen = nextGen(g),
 		source = entry,
+		target = ctx.target,
+		liveArgv = {},
 		diffDone = false,
 		livePending = {},
 		live = {},
@@ -1672,7 +1794,7 @@ local function onRender(g: G, ctx: Ctx, id: string, load: DriftLoad, tmp: string
 	compare(g, ctx, id, load, effects)
 end
 
-local function onDrift(g: G, ctx: Ctx, part: string, msg: Msg, effects: { Effect })
+local function onDrift(g: G, blockCtx: Ctx, part: string, msg: Msg, effects: { Effect })
 	local id, found = driftByGen(g, msg.gen)
 	local tmp = string.match(part, "^valueswrite|(.+)$") or string.match(part, "^render|(.+)$")
 	if id == nil or found == nil or found.status ~= "running" then
@@ -1683,6 +1805,7 @@ local function onDrift(g: G, ctx: Ctx, part: string, msg: Msg, effects: { Effect
 		return
 	end
 	local load = table.clone(found)
+	local ctx = withTarget(blockCtx, load.target)
 	local r = msg.result :: ProcessResult
 	local okRun = msg.spawnError == nil and r.status == 0
 	if part == "values" then
@@ -1886,6 +2009,315 @@ function M.driftSummary(load: DriftLoad, context: string?): string
 		end
 	end
 	return table.concat(out, "\n") .. "\n"
+end
+
+-- Matrix -----------------------------------------------------------------------
+
+local function kubeconfigKey(ctx: Ctx): string
+	return ctx.target.kubeconfig or ""
+end
+
+-- Reads the kubeconfig's contexts (local, no cluster call) unless known.
+function M.loadContexts(g: G, ctx: Ctx, force: boolean, effects: { Effect })
+	local key = kubeconfigKey(ctx)
+	local cur = g.contexts[key]
+	if cur and not force and cur.status ~= "error" then
+		return
+	end
+	local gen = nextGen(g)
+	local all = table.clone(g.contexts)
+	all[key] = { status = "loading", gen = gen, list = if cur then cur.list else {}, error = nil }
+	g.contexts = all
+	local argv = Query.contextsInfo(ctx.program, ctx.target.kubeconfig)
+	table.insert(effects, runEffect(M.TAG .. "|contexts|" .. key, gen, argv, queryTimeout(ctx)))
+end
+
+function M.contexts(g: G, ctx: Ctx): ContextsLoad?
+	return g.contexts[kubeconfigKey(ctx)]
+end
+
+-- The picker rows: one context, every context, the configured set.
+function M.choices(g: G, ctx: Ctx): { Contexts.Choice }
+	local load = M.contexts(g, ctx)
+	if load == nil or load.status ~= "ok" then
+		return {}
+	end
+	local cfg = ctx.config.compare
+	return Contexts.choices(load.list, ctx.target.context or "", cfg.contexts, cfg.max_contexts)
+end
+
+function M.matrixId(ctx: Ctx, route: Route): string
+	return table.concat({ M.targetId(ctx.target), route.source or "", route.across or "" }, "|")
+end
+
+function M.matrixState(g: G, ctx: Ctx, route: Route): MatrixState?
+	return g.matrices[M.matrixId(ctx, route)]
+end
+
+local function setMatrix(g: G, id: string, m: MatrixState)
+	local all = table.clone(g.matrices)
+	all[id] = m
+	g.matrices = all
+end
+
+-- The other contexts `across` names, or why it cannot run.
+local function resolveAcross(g: G, ctx: Ctx, across: string): ({ string }?, string?)
+	local load = M.contexts(g, ctx)
+	local list: { Contexts.ContextInfo } = if load then load.list else {}
+	local own = ctx.target.context or ""
+	for _, c in M.choices(g, ctx) do
+		if c.id == across then
+			if c.disabled then
+				return nil, c.disabled
+			end
+			local out: { string } = {}
+			for _, name in c.contexts do
+				if name ~= own and not table.find(out, name) then
+					table.insert(out, name)
+				end
+			end
+			return out, nil
+		end
+	end
+	local one = string.match(across, "^=(.+)$")
+	if one then
+		for _, info in list do
+			if info.name == one then
+				return { one }, nil
+			end
+		end
+		return nil, string.format("Context %s is not in the kubeconfig", one)
+	end
+	return nil, "Unknown choice " .. across
+end
+
+local function columnStatus(g: G, m: MatrixState, context: string): ColumnStatus
+	if m.queued[context] then
+		return "pending"
+	end
+	local load = g.drifts[M.driftId(columnTarget(m.base, context), m.source)]
+	if load == nil then
+		return "pending"
+	elseif load.status == "ok" or load.status == "error" then
+		return load.status
+	end
+	return "running"
+end
+
+-- Starts queued columns while fewer than compare.max_parallel run.
+local function pump(g: G, ctx: Ctx, id: string, effects: { Effect })
+	local m = g.matrices[id]
+	if m == nil or m.status ~= "ok" then
+		return
+	end
+	local statuses: { string } = {}
+	for i, c in m.contexts do
+		statuses[i] = columnStatus(g, m, c)
+	end
+	local start = Model.queue(statuses, ctx.config.compare.max_parallel)
+	if #start == 0 then
+		return
+	end
+	local upd = table.clone(m)
+	upd.queued = table.clone(m.queued)
+	for _, i in start do
+		local context = m.contexts[i]
+		upd.queued[context] = nil
+		M.startDriftReport(g, withTarget(ctx, columnTarget(m.base, context)), m.source, true, effects)
+	end
+	setMatrix(g, id, upd)
+end
+
+local function pumpAll(g: G, ctx: Ctx, effects: { Effect })
+	for id in g.matrices do
+		pump(g, ctx, id, effects)
+	end
+end
+
+-- Resolves the columns once the contexts are known and queues every
+-- column whose drift is missing, failed, ran with another namespace, or
+-- (force) all of them.
+local function planMatrix(g: G, ctx: Ctx, id: string, force: boolean, effects: { Effect })
+	local m = table.clone(g.matrices[id])
+	local others, err = resolveAcross(g, ctx, m.across)
+	if others == nil then
+		m.status = "error"
+		m.error = err
+		setMatrix(g, id, m)
+		return
+	end
+	local contexts = { m.base.context :: string }
+	table.move(others, 1, #others, 2, contexts)
+	local queued: { [string]: boolean } = {}
+	for _, c in contexts do
+		local t = columnTarget(m.base, c)
+		local load = g.drifts[M.driftId(t, m.source)]
+		if force or load == nil or load.status == "error" or load.target.namespace ~= t.namespace then
+			queued[c] = true
+		end
+	end
+	m.status = "ok"
+	m.error = nil
+	m.contexts = contexts
+	m.queued = queued
+	setMatrix(g, id, m)
+	pump(g, ctx, id, effects)
+end
+
+-- Opens (r: re-runs) the matrix of `route` (across set).
+function M.startMatrix(g: G, ctx: Ctx, route: Route, force: boolean, effects: { Effect })
+	local id = M.matrixId(ctx, route)
+	local existing = g.matrices[id]
+	if existing and not force and existing.status ~= "error" then
+		return
+	end
+	local m: MatrixState = {
+		status = "contexts",
+		source = route.source :: string,
+		across = route.across :: string,
+		base = matrixBase(ctx),
+		contexts = {},
+		queued = {},
+		filter = if existing then existing.filter else "all",
+		error = nil,
+	}
+	if not ctx.resolved or ctx.target.context == nil then
+		m.status = "error"
+		m.error = "No cluster target yet: pick a context first (c)"
+	elseif knownEntry(g, ctx, m.source) == nil then
+		m.status = "error"
+		m.error = "Unknown source " .. m.source .. ": open it from the drift chooser (ctrl+g)"
+	end
+	setMatrix(g, id, m)
+	if m.status == "error" then
+		return
+	end
+	local load = M.contexts(g, ctx)
+	if load and load.status == "ok" and not force then
+		planMatrix(g, ctx, id, false, effects)
+	else
+		M.loadContexts(g, ctx, force, effects)
+	end
+end
+
+local function onContexts(g: G, ctx: Ctx, key: string, msg: Msg, effects: { Effect })
+	local cur = g.contexts[key]
+	if cur == nil or cur.gen ~= msg.gen or cur.status ~= "loading" then
+		return
+	end
+	local r = msg.result :: ProcessResult
+	local upd = table.clone(cur)
+	if msg.spawnError or r.timed_out or r.status ~= 0 then
+		upd.status = "error"
+		upd.error = failText("kubectl config view", r, msg.spawnError)
+	else
+		local list, err = Contexts.parse(r.stdout, ctx.decode)
+		if list then
+			upd.status = "ok"
+			upd.list = list
+		else
+			upd.status = "error"
+			upd.error = err
+		end
+	end
+	local all = table.clone(g.contexts)
+	all[key] = upd
+	g.contexts = all
+	for id, m in g.matrices do
+		if m.status == "contexts" and (m.base.kubeconfig or "") == key then
+			if upd.status == "ok" then
+				planMatrix(g, ctx, id, true, effects)
+			else
+				local failed = table.clone(m)
+				failed.status = "error"
+				failed.error = upd.error
+				setMatrix(g, id, failed)
+			end
+		end
+	end
+end
+
+-- The matrix of a route (unfiltered): columns with each context's state
+-- and report.
+function M.matrix(g: G, ctx: Ctx, route: Route): Matrix.Matrix?
+	local m = M.matrixState(g, ctx, route)
+	if m == nil or m.status ~= "ok" then
+		return nil
+	end
+	local load = M.contexts(g, ctx)
+	local list: { Contexts.ContextInfo } = if load then load.list else {}
+	local infos: { [string]: Contexts.ContextInfo } = {}
+	for _, info in list do
+		infos[info.name] = info
+	end
+	local short = Contexts.short(m.contexts)
+	local columns: { Model.Column } = {}
+	local reports: { Drift.Report? } = {}
+	for i, c in m.contexts do
+		local d = g.drifts[M.driftId(columnTarget(m.base, c), m.source)]
+		local status: ColumnStatus = columnStatus(g, m, c)
+		local ok = status == "ok"
+		local info = infos[c]
+		local col: Model.Column = {
+			context = c,
+			label = short[c] or c,
+			server = if info then info.server else nil,
+			fetchedAt = if d and ok then d.at else nil,
+			status = status,
+			error = if d and status == "error" then d.error else nil,
+			argv = if d then d.argv else nil,
+		}
+		columns[i] = col
+		reports[i] = if d and ok then d.report else nil
+	end
+	return Matrix.fromReports(columns, reports)
+end
+
+-- The rows the matrix route shows (its filter applied).
+function M.matrixRows(g: G, ctx: Ctx, route: Route): Matrix.Matrix?
+	local mx = M.matrix(g, ctx, route)
+	local m = M.matrixState(g, ctx, route)
+	if mx == nil or m == nil then
+		return nil
+	end
+	return Matrix.filter(mx, m.filter)
+end
+
+-- The selected column: route.context, else the first other context.
+function M.matrixColumn(g: G, ctx: Ctx, route: Route): string?
+	local m = M.matrixState(g, ctx, route)
+	if m == nil or #m.contexts == 0 then
+		return nil
+	end
+	if route.context and table.find(m.contexts, route.context) then
+		return route.context
+	end
+	return m.contexts[2] or m.contexts[1]
+end
+
+-- Every command the matrix ran, one per line, per column.
+function M.matrixCommands(g: G, ctx: Ctx, route: Route): string?
+	local m = M.matrixState(g, ctx, route)
+	if m == nil then
+		return nil
+	end
+	local out: { string } = {}
+	for _, c in m.contexts do
+		local d = g.drifts[M.driftId(columnTarget(m.base, c), m.source)]
+		if d then
+			local render = d.renderArgv
+			if render and render ~= d.argv then
+				table.insert(out, Command.format(render))
+			end
+			if d.argv then
+				table.insert(out, Command.format(d.argv :: { string }))
+			end
+			for _, argv in d.liveArgv do
+				table.insert(out, Command.format(argv))
+			end
+		end
+	end
+	return if #out > 0 then table.concat(out, "\n") else nil
 end
 
 -- Export ---------------------------------------------------------------------
@@ -2462,7 +2894,13 @@ function M.enter(g: G, ctx: Ctx, route: Route, force: boolean, effects: { Effect
 			M.loadControllers(g, ctx, effects)
 			M.loadReleases(g, ctx, effects)
 		elseif route.item == nil then
-			M.startDriftReport(g, ctx, route.source :: string, force, effects)
+			M.startDriftReport(g, withTarget(ctx, routeTarget(ctx, route)), route.source :: string, force, effects)
+		end
+	elseif kind == "matrix" then
+		if route.across == nil then
+			M.loadContexts(g, ctx, force, effects)
+		else
+			M.startMatrix(g, ctx, route, force, effects)
 		end
 	elseif kind == "export" then
 		local ex = g.export
@@ -2484,19 +2922,29 @@ function M.items(g: G, ctx: Ctx, route: Route): { Item }
 			table.insert(out, { key = s.id, value = s.id })
 		end
 	elseif kind == "drift" and route.item == nil then
-		local load = g.drifts[route.source :: string]
+		local load = M.driftLoad(g, ctx, route)
 		if load and load.status == "ok" then
 			for _, e in M.entries(load) do
 				table.insert(out, { key = e.key, ref = e.ref })
 			end
 		end
 	elseif kind == "drift" then
-		local load = g.drifts[route.source :: string]
+		local load = M.driftLoad(g, ctx, route)
 		local e = if load then M.entry(load, route.item :: string) else nil
 		if e then
 			for _, d in e.docs do
 				table.insert(out, { key = d.file .. ":" .. d.startLine, ref = e.ref })
 			end
+		end
+	elseif kind == "matrix" and route.across == nil then
+		for _, c in M.choices(g, ctx) do
+			table.insert(out, { key = c.id, value = c.id })
+		end
+	elseif kind == "matrix" then
+		local mx = M.matrixRows(g, ctx, route)
+		local rows: { Matrix.Row } = if mx then mx.rows else {}
+		for _, row in rows do
+			table.insert(out, { key = row.key, ref = row.ref })
 		end
 	elseif kind == "export" then
 		local ex = g.export
@@ -2513,11 +2961,15 @@ function M.items(g: G, ctx: Ctx, route: Route): { Item }
 	return out
 end
 
--- The object keys act on in a GitOps route.
-function M.focusRef(g: G, _ctx: Ctx, route: Route, selected: Item?): Ref?
+-- The object keys act on in a GitOps route. None in a matrix or in a drift
+-- view of another context: object keys pin the block's context.
+function M.focusRef(g: G, ctx: Ctx, route: Route, selected: Item?): Ref?
+	if route.kind == "matrix" or (route.kind == "drift" and M.foreign(ctx, route)) then
+		return nil
+	end
 	if route.kind == "drift" then
 		if route.item then
-			local load = g.drifts[route.source :: string]
+			local load = M.driftLoad(g, ctx, route)
 			local e = if load then M.entry(load, route.item :: string) else nil
 			return if e then e.ref else nil
 		end
@@ -2596,6 +3048,76 @@ local function applyEntry(g: G, ctx: Ctx, e: Entry, effects: { Effect })
 	M.applyDocs(g, ctx, { e.docs[1] }, string.lower(e.ref.kind) .. "/" .. e.ref.name, effects)
 end
 
+local CELL_ENTRY: { [string]: string } = { changed = "changed", missing = "missing", unmanaged = "unmanaged" }
+
+-- Keys of a chosen matrix: f filter, [ ] column, enter drill-in, x choose
+-- again, Y copy every command.
+local function matrixKey(
+	g: G,
+	ctx: Ctx,
+	route: Route,
+	selected: Item?,
+	ch: string?,
+	enter: boolean,
+	effects: { Effect }
+): (boolean, Nav?)
+	local id = M.matrixId(ctx, route)
+	local m = g.matrices[id]
+	if ch == "x" then
+		return true, { replace = { kind = "matrix", source = route.source } }
+	elseif m == nil or m.status ~= "ok" then
+		return false, nil
+	elseif ch == "f" then
+		local upd = table.clone(m)
+		upd.filter = Matrix.nextFilter(m.filter)
+		setMatrix(g, id, upd)
+		return true, nil
+	elseif ch == "[" or ch == "]" then
+		local cur = table.find(m.contexts, M.matrixColumn(g, ctx, route) or "") or 1
+		local n = #m.contexts
+		local nextIndex = (cur - 1 + (if ch == "]" then 1 else -1)) % n + 1
+		local nav = table.clone(route)
+		nav.context = m.contexts[nextIndex]
+		return true, { replace = nav }
+	elseif ch == "Y" then
+		local text = M.matrixCommands(g, ctx, route)
+		if text then
+			table.insert(effects, { t = "copy", text = text })
+			toast(effects, "success", "Copied " .. M.count(#string.split(text, "\n"), "command"), text)
+		end
+		return true, nil
+	elseif enter and selected then
+		local context = M.matrixColumn(g, ctx, route) :: string
+		local i = table.find(m.contexts, context) :: number
+		local mx = M.matrixRows(g, ctx, route)
+		local rows: { Matrix.Row } = if mx then mx.rows else {}
+		local row: Matrix.Row? = nil
+		for _, r in rows do
+			if r.key == selected.key then
+				row = r
+			end
+		end
+		if row == nil then
+			return true, nil
+		end
+		local cell = row.cells[i]
+		local bucket = CELL_ENTRY[cell.state]
+		if bucket then
+			local item = bucket .. ":" .. row.key
+			local ctxField = if context == ctx.target.context then nil else context
+			return true, { push = { kind = "drift", source = route.source, item = item, context = ctxField } }
+		end
+		local why = if cell.state == "insync"
+			then "In sync in " .. context
+			elseif cell.state == "absent" then "Neither declared nor unmanaged in " .. context
+			elseif cell.state == "error" then cell.error or ("The drift of " .. context .. " failed")
+			else "The drift of " .. context .. " is still running"
+		toast(effects, if cell.state == "error" then "error" else "info", why, "[ ] picks another context")
+		return true, nil
+	end
+	return false, nil
+end
+
 -- Keys of the GitOps routes; `selected` is the selected item. Returns
 -- whether the key was handled and an optional navigation.
 function M.onKey(
@@ -2610,6 +3132,28 @@ function M.onKey(
 	local name = key.name
 	local enter = name == "enter" or name == "return"
 	local kind = route.kind
+	-- Views of another context (and the matrix) never act: the approve
+	-- pipeline is single-target and pins the block's context.
+	local mutating = ch == "a"
+		or ch == "A"
+		or ch == "E"
+		or ch == "X"
+		or (key.shift and (name == "a" or name == "e" or name == "x"))
+		or (key.ctrl == true and name == "d")
+	if mutating and (kind == "matrix" or (kind == "drift" and M.foreign(ctx, route))) then
+		local other = if kind == "matrix" then M.matrixColumn(g, ctx, route) else route.context
+		if other and other ~= ctx.target.context then
+			toast(
+				effects,
+				"error",
+				"Switch to " .. other .. " (c) to change it",
+				"Views of another context are read-only"
+			)
+		else
+			toast(effects, "info", "Open the cell (enter) to act on it", "The matrix is read-only")
+		end
+		return true, nil
+	end
 	if kind == "manifest" then
 		local docs = if route.ref then M.matches(g, ctx, route.ref :: Ref) else {}
 		local doc = docByKey(docs, if selected then selected.key else nil)
@@ -2639,18 +3183,21 @@ function M.onKey(
 			return true, { push = { kind = "drift", source = selected.key } }
 		end
 	elseif kind == "drift" and route.item == nil then
-		local id = route.source :: string
+		local source = route.source :: string
+		local id = M.routeDriftId(ctx, route)
 		local load = g.drifts[id]
 		if ch == "f" then
 			M.cycleFilter(g, id)
 			return true, nil
+		elseif ch == "x" then
+			return true, { push = { kind = "matrix", source = source } }
 		end
 		if load == nil or load.status ~= "ok" then
 			return false, nil
 		end
 		local e = if selected then M.entry(load, selected.key) else nil
 		if enter and e then
-			return true, { push = { kind = "drift", source = id, item = e.key } }
+			return true, { push = { kind = "drift", source = source, item = e.key, context = route.context } }
 		elseif ch == "m" and e then
 			if e.docs[1] then
 				openDoc(e.docs[1], effects)
@@ -2671,7 +3218,10 @@ function M.onKey(
 			return true, exportFromDrift(g, ctx, id, M.entries(load), effects)
 		end
 	elseif kind == "drift" then
-		local id = route.source :: string
+		if ch == "x" then
+			return true, { push = { kind = "matrix", source = route.source } }
+		end
+		local id = M.routeDriftId(ctx, route)
 		local load = g.drifts[id]
 		local e = if load then M.entry(load, route.item :: string) else nil
 		if e == nil then
@@ -2687,6 +3237,20 @@ function M.onKey(
 		elseif ch == "E" then
 			return true, exportFromDrift(g, ctx, id, { e }, effects)
 		end
+	elseif kind == "matrix" and route.across == nil then
+		if enter and selected then
+			for _, c in M.choices(g, ctx) do
+				if c.id == selected.key then
+					if c.disabled then
+						toast(effects, "error", "Cannot compare with " .. c.label, c.disabled)
+						return true, nil
+					end
+					return true, { replace = { kind = "matrix", source = route.source, across = c.id } }
+				end
+			end
+		end
+	elseif kind == "matrix" then
+		return matrixKey(g, ctx, route, selected, ch, enter, effects)
 	elseif kind == "export" then
 		local ex = g.export
 		if ex == nil then
@@ -2760,9 +3324,9 @@ function M.onAction(g: G, ctx: Ctx, route: Route, act: string, value: string, ef
 	elseif act == "gitops-source" then
 		return true, { push = { kind = "drift", source = value } }
 	elseif act == "gitops-entry" and route.kind == "drift" and route.source then
-		return true, { push = { kind = "drift", source = route.source, item = value } }
+		return true, { push = { kind = "drift", source = route.source, item = value, context = route.context } }
 	elseif act == "gitops-filter" and route.kind == "drift" and route.source then
-		M.setFilter(g, route.source :: string, value :: Filter)
+		M.setFilter(g, M.routeDriftId(ctx, route), value :: Filter)
 		return true, nil
 	elseif act == "gitops-doc" and route.kind == "diff" then
 		return true, { replace = { kind = "diff", ref = route.ref, doc = tonumber(value) or 1 } }
@@ -2817,6 +3381,9 @@ function M.onResult(g: G, ctx: Ctx, msg: Msg, effects: { Effect }): boolean
 		onDiff(g, ctx, part or "", msg, effects)
 	elseif what == "drift" then
 		onDrift(g, ctx, part or "", msg, effects)
+		pumpAll(g, ctx, effects)
+	elseif what == "contexts" then
+		onContexts(g, ctx, part or "", msg, effects)
 	elseif what == "apply" then
 		onApply(g, ctx, part or "", msg, effects)
 	elseif what == "export" then

@@ -576,6 +576,17 @@ rsh() {
 	fi
 }
 
+# --- Multi-cluster compare (track 5, E2E_MC=1) ----------------------------------
+# Contexts kind-tern-kube-dev and kind-tern-kube-dev2 (scripts/cluster.sh
+# create-peer); scenarios 70-79 hand it to the lens with --kubeconfig.
+
+MC_KUBECONFIG=$E2E_REPO/.sandbox/kubeconfig-mc
+
+# kc2 ARGS...: the real kubectl, pinned to the merged kubeconfig and the peer.
+kc2() {
+	KUBECONFIG=$MC_KUBECONFIG "${E2E_REAL_KUBECTL:-kubectl}" --kubeconfig "$MC_KUBECONFIG" --context kind-tern-kube-dev2 "$@"
+}
+
 # --- Helm (track 3) ----------------------------------------------------------------
 # The Helm scenarios source tests/e2e/helm.sh for their releases; these two
 # namespaces hold them and nothing else.

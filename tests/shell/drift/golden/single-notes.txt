@@ -1,0 +1,20 @@
+Drift: a.yaml (context kind-tern-kube-dev, namespace apps)
+
+CHANGE  RESOURCE  NAMESPACE  +/-
+modify  Pod/a     ns         +1 -1
+modify  Pod/b     ns         +0 -1
+
+2 resources drifted (0 create, 2 modify, 0 delete; +1 -2).
+
+Notes:
+  Warning: something odd
+  v1.Pod.ns.a: hunk ended early
+  v1.Pod.ns.b: hunk ended early
+  stray between hunks
+
+=== modify Pod ns/a (+1 -1)
+@@ -1,5 +1,5 @@
+-a
++b
+
+1 diff omitted to stay under --max-bytes.

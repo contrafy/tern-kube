@@ -6,10 +6,13 @@
 -- Explore list.
 
 local Command = require("../kubectl/command")
+local CompareView = require("../compare/view")
 local Diffseg = require("../mutation/diffseg")
 local Gitops = require("../explore/gitops")
 local Index = require("./index")
+local Matrix = require("./matrix")
 local T = require("../explore/types")
+local SegCard = require("../render/segcard")
 local Textfield = require("../textfield")
 local Types = require("../model/types")
 local ui = require("../ui")
@@ -42,19 +45,16 @@ export type Ctx = {
 	chip: Chip,
 	-- The live object of the route (manifest/diff), for the controller line.
 	object: any?,
+	-- Body width in cells (narrow matrix labels) and the scrolled window of
+	-- a long matrix; nil: wide, every row.
+	width: number?,
+	window: CompareView.Window?,
 }
 
 local M = {}
 
-M.MAX_DIFF_LINES = 4000
+M.MAX_DIFF_LINES = SegCard.MAX_LINES
 M.SENSITIVE = "Secret values in diffs are masked; set security.show_secret_values to show them"
-
-local ACTION_TONE: { [string]: string } = {
-	create = "success",
-	modify = "info",
-	delete = "error",
-	unknown = "neutral",
-}
 
 local BUCKET_TONE: { [string]: string } = { changed = "info", missing = "success", unmanaged = "warning" }
 local BUCKET_TEXT: { [string]: string } = { changed = "changed", missing = "missing", unmanaged = "unmanaged" }
@@ -369,58 +369,6 @@ end
 
 -- Diff -----------------------------------------------------------------------
 
-local function hunks(seg: Diffseg.Segment): (string, number)
-	local out: { string } = {}
-	local started = false
-	local hidden = 0
-	for _, l in seg.lines do
-		if string.sub(l, 1, 2) == "@@" then
-			started = true
-		end
-		if started then
-			if #out < M.MAX_DIFF_LINES then
-				table.insert(out, l)
-			else
-				hidden += 1
-			end
-		end
-	end
-	return table.concat(out, "\n"), hidden
-end
-
-local function segName(seg: Diffseg.Segment): string
-	return (seg.kind or "?") .. " " .. (if seg.namespace then seg.namespace .. "/" else "") .. (seg.name or seg.key)
-end
-
-function M.segmentCard(seg: Diffseg.Segment, key: string, collapsed: boolean): Node
-	local text, hidden = hunks(seg)
-	local body: { Node } = {}
-	if seg.binary then
-		table.insert(body, ui.muted("Binary or unreadable difference", { key = "bin" }))
-	else
-		table.insert(body, { k = "diff", p = { key = "diff", text = text, path = "object.yaml", mode = "unified" } })
-	end
-	if hidden > 0 then
-		table.insert(body, ui.muted(string.format("… %d more lines", hidden), { key = "more" }))
-	end
-	return ui.card(
-		{
-			ui.span(string.upper(seg.action) .. "  ", "strong"),
-			ui.span(segName(seg), "strong"),
-			ui.span(string.format("   +%d −%d", seg.added, seg.removed), "muted"),
-		},
-		body,
-		{
-			key = key,
-			collapsible = true,
-			collapsed = collapsed,
-			inset = true,
-			tone = ACTION_TONE[seg.action],
-			role = "tern-kube.gitops-diff",
-		}
-	)
-end
-
 local function hasSecret(segments: { Diffseg.Segment }): boolean
 	for _, s in segments do
 		if s.kind == "Secret" and s.group == nil then
@@ -510,7 +458,7 @@ local function diffBody(v: Ctx): { Node }
 		else
 			local cards: { Node } = {}
 			for i, seg in load.segments do
-				table.insert(cards, M.segmentCard(seg, "seg" .. i, false))
+				table.insert(cards, SegCard.card(seg, "seg" .. i, false))
 			end
 			table.insert(out, ui.col(cards, { key = "diffs" }))
 			if hasSecret(load.segments) and not v.gctx.config.security.show_secret_values then
@@ -797,18 +745,31 @@ local function reportBody(v: Ctx, load: Gitops.DriftLoad): { Node }
 		})
 	end
 	table.insert(list, { "Filter (f)", "gitops-key=f" })
+	table.insert(list, { "Across contexts (x)", "gitops-key=x", "accent", "Run this source against several contexts" })
 	table.insert(list, { "Compare again (r)", "refresh" })
 	table.insert(out, chips(v, list, "rc"))
 	return out
 end
 
 local function itemBody(v: Ctx, load: Gitops.DriftLoad, e: Gitops.Entry): { Node }
+	local context = load.target.context or "?"
+	local foreign = Gitops.foreign(v.gctx, v.route)
 	local out: { Node } = {
 		ui.row({
 			ui.badge(BUCKET_TEXT[e.bucket], BUCKET_TONE[e.bucket], { key = "bucket" }),
 			ui.text({ ui.span(refText(e.ref), "strong mono") }, { key = "ref" }),
+			ui.text({ ui.span("in context ", "muted"), ui.span(context, "strong mono") }, { key = "ctx" }),
 		}, { key = "head", wrap = true }),
 	}
+	if foreign then
+		table.insert(
+			out,
+			ui.text({
+				ui.span("Read-only: ", "warning strong"),
+				ui.span("switch to " .. context .. " (c) to change it.", "muted"),
+			}, { key = "ro" })
+		)
+	end
 	if e.bucket == "missing" then
 		table.insert(
 			out,
@@ -872,21 +833,23 @@ local function itemBody(v: Ctx, load: Gitops.DriftLoad, e: Gitops.Entry): { Node
 	end
 	local seg = e.segment
 	if seg then
-		table.insert(out, M.segmentCard(seg, "seg", false))
+		table.insert(out, SegCard.card(seg, "seg", false))
 	end
 	local list: { { string } } = {}
+	local mutable = v.gctx.config.mutations.enabled and not foreign
 	if #e.docs > 0 then
 		table.insert(list, { "Open manifest (m)", "gitops-key=m", "accent" })
-		if v.gctx.config.mutations.enabled then
+		if mutable then
 			table.insert(list, { "Apply (a)", "gitops-key=a", "warning", "Previews in the approve block" })
 		end
 	end
-	if e.bucket ~= "missing" and load.source.type ~= "helm" then
+	if e.bucket ~= "missing" and load.source.type ~= "helm" and not foreign then
 		table.insert(list, { "Export (E)", "gitops-key=E", "accent" })
 	end
-	if e.bucket == "unmanaged" and v.gctx.config.mutations.enabled then
+	if e.bucket == "unmanaged" and mutable then
 		table.insert(list, { "Delete (ctrl+d)", "mutate=delete", "warning", "Previews, then typed confirmation" })
 	end
+	table.insert(list, { "Across contexts (x)", "gitops-key=x", "accent" })
 	table.insert(out, chips(v, list, "ic"))
 	return out
 end
@@ -896,7 +859,7 @@ local function driftBody(v: Ctx): { Node }
 	if route.source == nil then
 		return chooserBody(v)
 	end
-	local load = v.g.drifts[route.source :: string]
+	local load = Gitops.driftLoad(v.g, v.gctx, route)
 	if load == nil then
 		return { ui.muted("Not compared yet (r).", { key = "idle" }) }
 	end
@@ -908,6 +871,144 @@ local function driftBody(v: Ctx): { Node }
 		return itemBody(v, load, e)
 	end
 	return reportBody(v, load)
+end
+
+-- Matrix ---------------------------------------------------------------------
+
+-- The source's label from any drift load of it (crumbs have no target).
+local function sourceLabel(g: Gitops.G, source: string): string
+	for _, load in g.drifts do
+		if load.source.id == source then
+			return load.source.label
+		end
+	end
+	return source
+end
+
+local MATRIX_FILTER_TEXT: { [string]: string } = {
+	all = "all",
+	drifted = "drifted anywhere",
+	differs = "differs between contexts",
+}
+
+local MATRIX_EMPTY: { [string]: string } = {
+	all = "The source declares nothing and no context has unmanaged objects.",
+	drifted = "In sync in every context (f shows all).",
+	differs = "Every context has the same drift (f shows all).",
+}
+
+local function clock(at: number?): string
+	return if at then os.date("!%H:%M:%S UTC", at) :: string else ""
+end
+
+local function pickerBody(v: Ctx): { Node }
+	local load = Gitops.contexts(v.g, v.gctx)
+	local out: { Node } = {
+		ui.text({
+			ui.span("Run ", "muted"),
+			ui.span(sourceLabel(v.g, v.route.source or ""), "strong mono"),
+			ui.span(" against several contexts of the kubeconfig", "muted"),
+		}, { key = "src" }),
+	}
+	if load == nil or load.status == "loading" then
+		table.insert(out, ui.muted("Reading the kubeconfig's contexts …", { key = "status" }))
+		return out
+	elseif load.status == "error" then
+		table.insert(
+			out,
+			ui.text({ ui.span(load.error or "kubectl config view failed", "error") }, {
+				key = "status",
+				role = "tern-kube.error",
+			})
+		)
+		return out
+	end
+	for _, n in CompareView.picker(Gitops.choices(v.g, v.gctx), v.selectedKey) do
+		table.insert(out, n)
+	end
+	return out
+end
+
+-- Whether the matrix needs short column labels in `width` columns.
+local function narrow(v: Ctx, mx: Matrix.Matrix): boolean
+	local width = v.width
+	if width == nil then
+		return false
+	end
+	local need = 32
+	for _, c in mx.columns do
+		need += math.max(#c.context, 14) + 3
+	end
+	return need > width
+end
+
+local function matrixBody(v: Ctx): { Node }
+	local route = v.route
+	if route.across == nil then
+		return pickerBody(v)
+	end
+	local m = Gitops.matrixState(v.g, v.gctx, route)
+	if m == nil or m.status == "contexts" then
+		return { ui.muted("Reading the kubeconfig's contexts …", { key = "status" }) }
+	elseif m.status == "error" then
+		return {
+			ui.text({ ui.span(m.error or "matrix failed", "error") }, { key = "status", role = "tern-kube.error" }),
+			chips(v, { { "Choose contexts (x)", "gitops-key=x", "accent" } }, "mc"),
+		}
+	end
+	local full = Gitops.matrix(v.g, v.gctx, route) :: Matrix.Matrix
+	local mx = Matrix.filter(full, m.filter)
+	local title = string.format(
+		"Drift of %s across %s (namespace %s) · filter: %s",
+		sourceLabel(v.g, m.source),
+		Gitops.count(#m.contexts, "context"),
+		m.base.namespace or "default",
+		MATRIX_FILTER_TEXT[m.filter]
+	)
+	local out: { Node } = {}
+	for i, c in full.columns do
+		local spans: { SpanLike } = {
+			ui.span(if i == 1 then "base " else "", "muted"),
+			ui.span(c.context, "strong mono"),
+		}
+		if c.server then
+			table.insert(spans, ui.span("  " .. c.server, "muted mono"))
+		end
+		if c.fetchedAt then
+			table.insert(spans, ui.span("  fetched " .. clock(c.fetchedAt), "muted"))
+		end
+		table.insert(spans, ui.span("  " .. Matrix.summary(full, i), "muted"))
+		table.insert(out, ui.text(spans, { key = "prov" .. i }))
+	end
+	for _, n in
+		CompareView.matrix(mx, v.selectedKey, {
+			narrow = narrow(v, mx),
+			filter = if m.filter == "all" then "all" else "differs",
+			title = title,
+			context = Gitops.matrixColumn(v.g, v.gctx, route),
+			window = v.window,
+			empty = MATRIX_EMPTY[m.filter],
+		})
+	do
+		table.insert(out, n)
+	end
+	table.insert(
+		out,
+		chips(v, {
+			{ "Open cell (enter)", "gitops-key=enter" },
+			{ "Previous context ([)", "gitops-key=[" },
+			{ "Next context (])", "gitops-key=]" },
+			{ "Filter (f)", "gitops-key=f" },
+			{ "Choose contexts (x)", "gitops-key=x", "accent" },
+			{ "Copy commands (Y)", "gitops-key=Y" },
+			{ "Compare again (r)", "refresh" },
+		}, "mc")
+	)
+	table.insert(
+		out,
+		ui.muted("Read-only: to change a context, switch to it (c) and open its drift report.", { key = "ro" })
+	)
+	return out
 end
 
 -- Export ---------------------------------------------------------------------
@@ -1256,6 +1357,8 @@ function M.body(v: Ctx): { Node }
 		return diffBody(v)
 	elseif kind == "drift" then
 		return driftBody(v)
+	elseif kind == "matrix" then
+		return matrixBody(v)
 	elseif kind == "export" then
 		return exportBody(v)
 	end
@@ -1304,12 +1407,14 @@ function M.crumb(g: Gitops.G, route: Route): string
 		if route.source == nil then
 			return "Drift sources"
 		end
-		local load = g.drifts[route.source :: string]
-		local label = if load then load.source.label else route.source :: string
+		local at = if route.context then " @ " .. route.context else ""
 		if route.item then
-			return "Drift " .. (string.match(route.item :: string, "/([^/]+)$") or route.item :: string)
+			return "Drift " .. (string.match(route.item :: string, "/([^/]+)$") or route.item :: string) .. at
 		end
-		return "Drift " .. label
+		return "Drift " .. sourceLabel(g, route.source :: string) .. at
+	elseif kind == "matrix" then
+		local label = sourceLabel(g, route.source or "")
+		return if route.across then "Across contexts " .. label else "Contexts for " .. label
 	elseif kind == "export" then
 		return "Export"
 	end
@@ -1320,8 +1425,11 @@ M.HINTS = {
 	manifest = "j/k move · m open at line · = diff · E export · r rescan · esc back",
 	diff = "m open manifest · a apply · [ ] other manifests · r diff again · esc back",
 	drift = "j/k move · enter open · r rescan · esc back",
-	["drift-report"] = "enter details · f filter · m manifest · a apply · A apply source · E export · X export all · ctrl+d delete · r again",
-	["drift-item"] = "m open manifest · a apply · E export · ctrl+d delete (unmanaged) · esc back",
+	["drift-report"] = "enter details · f filter · m manifest · a apply · A apply source · E export · X export all · ctrl+d delete · x across contexts · r again",
+	["drift-item"] = "m open manifest · a apply · E export · ctrl+d delete (unmanaged) · x across contexts · esc back",
+	["drift-other"] = "m open manifest · read-only: c switches context · x across contexts · esc back",
+	["matrix-pick"] = "j/k move · enter choose · esc back",
+	matrix = "enter open cell · [ ] context · f filter · x contexts · Y copy commands · r again · esc back",
 	export = "j/k move · enter diff · t directory · w write · b branch & commit · r read again · esc back",
 	git = "b branch · e message · p push · P pull request · o only exported files · enter run · esc back",
 }
@@ -1329,10 +1437,12 @@ M.HINTS = {
 function M.hint(route: Route): string
 	if route.kind == "drift" then
 		if route.item then
-			return M.HINTS["drift-item"]
+			return M.HINTS[if route.context then "drift-other" else "drift-item"]
 		elseif route.source then
 			return M.HINTS["drift-report"]
 		end
+	elseif route.kind == "matrix" and route.across == nil then
+		return M.HINTS["matrix-pick"]
 	end
 	return M.HINTS[route.kind] or "? help"
 end

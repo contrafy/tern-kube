@@ -1,0 +1,22 @@
+file	context	argv	exit	kubectl_version	server_version
+a-deployment-tkm-web.json	kind-tern-kube-dev	kubectl --context kind-tern-kube-dev get deployment tkm-web -n tern-test-mc -o json	0	v1.34.1	v1.37.0
+a-deployment-tkm-api.json	kind-tern-kube-dev	kubectl --context kind-tern-kube-dev get deployment tkm-api -n tern-test-mc -o json	0	v1.34.1	v1.37.0
+a-service-tkm-web.json	kind-tern-kube-dev	kubectl --context kind-tern-kube-dev get service tkm-web -n tern-test-mc -o json	0	v1.34.1	v1.37.0
+a-configmap-tkm-config.json	kind-tern-kube-dev	kubectl --context kind-tern-kube-dev get configmap tkm-config -n tern-test-mc -o json	0	v1.34.1	v1.37.0
+a-secret-tkm-secret.json	kind-tern-kube-dev	kubectl --context kind-tern-kube-dev get secret tkm-secret -n tern-test-mc -o json	0	v1.34.1	v1.37.0
+a-deployments-list.json	kind-tern-kube-dev	kubectl --context kind-tern-kube-dev get deployments -n tern-test-mc -o json	0	v1.34.1	v1.37.0
+a-mixed-list.json	kind-tern-kube-dev	kubectl --context kind-tern-kube-dev get configmaps,secrets,services,deployments -n tern-test-mc -o json	0	v1.34.1	v1.37.0
+b-deployment-tkm-web.json	kind-tern-kube-dev2	kubectl --context kind-tern-kube-dev2 get deployment tkm-web -n tern-test-mc -o json	0	v1.34.1	v1.37.0
+b-deployment-tkm-api.json	kind-tern-kube-dev2	kubectl --context kind-tern-kube-dev2 get deployment tkm-api -n tern-test-mc -o json	0	v1.34.1	v1.37.0
+b-service-tkm-web.json	kind-tern-kube-dev2	kubectl --context kind-tern-kube-dev2 get service tkm-web -n tern-test-mc -o json	0	v1.34.1	v1.37.0
+b-configmap-tkm-config.json	kind-tern-kube-dev2	kubectl --context kind-tern-kube-dev2 get configmap tkm-config -n tern-test-mc -o json	0	v1.34.1	v1.37.0
+b-secret-tkm-secret.json	kind-tern-kube-dev2	kubectl --context kind-tern-kube-dev2 get secret tkm-secret -n tern-test-mc -o json	0	v1.34.1	v1.37.0
+b-deployments-list.json	kind-tern-kube-dev2	kubectl --context kind-tern-kube-dev2 get deployments -n tern-test-mc -o json	0	v1.34.1	v1.37.0
+b-mixed-list.json	kind-tern-kube-dev2	kubectl --context kind-tern-kube-dev2 get configmaps,secrets,services,deployments -n tern-test-mc -o json	0	v1.34.1	v1.37.0
+a-configmap-tkm-flags.json	kind-tern-kube-dev	kubectl --context kind-tern-kube-dev get configmap tkm-flags -n tern-test-mc -o json	0	v1.34.1	v1.37.0
+a-diff-source.out	kind-tern-kube-dev	kubectl --context kind-tern-kube-dev diff -n tern-test-mc -f source/app.yaml	0	v1.34.1	v1.37.0
+b-diff-source.out	kind-tern-kube-dev2	kubectl --context kind-tern-kube-dev2 diff -n tern-test-mc -f source/app.yaml	1	v1.34.1	v1.37.0
+b-deployment-tkm-only-a.json	kind-tern-kube-dev2	kubectl --context kind-tern-kube-dev2 get deployment tkm-only-a -n tern-test-mc -o json	1	v1.34.1	v1.37.0
+b-fieldsel-tkm-only-a.json	kind-tern-kube-dev2	kubectl --context kind-tern-kube-dev2 get deployments.v1.apps --field-selector metadata.name=tkm-only-a -n tern-test-mc -o json	0	v1.34.1	v1.37.0
+config-view.json		kubectl config view -o json	0	v1.34.1	v1.37.0
+config-view-3.json		kubectl config view -o json	0	v1.34.1	v1.37.0
