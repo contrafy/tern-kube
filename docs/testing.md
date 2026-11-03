@@ -143,8 +143,15 @@ with Secrets masked (51), history and revision diffs with masked value
 changes (52), rollback through the approve block, the stale refusal and the
 typed pending-release preview (53; shop-a is rebuilt on exit), object to
 release relations and the lens Helm chip (54), and chart auto-detect drift
-in a throwaway git repository (55). The runner deletes both namespaces
-unless `--keep`. Scenarios that need
+in a throwaway git repository (55). The first Helm scenario of a run builds
+the world afresh; the runner deletes both namespaces unless `--keep`. Before
+the scenarios the runner restarts `tk-logmix` when its pods are older than
+4 hours: its `app` container prints a line a second and the logs lens keeps
+the newest 20 000 lines, so 40 would no longer find the first ones. The
+sandbox window usually stays behind other windows, where Tern sends blocks
+no pane size: Explore and Settings then size their lists for Tern's default
+window (see "Block size" in [sdk-capability-matrix.md](sdk-capability-matrix.md)).
+Scenarios that need
 output a read-only cluster cannot produce switch the pane to the fake
 `tests/bin/kubectl`. `--shots` regenerates `docs/screenshots/`
 (`E2E_SHOTS="m3b m4"` limits it to some groups; `t1` is the 0.2.0 verbs and

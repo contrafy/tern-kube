@@ -429,6 +429,32 @@ logmix_pod() {
 	[ -n "$pod" ] && printf '%s' "$pod"
 }
 
+# tk-logmix's app container prints a line a second and the logs lens keeps
+# the newest 20 000 records, so after about 5.5 h scenario 40 no longer finds
+# the container's first lines. logmix_fresh (run once before the scenarios)
+# restarts pods older than LOGMIX_MAX_AGE_S and waits until both new pods run
+# and crashy has exited once (49 reads its previous instance).
+LOGMIX_MAX_AGE_S=14400
+
+logmix_fresh() {
+	age=$(kc -n "$LNS" get pods -l app=tk-logmix -o json 2>/dev/null | jq -r '[.items[].status.containerStatuses[]?
+		| select(.name == "app") | .state.running.startedAt // empty | fromdateiso8601]
+		| if length == 0 then 0 else (now - min | floor) end')
+	[ "${age:-0}" -le $LOGMIX_MAX_AGE_S ] && return 0
+	note "restarting tk-logmix: its app containers are ${age}s old"
+	kc -n "$LNS" rollout restart deployment/tk-logmix >/dev/null || return 1
+	i=0
+	until kc -n "$LNS" get pods -l app=tk-logmix -o json 2>/dev/null | jq -e '.items
+		| length == 2 and all(.[]; .metadata.deletionTimestamp == null
+			and ([.status.containerStatuses[]? | select(.name == "app") | .state.running.startedAt // empty
+				| fromdateiso8601] | length == 1 and now - .[0] < 600)
+			and ([.status.containerStatuses[]? | select(.name == "crashy") | .restartCount][0] // 0) >= 1)' >/dev/null; do
+		i=$((i + 1))
+		[ $i -lt 90 ] || return 1
+		sleep 2
+	done
+}
+
 # The block shows the logs view (a native view, not the table pipeline).
 logs_native() {
 	native && { has "$LOGS" || fail "native view is not the logs view"; }
