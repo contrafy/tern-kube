@@ -1,0 +1,1 @@
+[{"revision":1,"updated":"2026-01-01T00:13:00.123456Z","status":"failed","chart":"shop-0.1.0","app_version":"1.27","description":"Release \"broken-c\" failed: 1 error occurred:\n\t* Service \"broken-c-shop\" is invalid: spec.ports[0].port: Invalid value: 99999: must be between 1 and 65535, inclusive\n\n"}]

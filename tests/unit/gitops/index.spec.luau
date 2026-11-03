@@ -246,6 +246,95 @@ describe("gitops index addFile", function()
 	end)
 end)
 
+-- Chart auto-detect needs to know which charts the checkout holds and which
+-- values files could go with them, without guessing from templates.
+describe("gitops index charts", function()
+	it("plans each chart's Chart.yaml and its candidate values files", function()
+		local plan = Index.plan(repo.files(), {})
+		expect(plan.chartReads).toEqual({
+			{ dir = "helm/chart", file = "helm/chart/Chart.yaml", values = { "helm/values-staging.yaml" } },
+		})
+	end)
+
+	-- values.yaml is applied by helm anyway; subcharts render as part of
+	-- their parent and are never released on their own from here.
+	it("skips the default values.yaml, subcharts, kustomizations and hidden files", function()
+		local plan = Index.plan({
+			"envs/shop/Chart.yaml",
+			"envs/shop/values.yaml",
+			"envs/shop/values-prod.yml",
+			"envs/shop/templates/deployment.yaml",
+			"envs/shop/charts/db/Chart.yaml",
+			"envs/shop/charts/db/values-x.yaml",
+			"envs/shop-a.yaml",
+			"envs/kustomization.yaml",
+			"envs/.secret.yaml",
+			"other/values.yaml",
+		}, {})
+		expect(plan.chartReads).toEqual({
+			{
+				dir = "envs/shop",
+				file = "envs/shop/Chart.yaml",
+				values = { "envs/shop-a.yaml", "envs/shop/values-prod.yml" },
+			},
+		})
+	end)
+
+	it("records the chart's identity and the values candidates that are not manifests", function()
+		local index = repo.index()
+		expect(index.chartDirs).toEqual({
+			{
+				path = repo.abs("helm/chart"),
+				name = "shop",
+				version = "0.1.0",
+				appVersion = "1.27",
+				valuesFiles = { repo.abs("helm/values-staging.yaml") },
+			},
+		})
+	end)
+
+	-- A parent directory full of manifests is not a pile of values files.
+	it("drops candidates that declare Kubernetes objects or lie outside the repository", function()
+		local index = Index.new("/r", nil)
+		Index.addFile(index, "/r/app/deploy.yaml", "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: a\n")
+		Index.addFile(index, "/r/app/prod.yaml", "replicaCount: 3\n")
+		local chart = Index.addChart(index, {
+			dir = "/r/app/chart",
+			file = "/r/app/chart/Chart.yaml",
+			values = { "/r/app/deploy.yaml", "/r/app/prod.yaml", "/elsewhere/values.yaml" },
+		}, "name: app\nversion: 1.0.0\n")
+		expect(chart and chart.valuesFiles).toEqual({ "/r/app/prod.yaml" })
+		expect(index.chartDirs[1]).toBe(chart)
+	end)
+
+	it("reports a Chart.yaml without name or version instead of offering it", function()
+		local index = Index.new("/r", nil)
+		local chart = Index.addChart(index, { dir = "/r/c", file = "/r/c/Chart.yaml", values = {} }, "name: c\n")
+		expect(chart).toBeNil()
+		expect(index.chartDirs).toEqual({})
+		expect(index.diagnostics).toEqual({
+			{
+				file = "/r/c/Chart.yaml",
+				line = nil,
+				severity = "warning",
+				text = "Chart.yaml has no name or version; not offered for chart auto-detect",
+			},
+		})
+	end)
+
+	it("keeps charts sorted by path and replaces a re-read chart", function()
+		local index = Index.new("/r", nil)
+		Index.addChart(index, { dir = "/r/b", file = "/r/b/Chart.yaml", values = {} }, "name: b\nversion: 1.0.0\n")
+		Index.addChart(index, { dir = "/r/a", file = "/r/a/Chart.yaml", values = {} }, "name: a\nversion: 1.0.0\n")
+		Index.addChart(index, { dir = "/r/b", file = "/r/b/Chart.yaml", values = {} }, "name: b\nversion: 2.0.0\n")
+		local brief: { string } = {}
+		for _, c in index.chartDirs do
+			table.insert(brief, c.path .. " " .. c.version)
+		end
+		expect(brief).toEqual({ "/r/a 1.0.0", "/r/b 2.0.0" })
+	end)
+end)
+
 describe("gitops index match", function()
 	it("finds the manifest of a namespaced object by exact namespace", function()
 		local index = repo.index()

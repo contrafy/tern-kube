@@ -12,7 +12,9 @@
 -- window.luau consumes the token (one use, expiry, exact link match) before
 -- it opens the split.
 local Command = require("../kubectl/command")
+local HelmTypes = require("../helm/types")
 local Kinds = require("../kubectl/kinds")
+local Query = require("../helm/query")
 local Quick = require("../actions/quick")
 local Types = require("../model/types")
 
@@ -30,6 +32,7 @@ export type Op =
 	| "cordon"
 	| "uncordon"
 	| "drain"
+	| "rollback"
 export type Source = "flag" | "chosen" | "inferred"
 export type PatchType = "strategic" | "merge" | "json"
 
@@ -53,7 +56,17 @@ export type Request = {
 	patchType: PatchType?,
 	-- drain: `--flag` / `--flag=value` words from the allow-list, in canonical order.
 	drainFlags: { string }?,
+	-- rollback: release, explicit revision, option toggles (nil: helm.rollback_* config).
+	release: string?,
+	revision: number?,
+	wait: boolean?,
+	cleanup: boolean?,
+	force: boolean?,
 }
+
+-- Programs a request's argv runs: helm nil = not found; `rollback` holds the
+-- configured defaults for options a link leaves unset.
+export type Programs = { kubectl: string, helm: string?, rollback: HelmTypes.RollbackOptions? }
 
 export type Prompt = { text: string, hint: string, prefill: string }
 
@@ -70,6 +83,15 @@ M.MAX_REPLICAS = 100000
 M.MAX_INPUT_BYTES = 65536
 M.MAX_DRAIN_TIMEOUT_MS = 3600000
 M.DRAIN_PREFILL = "--ignore-daemonsets --timeout=4m"
+-- helm.rollback_* defaults, for callers without a config (chip titles).
+M.ROLLBACK_DEFAULTS = table.freeze({
+	wait = true,
+	waitForJobs = false,
+	cleanupOnFail = false,
+	force = false,
+	noHooks = false,
+	timeoutS = 240,
+}) :: HelmTypes.RollbackOptions
 
 local FIELDS = {
 	"op",
@@ -89,6 +111,11 @@ local FIELDS = {
 	"patchtype",
 	"patch",
 	"drain",
+	"release",
+	"revision",
+	"wait",
+	"cleanup",
+	"force",
 }
 
 local OPS: { [string]: Op } = {
@@ -105,6 +132,7 @@ local OPS: { [string]: Op } = {
 	cordon = "cordon",
 	uncordon = "uncordon",
 	drain = "drain",
+	rollback = "rollback",
 }
 local SOURCES: { [string]: Source } = { flag = "flag", chosen = "chosen", inferred = "inferred" }
 local PATCH_TYPES: { [string]: PatchType } = { strategic = "strategic", merge = "merge", json = "json" }
@@ -123,8 +151,21 @@ local EXTRA: { [string]: { [string]: boolean } } = {
 	annotate = { edits = true, overwrite = true },
 	patch = { patch = true, patchtype = true },
 	drain = { drain = true },
+	rollback = { release = true, revision = true, wait = true, cleanup = true, force = true },
 }
-local OP_PARAMS = { "replicas", "edits", "overwrite", "patch", "patchtype", "drain" }
+local OP_PARAMS = {
+	"replicas",
+	"edits",
+	"overwrite",
+	"patch",
+	"patchtype",
+	"drain",
+	"release",
+	"revision",
+	"wait",
+	"cleanup",
+	"force",
+}
 
 local function noControl(s: string): boolean
 	return string.find(s, "%c") == nil
@@ -332,6 +373,12 @@ local function checkPatch(v: string): string?
 	return nil
 end
 
+local function flagBit(name: string): (string) -> string?
+	return function(v: string): string?
+		return if v == "0" or v == "1" then nil else name .. " must be 0 or 1"
+	end
+end
+
 local CHECKS: { [string]: (string) -> string? } = {
 	kind = function(v)
 		if
@@ -404,7 +451,21 @@ local CHECKS: { [string]: (string) -> string? } = {
 		return if PATCH_TYPES[v] then nil else "patch type must be strategic, merge or json"
 	end,
 	patch = checkPatch,
+	release = function(v)
+		return if Query.validRelease(v) then nil else "release must be a helm release name"
+	end,
+	revision = function(v)
+		local n = if string.find(v, "^%d+$") and #v <= 7 then tonumber(v) else nil
+		return if n and Query.validRevision(n) then nil else "revision must be a whole number from 1"
+	end,
+	wait = flagBit("wait"),
+	cleanup = flagBit("cleanup"),
+	force = flagBit("force"),
 }
+
+local function bit(v: boolean?): string?
+	return if v == nil then nil elseif v then "1" else "0"
+end
 
 local function fieldsOf(r: Request): { [string]: string }
 	local f: { [string]: string } = { op = r.op }
@@ -439,6 +500,13 @@ local function fieldsOf(r: Request): { [string]: string }
 	if r.drainFlags and #r.drainFlags > 0 then
 		f.drain = table.concat(r.drainFlags, "\n")
 	end
+	put("release", r.release)
+	if r.revision then
+		f.revision = string.format("%d", r.revision)
+	end
+	put("wait", bit(r.wait))
+	put("cleanup", bit(r.cleanup))
+	put("force", bit(r.force))
 	return f
 end
 
@@ -446,7 +514,7 @@ local function validate(f: { [string]: string }): (Request?, string?)
 	local op = OPS[f.op or ""]
 	if op == nil then
 		return nil,
-			"op must be one of delete, restart, scale, apply, undo, pause, resume, label, annotate, patch, cordon, uncordon, drain"
+			"op must be one of delete, restart, scale, apply, undo, pause, resume, label, annotate, patch, cordon, uncordon, drain, rollback"
 	end
 	for k, v in f do
 		if k ~= "op" then
@@ -478,12 +546,26 @@ local function validate(f: { [string]: string }): (Request?, string?)
 		patch = f.patch,
 		patchType = if f.patchtype then PATCH_TYPES[f.patchtype] else nil,
 		drainFlags = if f.drain then lines(f.drain) else nil,
+		release = f.release,
+		revision = if f.revision then tonumber(f.revision) else nil,
+		wait = if f.wait then f.wait == "1" else nil,
+		cleanup = if f.cleanup then f.cleanup == "1" else nil,
+		force = if f.force then f.force == "1" else nil,
 	}
 	local extra = EXTRA[op] or {}
 	for _, k in OP_PARAMS do
 		if f[k] and not extra[k] then
 			return nil, op .. " takes no " .. k
 		end
+	end
+	if op == "rollback" then
+		if r.release == nil or r.revision == nil or r.namespace == nil then
+			return nil, "rollback needs release, revision and namespace"
+		end
+		if r.kind or r.name or r.file or r.kustomize or r.recursive or r.cwd then
+			return nil, "rollback takes no kind, name, file, kustomize or cwd"
+		end
+		return r, nil
 	end
 	if op == "apply" then
 		if r.file and r.kustomize then
@@ -612,13 +694,80 @@ function M.needsInput(r: Request): boolean
 	return false
 end
 
+-- The rollback options a request asks for: its toggles over `defaults`.
+-- --wait-for-jobs only means something with --wait.
+function M.rollbackOptions(r: Request, defaults: HelmTypes.RollbackOptions): HelmTypes.RollbackOptions
+	local wait = if r.wait == nil then defaults.wait else r.wait :: boolean
+	return {
+		wait = wait,
+		waitForJobs = wait and defaults.waitForJobs,
+		cleanupOnFail = if r.cleanup == nil then defaults.cleanupOnFail else r.cleanup :: boolean,
+		force = if r.force == nil then defaults.force else r.force :: boolean,
+		noHooks = defaults.noHooks,
+		timeoutS = defaults.timeoutS,
+	}
+end
+
+export type Toggle = "wait" | "cleanup" | "force"
+
+-- A copy of a rollback request with one option flipped, relative to what
+-- it resolves to now (an unset toggle reads as the config default).
+function M.toggle(r: Request, what: Toggle, defaults: HelmTypes.RollbackOptions?): Request
+	local now = M.rollbackOptions(r, defaults or M.ROLLBACK_DEFAULTS)
+	local out = table.clone(r)
+	if what == "wait" then
+		out.wait = not now.wait
+	elseif what == "cleanup" then
+		out.cleanup = not now.cleanupOnFail
+	else
+		out.force = not now.force
+	end
+	return out
+end
+
+local function rollbackArgv(r: Request, helm: string, defaults: HelmTypes.RollbackOptions): { string }
+	local o = M.rollbackOptions(r, defaults)
+	local argv = {
+		helm,
+		"rollback",
+		r.release :: string,
+		string.format("%d", r.revision :: number),
+		"-n",
+		r.namespace :: string,
+		"--timeout",
+		string.format("%ds", o.timeoutS),
+	}
+	if o.wait then
+		table.insert(argv, "--wait")
+		if o.waitForJobs then
+			table.insert(argv, "--wait-for-jobs")
+		end
+	end
+	if o.cleanupOnFail then
+		table.insert(argv, "--cleanup-on-fail")
+	end
+	if o.force then
+		table.insert(argv, "--force")
+	end
+	if o.noHooks then
+		table.insert(argv, "--no-hooks")
+	end
+	return argv
+end
+
 -- The typed command a request stands for (connection flags are pinned later
--- by the plan from the context/kubeconfig fields); nil while it needs input.
-function M.argv(r: Request, program: string): { string }?
+-- by the plan from the context/kubeconfig fields); nil while it needs input,
+-- and for a rollback when helm was not found.
+function M.argv(r: Request, programs: Programs): { string }?
 	if M.needsInput(r) then
 		return nil
 	end
-	local argv: { string } = { program }
+	if r.op == "rollback" then
+		return if programs.helm
+			then rollbackArgv(r, programs.helm :: string, programs.rollback or M.ROLLBACK_DEFAULTS)
+			else nil
+	end
+	local argv: { string } = { programs.kubectl }
 	local function add(...: string)
 		for _, w in { ... } do
 			table.insert(argv, w)
@@ -638,6 +787,9 @@ function M.argv(r: Request, program: string): { string }?
 			if r.recursive then
 				add("-R")
 			end
+		end
+		if r.namespace then
+			add("-n", r.namespace :: string)
 		end
 		return argv
 	elseif op == "cordon" or op == "uncordon" then
@@ -1065,6 +1217,33 @@ function M.forRef(op: Op, ref: Types.ResourceRef, origin: Origin): (string?, str
 	})
 end
 
+export type RollbackToggles = { wait: boolean?, cleanup: boolean?, force: boolean? }
+
+-- A rollback of release `key` to `revision` (Explore ctrl+r). Unset option
+-- toggles leave the choice to the helm.rollback_* config.
+function M.forRelease(
+	key: HelmTypes.ReleaseKey,
+	revision: number,
+	origin: Origin,
+	opts: RollbackToggles?
+): (string?, string?)
+	local o: RollbackToggles = opts or {}
+	return M.encode({
+		op = "rollback",
+		namespace = key.namespace,
+		recursive = false,
+		overwrite = false,
+		context = origin.context,
+		source = if origin.context then origin.source else nil,
+		kubeconfig = origin.kubeconfig,
+		release = key.name,
+		revision = revision,
+		wait = o.wait,
+		cleanup = o.cleanup,
+		force = o.force,
+	})
+end
+
 -- One chip per op that applies to the object's kind (and, when known, its
 -- state: Pause or Resume, Cordon or Uncordon); each opens the approve
 -- block, which previews first.
@@ -1077,7 +1256,7 @@ function M.chips(ref: Types.ResourceRef, origin: Origin, state: ObjState?): { Ch
 		local url = M.forRef(s.op, ref, origin)
 		local req = if url then M.decode(url) else nil
 		if url and req then
-			local argv = M.argv(req, "kubectl")
+			local argv = M.argv(req, { kubectl = "kubectl" })
 			local title = if argv
 				then "Preview, then confirm: " .. Command.format(argv)
 				else ASKS[s.op] or "Asks for input, then previews"

@@ -1,0 +1,1 @@
+{"auth":{"apiToken":"tok-REDACTME","password":"hunter2-REDACTME"},"config":{"mode":"canary"},"image":{"repository":"nginx","tag":"1.27-alpine"},"replicaCount":1,"service":{"port":80}}

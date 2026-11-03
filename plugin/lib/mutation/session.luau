@@ -5,7 +5,8 @@
 --
 -- Three entry points share one pipeline:
 --   native  tern-kube://mutate?... (Explore keys, lens chips, palette): the
---           block executes the pinned argv after confirmation;
+--           block executes the pinned argv after confirmation (a rollback
+--           link runs `helm rollback`; context reads still use kubectl);
 --   quick   tern-kube://act/<debug-pod|debug-node|cronjob-run>?...: after
 --           confirmation the block grants a single-use token and opens the
 --           action link with confirm=<token>; the window runs the split;
@@ -23,16 +24,21 @@
 -- killed, so "cancel" means dropping late callbacks.
 local Audit = require("./audit")
 local Command = require("../kubectl/command")
+local Config = require("../config")
 local Confirm = require("./confirm")
 local Diffseg = require("./diffseg")
 local Drain = require("./drain")
 local Edit = require("./edit")
 local Fingerprint = require("./fingerprint")
+local HelmParse = require("../helm/parse")
+local HelmTypes = require("../helm/types")
 local Link = require("./link")
 local Objdiff = require("./objdiff")
 local ParseMutation = require("../parse/mutation")
 local Plan = require("./plan")
 local Quick = require("../actions/quick")
+local Redact = require("../model/redact")
+local RevDiff = require("../helm/revdiff")
 local Risk = require("./risk")
 local Rollout = require("./rollout")
 local Steps = require("./steps")
@@ -112,6 +118,8 @@ export type Config = {
 	-- security.show_secret_values: false redacts Secret last-applied lines in diffs.
 	showSecretValues: boolean,
 	quick: Quick.Settings,
+	-- helm.driver and the helm.rollback_* defaults.
+	helm: { driver: string, rollback: HelmTypes.RollbackOptions },
 }
 
 -- How the host's JSON decoder marks null and `[]` (tern.json.null, the
@@ -125,6 +133,8 @@ export type Init = {
 	config: Config,
 	-- Program for native and quick commands (config > TKUBE_KUBECTL > kubectl).
 	kubectl: string,
+	-- Resolved helm program; nil when helm was not found.
+	helm: string?,
 	-- Host-resolved kubeconfig for native/quick: config file, else daemon KUBECONFIG.
 	kubeconfig: string?,
 	home: string?,
@@ -187,6 +197,7 @@ export type State = {
 	config: Config,
 	decode: (string) -> any,
 	kubectl: string,
+	helm: string?,
 	home: string?,
 	spool: string,
 	hostKubeconfig: string?,
@@ -222,6 +233,11 @@ export type State = {
 	undo: { Rollout.UndoTarget }?,
 	editSet: Edit.EditSet?,
 	editFacts: Risk.EditFacts?,
+	helmFacts: Risk.HelmFacts?,
+	-- helm rollback: `kubectl diff` of the target manifest (masked); s.diff
+	-- holds the change between the two stored revisions.
+	liveDiff: Diffseg.Summary?,
+	liveExpanded: { [number]: boolean },
 	-- edit: the original file, the baseline of the manifest heuristics.
 	baseline: { T.Manifest }?,
 	-- Steps added after stage 1 settled.
@@ -364,6 +380,10 @@ local function emitRun(s: State, effects: { Effect }, tag: string, argv: { strin
 	})
 end
 
+local function emitStep(s: State, effects: { Effect }, tag: string, step: T.Step, cwd: string)
+	emitRun(s, effects, tag, step.argv, { env = step.env, cwd = cwd, stdin = step.stdin, timeout = step.timeoutMs })
+end
+
 -- kubectl with the connection the command will use (no context yet).
 local function connArgv(s: State, words: { string }): ({ string }, { [string]: string })
 	local argv: { string } = { s.conn.program }
@@ -430,6 +450,7 @@ local function audit(s: State, effects: { Effect }, decision: Audit.Decision, ex
 		finishedAt = if exec then exec.finishedAt else nil,
 		objects = previewObjects(s),
 		files = s.files,
+		fromRevision = if s.helmFacts and s.helmFacts.latest then s.helmFacts.latest.revision else nil,
 	})
 	table.insert(effects, { t = "audit", line = Audit.line(record) })
 end
@@ -599,7 +620,8 @@ local function provisional(s: State): boolean
 		end
 		return false
 	end
-	s.conn = { program = plan.program, kubeconfig = plan.kubeconfig }
+	-- Context reads always go through kubectl, also for a helm rollback.
+	s.conn = { program = if plan.helm then plan.helm.kubectl else plan.program, kubeconfig = plan.kubeconfig }
 	local context = plan.invocation.context
 	if context then
 		local live = s.env :: T.Env
@@ -755,7 +777,7 @@ local function startSteps(s: State, effects: { Effect })
 	s.steps = {}
 	for _, step in plan.steps do
 		table.insert(s.steps, { step = step, status = "running" })
-		emitRun(s, effects, "step:" .. step.id, step.argv, { env = step.env, cwd = plan.cwd, timeout = step.timeoutMs })
+		emitStep(s, effects, "step:" .. step.id, step, plan.cwd)
 	end
 	if plan.family == "apply" then
 		if plan.kustomize then
@@ -810,7 +832,7 @@ local function startStage2(s: State, effects: { Effect }): boolean
 	end
 	for _, step in more do
 		table.insert(s.steps, { step = step, status = "running" })
-		emitRun(s, effects, "step:" .. step.id, step.argv, { env = step.env, cwd = plan.cwd, timeout = step.timeoutMs })
+		emitStep(s, effects, "step:" .. step.id, step, plan.cwd)
 	end
 	return true
 end
@@ -1007,6 +1029,102 @@ local function computeFamilyFacts(s: State, plan: T.Plan)
 	end
 end
 
+local function anyList(t: { [any]: any }): boolean
+	return #t > 0 or next(t) == nil
+end
+
+-- Masked strings from the values both revisions were deployed with and the
+-- target's stored chart defaults (--reuse-values copies user values there):
+-- kubectl masks only Secret objects, so echoes elsewhere are replaced here.
+local function helmSecrets(s: State, f: Risk.HelmFacts, policy: Redact.Policy): { string }
+	local out: { string } = {}
+	local isList = s.json.isList or anyList
+	local function collect(v: any)
+		if v ~= nil then
+			for _, secret in Redact.maskTree(v, policy, isList).secrets do
+				table.insert(out, secret)
+			end
+		end
+	end
+	collect(if f.current then f.current.user else nil)
+	collect(if f.target then f.target.user else nil)
+	collect(if f.extras then f.extras.defaults else nil)
+	return out
+end
+
+local function maskSummary(summary: Diffseg.Summary, secrets: { string }): Diffseg.Summary
+	local out = Diffseg.redactSecrets(summary)
+	for i, seg in out.segments do
+		local copy = table.clone(seg)
+		copy.lines = {}
+		for _, line in seg.lines do
+			table.insert(copy.lines, (Redact.maskEchoes(line, secrets)))
+		end
+		out.segments[i] = copy
+	end
+	return out
+end
+
+-- Parses the helm steps; returns why the preview cannot vouch for the
+-- rollback (unreadable current/target release), nil when it can.
+local function computeHelmFacts(s: State, plan: T.Plan): string?
+	local h = plan.helm :: T.HelmRollback
+	local f: Risk.HelmFacts = {}
+	s.helmFacts = f
+	local why: string? = nil
+	local cur = okRun(s, "helm-current")
+	if cur then
+		local st, e = HelmParse.status(cur.stdout or "", s.decode)
+		f.current = st
+		why = why or e
+	end
+	local tgt = okRun(s, "helm-target")
+	if tgt then
+		local st, e = HelmParse.status(tgt.stdout or "", s.decode)
+		f.target = st
+		why = why or e
+	end
+	local latest = okRun(s, "helm-latest")
+	if latest then
+		local rows, e = HelmParse.history(latest.stdout or "", s.decode)
+		f.latest = if rows then rows[#rows] else nil
+		why = why or e or (if rows and #rows == 0 then "helm history listed no revision" else nil)
+	end
+	local hooks = runOf(s, "helm-hooks")
+	if hooks and hooks.outcome and (hooks.outcome :: Steps.Outcome).ok then
+		local x, e = HelmParse.extras(hooks.stdout or "", s.decode)
+		f.extras = x
+		if e then
+			table.insert(s.notes, "Chart and hooks of revision " .. h.revision .. " unavailable: " .. e)
+		end
+	elseif hooks and hooks.outcome then
+		table.insert(s.notes, "Chart and hooks unavailable: " .. (hooks.outcome :: Steps.Outcome).text)
+	end
+	local policy: Redact.Policy = { showSecrets = s.config.showSecretValues, strict = false }
+	local secrets = if s.config.showSecretValues then {} else helmSecrets(s, f, policy)
+	if f.current and f.target then
+		local rd = RevDiff.diff(
+			(f.current :: HelmTypes.ReleaseStatus).manifest,
+			(f.target :: HelmTypes.ReleaseStatus).manifest,
+			{ namespace = h.namespace, policy = policy, secrets = secrets }
+		)
+		f.revdiff = rd
+		s.diff = rd.summary
+	end
+	local live = runOf(s, "diff")
+	if live and live.outcome then
+		local o = live.outcome :: Steps.Outcome
+		if o.ok then
+			local diff = Diffseg.parse(live.stdout or "")
+			f.live = if s.config.showSecretValues then diff else maskSummary(diff, secrets)
+			s.liveDiff = f.live
+		else
+			table.insert(s.notes, "Live diff unavailable: " .. Redact.maskEchoes(o.text, secrets))
+		end
+	end
+	return why
+end
+
 local function finishPreview(s: State, effects: { Effect })
 	local plan = s.plan :: T.Plan
 	local ok = true
@@ -1017,7 +1135,9 @@ local function finishPreview(s: State, effects: { Effect })
 			ok = false
 			failure = failure or (if o then o.text else run.step.label .. " did not finish")
 		end
-		if run.step.kind == "diff" and o and o.ok then
+		if plan.helm then
+			continue
+		elseif run.step.kind == "diff" and o and o.ok then
 			local diff = Diffseg.parse(run.stdout or "")
 			s.diff = if s.config.showSecretValues then diff else Diffseg.redactSecrets(diff)
 		elseif run.step.kind == "targets" and o and o.ok then
@@ -1034,6 +1154,13 @@ local function finishPreview(s: State, effects: { Effect })
 	end
 	computeObjects(s, plan)
 	computeFamilyFacts(s, plan)
+	if plan.helm then
+		local why = computeHelmFacts(s, plan)
+		if why then
+			ok = false
+			failure = failure or why
+		end
+	end
 	local facts: Risk.Facts = {
 		previewOk = ok,
 		failure = failure,
@@ -1046,6 +1173,7 @@ local function finishPreview(s: State, effects: { Effect })
 		drain = s.drainFacts,
 		undo = s.undo,
 		edit = s.editFacts,
+		helm = s.helmFacts,
 	}
 	s.assessment = Risk.assess(plan, facts)
 	s.requirements =
@@ -1082,6 +1210,9 @@ local function resetPreview(s: State)
 	s.undo = nil
 	s.editSet = nil
 	s.editFacts = nil
+	s.helmFacts = nil
+	s.liveDiff = nil
+	s.liveExpanded = {}
 	s.baseline = nil
 	s.stage = 1
 	s.followUpError = nil
@@ -1188,12 +1319,42 @@ local function proceed(s: State, effects: { Effect })
 	end
 end
 
+-- A helm upgrade, rollback or uninstall since the preview changes what the
+-- rollback replaces: the newest revision and its status must be unchanged.
+local function releaseMoved(s: State, run: StepRun): string?
+	local o = run.outcome
+	if o == nil or not o.ok then
+		return "Cannot re-read the release history"
+			.. (if o then ": " .. o.text else "")
+			.. ". Press r to preview again."
+	end
+	local rows = HelmParse.history(run.stdout or "", s.decode)
+	local now = if rows then rows[#rows] else nil
+	local before = if s.helmFacts then s.helmFacts.latest else nil
+	if now == nil or before == nil then
+		return "Cannot read the release history; press r to preview again."
+	end
+	if now.revision ~= before.revision or now.status ~= before.status then
+		return string.format(
+			"The release changed since the preview (revision %d %s, previewed %d %s); press r to preview again.",
+			now.revision,
+			now.status,
+			before.revision,
+			before.status
+		)
+	end
+	return nil
+end
+
 -- `rollout undo` without --to-revision restores "the previous revision":
 -- a rollout since the preview moves that target.
 local function rolloutMoved(s: State): string?
 	local run = s.verify.history
 	if run == nil then
 		return nil
+	end
+	if s.plan and (s.plan :: T.Plan).helm then
+		return releaseMoved(s, run)
 	end
 	local o = run.outcome
 	if o == nil or not o.ok then
@@ -1303,7 +1464,7 @@ local function verifyNext(s: State, effects: { Effect }, after: string)
 		if #again > 0 then
 			local step = again[1]
 			s.verify.history = { step = step, status = "running" }
-			emitRun(s, effects, "v-history", step.argv, { env = step.env, cwd = plan.cwd, timeout = step.timeoutMs })
+			emitStep(s, effects, "v-history", step, plan.cwd)
 			return
 		end
 	end
@@ -1372,18 +1533,34 @@ local function requery(s: State, effects: { Effect })
 	s.pending = {}
 	local rq: Requery = { at = nil, steps = {} }
 	s.requery = rq
-	for _, step in plan.steps do
-		if step.kind == "targets" or step.kind == "diff" then
-			table.insert(rq.steps, { step = step, status = "running" })
-			emitRun(
-				s,
-				effects,
-				"rq:" .. step.id,
-				step.argv,
-				{ env = step.env, cwd = plan.cwd, timeout = step.timeoutMs }
-			)
-		end
+	for _, step in Steps.requerySteps(plan) do
+		table.insert(rq.steps, { step = step, status = "running" })
+		emitStep(s, effects, "rq:" .. step.id, step, plan.cwd)
 	end
+end
+
+local function programs(s: State): Link.Programs
+	return { kubectl = s.kubectl, helm = s.helm, rollback = s.config.helm.rollback }
+end
+
+-- Wait / Cleanup on fail / Force chips: the rollback with that option
+-- flipped is a different command, so it gets a fresh preview.
+local function toggleOption(s: State, effects: { Effect }, what: Link.Toggle)
+	local link = s.link
+	if s.decided or link == nil or link.op ~= "rollback" or not (s.phase == "ready" or s.phase == "error") then
+		return
+	end
+	s.link = Link.toggle(link, what, s.config.helm.rollback)
+	s.argv = Link.argv(s.link :: Link.Request, programs(s))
+	if s.argv == nil then
+		return
+	end
+	resetPreview(s)
+	s.plan = nil
+	s.target = nil
+	s.typed = ""
+	s.input = nil
+	start(s, effects)
 end
 
 -- Init ------------------------------------------------------------------------
@@ -1396,6 +1573,7 @@ local function blank(env: Init, mode: Mode): State
 		config = env.config,
 		decode = env.decode,
 		kubectl = env.kubectl,
+		helm = env.helm,
 		home = env.home,
 		spool = env.spool,
 		hostKubeconfig = nonEmpty(env.kubeconfig),
@@ -1427,6 +1605,9 @@ local function blank(env: Init, mode: Mode): State
 		undo = nil,
 		editSet = nil,
 		editFacts = nil,
+		helmFacts = nil,
+		liveDiff = nil,
+		liveExpanded = {},
 		baseline = nil,
 		stage = 1,
 		followUpError = nil,
@@ -1471,8 +1652,14 @@ local function initNative(s: State, url: string, effects: { Effect })
 		program = s.kubectl,
 		cwd = Link.cwd(req, s.home),
 		timeoutMs = s.config.previewTimeoutMs,
+		helm = s.helm,
+		helmDriver = s.config.helm.driver,
 	}
-	local argv = Link.argv(req, s.kubectl)
+	local argv = Link.argv(req, programs(s))
+	if argv == nil and req.op == "rollback" then
+		fail(s, "helm was not found: install helm, or set helm.program in the tern-kube config to its path.")
+		return
+	end
 	if argv == nil then
 		s.phase = "input"
 		s.typed = Link.prompt(req).prefill
@@ -1670,6 +1857,22 @@ local function onResult(s: State, tag: string, r: ProcessResult, effects: { Effe
 				return
 			end
 		end
+		local h = p.helm
+		if h and h.options.timeoutS * 1000 + Config.HELM_EXEC_MARGIN_MS > s.config.execTimeoutMs then
+			-- helm and its hooks keep running after the block stops waiting.
+			fail(
+				s,
+				string.format(
+					"--timeout %ds plus %d s exceeds mutations.execute_timeout_ms (%d s): the block would stop "
+						.. "waiting while helm and its hooks still run. Lower helm.rollback_timeout_s or raise "
+						.. "mutations.execute_timeout_ms.",
+					h.options.timeoutS,
+					Config.HELM_EXEC_MARGIN_MS // 1000,
+					math.floor(s.config.execTimeoutMs / 1000)
+				)
+			)
+			return
+		end
 		if not emitDigest(s, effects, "digest") then
 			s.files = {}
 			emitHash(s, effects, "fp", {})
@@ -1739,6 +1942,10 @@ local function onResult(s: State, tag: string, r: ProcessResult, effects: { Effe
 		ex.stderr = r.stderr
 		s.phase = "done"
 		audit(s, effects, if r.status == 0 and not r.timed_out then "executed" else "failed", ex.status)
+		if plan and plan.helm then
+			-- The new revision row is the result: a rollback's stdout says little.
+			requery(s, effects)
+		end
 	elseif tag == "respond" then
 		if r.status == 0 then
 			exit(s, effects)
@@ -1863,7 +2070,7 @@ local function submitInput(s: State, effects: { Effect })
 	s.typed = ""
 	s.input = nil
 	s.confirmError = nil
-	s.argv = Link.argv(req, s.kubectl)
+	s.argv = Link.argv(req, programs(s))
 	start(s, effects)
 end
 
@@ -1938,6 +2145,12 @@ local function applyAction(s: State, act: string, value: string?, effects: { Eff
 		s.resultView = Viewstate.decode(value or "")
 	elseif act == "typed-focus" then
 		s.focused = true
+	elseif act == "helm-wait" then
+		toggleOption(s, effects, "wait")
+	elseif act == "helm-cleanup" then
+		toggleOption(s, effects, "cleanup")
+	elseif act == "helm-force" then
+		toggleOption(s, effects, "force")
 	end
 end
 
@@ -2044,8 +2257,11 @@ function M.update(s: State, msg: Msg): (State, { Effect }, boolean)
 		applyAction(s, msg.act :: string, msg.value, effects)
 	elseif t == "toggle" and msg.id then
 		local i = tonumber(string.match(msg.id :: string, "%.d(%d+)$") or "")
+		local l = tonumber(string.match(msg.id :: string, "%.l(%d+)$") or "")
 		if i then
 			s.expanded[i] = not s.expanded[i]
+		elseif l then
+			s.liveExpanded[l] = not s.liveExpanded[l]
 		end
 	elseif t == "tick" then
 		local r = s.request
@@ -2111,6 +2327,9 @@ function M.commandText(s: State): string
 	if plan then
 		local env = Plan.execEnv(plan)
 		local prefix = if env.KUBECONFIG then "KUBECONFIG=" .. Command.quote(env.KUBECONFIG) .. " " else ""
+		if env.HELM_DRIVER then
+			prefix = "HELM_DRIVER=" .. Command.quote(env.HELM_DRIVER) .. " " .. prefix
+		end
 		return prefix .. Command.format(plan.execArgv)
 	end
 	return Command.format(s.argv or {})

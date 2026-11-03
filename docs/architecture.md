@@ -36,19 +36,21 @@ plugin/
   explore_host.luau    block "explore": runs lib/explore/state effects
   mutate_host.luau     block "approve": runs lib/mutation/session effects,
                        audit log, quick-action grants
-  gitops_host.luau     manifest scan, kustomize/helm render, git status
+  gitops_host.luau     manifest scan, kustomize/helm render (Chart.yaml
+                       reads for auto-detect), git status
   settings_host.luau   block "settings": runs lib/settings/state effects
   lib/
     kubectl/           argv parser (cobra/pflag rules), generated flag and
                        kind tables, copyable commands and Explore links
     parse/             table, describe, json, yaml, mutation-result output
     model/             shared types, typed cell values, resource keys,
-                       redaction policy
+                       redaction policy (+ maskTree/maskEchoes for Helm
+                       values), linediff (LCS unified diff)
     lens/              capture (run -> immutable model), query (filter,
                        sort), viewstate (state encoded in action values),
                        view (dispatch)
     render/            grid, table/describe/yaml/objtree/mutation views,
-                       header, summary
+                       header, summary, helm_chip (lens "Helm release" chip)
     logs/              parse (JSON, klog, logfmt, plain; prefix, kubelet
                        time, continuations), store (incremental ring of
                        records), query (filters, pages, context, next
@@ -56,14 +58,21 @@ plugin/
     events/            model (EventList and table rows -> events), timeline
                        (sort, filter, time groups, ownerReferences closure)
     explore/           state (Elm-style core), gitops (manifest, diff,
-                       drift, export and git routes), render, query (pinned
+                       drift, export and git routes), helm (Helm routes:
+                       loads, keys, rollback links), render, query (pinned
                        argv), relations, label selectors
+    helm/              types, query (pinned helm argv, extras template),
+                       parse (list/history/status/values/extras), owner
+                       (object -> release), values (defaults vs user vs
+                       computed), revdiff (two revision manifests ->
+                       diff segments), detect (chart dir <-> release), view
     actions/quick.luau shell, logs, port-forward, debug, CronJob run-now
                        links, the commands they launch and typed logs lines
-    mutation/          plan, steps, diffseg, objdiff (before/after diffs),
-                       drain, rollout, edit, risk, confirm, fingerprint,
-                       audit, link (mutate links + grants), session (approve
-                       block core), render
+    mutation/          plan, helm_plan (`helm rollback` argv), steps,
+                       diffseg, objdiff (before/after diffs), drain,
+                       rollout, edit, risk, confirm, fingerprint, audit, link
+                       (mutate links + grants), session (approve block
+                       core), render
     gitops/            index, controllers, clean, emit, export, drift, view
     settings/          settings block core and view
     config.luau        config schema, validation, defaults
@@ -209,6 +218,7 @@ Families and their preview steps:
 | cordon, uncordon | targets (nodes), server dry run | | live vs `spec.unschedulable` set/removed |
 | drain | targets, client dry run, server eviction probe (bounded `--timeout`) | | node cordoned; evictions card (`drain.luau`) |
 | edit (guard edit hook) | `patch --local -o json` of both files, targets | merge patch dry run per changed object (`edit.luau`) | live vs dry run |
+| helm-rollback | `helm status` of the latest and the target revision, `history --max 1`, the target's extras (soft), `helm rollback --dry-run` | `kubectl diff -f -` of the target manifest (stdin, soft) | the two revision manifests (`helm/revdiff.luau`) |
 
 Families without `kubectl diff` render before/after object diffs through
 `objdiff.luau`: both sides are cleaned (generation, resourceVersion,
@@ -221,6 +231,40 @@ Input ops (scale, apply, label, annotate, patch, drain) open at a prompt
 `Link.withInput`, and `i` after a preview returns to the prompt. A native
 drain must carry a `--timeout` below `mutations.execute_timeout_ms`: the
 block cannot stop kubectl once it runs.
+
+A helm rollback is always typed (token: the release name) and always
+carries `--timeout`, checked against `mutations.execute_timeout_ms` for the
+same reason. Confirm re-runs `helm history --max 1` (`Steps.verifySteps`)
+and refuses when the latest revision or its status moved since the preview.
+
+### Helm
+
+```
+ Explore H / kinds picker / palette / lens chip
+   -> helm-releases (helm list -a, -A or -n by the namespace scope)
+   -> helm-release: status, history, extras (get all --template), computed
+      values (get values --all) -> header, values summary, notes, hooks
+      -> h history -> = revision diff (two statuses + extras -> revdiff)
+      -> v values (defaults from the earliest trustworthy revision, a
+         chart dir in the repository, or helm.chart_sources)
+      -> M manifest, N notes, K hooks, R resources (+ live kubectl get)
+      -> ctrl+r tern-kube://mutate?op=rollback -> approve block
+ Explore detail of an object: Owner.fromObject -> one helm status per
+   release and context -> "Managed by Helm release" line and chip
+ ctrl+g: chart dirs with Chart.yaml x helm list -> Detect.candidates ->
+   helm template (deployed values via a 0600 temp file, or a values file)
+   -> Index.addRendered -> kubectl diff -n <release namespace> -> drift
+```
+
+`plugin/lib/explore/helm.luau` keeps every load (lists, statuses, extras,
+computed values, defaults, diffs, resources) keyed by context, namespace,
+release and revision, each with its generation; `enter` only starts what a
+route still lacks and `r` forgets the release. Rendering
+(`plugin/lib/helm/view.luau`) masks values through `model/redact.luau`
+before any text reaches a node, so copies and toasts see masked text too.
+helm runs with `HELM_DRIVER` from `helm.driver` and the pinned
+`--kube-context`/`--kubeconfig` (a kubeconfig path list goes into the
+environment instead).
 
 ### GitOps
 

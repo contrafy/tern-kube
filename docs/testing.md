@@ -68,6 +68,7 @@ sh tests/integration/drift-rbac/run.sh [--keep]
 sh tests/integration/gitops/roundtrip.sh
 sh tests/integration/logs/check.sh
 sh tests/integration/events/check.sh
+sh tests/integration/helm/template-compat.sh
 sh scripts/cluster.sh delete
 ```
 
@@ -94,6 +95,13 @@ sh scripts/cluster.sh delete
   `tern-test-apps`, and decodes the real `get events -o json` and
   `kubectl events -o json` with `lib/events/model`: every event names its
   involved object and has a parseable last-seen time.
+- `helm/template-compat.sh` installs the Helm fixture releases with the
+  pinned `.tools/bin/helm` in `tern-test-helm-compat`, runs the release
+  extras template against every revision and decodes each output with the
+  plugin parser (`tests/integration/helm/compat.luau`), so a helm bump that
+  changes Go quoting, the release fields read, or what `--reuse-values`
+  stores as chart defaults fails here. Evidence: `.sandbox/helm-compat/`;
+  the namespace is deleted on exit unless `KEEP=1`.
 
 In CI each script runs only when it exists on the branch; on failure the
 evidence (without kubeconfigs) and `kind export logs` are uploaded.
@@ -126,11 +134,29 @@ typed into an interactive split and the refusal of a kubeconfig path with a
 quote (43), a 25 000-line fake log with the ring, pages and the First error
 context view (44), kubectl errors staying raw (45), the Explore events
 timeline `v`/`V` (46), `kubectl events`/`get events` tables (47), event
-watches (48) and Explore logs `L` (49). Scenarios that need
+watches (48) and Explore logs `L` (49). 50-55 cover Helm (0.4.0) on a
+shared world (`tests/e2e/helm.sh`: releases in `tern-test-helm-e2e` and
+`tern-test-helm-e2e-b`, installed with the pinned helm and `HELM_*_HOME`
+under the sandbox): the releases route with status badges and filters
+(50), release detail, the five values modes, notes, hooks and manifest
+with Secrets masked (51), history and revision diffs with masked value
+changes (52), rollback through the approve block, the stale refusal and the
+typed pending-release preview (53; shop-a is rebuilt on exit), object to
+release relations and the lens Helm chip (54), and chart auto-detect drift
+in a throwaway git repository (55). The first Helm scenario of a run builds
+the world afresh; the runner deletes both namespaces unless `--keep`. Before
+the scenarios the runner restarts `tk-logmix` when its pods are older than
+4 hours: its `app` container prints a line a second and the logs lens keeps
+the newest 20 000 lines, so 40 would no longer find the first ones. The
+sandbox window usually stays behind other windows, where Tern sends blocks
+no pane size: Explore and Settings then size their lists for Tern's default
+window (see "Block size" in [sdk-capability-matrix.md](sdk-capability-matrix.md)).
+Scenarios that need
 output a read-only cluster cannot produce switch the pane to the fake
 `tests/bin/kubectl`. `--shots` regenerates `docs/screenshots/`
 (`E2E_SHOTS="m3b m4"` limits it to some groups; `t1` is the 0.2.0 verbs and
-`t2` the 0.3.0 logs and events views, both dark only) and then runs
+`t2` the 0.3.0 logs and events views, `t3` the 0.4.0 Helm views, all dark
+only) and then runs
 `make shots-optimize` (pngquant quality floor 95, then lossless oxipng;
 idempotent, only `docs/screenshots/*.png`), `--perf`
 prints timings for [performance.md](performance.md). It exits 0 with

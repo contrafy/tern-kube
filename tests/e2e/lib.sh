@@ -429,6 +429,32 @@ logmix_pod() {
 	[ -n "$pod" ] && printf '%s' "$pod"
 }
 
+# tk-logmix's app container prints a line a second and the logs lens keeps
+# the newest 20 000 records, so after about 5.5 h scenario 40 no longer finds
+# the container's first lines. logmix_fresh (run once before the scenarios)
+# restarts pods older than LOGMIX_MAX_AGE_S and waits until both new pods run
+# and crashy has exited once (49 reads its previous instance).
+LOGMIX_MAX_AGE_S=14400
+
+logmix_fresh() {
+	age=$(kc -n "$LNS" get pods -l app=tk-logmix -o json 2>/dev/null | jq -r '[.items[].status.containerStatuses[]?
+		| select(.name == "app") | .state.running.startedAt // empty | fromdateiso8601]
+		| if length == 0 then 0 else (now - min | floor) end')
+	[ "${age:-0}" -le $LOGMIX_MAX_AGE_S ] && return 0
+	note "restarting tk-logmix: its app containers are ${age}s old"
+	kc -n "$LNS" rollout restart deployment/tk-logmix >/dev/null || return 1
+	i=0
+	until kc -n "$LNS" get pods -l app=tk-logmix -o json 2>/dev/null | jq -e '.items
+		| length == 2 and all(.[]; .metadata.deletionTimestamp == null
+			and ([.status.containerStatuses[]? | select(.name == "app") | .state.running.startedAt // empty
+				| fromdateiso8601] | length == 1 and now - .[0] < 600)
+			and ([.status.containerStatuses[]? | select(.name == "crashy") | .restartCount][0] // 0) >= 1)' >/dev/null; do
+		i=$((i + 1))
+		[ $i -lt 90 ] || return 1
+		sleep 2
+	done
+}
+
 # The block shows the logs view (a native view, not the table pipeline).
 logs_native() {
 	native && { has "$LOGS" || fail "native view is not the logs view"; }
@@ -476,4 +502,51 @@ config_reset() {
 	dev reload >/dev/null 2>&1
 	E2E_WAIT=10 wait_for "the config stub" test -f "$E2E_CFG"
 	sleep 0.5
+}
+
+# --- Helm (track 3) ----------------------------------------------------------------
+# The Helm scenarios source tests/e2e/helm.sh for their releases; these two
+# namespaces hold them and nothing else.
+
+HNS=tern-test-helm-e2e
+HNS2=tern-test-helm-e2e-b
+
+helm_world_down() {
+	kc delete namespace "$HNS" "$HNS2" --ignore-not-found --wait=false >/dev/null 2>&1
+}
+
+# hsel_has TEXT: the selected Explore row contains TEXT.
+hsel_has() {
+	case $(texts "$EX .tk-sel .tk-c" | jq -r 'join(" ")') in *"$1"*) true ;; *) false ;; esac
+}
+
+# hcol N COLUMNS: cell N of every visible row of the Explore grid (JSON array).
+hcol() {
+	texts "$EX .tk-grid .tk-r .tk-c" | jq -c --argjson n "$1" --argjson w "$2" '[range($n - 1; length; $w) as $i | .[$i]]'
+}
+
+# explore_close_all: esc through a deep Helm route stack until Explore closes.
+explore_close_all() {
+	i=0
+	while has "$EX" && [ $i -lt 20 ]; do
+		ctl key escape >/dev/null
+		sleep 0.3
+		i=$((i + 1))
+	done
+	lacks "$EX" || fail "Explore block did not close"
+}
+
+# xselect TEXT: move the Explore selection down (from the top) to the first
+# row containing TEXT.
+xselect() {
+	xkey g g
+	i=0
+	until hsel_has "$1"; do
+		i=$((i + 1))
+		[ $i -le 40 ] || {
+			fail "no Explore row with \"$1\""
+			return 1
+		}
+		xkey j
+	done
 }

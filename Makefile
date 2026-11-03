@@ -7,7 +7,7 @@ STYLUA = $(BIN)/stylua
 SELENE = $(BIN)/selene
 TERN_DEFS = .tools/types/tern.d.luau
 
-LUAU_DIRS = $(wildcard plugin tests) scripts/bench.luau scripts/gen-config-schema.luau
+LUAU_DIRS = $(wildcard plugin tests) scripts/bench.luau scripts/gen-config-schema.luau scripts/fixtures/helm-template.luau
 FILTER =
 
 .PHONY: bootstrap tools fixtures test test-runner-selfcheck bench e2e lint fmt fmt-check typecheck schema schema-check check

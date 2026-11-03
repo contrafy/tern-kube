@@ -7,7 +7,7 @@ local M = {}
 
 local MAX_DIFF_CELLS = 4000000
 
-local function lines(text: string): { string }
+function M.lines(text: string): { string }
 	local out = string.split(text, "\n")
 	if out[#out] == "" then
 		table.remove(out)
@@ -67,12 +67,13 @@ local function editScript(a: { string }, b: { string }): { Op }
 end
 
 -- nil when the texts are equal. `old == nil` diffs against /dev/null (a new
--- file); `oldPath` names the old side when it differs from `path`.
-function M.unified(old: string?, new: string, path: string, oldPath: string?): string?
+-- file), `new == nil` against an empty text (a removed one, still named by
+-- `path`); `oldPath` names the old side when it differs from `path`.
+function M.unified(old: string?, new: string?, path: string, oldPath: string?): string?
 	if old == new then
 		return nil
 	end
-	local a, b = lines(old or ""), lines(new)
+	local a, b = M.lines(old or ""), M.lines(new or "")
 	local ops = editScript(a, b)
 	local out = { "--- " .. (if old then oldPath or path else "/dev/null"), "+++ " .. path }
 	local k = 1

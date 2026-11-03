@@ -8,7 +8,9 @@ local Command = require("../kubectl/command")
 local Link = require("../mutation/link")
 local Quick = require("../actions/quick")
 local Grid = require("./grid")
+local HelmChip = require("./helm_chip")
 local Objtree = require("./objtree")
+local Owner = require("../helm/owner")
 local Query = require("../lens/query")
 local Summary = require("./summary")
 local Types = require("../model/types")
@@ -291,6 +293,23 @@ local function mutationChips(capture: Capture, tbl: SnapshotTable, row: Resource
 	return out
 end
 
+-- `-o json` rows carry the object (release annotations); plain tables only
+-- know the release from `--show-labels` (instance label, no namespace
+-- annotation, so the row's namespace).
+local function helmOwner(capture: Capture, tbl: SnapshotTable, row: ResourceRow, ref: Types.ResourceRef): Owner.Owner?
+	local object = if capture.objects then capture.objects[row.key] else nil
+	if object ~= nil then
+		return Owner.fromObject(object)
+	end
+	local index = columnIndex(tbl, "LABELS")
+	if index == nil then
+		return nil
+	end
+	return Owner.fromObject({
+		metadata = { labels = HelmChip.labels(row.cells[index] or ""), namespace = ref.namespace },
+	})
+end
+
 local function actionChips(
 	capture: Capture,
 	tbl: SnapshotTable,
@@ -337,6 +356,10 @@ local function actionChips(
 					actions = { click = "explore-route=events|" .. row.key },
 				})
 			)
+		end
+		local helm = HelmChip.node(helmOwner(capture, tbl, row, ref), "helm")
+		if helm then
+			table.insert(out, helm)
 		end
 		for _, n in quickChips(capture, tbl, row, ref, mutations) do
 			table.insert(out, n)

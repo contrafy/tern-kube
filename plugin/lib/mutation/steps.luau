@@ -8,6 +8,7 @@ local Argv = require("../kubectl/argv")
 local Drain = require("./drain")
 local Edit = require("./edit")
 local Objdiff = require("./objdiff")
+local Query = require("../helm/query")
 local Resource = require("../model/resource")
 local Rollout = require("./rollout")
 local T = require("./types")
@@ -114,6 +115,10 @@ function M.pins(plan: Plan, pinNamespace: string?): { string }
 end
 
 function M.baseEnv(plan: Plan): { [string]: string }
+	local h = plan.helm
+	if h then
+		return Query.env(h.driver, plan.kubeconfig)
+	end
 	local env: { [string]: string } = {}
 	if M.isPathList(plan.kubeconfig) then
 		env.KUBECONFIG = plan.kubeconfig :: string
@@ -272,10 +277,62 @@ local function getOne(plan: Plan, kind: string, name: string, label: string): St
 	return step(plan, "targets", "targets", label, argv)
 end
 
+local function helmTarget(plan: Plan): Query.Target
+	return { context = plan.targetContext, kubeconfig = plan.kubeconfig }
+end
+
+local function helmKey(plan: Plan): Query.Key
+	local h = plan.helm :: T.HelmRollback
+	return { name = h.release, namespace = h.namespace }
+end
+
+local function helmLatest(plan: Plan, id: string, max: number): Step
+	return step(
+		plan,
+		id,
+		"helm-history",
+		"Read the latest revision",
+		Query.history(plan.program, helmTarget(plan), helmKey(plan), max)
+	)
+end
+
+-- `helm rollback --dry-run` renders nothing and validates nothing on the
+-- server: it only proves the target revision exists. What changes comes
+-- from the two stored manifests and, in stage 2, `kubectl diff`.
+local function helmSteps(plan: Plan): { Step }
+	local h = plan.helm :: T.HelmRollback
+	local target, key = helmTarget(plan), helmKey(plan)
+	local dry = table.clone(plan.execArgv)
+	table.insert(dry, "--dry-run")
+	local out = {
+		step(plan, "helm-current", "helm-status", "Read the deployed release", Query.status(plan.program, target, key)),
+		step(
+			plan,
+			"helm-target",
+			"helm-status",
+			string.format("Read revision %d", h.revision),
+			Query.status(plan.program, target, key, h.revision)
+		),
+		helmLatest(plan, "helm-latest", 1),
+		step(
+			plan,
+			"helm-hooks",
+			"helm-extras",
+			string.format("Read revision %d's chart and hooks", h.revision),
+			Query.extras(plan.program, target, key, h.revision)
+		),
+		step(plan, "dry-run", "dry-run", "helm rollback --dry-run (the revision exists)", dry),
+	}
+	out[4].soft = true
+	return out
+end
+
 function M.forPlan(plan: Plan, timeoutMs: number?): { Step }
 	local out: { Step }
 	local family = plan.family
-	if family == "apply" then
+	if family == "helm-rollback" then
+		out = helmSteps(plan)
+	elseif family == "apply" then
 		out = {
 			dryRun(plan, { "apply" }, "Server-side dry run"),
 			step(
@@ -490,6 +547,57 @@ local function editSteps(plan: Plan, results: { [string]: StepResult }, timeoutM
 	return out, nil
 end
 
+-- The rollback's target manifest against the live objects: `kubectl diff
+-- -f -` with the manifest on stdin (never a file: it holds the revision's
+-- Secrets). Objects without metadata.namespace go to the release namespace,
+-- as helm applies them. Soft: helm merges three ways, so this diff is an
+-- approximation, and a failure is a finding, not a failed preview.
+local function helmDiffSteps(
+	plan: Plan,
+	results: { [string]: StepResult },
+	budget: number,
+	decode: (string) -> any
+): ({ Step }?, string?)
+	local target = results["helm-target"]
+	if target == nil or not target.ok then
+		return nil, nil
+	end
+	local ok, doc = pcall(decode, target.stdout)
+	if not ok or type(doc) ~= "table" then
+		return nil, "helm status returned unreadable JSON for the target revision"
+	end
+	local manifest = doc.manifest
+	if
+		type(manifest) ~= "string"
+		or not string.find(manifest, "\n%s*kind:") and not string.find(manifest, "^kind:")
+	then
+		return nil, nil
+	end
+	local h = plan.helm :: T.HelmRollback
+	local argv: { string } = { h.kubectl }
+	for _, a in M.pins(plan, h.namespace) do
+		table.insert(argv, a)
+	end
+	for _, a in { "diff", "-f", "-" } do
+		table.insert(argv, a)
+	end
+	local env: { [string]: string } = { KUBECTL_EXTERNAL_DIFF = "" }
+	if M.isPathList(plan.kubeconfig) then
+		env.KUBECONFIG = plan.kubeconfig :: string
+	end
+	local s: Step = {
+		id = "diff",
+		kind = "diff",
+		label = string.format("Diff revision %d against the live objects", h.revision),
+		argv = argv,
+		env = env,
+		timeoutMs = budget,
+		soft = true,
+		stdin = manifest,
+	}
+	return { s }, nil
+end
+
 -- Stage 2, from the stage-1 results keyed by step id: nil, nil when the
 -- family has none; an error string fails the preview with that text.
 function M.followUp(
@@ -501,6 +609,8 @@ function M.followUp(
 	local budget = timeoutMs or M.DEFAULT_TIMEOUT_MS
 	if plan.family == "edit" then
 		return editSteps(plan, results, budget)
+	elseif plan.family == "helm-rollback" then
+		return helmDiffSteps(plan, results, budget, decode)
 	elseif plan.family ~= "undo" then
 		return nil, nil
 	end
@@ -533,17 +643,41 @@ function M.followUp(
 end
 
 -- Re-read at confirm: what decided the preview must not have moved
--- (`rollout undo` without --to-revision is relative to the newest revision).
+-- (`rollout undo` without --to-revision is relative to the newest revision;
+-- a helm upgrade or another rollback since the preview changes what the
+-- rollback replaces).
 function M.verifySteps(plan: Plan): { Step }
-	if plan.family ~= "undo" then
+	local kind: T.StepKind? = if plan.family == "undo"
+		then "history"
+		elseif plan.family == "helm-rollback" then "helm-history"
+		else nil
+	if kind == nil then
 		return {}
 	end
 	for _, s in plan.steps do
-		if s.kind == "history" then
+		if s.kind == kind then
 			return { s }
 		end
 	end
 	return {}
+end
+
+-- Re-read after a run: the targets and the diff again; for a helm rollback
+-- the two newest revisions (the rollback's own and the one it replaced).
+function M.requerySteps(plan: Plan): { Step }
+	if plan.family == "helm-rollback" then
+		local s = helmLatest(plan, "helm-after", 2)
+		s.label = "Release history"
+		s.timeoutMs = (plan.steps[1] and plan.steps[1].timeoutMs) or M.DEFAULT_TIMEOUT_MS
+		return { s }
+	end
+	local out: { Step } = {}
+	for _, s in plan.steps do
+		if s.kind == "targets" or s.kind == "diff" then
+			table.insert(out, s)
+		end
+	end
+	return out
 end
 
 -- Native execution: the typed command with the same pins as the preview.

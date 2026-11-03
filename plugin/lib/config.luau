@@ -11,6 +11,9 @@ M.RELATIVE_PATH = "tern-kube/config.json"
 -- The published JSON Schema (schema/config.schema.json, `make schema`).
 M.SCHEMA_URL = "https://raw.githubusercontent.com/contrafy/tern-kube/master/schema/config.schema.json"
 M.DEFAULT_SHELL_COMMAND = table.freeze({ "sh", "-c", "command -v bash >/dev/null 2>&1 && exec bash || exec sh" })
+-- What the approve block waits beyond a helm rollback's --timeout before it
+-- gives up (process start, release lock, the history requery).
+M.HELM_EXEC_MARGIN_MS = 30000
 
 export type Placement = "right" | "down" | "tab"
 export type StreamingView = "raw" | "native"
@@ -18,6 +21,11 @@ export type StreamingView = "raw" | "native"
 -- `helm template <release> <chart> [-n namespace] [-f values]...`; paths are
 -- absolute or relative to the repository root.
 export type HelmRelease = { chart: string, release: string, namespace: string?, values: { string } }
+
+export type HelmDriver = "secret" | "configmap"
+-- `helm show values <ref>`: where a chart's pristine defaults come from when
+-- the stored release's defaults are unusable (oci://, repo/name or a path).
+export type HelmChartSource = { chart: string, ref: string }
 
 export type Config = {
 	schema_version: number,
@@ -66,6 +74,18 @@ export type Config = {
 		max_file_bytes: number,
 		render_kustomize: boolean,
 		gh: string,
+	},
+	helm: {
+		program: string,
+		driver: HelmDriver,
+		list_max: number,
+		history_max: number,
+		auto_detect: boolean,
+		chart_sources: { HelmChartSource },
+		rollback_wait: boolean,
+		rollback_wait_for_jobs: boolean,
+		rollback_cleanup_on_fail: boolean,
+		rollback_timeout_s: number,
 	},
 }
 
@@ -165,6 +185,18 @@ function M.defaults(): Config
 			max_file_bytes = 1048576,
 			render_kustomize = true,
 			gh = "gh",
+		},
+		helm = {
+			program = "helm",
+			driver = "secret",
+			list_max = 1000,
+			history_max = 256,
+			auto_detect = true,
+			chart_sources = {},
+			rollback_wait = true,
+			rollback_wait_for_jobs = false,
+			rollback_cleanup_on_fail = false,
+			rollback_timeout_s = 240,
 		},
 	}
 	return freezeDeep(cfg)
@@ -485,6 +517,41 @@ local function helmReleases(): Check
 	end
 end
 
+local CHART_NAME = "^[%w][%w%._%-]*$"
+
+-- `helm.chart_sources`: refs reach `helm show values` argv, so a ref must not
+-- read as a flag; one source per chart name.
+local function chartSources(): Check
+	return function(v, path, default, ctx)
+		if not isArray(v) then
+			reject(ctx, path, "a list of {chart, ref} objects", v, default)
+			return default
+		end
+		local out: { HelmChartSource } = {}
+		local seen: { [string]: boolean } = {}
+		for i, item in v do
+			local problem: string? = nil
+			local ref = if isObject(item) then relPath(item.ref, ctx) else nil
+			if not isObject(item) then
+				problem = "expected an object with chart and ref"
+			elseif type(item.chart) ~= "string" or #item.chart > 250 or not string.find(item.chart, CHART_NAME) then
+				problem = "chart must be a chart name (letters, digits, . _ -)"
+			elseif ref == nil or string.sub(ref, 1, 1) == "-" then
+				problem = "ref must be an oci:// reference, repo/chart or a chart path"
+			elseif seen[item.chart] then
+				problem = "a source for chart " .. item.chart .. " is already listed"
+			end
+			if problem then
+				add(ctx, "error", string.format("%s[%d]", path, i), problem .. "; the entry is ignored.")
+			else
+				seen[item.chart] = true
+				table.insert(out, { chart = item.chart, ref = ref :: string })
+			end
+		end
+		return out
+	end
+end
+
 local KIND_TOKEN = "^[%a][%w%-]*[%.%w%-]*$"
 
 -- `gitops.unmanaged_kinds`: Kind or kind.group tokens.
@@ -582,6 +649,8 @@ local PROGRAM_SCHEMA = { type = "string", pattern = "^(/|~/|[^/]+$)" }
 local NO_CONTROL = "^[^\\x00-\\x1F\\x7F]+$"
 local DNS_LABEL_SCHEMA = { type = "string", maxLength = 63, pattern = "^[a-z0-9]([a-z0-9-]*[a-z0-9])?$" }
 local REL_PATH_SCHEMA = { type = "string", maxLength = 4096, pattern = NO_CONTROL }
+-- The JSON Schema `pattern` of CHART_NAME.
+local CHART_NAME_SCHEMA = { type = "string", maxLength = 250, pattern = "^[A-Za-z0-9][A-Za-z0-9._-]*$" }
 
 local function spec(
 	key: string,
@@ -621,6 +690,7 @@ end
 
 local PLACEMENTS = { "right", "down", "tab" }
 local STREAMING_VIEWS = { "raw", "native" }
+local HELM_DRIVERS = { "secret", "configmap" }
 
 -- Every key of the file in its documented order (the order Settings lists
 -- and writes them).
@@ -782,6 +852,49 @@ M.CATALOG = freezeDeep({
 			PROGRAM_SCHEMA
 		),
 	}),
+	sectionSpec("helm", "Helm releases in Explore and rollbacks through the approve block", {
+		spec(
+			"program",
+			"string",
+			"helm program: an absolute path, or a name looked up like kubectl's",
+			filePath(true),
+			PROGRAM_SCHEMA
+		),
+		spec(
+			"driver",
+			"enum",
+			"Release storage helm reads (HELM_DRIVER); must match how the releases were installed",
+			enum(HELM_DRIVERS),
+			{ type = "string", enum = HELM_DRIVERS },
+			{ values = HELM_DRIVERS }
+		),
+		intSpec("list_max", 1, 100000, "Releases Explore lists at once (helm list --max)"),
+		intSpec("history_max", 1, 10000, "Revisions Explore reads per release (helm history --max)"),
+		boolSpec("auto_detect", "Offer chart directories in the repository as drift sources for matching releases"),
+		spec(
+			"chart_sources",
+			"json",
+			"Where pristine chart defaults come from when a release's stored ones are unusable: [{chart, ref}]",
+			chartSources(),
+			{
+				type = "array",
+				items = {
+					type = "object",
+					required = { "chart", "ref" },
+					properties = { chart = CHART_NAME_SCHEMA, ref = REL_PATH_SCHEMA },
+				},
+			}
+		),
+		boolSpec("rollback_wait", "Rollbacks wait for the rolled-back objects to be ready (--wait)"),
+		boolSpec("rollback_wait_for_jobs", "With rollback_wait, also wait for Jobs to complete (--wait-for-jobs)"),
+		boolSpec("rollback_cleanup_on_fail", "Delete objects a failed rollback created (--cleanup-on-fail)"),
+		intSpec(
+			"rollback_timeout_s",
+			10,
+			3570,
+			"Rollback --timeout in seconds (also bounds hooks); keep it 30 s under mutations.execute_timeout_ms"
+		),
+	}),
 }) :: { Spec }
 
 local KNOWN_TOP: { [string]: boolean } = {}
@@ -889,6 +1002,24 @@ function M.parse(text: string?, decode: (string) -> any, opts: ParseOptions?): (
 		if v ~= nil then
 			out[s.key] = s.check(v, s.key, dflt[s.key], ctx)
 		end
+	end
+	-- Only for a timeout the user chose: a lowered execute timeout alone is
+	-- reported by the rollback preview, where it matters.
+	local helm, mutations = out.helm, out.mutations
+	local chosen = isObject(value.helm) and value.helm.rollback_timeout_s ~= nil
+	if chosen and helm.rollback_timeout_s * 1000 + M.HELM_EXEC_MARGIN_MS > mutations.execute_timeout_ms then
+		add(
+			ctx,
+			"warning",
+			"helm.rollback_timeout_s",
+			string.format(
+				"%d s plus %d s exceeds mutations.execute_timeout_ms (%d ms): the approve block would stop "
+					.. "waiting while helm and its hooks still run. Lower it or raise execute_timeout_ms.",
+				helm.rollback_timeout_s,
+				M.HELM_EXEC_MARGIN_MS // 1000,
+				mutations.execute_timeout_ms
+			)
+		)
 	end
 	warnUnknown(value, KNOWN_TOP, "", ctx)
 	return freezeDeep(out) :: any, diags

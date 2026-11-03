@@ -1,0 +1,3 @@
+helm: v3.22.0+g144ca65
+kubectl: Client Version: v1.34.1
+server: Server Version: v1.37.0

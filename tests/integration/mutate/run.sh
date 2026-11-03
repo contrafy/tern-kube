@@ -1,8 +1,9 @@
 #!/bin/sh
 # Mutation integration scenarios against the kind cluster: the approve
-# block's pure session driven by harness.sh with real kubectl results.
-# Everything targets context kind-tern-kube-dev through .sandbox kubeconfigs
-# and only namespace tern-test-mutate. Evidence per scenario lands in
+# block's pure session driven by harness.sh with real kubectl (and, for the
+# helm_* scenarios, .tools/bin/helm) results. Everything targets context
+# kind-tern-kube-dev through .sandbox kubeconfigs and only namespaces
+# tern-test-mutate and tern-test-helm-it. Evidence per scenario lands in
 # .sandbox/mutate-it/<scenario>/{evidence.log,view.txt,effects.log,audit.log}.
 #
 #   tests/integration/mutate/run.sh [SCENARIO...]   (default: all)
@@ -1039,12 +1040,273 @@ scenario_edit_invalid_approvable() {
 	gone meta/tkm-edit.yaml
 }
 
+# helm rollback scenarios: releases of the fixture charts in their own
+# namespace, helm pinned to .tools/bin/helm with throwaway HELM_*_HOME dirs
+# (never the user's repositories or registry logins). They build on each
+# other in this order; helm_cleanup removes the namespace.
+HNS=tern-test-helm-it
+HELM=$TK_REPO/.tools/bin/helm
+SHOP=$TK_REPO/tests/fixtures/gitops/helm/chart
+STAGING=$TK_REPO/tests/fixtures/gitops/helm/values-staging.yaml
+WEB=$TK_REPO/tests/fixtures/helm/web
+TK_HELM_HOME=${TK_HELM_HOME:-${TMPDIR:-/tmp}/tk-mutate-it-helm}
+HELM_CONFIG_HOME=$TK_HELM_HOME/config
+HELM_CACHE_HOME=$TK_HELM_HOME/cache
+HELM_DATA_HOME=$TK_HELM_HOME/data
+export HELM_CONFIG_HOME HELM_CACHE_HOME HELM_DATA_HOME
+
+h() {
+	"$HELM" --kube-context "$CTX" --kubeconfig "$KC" -n "$HNS" "$@"
+}
+
+hlink() { # RELEASE REVISION [extra]
+	printf 'tern-kube://mutate?op=rollback&release=%s&revision=%s&namespace=%s&context=%s&source=chosen%s' \
+		"$1" "$2" "$HNS" "$CTX" "${3:-}"
+}
+
+expect_release() { # RELEASE REVISION STATUS DESCRIPTION: the newest revision
+	row=$(h history "$1" --max 1 -o json 2>&1)
+	case $row in
+	*"\"revision\":$2,"*"\"status\":\"$3\""*"\"description\":\"$4\""*) tk_ok "$1 is at revision $2 ($3): $4" ;;
+	*) tk_fail "$1: expected revision $2 ($3): $4, got $row" ;;
+	esac
+}
+
+helm_up() { # helm args...: install/upgrade and wait, or fail the scenario
+	h "$@" --wait --timeout 120s >/dev/null 2>"$TK_REPO/.sandbox/mutate-it/helm.err" ||
+		tk_fail "helm $*: $(cat "$TK_REPO/.sandbox/mutate-it/helm.err")"
+}
+
+helm_sa_kubeconfig() { # SA: a kubeconfig for a ServiceAccount of $HNS
+	out=$TK_REPO/.sandbox/rbac/$1.kubeconfig
+	mkdir -p "$TK_REPO/.sandbox/rbac"
+	server=$(k config view --raw --minify -o jsonpath='{.clusters[0].cluster.server}')
+	ca=$(k config view --raw --minify -o jsonpath='{.clusters[0].cluster.certificate-authority-data}')
+	token=$(k -n "$HNS" create token "$1" --duration=1h)
+	(
+		umask 077
+		cat >"$out" <<EOF
+apiVersion: v1
+kind: Config
+clusters:
+  - name: kind-tern-kube-dev
+    cluster:
+      server: $server
+      certificate-authority-data: $ca
+users:
+  - name: $1
+    user:
+      token: $token
+contexts:
+  - name: $1@kind-tern-kube-dev
+    context:
+      cluster: kind-tern-kube-dev
+      user: $1
+      namespace: $HNS
+current-context: $1@kind-tern-kube-dev
+EOF
+	)
+	printf '%s' "$out"
+}
+
+# tk-helm-reader reads everything (Secrets included: helm's release
+# records) but writes nothing; tk-helm-nosecrets cannot read Secrets.
+helm_rbac() {
+	k apply -f - >/dev/null <<EOF
+apiVersion: v1
+kind: ServiceAccount
+metadata: { name: tk-helm-reader, namespace: $HNS }
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata: { name: tk-helm-nosecrets, namespace: $HNS }
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata: { name: tk-helm-reader, namespace: $HNS }
+rules:
+  - apiGroups: ["", "apps", "batch"]
+    resources: ["*"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata: { name: tk-helm-nosecrets, namespace: $HNS }
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps", "services", "pods"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata: { name: tk-helm-reader, namespace: $HNS }
+roleRef: { apiGroup: rbac.authorization.k8s.io, kind: Role, name: tk-helm-reader }
+subjects: [{ kind: ServiceAccount, name: tk-helm-reader, namespace: $HNS }]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata: { name: tk-helm-nosecrets, namespace: $HNS }
+roleRef: { apiGroup: rbac.authorization.k8s.io, kind: Role, name: tk-helm-nosecrets }
+subjects: [{ kind: ServiceAccount, name: tk-helm-nosecrets, namespace: $HNS }]
+EOF
+}
+
+scenario_helm_rollback() {
+	mkdir -p "$TK_REPO/.sandbox/mutate-it" "$TK_HELM_HOME"
+	k delete namespace "$HNS" --ignore-not-found --wait=true >/dev/null 2>&1
+	k create namespace "$HNS" >/dev/null || tk_fail "cannot create $HNS"
+	helm_up install shop-a "$SHOP"
+	helm_up upgrade shop-a "$SHOP" -f "$STAGING"
+	tk_begin helm-rollback "$(hlink shop-a 1)"
+	tk_expect phase ready
+	tk_expect tier typed
+	tk_expect token shop-a
+	for st in helm-current=ok helm-target=ok helm-latest=ok helm-hooks=ok dry-run=ok diff=changes; do
+		tk_expect_has steps "$st"
+	done
+	tk_expect_has reasons "typed:helm-rollback"
+	tk_expect_has segments "modify:Deployment/shop-a-shop"
+	tk_expect_has segments "modify:ConfigMap/shop-a-shop-config"
+	tk_expect_has live "Deployment/shop-a-shop"
+	tk_expect_has view "Recorded change (helm revisions 2 → 1)"
+	tk_expect_has view "Against live objects (kubectl diff)"
+	tk_expect_has command "HELM_DRIVER=secret"
+	expect_release shop-a 2 deployed "Upgrade complete"
+	tk_type shop-a
+	tk_key enter
+	tk_expect phase done
+	tk_expect exec_status 0
+	expect_release shop-a 3 deployed "Rollback to 1"
+	tk_expect_has view "shop-a is now at revision 3 (deployed): Rollback to 1"
+	tk_check "audit records the rollback with its revisions" sh -c \
+		"grep '\"decision\":\"executed\"' '$TK_W/audit.log' | grep '\"family\":\"helm-rollback\"' | grep -q '\"release\":\"shop-a\",\"revision\":1,\"from_revision\":2'"
+	tk_check "the audit line holds no values" sh -c "! grep -q 'staging' '$TK_W/audit.log'"
+}
+
+scenario_helm_stale() {
+	tk_begin helm-stale "$(hlink shop-a 2)"
+	tk_expect phase ready
+	tk_note "helm upgrade from the shell between preview and confirm"
+	helm_up upgrade shop-a "$SHOP" --reuse-values --set config.mode=stale
+	tk_type shop-a
+	tk_key enter
+	tk_expect phase ready
+	tk_expect_has confirm_error "The release changed since the preview (revision 4 deployed, previewed 3 deployed)"
+	tk_effects_lacks run "'exec'"
+	expect_release shop-a 4 deployed "Upgrade complete"
+	tk_check "audit records the refusal" grep -q '"decision":"blocked"' "$TK_W/audit.log"
+}
+
+scenario_helm_pending() {
+	helm_up install stuck-d "$SHOP"
+	h upgrade stuck-d "$SHOP" --set image.tag=does-not-exist --wait --timeout 2m >/dev/null 2>&1 &
+	pid=$!
+	i=0
+	until h history stuck-d -o json 2>/dev/null | grep -q '"pending-upgrade"' &&
+		[ "$(k -n "$HNS" get deploy stuck-d-shop -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null)" = nginx:does-not-exist ]; do
+		i=$((i + 1))
+		[ "$i" -lt 100 ] || break
+		sleep 0.2
+	done
+	kill -9 "$pid" 2>/dev/null
+	wait "$pid" 2>/dev/null
+	expect_release stuck-d 2 pending-upgrade "Preparing upgrade"
+	tk_begin helm-pending "$(hlink stuck-d 1)"
+	tk_expect phase ready
+	tk_expect tier typed
+	tk_expect_has reasons "typed:helm-pending"
+	tk_expect_has view "pending-upgrade"
+	tk_type stuck-d
+	tk_key enter
+	tk_expect phase done
+	tk_expect exec_status 0
+	expect_release stuck-d 3 deployed "Rollback to 1"
+}
+
+scenario_helm_missing_rev() {
+	helm_up install hist-e "$SHOP"
+	helm_up upgrade hist-e "$SHOP" --reuse-values --set config.mode=two --history-max 2
+	helm_up upgrade hist-e "$SHOP" --reuse-values --set config.mode=three --history-max 2
+	hist=$(h history hist-e -o json 2>&1)
+	case $hist in
+	*'"revision":1,'*) tk_fail "--history-max kept revision 1: $hist" ;;
+	*'"revision":3,'*) tk_ok "--history-max dropped revision 1" ;;
+	*) tk_fail "hist-e history: $hist" ;;
+	esac
+	tk_begin helm-missing-rev "$(hlink hist-e 1)"
+	tk_expect phase ready
+	tk_expect tier blocked
+	tk_expect_has steps "helm-current=ok"
+	tk_expect_has steps "helm-target=failed"
+	tk_expect_has steps "dry-run=failed"
+	tk_expect_has reasons "blocked:preview-failed"
+	tk_key escape
+	tk_expect phase closed
+	tk_effects_lacks run "'exec'"
+	expect_release hist-e 3 deployed "Upgrade complete"
+}
+
+scenario_helm_rbac() {
+	helm_rbac
+	reader=$(helm_sa_kubeconfig tk-helm-reader)
+	nosecrets=$(helm_sa_kubeconfig tk-helm-nosecrets)
+	TK_KUBECONFIG=$reader tk_begin helm-rbac-reader \
+		"tern-kube://mutate?op=rollback&release=shop-a&revision=3&namespace=$HNS&context=$(url tk-helm-reader@kind-tern-kube-dev)&source=chosen"
+	tk_expect phase ready
+	tk_expect tier typed
+	tk_expect_has steps "helm-current=ok"
+	tk_expect_has steps "dry-run=ok"
+	tk_note "a reader cannot server-dry-run the live diff: a note, not a failed preview"
+	tk_expect_has steps "diff=failed"
+	tk_expect_has notes "Live diff unavailable"
+	tk_type shop-a
+	tk_key enter
+	tk_expect phase done
+	if [ -n "$S_exec_status" ] && [ "$S_exec_status" != 0 ]; then tk_ok "helm rollback refused by RBAC (exit $S_exec_status)"; else tk_fail "rollback exit '$S_exec_status', want non-zero"; fi
+	tk_check "audit records the failure" grep -q '"decision":"failed"' "$TK_W/audit.log"
+	expect_release shop-a 4 deployed "Upgrade complete"
+	TK_KUBECONFIG=$nosecrets tk_begin helm-rbac-nosecrets \
+		"tern-kube://mutate?op=rollback&release=shop-a&revision=3&namespace=$HNS&context=$(url tk-helm-nosecrets@kind-tern-kube-dev)&source=chosen"
+	tk_expect phase ready
+	tk_expect tier blocked
+	tk_expect_has reasons "blocked:preview-failed"
+	tk_expect_has steps "helm-current=failed"
+	tk_expect_has view "forbidden"
+	tk_effects_lacks run "'exec'"
+	rm -f "$reader" "$nosecrets"
+}
+
+scenario_helm_secret_echo() {
+	helm_up install web-e "$WEB" --set auth.password=first-REDACTME --set-string auth.apiToken=tok-REDACTME
+	helm_up upgrade web-e "$WEB" --reuse-values --set auth.password=second-REDACTME
+	tk_begin helm-secret-echo "$(hlink web-e 1)"
+	tk_expect phase ready
+	tk_expect_has segments "ConfigMap/web-e-web-config"
+	tk_expect_has live "ConfigMap/web-e-web-config"
+	tk_expect_has reasons "simple:helm-hooks"
+	tk_expect_lacks diff_text "REDACTME"
+	tk_expect_lacks live_text "REDACTME"
+	tk_expect_lacks view "REDACTME"
+	tk_expect_lacks notes "REDACTME"
+	tk_key escape
+	tk_expect phase closed
+}
+
+scenario_helm_cleanup() {
+	k delete namespace "$HNS" --ignore-not-found --wait=true >/dev/null 2>&1 || tk_fail "cannot delete $HNS"
+	tk_check "$HNS is gone" sh -c "! kubectl --kubeconfig '$KC' --context $CTX get namespace $HNS"
+}
+
 ALL="apply_one apply_many diff_modify_cancel stale_file scale restart delete_typed delete_cancel nonexistent
 context_drift server_drift rbac_deny_dry_run tiny_timeout cronjob_quick guard_roundtrip secret_redaction apply_prompt
 guard_disabled label_one label_selector_typed label_conflict_fails annotate_overwrite patch_merge patch_cr_merge
 patch_json_typed patch_file_changed_refused undo_previous undo_to_revision undo_single_revision_fails
 undo_verify_refuses pause_resume cordon_uncordon drain_preflight drain_pdb_blocked drain_ok edit_request
-edit_renamed_blocked edit_invalid_approvable"
+edit_renamed_blocked edit_invalid_approvable helm_rollback helm_stale helm_pending helm_missing_rev helm_rbac
+helm_secret_echo helm_cleanup"
 
 for s in ${*:-$ALL}; do
 	"scenario_$s"

@@ -107,6 +107,23 @@ describe("drift.scope", function()
 		expect(Drift.scope(SOURCE, { docs = docs }, { defaultNamespace = "team" }).namespaces).toEqual({ "team" })
 		expect(Drift.scope(SOURCE, { docs = docs }, {}).namespaces).toEqual({})
 	end)
+
+	-- One chart dir renders several releases (configured, auto-detected,
+	-- with deployed values or a values file): each render is its own
+	-- source, and mixing them would report one release's objects as
+	-- missing from another's namespace.
+	it("never mixes renders of two helm sources of the same chart dir", function()
+		local chart = "/repo/helm/chart"
+		local a: Drift.Source = { type = "helm", root = "/repo", path = chart, label = "a" }
+		local b: Drift.Source = { type = "helm", root = "/repo", path = chart, label = "b" }
+		local docs: { Drift.Doc } = {}
+		addDocs(docs, "a.yaml", "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: a\n  namespace: ns-a\n", a)
+		for _, d in docs do
+			d.rendered = true
+		end
+		expect(#Drift.scope(a, { docs = docs }, {}).docs).toBe(1)
+		expect(#Drift.scope(b, { docs = docs }, {}).docs).toBe(0)
+	end)
 end)
 
 describe("drift.report over a whole source (kubectl diff -R -f drift)", function()
@@ -269,6 +286,36 @@ describe("drift.report edge cases", function()
 			"/Secret/ns/sh.helm.release.v1.web.v1 = helm release record",
 		})
 		expect(keys(r.missing)).toEqual({ "/Secret/ns/app" })
+	end)
+
+	-- Several releases share a namespace. Against one release's chart,
+	-- another release's objects (and hook objects, which carry no release
+	-- annotation) are not unmanaged: reporting them would offer to delete
+	-- or export what helm owns.
+	it("a helm source ignores objects of other Helm releases in its namespace", function()
+		local source: Drift.Source =
+			{ type = "helm", root = "/repo", path = "/repo/chart", helm = { release = "shop-a", namespace = "ns" } }
+		local function cm(name: string, release: string?): any
+			local annotations = if release
+				then { ["meta.helm.sh/release-name"] = release, ["meta.helm.sh/release-namespace"] = "ns" }
+				else nil
+			return {
+				apiVersion = "v1",
+				kind = "ConfigMap",
+				metadata = { name = name, namespace = "ns", annotations = annotations },
+			}
+		end
+		local docs: { Drift.Doc } = {}
+		addDocs(docs, "cm.yaml", "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: shop\n  namespace: ns\n", source)
+		local hook = cm("web-pre-upgrade", nil)
+		hook.metadata.annotations = { ["helm.sh/hook"] = "pre-upgrade,pre-rollback" }
+		local objects = { cm("shop", "shop-a"), cm("left", "shop-a"), cm("web", "web-b"), cm("stray", nil), hook }
+		local r = Drift.report(source, { docs = docs }, {}, objects, {})
+		expect(keys(r.unmanaged)).toEqual({ "/ConfigMap/ns/left", "/ConfigMap/ns/stray" })
+		expect(ignoredPairs(r)).toEqual({
+			"/ConfigMap/ns/web = Helm release ns/web-b",
+			"/ConfigMap/ns/web-pre-upgrade = Helm hook (pre-upgrade, pre-rollback)",
+		})
 	end)
 
 	it("matches namespace-less manifests through the default namespace", function()

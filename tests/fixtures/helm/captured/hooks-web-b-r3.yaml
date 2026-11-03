@@ -1,0 +1,22 @@
+---
+# Source: web/templates/hooks.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: web-b-web-pre-upgrade
+  annotations:
+    "helm.sh/hook": pre-upgrade,pre-rollback
+    "helm.sh/hook-weight": "-5"
+    "helm.sh/hook-delete-policy": before-hook-creation
+data:
+  revision: "1"
+---
+# Source: web/templates/hooks.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: web-b-web-post-install
+  annotations:
+    "helm.sh/hook": post-install
+data:
+  installed: "true"

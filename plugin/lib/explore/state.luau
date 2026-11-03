@@ -18,6 +18,9 @@ local Config = require("../config")
 local EventsModel = require("../events/model")
 local ExploreTypes = require("./types")
 local Gitops = require("./gitops")
+local Helm = require("./helm")
+local HelmOwner = require("../helm/owner")
+local HelmQuery = require("../helm/query")
 local Json = require("../parse/json")
 local Kinds = require("../kubectl/kinds")
 local Link = require("../mutation/link")
@@ -122,6 +125,8 @@ export type Env = {
 	-- Export: `[]` vs `{}` of decoded JSON, and the JSON null value.
 	isList: ((t: { [any]: any }) -> boolean)?,
 	null: any?,
+	-- Resolved helm program (env_host.program("helm")); nil = not found.
+	helm: string?,
 }
 
 export type Resolve = { phase: "current" | "verify" | "done" | "failed", gen: number }
@@ -171,6 +176,9 @@ export type State = {
 	-- A link asked for the filter field focused (lens "Search…"); done once
 	-- the target is resolved and the route is loading.
 	searchPending: boolean,
+	-- Helm releases, history, values and their loads (helm.luau).
+	helm: Helm.H,
+	helmProgram: string?,
 }
 
 export type Effect = ExploreTypes.Effect
@@ -364,6 +372,9 @@ function M.routeKey(s: State, route: Route): string
 		table.insert(parts, route.item or "")
 		table.insert(parts, tostring(route.doc or ""))
 		return table.concat(parts, "|")
+	elseif Helm.isRoute(kind) then
+		-- Never a cache key either: Helm routes keep their data in s.helm.
+		return Helm.routeKey(route, targetId(s.target), M.scope(s, route))
 	end
 	if kind == "events" then
 		local subject = if route.ref then Resource.key(route.ref) else "ns:" .. scopeId(M.eventsScope(s, route))
@@ -605,8 +616,30 @@ function M.gitopsCtx(s: State): Gitops.Ctx
 		nonce = s.nonce,
 		isList = s.isList,
 		null = s.null,
+		helm = s.helmProgram,
 	}
 end
+
+-- What the Helm routes need to know about the block.
+function M.helmCtx(s: State): Helm.Ctx
+	return {
+		target = s.target,
+		helm = s.helmProgram,
+		kubectl = s.program,
+		config = s.config,
+		decode = s.decode,
+		isList = s.isList,
+		resolved = M.resolved(s),
+		now = s.now,
+		daemonPath = s.daemonPath,
+		dataDir = s.dataDir,
+		nonce = s.nonce,
+		chartDirs = Gitops.chartDirs(s.gitops),
+	}
+end
+
+-- The kinds picker's synthetic first row (shown when helm was found).
+M.HELM_KIND_ROW = "helm releases"
 
 -- Record indices of a logs load that pass the route's filter and level
 -- floor, in display order (merged by kubelet time).
@@ -640,12 +673,20 @@ function M.items(s: State, route: Route?): { Item }
 	if Gitops.isRoute(r.kind) then
 		return Gitops.items(s.gitops, M.gitopsCtx(s), r)
 	end
+	if Helm.isRoute(r.kind) then
+		return Helm.items(s.helm, M.helmCtx(s), r, s.filter[key])
+	end
 	local out: { Item } = {}
 	local f = string.lower(s.filter[key] or "")
 	if r.kind == "namespaces" then
 		local all = "* all namespaces"
 		if f == "" or string.find(all, f, 1, true) then
 			table.insert(out, { key = "*", value = "*" })
+		end
+	end
+	if r.kind == "kinds" and s.helmProgram then
+		if f == "" or string.find(M.HELM_KIND_ROW, f, 1, true) or f == "hr" then
+			table.insert(out, { key = M.HELM_KIND_ROW, value = M.HELM_KIND_ROW })
 		end
 	end
 	if load == nil or load.status ~= "ok" or load.data == nil then
@@ -719,6 +760,9 @@ function M.focusRef(s: State): Ref?
 	end
 	if Gitops.isRoute(r.kind) then
 		return Gitops.focusRef(s.gitops, M.gitopsCtx(s), r, M.selectedItem(s))
+	end
+	if Helm.isRoute(r.kind) then
+		return Helm.focusRef(s.helm, M.helmCtx(s), r, M.selectedItem(s))
 	end
 	return r.ref
 end
@@ -905,6 +949,21 @@ local function enterGitops(s: State, route: Route, force: boolean, effects: { Ef
 	end)
 end
 
+-- Runs a Helm call on a fresh copy of s.helm.
+local function withHelm<R>(s: State, fn: (h: Helm.H, ctx: Helm.Ctx) -> R): R
+	local h = Helm.clone(s.helm)
+	local r = fn(h, M.helmCtx(s))
+	s.helm = h
+	return r
+end
+
+local function enterHelm(s: State, route: Route, force: boolean, effects: { Effect })
+	withHelm(s, function(h, ctx)
+		Helm.enter(h, ctx, route, force, effects)
+		return nil
+	end)
+end
+
 local startEdit: (s: State, effects: { Effect }) -> boolean
 
 local function replaceTop(s: State, route: Route)
@@ -917,6 +976,10 @@ local function ensure(s: State, effects: { Effect })
 	local route = top(s)
 	if Gitops.isRoute(route.kind) then
 		enterGitops(s, route, false, effects)
+		return
+	end
+	if Helm.isRoute(route.kind) then
+		enterHelm(s, route, false, effects)
 		return
 	end
 	local q = route.q
@@ -984,7 +1047,49 @@ local ROUTE_KINDS: { [string]: boolean } = {
 	contexts = true,
 	namespaces = true,
 	kinds = true,
+	["helm-releases"] = true,
+	["helm-release"] = true,
+	["helm-history"] = true,
+	["helm-values"] = true,
+	["helm-manifest"] = true,
+	["helm-notes"] = true,
+	["helm-hooks"] = true,
+	["helm-resources"] = true,
+	["helm-diff"] = true,
 }
+
+function M.validRelease(v: any): string?
+	return if type(v) == "string" and HelmQuery.validRelease(v) then v else nil
+end
+
+function M.validRevision(v: any): number?
+	local n = if type(v) == "number" then v elseif type(v) == "string" then tonumber(v) else nil
+	return if n and HelmQuery.validRevision(n) then n else nil
+end
+
+-- A Helm route from a link or saved state; nil when it names no valid
+-- release (helm-releases needs none).
+local function helmRoute(kind: string, release: any, namespace: any, revision: any, against: any, mode: any): Route?
+	if kind == "helm-releases" then
+		return { kind = "helm-releases" }
+	end
+	local name = M.validRelease(release)
+	local ns = nonEmpty(namespace)
+	if name == nil or ns == nil or ns == "*" then
+		return nil
+	end
+	local route: Route =
+		{ kind = kind :: RouteKind, release = name, namespace = ns, revision = M.validRevision(revision) }
+	if kind == "helm-diff" then
+		route.against = M.validRevision(against)
+		if route.revision == nil or route.against == nil then
+			return nil
+		end
+	elseif kind == "helm-values" then
+		route.mode = Helm.validMode(mode)
+	end
+	return route
+end
 
 -- Link and saved-state values reach kubectl's argv: each must look like what
 -- it claims to be (same rules as actions/quick.luau).
@@ -1019,6 +1124,13 @@ end
 local function restoreRoute(v: any): Route?
 	if type(v) ~= "table" or not ROUTE_KINDS[v.kind] then
 		return nil
+	end
+	if Helm.isRoute(v.kind) then
+		local route = helmRoute(v.kind, v.release, v.namespace, v.revision, v.against, v.mode)
+		if route and v.kind == "helm-releases" then
+			route.namespace = nonEmpty(v.namespace)
+		end
+		return route
 	end
 	local ref: Ref? = nil
 	if type(v.ref) == "table" then
@@ -1087,6 +1199,18 @@ local function linkRoutes(params: { { key: string, value: string } }): { Route }
 	local resource = if kind then M.resourceToken(kind, group) else "pods"
 	local stack: { Route } = { { kind = "list", resource = resource } }
 	local route = param(params, "route")
+	if route == "helm-releases" or route == "helm-release" or route == "helm-history" then
+		local helm: { Route } = { { kind = "helm-releases" } }
+		local release =
+			helmRoute("helm-release", param(params, "release"), namespace, param(params, "revision"), nil, nil)
+		if release then
+			table.insert(helm, release)
+			if route == "helm-history" then
+				table.insert(helm, { kind = "helm-history", release = release.release, namespace = release.namespace })
+			end
+		end
+		return helm
+	end
 	local ref: Ref? = nil
 	if kind and name then
 		local info = Kinds.normalize(resource)
@@ -1211,6 +1335,8 @@ function M.init(args: { string }, saved: any, config: Config, env: Env): (State,
 		isList = env.isList,
 		null = env.null,
 		searchPending = param(params, "search") == "1",
+		helm = Helm.new(),
+		helmProgram = env.helm,
 	}
 	local effects: { Effect } = {}
 	if s.envPending then
@@ -1269,6 +1395,10 @@ function M.save(s: State): any
 			wrap = r.wrap,
 			warnings = r.warnings,
 			related = r.related,
+			release = r.release,
+			revision = r.revision,
+			against = r.against,
+			mode = r.mode,
 		}
 	end
 	local t = s.target
@@ -1352,9 +1482,13 @@ local function chooseContext(s: State, name: string, effects: { Effect })
 	s.targetError = nil
 	s.targetErrorKind = nil
 	s.resolve = { phase = "done", gen = s.resolve.gen }
-	-- Back to the root view of the newly chosen cluster.
+	-- Back to the root view of the newly chosen cluster; nothing read from
+	-- the previous one may show under the new target.
+	s.helm = Helm.new()
 	local root = s.stack[1]
-	if root.kind ~= "list" then
+	if root.kind == "helm-releases" then
+		root = { kind = "helm-releases" }
+	elseif root.kind ~= "list" then
 		root = { kind = "list", resource = "pods" }
 	end
 	s.stack = { root }
@@ -1416,7 +1550,7 @@ end
 
 local function drill(s: State, effects: { Effect })
 	local r = top(s)
-	if Gitops.isRoute(r.kind) then
+	if Gitops.isRoute(r.kind) or Helm.isRoute(r.kind) then
 		return
 	end
 	if r.kind == "detail" then
@@ -1432,7 +1566,12 @@ local function drill(s: State, effects: { Effect })
 	elseif r.kind == "namespaces" then
 		chooseNamespace(s, item.key, effects)
 	elseif r.kind == "kinds" then
-		chooseKind(s, item.key, effects)
+		if item.key == M.HELM_KIND_ROW then
+			s.stack = { { kind = "helm-releases" } }
+			ensure(s, effects)
+		else
+			chooseKind(s, item.key, effects)
+		end
 	elseif item.ref then
 		openRef(s, "detail", item.ref, effects)
 	end
@@ -1461,6 +1600,10 @@ function M.refresh(s: State, effects: { Effect })
 		enterGitops(s, r, true, effects)
 		return
 	end
+	if Helm.isRoute(r.kind) then
+		enterHelm(s, r, true, effects)
+		return
+	end
 	if r.kind == "contexts" or M.resolved(s) then
 		startLoad(s, r, true, effects)
 	end
@@ -1476,7 +1619,15 @@ local function typed(argv: { string }): string
 end
 
 local function copyCommand(s: State, effects: { Effect })
-	local argv = argvFor(s, top(s))
+	local r = top(s)
+	if Helm.isRoute(r.kind) then
+		withHelm(s, function(h, ctx)
+			Helm.copy(h, ctx, r, effects)
+			return nil
+		end)
+		return
+	end
+	local argv = argvFor(s, r)
 	if argv == nil then
 		return
 	end
@@ -1954,6 +2105,59 @@ local function gitopsRouteKey(s: State, key: Key, ch: string?, effects: { Effect
 	return handled
 end
 
+-- Helm -------------------------------------------------------------------------
+
+-- H: the focused object's Helm release, else the release list.
+local function helmKey(s: State, effects: { Effect })
+	if s.helmProgram == nil then
+		table.insert(effects, toast("error", "helm not found", Helm.notFound(M.helmCtx(s))))
+		return
+	end
+	if not needTarget(s, effects) then
+		return
+	end
+	local ref = M.focusRef(s)
+	local obj = if ref then M.findObject(s, ref) else nil
+	local owner = if obj then HelmOwner.fromObject(obj) else nil
+	if owner then
+		pushRoute(s, { kind = "helm-release", release = owner.release, namespace = owner.namespace }, effects)
+	elseif top(s).kind ~= "helm-releases" then
+		pushRoute(s, { kind = "helm-releases" }, effects)
+	end
+end
+
+-- Route-specific keys of the Helm views; false lets the global keys run.
+-- Runs before the GitOps and logs/events dispatch.
+local function helmRouteKey(s: State, key: Key, ch: string?, effects: { Effect }): boolean
+	local r = top(s)
+	if not Helm.isRoute(r.kind) then
+		return false
+	end
+	if r.kind == "helm-release" and key.ctrl and key.name == "g" then
+		-- The drift report of the chart directory that matches the release.
+		local row = withHelm(s, function(h, ctx)
+			return Helm.releaseRow(h, ctx, r)
+		end)
+		local id = if row
+			then withGitops(s, function(g, ctx)
+				return Gitops.releaseSource(g, ctx, row)
+			end)
+			else nil
+		if id then
+			pushRoute(s, { kind = "drift", source = id }, effects)
+		else
+			driftKey(s, effects)
+		end
+		return true
+	end
+	local selected = M.selectedItem(s)
+	local h = Helm.clone(s.helm)
+	local handled, nav = Helm.onKey(h, M.helmCtx(s), r, selected, ch, key, effects)
+	s.helm = h
+	applyNav(s, nav, effects)
+	return handled
+end
+
 -- Logs and events routes ------------------------------------------------------
 
 local ERROR_RANK = LogsParse.rank("error")
@@ -2160,6 +2364,9 @@ local FILTERABLE: { [string]: boolean } = {
 	relations = true,
 	logs = true,
 	events = true,
+	["helm-releases"] = true,
+	["helm-history"] = true,
+	["helm-resources"] = true,
 }
 M.FILTERABLE = FILTERABLE
 
@@ -2236,10 +2443,17 @@ local function onKey(s: State, key: Key, effects: { Effect }): boolean
 		s.help = false
 		return true
 	end
+	if not s.help and helmRouteKey(s, key, ch, effects) then
+		return true
+	end
 	if not s.help and gitopsRouteKey(s, key, ch, effects) then
 		return true
 	end
 	if not s.help and dataRouteKey(s, key, ch, effects) then
+		return true
+	end
+	if ch == "H" or (name == "h" and key.shift) then
+		helmKey(s, effects)
 		return true
 	end
 	if ch == "g" then
@@ -2351,6 +2565,10 @@ end
 local function onAction(s: State, act: string, value: string, effects: { Effect }): boolean
 	if act == "open" then
 		selectKey(s, value)
+		if Helm.isRoute(top(s).kind) then
+			helmRouteKey(s, { name = "enter" }, nil, effects)
+			return true
+		end
 		if Gitops.isRoute(top(s).kind) then
 			gitopsRouteKey(s, { name = "enter" }, nil, effects)
 			return true
@@ -2493,6 +2711,12 @@ local function onAction(s: State, act: string, value: string, effects: { Effect 
 	elseif act == "gitops-key" then
 		local ch = if value == "enter" or value == "escape" then nil else value
 		return gitopsRouteKey(s, { name = value, text = ch }, ch, effects)
+	elseif string.sub(act, 1, 5) == "helm-" then
+		local h = Helm.clone(s.helm)
+		local handled, nav = Helm.onAction(h, M.helmCtx(s), top(s), act, value, effects)
+		s.helm = h
+		applyNav(s, nav, effects)
+		return handled
 	elseif string.sub(act, 1, 7) == "gitops-" then
 		local r = top(s)
 		local g = Gitops.clone(s.gitops)
@@ -2616,6 +2840,10 @@ local function onRelationResult(s: State, key: string, sub: string, load: Load, 
 		end
 		data.root = (Json.redactObject(obj, policy(s)))
 		upd.data = data
+		withHelm(s, function(h, ctx)
+			Helm.noticeObject(h, ctx, data.root, effects)
+			return nil
+		end)
 		issueRelationQueries(s, key, upd, effects)
 		return
 	end
@@ -2728,6 +2956,18 @@ local function onResult(s: State, msg: Msg, effects: { Effect }): boolean
 	elseif tag == M.QUICK_TAG then
 		onQuick(s, msg, effects)
 		return true
+	elseif string.sub(tag, 1, 5) == "helm|" then
+		local route = top(s)
+		local h = Helm.clone(s.helm)
+		local ctx = M.helmCtx(s)
+		Helm.onResult(h, ctx, msg, if Helm.isRoute(route.kind) then route else nil, effects)
+		-- Chained reads (the latest status's extras, pristine defaults inputs,
+		-- live presence) start once what they need arrived.
+		if Helm.isRoute(route.kind) then
+			Helm.enter(h, ctx, route, false, effects)
+		end
+		s.helm = h
+		return true
 	elseif string.sub(tag, 1, 7) == "gitops|" then
 		local g = Gitops.clone(s.gitops)
 		Gitops.onResult(g, M.gitopsCtx(s), msg, effects)
@@ -2797,6 +3037,10 @@ local function onResult(s: State, msg: Msg, effects: { Effect }): boolean
 	end
 	setLoad(s, key :: string, upd)
 	if kind == "detail" and ok then
+		withHelm(s, function(h, ctx)
+			Helm.noticeObject(h, ctx, (data :: DetailData).object, effects)
+			return nil
+		end)
 		withGitops(s, function(g, ctx)
 			Gitops.noticeObject(g, ctx, (data :: DetailData).object, effects)
 			return nil

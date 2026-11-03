@@ -1,0 +1,3 @@
+{{ .Release.Name }} serves on port {{ .Values.service.port }} in {{ .Release.Namespace }}.
+Mode: {{ .Values.config.mode }}
+API token: {{ .Values.auth.apiToken }}

@@ -732,12 +732,24 @@ describe("explore gitops: drift", function()
 		local tmp = "/data/tmp/drift-1000-n1.yaml"
 		local lines = G.lines(w)
 		expect(find(lines, "/bin/sh -c")).toBe("/bin/sh -c " .. Gitops.WRITE_SCRIPT .. " tern-kube-tmp " .. tmp)
-		expect(find(lines, " diff ")).toBe("kubectl --context kind-tern-kube-dev diff -f " .. tmp)
+		-- helm template leaves metadata.namespace out of most objects (helm
+		-- install puts them in the release namespace); without -n kubectl
+		-- would diff them against its default namespace and report them missing.
+		expect(find(lines, " diff ")).toBe(
+			"kubectl --context kind-tern-kube-dev diff -f " .. tmp .. " -n tern-test-helm"
+		)
 		expect(w.removed).toEqual({ tmp })
 		expect(g.drifts[id :: string].status).toBe("ok")
 		local _, nav = G.press(w, g, ctx, { kind = "drift", source = id }, nil, "X")
 		expect(nav).toBeNil()
 		expect(G.toastTexts(w)[1]).toContain("Charts are not exported")
+		-- Applying the render must land where helm installs it, not in
+		-- kubectl's default namespace (the documents carry no namespace).
+		G.press(w, g, ctx, { kind = "drift", source = id }, nil, "A")
+		local req = decodeOpen(w)
+		expect(req.op).toBe("apply")
+		expect(req.file).toBe("/data/tmp/apply-1000-n2.yaml")
+		expect(req.namespace).toBe("tern-test-helm")
 	end)
 
 	it("a kustomize source diffs with -k and A applies with kustomize=", function()
@@ -774,6 +786,243 @@ describe("explore gitops: drift", function()
 		expect(md).toContain("Drift of `drift/` against context `kind-tern-kube-dev` (tern-kube).")
 		expect(md).toContain("4 changed, 3 missing in cluster, 1 unmanaged, 2 in sync.")
 		expect(md).toContain("| Deployment tern-test-drift/web | changed | +2 -2 |")
+	end)
+end)
+
+-- Chart auto-detect: chart dirs in the checkout are offered as drift
+-- sources for the releases that run them. Helm is asked once per index,
+-- the deployed values (which can hold secrets) only touch disk 0600 for the
+-- one render and are always removed, and the user's configured entries win.
+describe("explore gitops: chart auto-detect", function()
+	local HELM_NS = "tern-test-helm"
+	local CHART = "/repo/helm/chart"
+	local DEPLOYED = "helm:" .. CHART .. ":" .. HELM_NS .. "/shop-a:deployed"
+	local STAGING = "helm:" .. CHART .. ":" .. HELM_NS .. "/shop-a:values=/repo/helm/values-staging.yaml"
+	local VALUES_TMP = "/data/tmp/values-1000-n1.yaml"
+
+	local function chooser(cfg: string?, ctxHelm: string?): (World, Gitops.G, Gitops.Ctx)
+		local w = G.new(G.helmFiles())
+		local ctx = G.ctx(cfg, HELM_NS)
+		ctx.helm = ctxHelm
+		local g = G.ready(w, ctx)
+		w.runs = {}
+		step(w, g, ctx, function(effects)
+			Gitops.enter(g, ctx, { kind = "drift" } :: Gitops.Route, false, effects)
+		end)
+		return w, g, ctx
+	end
+
+	local function source(g: Gitops.G, ctx: Gitops.Ctx, id: string): Gitops.SourceEntry?
+		return Gitops.findSource(g, ctx, id)
+	end
+
+	local function helmRuns(w: World): { Effect }
+		local out: { Effect } = {}
+		for _, e in ofType(w.effects, "run") do
+			if (e.argv :: { string })[1] == G.HELM then
+				table.insert(out, e)
+			end
+		end
+		return out
+	end
+
+	it("lists each matching release with deployed values and with the proposed values file", function()
+		local w, g, ctx = chooser(nil, G.HELM)
+		local runs = helmRuns(w)
+		expect(#runs).toBe(1)
+		expect(table.concat(runs[1].argv :: { string }, " ")).toBe(
+			G.HELM
+				.. " --kube-context kind-tern-kube-dev list -a -o json --time-format 2006-01-02T15:04:05Z07:00 --max 1000 -A"
+		)
+		expect(runs[1].env).toEqual({ HELM_DRIVER = "secret" })
+		local deployed = source(g, ctx, DEPLOYED) :: Gitops.SourceEntry
+		expect(deployed.label).toBe("helm/chart as tern-test-helm/shop-a with deployed values")
+		expect(deployed.note).toBe("auto: name+version+app version match")
+		expect(deployed.namespaces).toEqual({ HELM_NS })
+		expect(deployed.rank).toBe(2)
+		expect((source(g, ctx, STAGING) :: Gitops.SourceEntry).label).toBe(
+			"helm/chart as tern-test-helm/shop-a with helm/values-staging.yaml"
+		)
+		-- web-b runs another chart.
+		for _, s in Gitops.sources(g, ctx) do
+			expect((string.find(s.id, "web-b", 1, true))).toBeNil()
+		end
+		expect(#Gitops.chartDirs(g)).toBe(1)
+	end)
+
+	it("asks helm once per index: again on r, not on every visit", function()
+		local w, g, ctx = chooser(nil, G.HELM)
+		step(w, g, ctx, function(effects)
+			Gitops.enter(g, ctx, { kind = "drift" } :: Gitops.Route, false, effects)
+		end)
+		expect(#helmRuns(w)).toBe(1)
+		step(w, g, ctx, function(effects)
+			Gitops.enter(g, ctx, { kind = "drift" } :: Gitops.Route, true, effects)
+		end)
+		expect(#helmRuns(w)).toBe(2)
+	end)
+
+	it("offers nothing and asks helm nothing when auto-detect is off or helm is missing", function()
+		local w, g, ctx = chooser('{"helm": {"auto_detect": false}}', G.HELM)
+		expect(#helmRuns(w)).toBe(0)
+		expect(source(g, ctx, DEPLOYED)).toBeNil()
+		local w2, g2, ctx2 = chooser(nil, nil)
+		expect(#helmRuns(w2)).toBe(0)
+		expect(source(g2, ctx2, DEPLOYED)).toBeNil()
+	end)
+
+	it("shows a failed helm list and keeps the other sources", function()
+		local w = G.new(G.helmFiles())
+		w.answer = function(argv)
+			return if argv[1] == G.HELM then G.fail(1, "Error: Kubernetes cluster unreachable") else nil
+		end
+		local ctx = G.ctx(nil, HELM_NS)
+		local g = G.ready(w, ctx)
+		step(w, g, ctx, function(effects)
+			Gitops.enter(g, ctx, { kind = "drift" } :: Gitops.Route, false, effects)
+		end)
+		expect(g.releases.status).toBe("error")
+		expect(g.releases.error).toBe("helm list exited 1: Error: Kubernetes cluster unreachable")
+		expect(source(g, ctx, DRIFT) ~= nil).toBe(true)
+	end)
+
+	it("lets a configured gitops.helm entry replace the guesses for its release", function()
+		local _, g, ctx = chooser(
+			'{"gitops": {"helm": [{"chart": "helm/chart", "release": "shop-a", "namespace": "tern-test-helm"}]}}',
+			G.HELM
+		)
+		expect(source(g, ctx, DEPLOYED)).toBeNil()
+		expect(source(g, ctx, STAGING)).toBeNil()
+		expect(source(g, ctx, "helm:" .. CHART .. ":" .. HELM_NS .. "/stuck-d:deployed") ~= nil).toBe(true)
+	end)
+
+	it("renders with the deployed values from a 0600 temp file removed right after the render", function()
+		local w, g, ctx = chooser(nil, G.HELM)
+		w.runs = {}
+		step(w, g, ctx, function(effects)
+			Gitops.startDriftReport(g, ctx, DEPLOYED, false, effects)
+		end)
+		local lines = G.lines(w)
+		local pins = G.HELM .. " --kube-context kind-tern-kube-dev "
+		expect(lines[1]).toBe(pins .. "get values shop-a -n tern-test-helm -o json")
+		expect(lines[2]).toBe("/bin/sh -c " .. Gitops.WRITE_SCRIPT .. " tern-kube-tmp " .. VALUES_TMP)
+		expect(Gitops.WRITE_SCRIPT).toContain("umask 077")
+		expect(lines[3]).toBe(G.HELM .. " template shop-a " .. CHART .. " -n tern-test-helm -f " .. VALUES_TMP)
+		expect(lines[4]).toBe("rm -f -- " .. VALUES_TMP)
+		expect(w.helmInputs[VALUES_TMP]).toBe(fixtures.read("helm/captured/values-shop-a-r3.json"))
+		expect(find(lines, " diff ")).toBe(
+			"kubectl --context kind-tern-kube-dev diff -f /data/tmp/drift-1000-n2.yaml -n tern-test-helm"
+		)
+		expect(w.removed).toEqual({ VALUES_TMP, "/data/tmp/drift-1000-n2.yaml" })
+		expect((next(w.tmp))).toBeNil()
+		local load = g.drifts[DEPLOYED]
+		expect(load.status).toBe("ok")
+		-- The render now is the source: its objects are what was compared.
+		expect((load.report :: any).counts.docs).toBe(3)
+	end)
+
+	it("renders with the proposed values file, nothing written", function()
+		local w, g, ctx = chooser(nil, G.HELM)
+		w.runs = {}
+		step(w, g, ctx, function(effects)
+			Gitops.startDriftReport(g, ctx, STAGING, false, effects)
+		end)
+		local lines = G.lines(w)
+		expect(lines[1]).toBe(
+			G.HELM .. " template shop-a " .. CHART .. " -n tern-test-helm -f /repo/helm/values-staging.yaml"
+		)
+		expect(find(lines, "get values")).toBeNil()
+		expect(g.drifts[STAGING].status).toBe("ok")
+	end)
+
+	it("reports a failed render and still removes the deployed values", function()
+		local w, g, ctx = chooser(nil, G.HELM)
+		w.answer = function(argv)
+			return if table.find(argv, "template")
+				then G.fail(1, "Error: found in Chart.yaml, but missing in charts/")
+				else nil
+		end
+		step(w, g, ctx, function(effects)
+			Gitops.startDriftReport(g, ctx, DEPLOYED, false, effects)
+		end)
+		local load = g.drifts[DEPLOYED]
+		expect(load.status).toBe("error")
+		expect(load.error).toBe("helm template shop-a exited 1: Error: found in Chart.yaml, but missing in charts/")
+		expect(w.removed).toEqual({ VALUES_TMP })
+	end)
+
+	-- r while helm still runs: the old run's answers are ignored, but its
+	-- values file must not stay behind.
+	it("removes the values file of a superseded render", function()
+		local w, g, ctx = chooser(nil, G.HELM)
+		local first: { Effect } = {}
+		Gitops.startDriftReport(g, ctx, DEPLOYED, false, first)
+		-- The values arrive: the first run asks to write its values file.
+		local writes: { Effect } = {}
+		for _, e in first do
+			Gitops.onResult(
+				g,
+				ctx,
+				{ t = "result", tag = e.tag, gen = e.gen, result = G.respond(w, e), at = G.AT },
+				writes
+			)
+		end
+		expect(#writes).toBe(1)
+		local second: { Effect } = {}
+		Gitops.startDriftReport(g, ctx, DEPLOYED, true, second)
+		for _, e in second do
+			table.insert(writes, e)
+		end
+		G.core(w, g, ctx, writes)
+		expect(table.find(w.removed, VALUES_TMP) ~= nil).toBe(true)
+		expect((next(w.tmp))).toBeNil()
+		expect(g.drifts[DEPLOYED].status).toBe("ok")
+	end)
+
+	it("resolves the best source of a release opened elsewhere", function()
+		local w = G.new(G.helmFiles())
+		local ctx = G.ctx(nil, HELM_NS)
+		local g = G.ready(w, ctx)
+		local row = {
+			name = "shop-a",
+			namespace = HELM_NS,
+			revision = 3,
+			updated = "2026-01-01T00:03:00Z",
+			updatedAt = nil,
+			status = "deployed",
+			chart = "shop-0.1.0",
+			chartName = "shop",
+			chartVersion = "0.1.0",
+			appVersion = "1.27",
+		} :: any
+		expect(Gitops.releaseSource(g, ctx, row)).toBe(DEPLOYED)
+		step(w, g, ctx, function(effects)
+			Gitops.startDriftReport(g, ctx, DEPLOYED, false, effects)
+		end)
+		expect(g.drifts[DEPLOYED].status).toBe("ok")
+		local other = table.clone(row)
+		other.chartName = "web"
+		expect(Gitops.releaseSource(g, ctx, other)).toBeNil()
+	end)
+
+	it("copies an auto source as a gitops.helm entry instead of writing the config", function()
+		local w, g, ctx = chooser(nil, G.HELM)
+		local effects: { Effect } = {}
+		local handled = Gitops.onAction(
+			g,
+			ctx,
+			{ kind = "drift", source = STAGING } :: Gitops.Route,
+			"gitops-copyhelm",
+			"",
+			effects
+		)
+		expect(handled).toBe(true)
+		local copies = ofType(effects, "copy")
+		expect(copies[1].text).toBe(
+			'{"chart":"helm/chart","release":"shop-a","namespace":"tern-test-helm","values":["helm/values-staging.yaml"]}'
+		)
+		expect(#ofType(effects, "write")).toBe(0)
+		local _ = w
 	end)
 end)
 

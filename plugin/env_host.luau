@@ -180,6 +180,8 @@ local function explicit(name: string): Shellenv.Explicit?
 		return Shellenv.explicitKubectl(cfg.kubectl, tern.kv.get("kubectl"), getenv("TKUBE_KUBECTL"))
 	elseif name == "gh" and cfg.gitops.gh ~= "" and cfg.gitops.gh ~= "gh" then
 		return { value = cfg.gitops.gh, source = "config" }
+	elseif name == "helm" and cfg.helm.program ~= "" and cfg.helm.program ~= "helm" then
+		return { value = cfg.helm.program, source = "config" }
 	end
 	return nil
 end

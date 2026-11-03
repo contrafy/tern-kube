@@ -1,0 +1,1 @@
+{"big":12345678901234567000,"config":{"mode":"reused"},"empty":{},"float":1e+21,"list":[1,2.5,true,null,{"a":[]}],"weird":"q\"uote back\\slash tab\t bell\u0007 nul\u0000 é 漢 😀"}

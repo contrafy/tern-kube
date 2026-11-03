@@ -7,6 +7,31 @@ versions may break).
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-02
+
+### Added
+
+- Explore Helm views: `H` (or the kinds picker row `helm releases`, or **Tern Kube: Helm releases** in the palette) lists releases in the Explore namespace scope with status badges (failed, pending, stuck), chart, version and app version; on a Helm-managed object `H` opens its release. A release shows its header, a values summary (overridden, same as default, unknown keys), notes and hooks; `h` history (latest and running revision marked), `v` values in five modes (changed, user-supplied, computed, chart defaults, defaults → computed), `M` manifest, `N` notes, `K` hooks with their last run, `R` resources with live presence. Every helm call pins the context and `HELM_DRIVER`.
+- Revision diffs: `=` diffs a revision against the latest (or one marked with `space`): chart and app version change, user values that changed, hooks added or removed, and per-object diffs.
+- Helm rollback through the approve block (`ctrl+r` on a release or a history row): the recorded change between the two revisions, the live `kubectl diff` against the target manifest, a dry run, options (wait, cleanup on fail, force), and the typed release name. Pending releases, forced rollbacks and deletions carry their reason; the rollback is refused when the release moved since the preview. Audit records carry the release and both revisions.
+- Secret masking for Helm values, notes, manifests, hooks and diffs: key names, value shapes (PEM, JWT, bearer tokens, URL passwords) and echoes of masked values in other text; `security.show_secret_values` turns it off.
+- Chart auto-detect for drift: a chart directory in the repository whose name and version match a deployed release becomes a drift source, rendered with the release's deployed values (written 0600, removed after the render) or a values file next to the chart. **Copy as gitops.helm entry** copies the config for it.
+- Objects managed by Helm name their release (revision, status, chart) in Explore detail and relations, with a chip to the release; the lens shows a **Helm release ns/X** chip on `describe`, `get -o yaml`, `get -o json` and tables with `--show-labels`.
+- Settings section `helm`: program, storage driver, list and history limits, auto-detect, chart sources, rollback defaults.
+
+### Changed
+
+- End-to-end scenarios 50-55 cover the Helm views, revision diffs, rollback, relations and chart auto-detect against kind; `tests/integration/helm/template-compat.sh` (run in CI) checks the release extras template against the pinned helm, and the mutation integration suite gains Helm rollback scenarios.
+- The test sandbox points `HELM_CONFIG_HOME`, `HELM_CACHE_HOME` and `HELM_DATA_HOME` at the sandbox.
+- End-to-end runs restart `tk-logmix` when its pods are older than 4 hours (the logs lens keeps the newest 20 000 lines, so scenario 40 lost the container's first lines), build the Helm world afresh in every run instead of reusing one another run left or is still deleting, and wait until kubectl can read crashy's previous instance before scenario 49 asks for it.
+
+### Fixed
+
+- Drift of a Helm source diffs the render in the release namespace: objects without `metadata.namespace` were compared in kubectl's default namespace and reported missing.
+- Drift of a Helm source ignores objects of other Helm releases and Helm hook objects in the same namespace instead of listing them as unmanaged.
+- **Apply source** (`A`) and **Apply** (`a`) on a Helm drift source apply the render with `-n <release namespace>`: objects without `metadata.namespace` would have been applied to kubectl's default namespace. Documents of different releases, or renders mixed with plain manifests, are refused.
+- Explore and Settings lists keep a full window of rows when the block opens while the Tern window is in the background (behind other windows): Tern reports such a block as 80x24 until the window is activated, and Explore cut its lists to 3 rows.
+
 ## [0.3.0] - 2026-11-02
 
 ### Added
@@ -143,7 +168,8 @@ First public beta.
 - Docs: SDK capability matrix, configuration, performance, architecture,
   security model, testing, releasing.
 
-[Unreleased]: https://github.com/contrafy/tern-kube/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/contrafy/tern-kube/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/contrafy/tern-kube/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/contrafy/tern-kube/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/contrafy/tern-kube/compare/v0.1.3...v0.2.0
 [0.1.3]: https://github.com/contrafy/tern-kube/compare/v0.1.2...v0.1.3

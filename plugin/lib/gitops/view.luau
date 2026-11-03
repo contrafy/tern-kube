@@ -560,6 +560,18 @@ local function chooserBody(v: Ctx): { Node }
 	if g.ctl.status == "loading" then
 		table.insert(out, ui.muted("Reading Argo CD / Flux applications …", { key = "ctl" }))
 	end
+	local releases = g.releases
+	if releases.status == "loading" then
+		table.insert(out, ui.muted("Reading helm releases for chart auto-detect …", { key = "releases" }))
+	elseif releases.status == "error" then
+		table.insert(
+			out,
+			ui.text(
+				{ ui.span("Chart auto-detect unavailable: " .. (releases.error or "?"), "error") },
+				{ key = "releases", role = "tern-kube.error" }
+			)
+		)
+	end
 	if not Gitops.ready(g) then
 		return out
 	end
@@ -655,6 +667,17 @@ local function reportBody(v: Ctx, load: Gitops.DriftLoad): { Node }
 			ui.span(if src.note then "  · " .. src.note else "", "muted"),
 		}, { key = "src" }),
 	}
+	local auto = src.auto
+	if auto then
+		local how = if auto.useDeployedValues
+			then string.format(
+				"Rendered with the deployed values of %s/%s (written 0600 for the render, then removed).",
+				auto.release.namespace,
+				auto.release.name
+			)
+			else "Rendered with " .. Gitops.rel(g, (auto.values :: { string })[1]) .. "."
+		table.insert(out, ui.muted(how, { key = "auto" }))
+	end
 	if load.status == "index" then
 		table.insert(out, M.scanLine(g))
 		return out
@@ -663,10 +686,13 @@ local function reportBody(v: Ctx, load: Gitops.DriftLoad): { Node }
 		for _ in load.livePending do
 			pending += 1
 		end
-		local text = "Comparing with the cluster: "
-			.. (if load.diffDone then "diff done" else "kubectl diff running")
-			.. (if pending > 0 then string.format(", listing %d namespaces", pending) else "")
-			.. " …"
+		local text = if load.render == "values"
+			then "Reading the release's deployed values …"
+			elseif load.render == "template" then "Rendering the chart …"
+			else "Comparing with the cluster: "
+				.. (if load.diffDone then "diff done" else "kubectl diff running")
+				.. (if pending > 0 then string.format(", listing %d namespaces", pending) else "")
+				.. " …"
 		table.insert(out, ui.muted(text, { key = "status" }))
 		if load.argv then
 			table.insert(out, ui.muted(typed(load.argv :: { string }), { key = "argv" }))
@@ -730,6 +756,15 @@ local function reportBody(v: Ctx, load: Gitops.DriftLoad): { Node }
 			table.insert(out, ui.muted(note, { key = "note" .. i }))
 		end
 	end
+	if load.renderArgv then
+		table.insert(
+			out,
+			ui.text({
+				ui.span("rendered by ", "muted"),
+				ui.span(table.concat(load.renderArgv :: { string }, " "), "muted mono"),
+			}, { key = "render-argv" })
+		)
+	end
 	if load.argv then
 		table.insert(
 			out,
@@ -752,6 +787,14 @@ local function reportBody(v: Ctx, load: Gitops.DriftLoad): { Node }
 	if src.type ~= "helm" then
 		table.insert(list, { "Export (E)", "gitops-key=E", "accent", "Write the selected live object to manifests" })
 		table.insert(list, { "Export all shown (X)", "gitops-key=X", "accent" })
+	end
+	if src.auto then
+		table.insert(list, {
+			"Copy as gitops.helm entry",
+			"gitops-copyhelm=",
+			"accent",
+			"Copies the config entry for this source; the config is not changed",
+		})
 	end
 	table.insert(list, { "Filter (f)", "gitops-key=f" })
 	table.insert(list, { "Compare again (r)", "refresh" })

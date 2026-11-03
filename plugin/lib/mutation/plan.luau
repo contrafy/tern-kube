@@ -5,6 +5,7 @@
 -- inputs, unknown or ambiguous flags, --raw, interactive prompts) is rejected
 -- with an actionable diagnostic instead of being approved blind.
 local Argv = require("../kubectl/argv")
+local HelmPlan = require("./helm_plan")
 local Kinds = require("../kubectl/kinds")
 local Steps = require("./steps")
 local T = require("./types")
@@ -34,6 +35,7 @@ local OPERATION: { [T.Family]: string } = {
 	uncordon = "uncordon",
 	drain = "drain",
 	edit = "edit",
+	["helm-rollback"] = "rollback",
 }
 
 local FAMILIES: { [string]: T.Family } = {
@@ -462,10 +464,13 @@ end
 -- (context and its provenance, kubeconfig path, default namespace, cwd).
 -- Returns nil with an `info` diagnostic for commands that need no approval
 -- (not a guarded mutation, or already a dry run) and nil with `error`
--- diagnostics for rejected ones.
+-- diagnostics for rejected ones. A helm argv is planned by HelmPlan.
 function M.fromArgv(argv: { string }, env: T.Env): (Plan?, { Diagnostic })
 	if #argv == 0 then
 		return nil, { err("invalid", "empty command") }
+	end
+	if HelmPlan.isHelm(argv, env) then
+		return HelmPlan.fromArgv(argv, env)
 	end
 	local program = nonEmpty(env.program) or argv[1]
 	local inv = Argv.parse(argv[1], table.move(argv, 2, #argv, 1, {}))

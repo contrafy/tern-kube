@@ -1,0 +1,63 @@
+---
+# Source: web/templates/secret.yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: web-b-web-auth
+type: Opaque
+stringData:
+  password: "hunter2-REDACTME"
+  apiToken: "tok-REDACTME"
+---
+# Source: web/templates/configmap.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: web-b-web-config
+  namespace: tern-test-helm
+data:
+  mode: "canary"
+  dsn: "postgres://app:hunter2-REDACTME@db:5432/app"
+---
+# Source: web/templates/service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: web-b-web
+  labels:
+    app.kubernetes.io/name: web
+    app.kubernetes.io/instance: web-b
+spec:
+  selector:
+    app.kubernetes.io/name: web
+    app.kubernetes.io/instance: web-b
+  ports:
+    - port: 80
+      targetPort: 80
+---
+# Source: web/templates/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web-b-web
+  labels:
+    app.kubernetes.io/name: web
+    app.kubernetes.io/instance: web-b
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: web
+      app.kubernetes.io/instance: web-b
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: web
+        app.kubernetes.io/instance: web-b
+    spec:
+      containers:
+        - name: shop
+          image: "nginx:1.27-alpine"
+          ports:
+            - containerPort: 80
+

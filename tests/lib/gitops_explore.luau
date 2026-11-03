@@ -68,6 +68,24 @@ function M.open(w: G.World, params: { [string]: string }?, cfgText: string?): St
 	return M.drive(w, s, effects)
 end
 
+-- The world plus the shop chart at /repo/helm (gitops fixtures), with helm
+-- resolved: the drift chooser offers auto-detected chart sources.
+function M.helmWorld(): G.World
+	local files = G.helmFiles()
+	files["/repo/apps/web.yaml"] = M.WEB
+	local w = G.new(files)
+	w.answer = M.world().answer
+	return w
+end
+
+function M.openHelm(w: G.World, cfgText: string?): State
+	local e = M.env()
+	e.helm = G.HELM
+	local s, effects =
+		State.init({ W.link({ context = W.CTX, namespace = M.APPS, kind = "Deployment" }) }, nil, W.config(cfgText), e)
+	return M.drive(w, s, effects)
+end
+
 function M.press(w: G.World, s: State, name: string, extra: { [string]: any }?): State
 	local s2, effects = State.update(s, W.key(name, extra))
 	return M.drive(w, s2, effects)

@@ -158,6 +158,29 @@ describe("kubectl command", function()
 		})
 	end)
 
+	-- Lens chips on Helm-managed objects open the release in Explore: the
+	-- release namespace must win over the lensed command's -n (a describe
+	-- in another namespace still names the release's own).
+	it("explore URL names a Helm release with its own namespace and pins the target", function()
+		local url = Command.exploreUrl(inv("--context kind --kubeconfig /k/c get pods -n other"), nil, {
+			route = "helm-release",
+			release = "shop-a",
+			namespace = "tern-test-helm",
+			revision = 3,
+		})
+		expect(params(url)).toEqual({
+			namespace = "tern-test-helm",
+			context = "kind",
+			kubeconfig = "/k/c",
+			route = "helm-release",
+			release = "shop-a",
+			revision = "3",
+		})
+		expect(url).toBe(
+			"tern-kube://explore?namespace=tern-test-helm&context=kind&kubeconfig=%2Fk%2Fc&route=helm-release&release=shop-a&revision=3"
+		)
+	end)
+
 	it("logsSource reads the pod, TYPE/NAME or selector and the flags a rerun keeps", function()
 		local pod = Command.logsSource(inv("--context kind logs p -n x -c app -p --since=5m --tail=20 --timestamps"))
 		expect(pod.ref and pod.ref.kind).toBe("Pod")

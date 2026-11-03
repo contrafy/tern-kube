@@ -11,7 +11,8 @@
 #
 # Inputs (env): TK_KUBECONFIG (host kubeconfig the block resolves),
 # TK_PREVIEW_MS, TK_EXEC_MS, TK_MUTATIONS_ENABLED (true|false),
-# TK_SHOW_SECRETS (true|false), TK_REQUEST (guard request file), TK_PANES.
+# TK_SHOW_SECRETS (true|false), TK_REQUEST (guard request file), TK_PANES,
+# TK_HELM (helm program; "none" = not found), TK_HELM_TIMEOUT_S, TK_HELM_WAIT.
 
 TK_REPO=${TK_REPO:?}
 TK_LUAU=$TK_REPO/.tools/bin/luau
@@ -70,6 +71,9 @@ local T = { init = {
 	arg = "$(printf '%s' "$2" | tk_hex)",
 	now = $(date +%s),
 	kubectl = "$(printf '%s' "$(command -v kubectl)" | tk_hex)",
+	$(if [ "${TK_HELM:-}" != none ]; then printf 'helm = "%s",' "$(printf '%s' "${TK_HELM:-$TK_REPO/.tools/bin/helm}" | tk_hex)"; fi)
+	helmTimeoutS = ${TK_HELM_TIMEOUT_S:-60},
+	helmWait = ${TK_HELM_WAIT:-true},
 	kubeconfig = "$(printf '%s' "${TK_KUBECONFIG:-$TK_REPO/.sandbox/kubeconfig}" | tk_hex)",
 	home = "$(printf '%s' "$TK_HOME" | tk_hex)",
 	spool = "$(printf '%s' "$TK_SPOOL" | tk_hex)",

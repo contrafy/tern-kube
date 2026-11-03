@@ -11,6 +11,7 @@
 -- The host runs the queries scope() describes; nothing here touches kubectl.
 local Controllers = require("./controllers")
 local Diffseg = require("../mutation/diffseg")
+local HelmOwner = require("../helm/owner")
 local Kinds = require("../kubectl/kinds")
 local Command = require("../kubectl/command")
 local Resource = require("../model/resource")
@@ -26,6 +27,8 @@ export type Source = {
 	root: string?,
 	path: string,
 	label: string?,
+	-- Helm sources: the release the chart is rendered as.
+	helm: { release: string, namespace: string? }?,
 }
 
 -- The fields of gitops/index.luau's ManifestDoc this module reads.
@@ -111,6 +114,11 @@ local function under(file: string, dir: string): boolean
 end
 
 local function inSource(doc: Doc, source: Source): boolean
+	-- Helm sources are interned per render (release, values): one chart
+	-- dir can back several of them.
+	if source.type == "helm" or doc.source.type == "helm" then
+		return doc.source == source
+	end
 	if doc.source.path == source.path and doc.source.type == source.type then
 		return true
 	end
@@ -285,7 +293,7 @@ local GENERATED: { [string]: boolean } = {
 	["coordination.k8s.io/lease"] = true,
 }
 
-local function exclusion(obj: { [string]: any }, ref: Ref): string?
+local function exclusion(source: Source, obj: { [string]: any }, ref: Ref): string?
 	local meta = obj.metadata
 	local id = kindId(ref.group, ref.kind)
 	if str(meta.deletionTimestamp) then
@@ -313,6 +321,17 @@ local function exclusion(obj: { [string]: any }, ref: Ref): string?
 	end
 	if labels["argocd.argoproj.io/secret-type"] ~= nil then
 		return "argo cd bookkeeping"
+	end
+	local spec = source.helm
+	if spec then
+		local owner = HelmOwner.fromObject(obj)
+		if owner and (owner.release ~= spec.release or owner.namespace ~= (spec.namespace or owner.namespace)) then
+			return string.format("Helm release %s/%s", owner.namespace, owner.release)
+		end
+		local hook = HelmOwner.hook(obj)
+		if hook then
+			return "Helm hook (" .. table.concat(hook.events, ", ") .. ")"
+		end
 	end
 	return nil
 end
@@ -443,7 +462,7 @@ function M.report(source: Source, index: Index, segments: { Segment }, live: { a
 			if indexed then
 				continue
 			end
-			local reason = exclusion(entry.obj, ref)
+			local reason = exclusion(source, entry.obj, ref)
 			if reason then
 				table.insert(ignored, { key = key, reason = reason })
 			else

@@ -74,10 +74,13 @@ KUBECONFIG=$kubeconfig "$real_kubectl" --request-timeout=5s get --raw /readyz >/
 KUBECONFIG=$kubeconfig "$real_kubectl" --request-timeout=5s get pod crashloop -n tern-test-apps >/dev/null 2>&1 ||
 	need "the tern-test-* world is missing: sh scripts/fixtures/capture.sh --world-only"
 export E2E_REAL_KUBECTL="$real_kubectl" E2E_KUBECONFIG="$kubeconfig"
+logmix_fresh || need "tk-logmix in tern-test-logs did not come back after a restart"
 
 cleanup() {
 	clip_restore
 	if [ $keep = 0 ]; then
+		# Built by the Helm scenarios (tests/e2e/helm.sh) on first use.
+		[ -d "$E2E_SB/helm" ] && helm_world_down
 		dev stop >/dev/null 2>&1
 		i=0
 		while [ -n "${window_pid:-}" ] && kill -0 "$window_pid" 2>/dev/null && [ $i -lt 40 ]; do

@@ -68,3 +68,38 @@
 [data-role="tern-kube.log-inspector"] [data-role="tern-kube.chip"] {
 	cursor: pointer;
 }
+
+/* Helm: status tones come from the span styles (deployed ok, failed error,
+   pending and uninstalling warn); these mark the cell edge so a stuck or
+   failed release stands out in a long list, and dim history that no longer
+   runs. */
+[data-role="tern-kube.explore"] .tk-grid .tk-helm-warn {
+	box-shadow: inset 2px 0 0 var(--warn);
+}
+
+[data-role="tern-kube.explore"] .tk-grid .tk-helm-error {
+	background: var(--bad-fill);
+}
+
+[data-role="tern-kube.explore"] .tk-grid .tk-helm-muted {
+	opacity: 0.7;
+}
+
+[data-role="tern-kube.helm-head"],
+[data-role="tern-kube.helm-owner"] {
+	align-items: center;
+}
+
+[data-role="tern-kube.helm-owner"] [data-role="tern-kube.chip"],
+[data-role="tern-kube.helm-doc"] [data-role="tern-kube.chip"] {
+	cursor: pointer;
+}
+
+[data-role="tern-kube.helm-defaults-source"],
+[data-role="tern-kube.helm-split"] {
+	white-space: pre-wrap;
+}
+
+[data-role="tern-kube.helm-notes"] {
+	white-space: pre-wrap;
+}

@@ -411,6 +411,87 @@ describe("config validation", function()
 		expect(find(notObject, "gitops").level).toBe("error")
 	end)
 
+	it("defaults helm to secret storage and a waiting rollback that fits the execute timeout", function()
+		local cfg = parse(nil)
+		expect(cfg.helm).toEqual({
+			program = "helm",
+			driver = "secret",
+			list_max = 1000,
+			history_max = 256,
+			auto_detect = true,
+			chart_sources = {},
+			rollback_wait = true,
+			rollback_wait_for_jobs = false,
+			rollback_cleanup_on_fail = false,
+			rollback_timeout_s = 240,
+		})
+		expect(cfg.helm.rollback_timeout_s * 1000 + 30000 <= cfg.mutations.execute_timeout_ms).toBe(true)
+	end)
+
+	it("reads the helm program, driver, limits and rollback defaults", function()
+		local cfg, diags = parse(
+			[[{"helm": {"program": "~/bin/helm", "driver": "configmap", "list_max": 50, "history_max": 10,
+			"auto_detect": false, "rollback_wait": false, "rollback_wait_for_jobs": true,
+			"rollback_cleanup_on_fail": true, "rollback_timeout_s": 60}}]],
+			{ home = "/home/u" }
+		)
+		expect(diags).toEqual({})
+		expect(cfg.helm.program).toBe("/home/u/bin/helm")
+		expect(cfg.helm.driver).toBe("configmap")
+		expect(cfg.helm.list_max).toBe(50)
+		expect(cfg.helm.history_max).toBe(10)
+		expect(cfg.helm.auto_detect).toBe(false)
+		expect(cfg.helm.rollback_wait).toBe(false)
+		expect(cfg.helm.rollback_wait_for_jobs).toBe(true)
+		expect(cfg.helm.rollback_cleanup_on_fail).toBe(true)
+		expect(cfg.helm.rollback_timeout_s).toBe(60)
+		local bad, wrong = parse([[{"helm": {"program": "bin/helm", "driver": "sql", "rollback_timeout_s": 5}}]])
+		expect(bad.helm.program).toBe("helm")
+		expect(bad.helm.driver).toBe("secret")
+		expect(bad.helm.rollback_timeout_s).toBe(240)
+		for _, path in { "helm.program", "helm.driver", "helm.rollback_timeout_s" } do
+			expect(find(wrong, path).level).toBe("error")
+		end
+	end)
+
+	-- The approve block stops waiting after execute_timeout_ms while helm and
+	-- its hooks keep running; a longer rollback timeout would report a
+	-- timeout for a rollback that may still succeed.
+	it("warns when the rollback timeout does not fit the execute timeout", function()
+		local cfg, diags = parse([[{"helm": {"rollback_timeout_s": 300}, "mutations": {"execute_timeout_ms": 300000}}]])
+		expect(cfg.helm.rollback_timeout_s).toBe(300)
+		local d = find(diags, "helm.rollback_timeout_s")
+		expect(d.level).toBe("warning")
+		expect(contains(d.message, "mutations.execute_timeout_ms")).toBe(true)
+		local _, ok = parse([[{"helm": {"rollback_timeout_s": 270}}]])
+		expect(ok).toEqual({})
+	end)
+
+	-- chart_sources refs reach `helm show values` argv: bad entries are
+	-- dropped instead of reaching a process.
+	it("validates helm chart sources entry by entry", function()
+		local cfg, diags = parse(
+			[[{"helm": {"chart_sources": [
+				{"chart": "shop", "ref": "oci://registry.example.com/charts/shop"},
+				{"chart": "web", "ref": "~/charts/web"},
+				{"chart": "shop", "ref": "repo/shop"},
+				{"chart": "-x", "ref": "repo/x"},
+				{"chart": "api", "ref": ""},
+				{"chart": "api", "ref": "-repo"},
+				"shop"
+			]}}]],
+			{ home = "/home/u" }
+		)
+		expect(cfg.helm.chart_sources).toEqual({
+			{ chart = "shop", ref = "oci://registry.example.com/charts/shop" },
+			{ chart = "web", ref = "/home/u/charts/web" },
+		})
+		for i = 3, 7 do
+			local path = string.format("helm.chart_sources[%d]", i)
+			expect(find(diags, path) and find(diags, path).level or "missing " .. path).toBe("error")
+		end
+	end)
+
 	it("reports diagnostics in a stable order", function()
 		local _, diags = parse([[{"zeta": 1, "alpha": 1, "general": {"max_rows": "x"}}]])
 		local paths = {}

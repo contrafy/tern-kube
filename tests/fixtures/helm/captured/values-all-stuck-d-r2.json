@@ -1,0 +1,1 @@
+{"config":{"mode":"default"},"image":{"repository":"nginx","tag":"does-not-exist"},"replicaCount":1,"service":{"port":80}}

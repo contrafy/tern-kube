@@ -121,6 +121,40 @@ file like `-f`: hashed into the fingerprint, re-hashed before kubectl runs.
   kubectl fetched it, the block says so; kubectl itself sends a strategic
   merge patch computed against its first fetch.
 
+## Helm rollback
+
+`helm rollback` goes through the approve block only from Tern Kube links
+(Explore); there is no shell guard for `helm` typed in a pane.
+
+- Every helm call pins `--kube-context` (and `--kubeconfig` when it names
+  one file; a path list travels in `KUBECONFIG`) and sets `HELM_DRIVER`
+  from `helm.driver`: the Tern daemon has no shell environment, and a
+  driver that does not match the release storage lists nothing.
+- The grammar is strict (`plugin/lib/mutation/helm_plan.luau`): an explicit
+  revision, a `--timeout`, and only flags whose effect the preview models
+  (`--wait`, `--wait-for-jobs`, `--cleanup-on-fail`, `--force`,
+  `--no-hooks`, `--history-max`, connection flags); anything else is
+  refused. `--timeout` is always pinned because it also bounds hooks, and
+  it must leave 30 s within `mutations.execute_timeout_ms`, since the block
+  cannot stop helm once it runs.
+- `helm rollback --dry-run` validates nothing on the server; the block uses
+  it only to prove the target revision exists. The preview is the change
+  between the two stored revision manifests plus `kubectl diff -f -` of the
+  target manifest against the live objects (approximate: helm merges three
+  ways). The target manifest reaches kubectl on stdin, never a file.
+- Confirmation is always typed (the release name). A release stuck in
+  `pending-*` is a typed finding, not a block: rollback is helm's recovery
+  path, but it races a helm process that may still run.
+- At confirm the block re-reads `helm history --max 1` and refuses when the
+  newest revision or its status changed since the preview (an upgrade,
+  rollback or uninstall in between).
+- Helm values are masked in the approve block by key name and value shape
+  (`plugin/lib/model/redact.luau`); every masked string from the deployed
+  and target user values and the stored chart defaults is also replaced
+  where it is echoed into other objects (a ConfigMap DSN) in both diffs,
+  because kubectl masks only Secret objects. `security.show_secret_values`
+  turns this off.
+
 ## Secrets
 
 - Native views mask Secret `data`/`stringData` and the Secret's
@@ -189,7 +223,9 @@ executed, failed), `mode` (native, guard), `op`, `family`, `context`,
 `context_source`, `namespace`, `kubeconfig` (path), `cwd`, `argv`, `tier`,
 `fingerprint`, `exit_code`, `previewed_at`, `started_at`, `finished_at`,
 `objects` (up to 50 previewed `Kind namespace/name`), `objects_total` and
-`files` (path and sha256 of each fingerprinted input file).
+`files` (path and sha256 of each fingerprinted input file); helm rollbacks
+add `release`, `revision` (the target) and `from_revision` (the newest
+revision when previewed).
 Values of `--token` and `--password` in argv are replaced by `<redacted>`;
 inline `-p` patch text stays in argv, since it is the command.
 Command output, environment values and file contents are never logged. The

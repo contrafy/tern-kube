@@ -209,6 +209,17 @@ describe("explore gitops keys", function()
 		expect(mutateOpens(xEffects)).toBe(0)
 		expect(Gitops.isRoute(top(drive(w, afterX, xEffects)).kind)).toBe(true)
 	end)
+
+	-- The block hands its resolved helm to the GitOps routes: without it the
+	-- chooser could never offer the repository's charts for live releases.
+	it("ctrl+g lists auto-detected chart sources once helm is resolved", function()
+		local w = X.helmWorld()
+		local s = press(w, X.openHelm(w), "g", { ctrl = true })
+		expect(top(s).kind).toBe("drift")
+		expect(s.gitops.releases.status).toBe("ok")
+		local id = "helm:/repo/helm/chart:tern-test-helm/shop-a:deployed"
+		expect(Gitops.findSource(s.gitops, State.gitopsCtx(s), id) ~= nil).toBe(true)
+	end)
 end)
 
 return nil

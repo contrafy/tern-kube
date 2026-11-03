@@ -1,0 +1,1 @@
+{"big":12345678901234567000,"config":{"mode":"default"},"empty":{},"float":1e+21,"image":{"repository":"nginx","tag":"1.27-alpine"},"list":[1,2.5,true,null,{"a":[]}],"replicaCount":1,"service":{"port":80},"weird":"q\"uote back\\slash tab\t bell\u0007 nul\u0000 é 漢 😀"}

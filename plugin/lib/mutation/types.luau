@@ -1,6 +1,7 @@
 --!strict
 -- Shared shapes of the mutation engine (plan -> preview steps -> risk ->
 -- confirm). Pure data: the host runs the steps and feeds results back.
+local HelmTypes = require("../helm/types")
 local Types = require("../model/types")
 
 export type Family =
@@ -21,6 +22,7 @@ export type Family =
 	| "uncordon"
 	| "drain"
 	| "edit"
+	| "helm-rollback"
 
 -- Same vocabulary as Explore's target provenance.
 export type ContextSource = "flag" | "chosen" | "inferred"
@@ -61,6 +63,10 @@ export type Env = {
 	timeoutMs: number?,
 	-- Guard edit approvals: kubectl's temp file and the copy of its first round.
 	edit: EditInput?,
+	-- Resolved helm program: an argv starting with it is a helm command.
+	helm: string?,
+	-- HELM_DRIVER for every helm call (helm.driver).
+	helmDriver: string?,
 }
 
 -- A `kubectl edit` round: the file the editor saved and kubectl's original
@@ -88,7 +94,21 @@ export type DrainOpts = {
 -- history   `rollout history` text (revision list)
 -- revision  `rollout history --revision=N -o json` (target template)
 -- convert   `patch --local -f FILE -o json` (edit: a manifest file to JSON, offline)
-export type StepKind = "dry-run" | "diff" | "targets" | "after" | "evict" | "history" | "revision" | "convert"
+-- helm-status   `helm status [--revision N] -o json` (release manifest and values)
+-- helm-extras   `helm get all --template` (stored chart metadata and hooks)
+-- helm-history  `helm history --max N -o json` (latest revision and status)
+export type StepKind =
+	"dry-run"
+	| "diff"
+	| "targets"
+	| "after"
+	| "evict"
+	| "history"
+	| "revision"
+	| "convert"
+	| "helm-status"
+	| "helm-extras"
+	| "helm-history"
 
 export type Step = {
 	id: string,
@@ -103,6 +123,20 @@ export type Step = {
 	-- A failure is a preview finding (edit rejected by the server), not a
 	-- failed preview.
 	soft: boolean?,
+	-- Bytes for the process's stdin (the rollback's target manifest for
+	-- `kubectl diff -f -`); never written to disk.
+	stdin: string?,
+}
+
+-- `helm rollback RELEASE REVISION`: what the plan targets and how it runs.
+export type HelmRollback = {
+	release: string,
+	namespace: string,
+	revision: number,
+	options: HelmTypes.RollbackOptions,
+	driver: string,
+	-- Program for the live `kubectl diff` of the target manifest.
+	kubectl: string,
 }
 
 export type KindRef = { kind: string, group: string?, namespaced: boolean? }
@@ -149,6 +183,7 @@ export type Plan = {
 	drain: DrainOpts?,
 	-- Guard edit approvals only.
 	edit: EditInput?,
+	helm: HelmRollback?,
 	steps: { Step },
 	invocation: Types.Invocation,
 	validation: { Diagnostic },

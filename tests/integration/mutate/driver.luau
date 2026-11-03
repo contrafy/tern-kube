@@ -45,8 +45,20 @@ local s, effects = Session.init({
 		execTimeoutMs = init.execTimeoutMs or 300000,
 		showSecretValues = init.showSecretValues == true,
 		quick = { debugImage = "busybox:1.36" },
+		helm = {
+			driver = "secret",
+			rollback = {
+				wait = init.helmWait ~= false,
+				waitForJobs = false,
+				cleanupOnFail = false,
+				force = false,
+				noHooks = false,
+				timeoutS = init.helmTimeoutS or 60,
+			},
+		},
 	},
 	kubectl = unhex(init.kubectl),
+	helm = if init.helm then unhex(init.helm) else nil,
 	kubeconfig = if init.kubeconfig then unhex(init.kubeconfig) else nil,
 	home = unhex(init.home),
 	spool = unhex(init.spool),
@@ -237,6 +249,22 @@ assign(
 		)
 		else nil
 )
+
+-- helm rollback: the live `kubectl diff` of the target manifest (masked).
+local live = s.liveDiff
+local liveSegs: { string } = {}
+local liveLines: { string } = {}
+if live then
+	for _, seg in live.segments do
+		table.insert(liveSegs, seg.action .. ":" .. (seg.kind or "?") .. "/" .. (seg.name or "?"))
+		for _, l in seg.lines do
+			table.insert(liveLines, l)
+		end
+	end
+end
+assign("live", table.concat(liveSegs, " "))
+assign("live_text", table.concat(liveLines, "\n"))
+assign("notes", table.concat(s.notes, " | "))
 
 -- The rendered view as plain text, for evidence logs.
 local ok, view = pcall(Render.view, s)

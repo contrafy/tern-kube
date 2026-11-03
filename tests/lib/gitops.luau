@@ -29,8 +29,9 @@ function M.text(rel: string): string
 	return fixtures.read("gitops/" .. rel)
 end
 
--- Indexes every planned file; `reverse` feeds them in the opposite order to
--- prove the result does not depend on read order.
+-- Indexes every planned file, then the charts' Chart.yaml (as the host
+-- does); `reverse` feeds the files in the opposite order to prove the
+-- result does not depend on read order.
 function M.index(reverse: boolean?): Index.Index
 	local plan = Index.plan(M.files(), {})
 	local index = Index.new(M.ROOT, plan.limits)
@@ -38,6 +39,13 @@ function M.index(reverse: boolean?): Index.Index
 	for i = 1, n do
 		local rel = plan.read[if reverse then n + 1 - i else i]
 		Index.addFile(index, M.abs(rel), M.text(rel))
+	end
+	for _, c in plan.chartReads do
+		local values: { string } = {}
+		for i, v in c.values do
+			values[i] = M.abs(v)
+		end
+		Index.addChart(index, { dir = M.abs(c.dir), file = M.abs(c.file), values = values }, M.text(c.file))
 	end
 	return index
 end

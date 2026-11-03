@@ -1,0 +1,731 @@
+{
+    "apiVersion": "v1",
+    "items": [
+        {
+            "apiVersion": "apps/v1",
+            "kind": "Deployment",
+            "metadata": {
+                "annotations": {
+                    "deployment.kubernetes.io/revision": "1",
+                    "meta.helm.sh/release-name": "broken-c",
+                    "meta.helm.sh/release-namespace": "tern-test-helm"
+                },
+                "creationTimestamp": "2026-01-01T00:00:00Z",
+                "generation": 1,
+                "labels": {
+                    "app.kubernetes.io/instance": "broken-c",
+                    "app.kubernetes.io/managed-by": "Helm",
+                    "app.kubernetes.io/name": "shop"
+                },
+                "name": "broken-c-shop",
+                "namespace": "tern-test-helm",
+                "resourceVersion": "1",
+                "uid": "00000000-0000-4000-8000-000000000001"
+            },
+            "spec": {
+                "progressDeadlineSeconds": 600,
+                "replicas": 1,
+                "revisionHistoryLimit": 10,
+                "selector": {
+                    "matchLabels": {
+                        "app.kubernetes.io/instance": "broken-c",
+                        "app.kubernetes.io/name": "shop"
+                    }
+                },
+                "strategy": {
+                    "rollingUpdate": {
+                        "maxSurge": "25%",
+                        "maxUnavailable": "25%"
+                    },
+                    "type": "RollingUpdate"
+                },
+                "template": {
+                    "metadata": {
+                        "labels": {
+                            "app.kubernetes.io/instance": "broken-c",
+                            "app.kubernetes.io/name": "shop"
+                        }
+                    },
+                    "spec": {
+                        "containers": [
+                            {
+                                "image": "nginx:1.27-alpine",
+                                "imagePullPolicy": "IfNotPresent",
+                                "name": "shop",
+                                "ports": [
+                                    {
+                                        "containerPort": 80,
+                                        "protocol": "TCP"
+                                    }
+                                ],
+                                "resources": {},
+                                "terminationMessagePath": "/dev/termination-log",
+                                "terminationMessagePolicy": "File"
+                            }
+                        ],
+                        "dnsPolicy": "ClusterFirst",
+                        "restartPolicy": "Always",
+                        "schedulerName": "default-scheduler",
+                        "securityContext": {},
+                        "terminationGracePeriodSeconds": 30
+                    }
+                }
+            },
+            "status": {}
+        },
+        {
+            "apiVersion": "apps/v1",
+            "kind": "Deployment",
+            "metadata": {
+                "annotations": {
+                    "deployment.kubernetes.io/revision": "2",
+                    "meta.helm.sh/release-name": "shop-a",
+                    "meta.helm.sh/release-namespace": "tern-test-helm"
+                },
+                "creationTimestamp": "2026-01-01T00:00:00Z",
+                "generation": 3,
+                "labels": {
+                    "app.kubernetes.io/instance": "shop-a",
+                    "app.kubernetes.io/managed-by": "Helm",
+                    "app.kubernetes.io/name": "shop"
+                },
+                "name": "shop-a-shop",
+                "namespace": "tern-test-helm",
+                "resourceVersion": "2",
+                "uid": "00000000-0000-4000-8000-000000000002"
+            },
+            "spec": {
+                "progressDeadlineSeconds": 600,
+                "replicas": 2,
+                "revisionHistoryLimit": 10,
+                "selector": {
+                    "matchLabels": {
+                        "app.kubernetes.io/instance": "shop-a",
+                        "app.kubernetes.io/name": "shop"
+                    }
+                },
+                "strategy": {
+                    "rollingUpdate": {
+                        "maxSurge": "25%",
+                        "maxUnavailable": "25%"
+                    },
+                    "type": "RollingUpdate"
+                },
+                "template": {
+                    "metadata": {
+                        "labels": {
+                            "app.kubernetes.io/instance": "shop-a",
+                            "app.kubernetes.io/name": "shop"
+                        }
+                    },
+                    "spec": {
+                        "containers": [
+                            {
+                                "image": "nginx:1.27.3-alpine",
+                                "imagePullPolicy": "IfNotPresent",
+                                "name": "shop",
+                                "ports": [
+                                    {
+                                        "containerPort": 80,
+                                        "protocol": "TCP"
+                                    }
+                                ],
+                                "resources": {},
+                                "terminationMessagePath": "/dev/termination-log",
+                                "terminationMessagePolicy": "File"
+                            }
+                        ],
+                        "dnsPolicy": "ClusterFirst",
+                        "restartPolicy": "Always",
+                        "schedulerName": "default-scheduler",
+                        "securityContext": {},
+                        "terminationGracePeriodSeconds": 30
+                    }
+                }
+            },
+            "status": {}
+        },
+        {
+            "apiVersion": "apps/v1",
+            "kind": "Deployment",
+            "metadata": {
+                "annotations": {
+                    "deployment.kubernetes.io/revision": "2",
+                    "meta.helm.sh/release-name": "stuck-d",
+                    "meta.helm.sh/release-namespace": "tern-test-helm"
+                },
+                "creationTimestamp": "2026-01-01T00:00:00Z",
+                "generation": 2,
+                "labels": {
+                    "app.kubernetes.io/instance": "stuck-d",
+                    "app.kubernetes.io/managed-by": "Helm",
+                    "app.kubernetes.io/name": "shop"
+                },
+                "name": "stuck-d-shop",
+                "namespace": "tern-test-helm",
+                "resourceVersion": "3",
+                "uid": "00000000-0000-4000-8000-000000000003"
+            },
+            "spec": {
+                "progressDeadlineSeconds": 600,
+                "replicas": 1,
+                "revisionHistoryLimit": 10,
+                "selector": {
+                    "matchLabels": {
+                        "app.kubernetes.io/instance": "stuck-d",
+                        "app.kubernetes.io/name": "shop"
+                    }
+                },
+                "strategy": {
+                    "rollingUpdate": {
+                        "maxSurge": "25%",
+                        "maxUnavailable": "25%"
+                    },
+                    "type": "RollingUpdate"
+                },
+                "template": {
+                    "metadata": {
+                        "labels": {
+                            "app.kubernetes.io/instance": "stuck-d",
+                            "app.kubernetes.io/name": "shop"
+                        }
+                    },
+                    "spec": {
+                        "containers": [
+                            {
+                                "image": "nginx:does-not-exist",
+                                "imagePullPolicy": "IfNotPresent",
+                                "name": "shop",
+                                "ports": [
+                                    {
+                                        "containerPort": 80,
+                                        "protocol": "TCP"
+                                    }
+                                ],
+                                "resources": {},
+                                "terminationMessagePath": "/dev/termination-log",
+                                "terminationMessagePolicy": "File"
+                            }
+                        ],
+                        "dnsPolicy": "ClusterFirst",
+                        "restartPolicy": "Always",
+                        "schedulerName": "default-scheduler",
+                        "securityContext": {},
+                        "terminationGracePeriodSeconds": 30
+                    }
+                }
+            },
+            "status": {}
+        },
+        {
+            "apiVersion": "apps/v1",
+            "kind": "Deployment",
+            "metadata": {
+                "annotations": {
+                    "deployment.kubernetes.io/revision": "1",
+                    "meta.helm.sh/release-name": "tricky-e",
+                    "meta.helm.sh/release-namespace": "tern-test-helm"
+                },
+                "creationTimestamp": "2026-01-01T00:00:00Z",
+                "generation": 1,
+                "labels": {
+                    "app.kubernetes.io/instance": "tricky-e",
+                    "app.kubernetes.io/managed-by": "Helm",
+                    "app.kubernetes.io/name": "shop"
+                },
+                "name": "tricky-e-shop",
+                "namespace": "tern-test-helm",
+                "resourceVersion": "4",
+                "uid": "00000000-0000-4000-8000-000000000004"
+            },
+            "spec": {
+                "progressDeadlineSeconds": 600,
+                "replicas": 1,
+                "revisionHistoryLimit": 10,
+                "selector": {
+                    "matchLabels": {
+                        "app.kubernetes.io/instance": "tricky-e",
+                        "app.kubernetes.io/name": "shop"
+                    }
+                },
+                "strategy": {
+                    "rollingUpdate": {
+                        "maxSurge": "25%",
+                        "maxUnavailable": "25%"
+                    },
+                    "type": "RollingUpdate"
+                },
+                "template": {
+                    "metadata": {
+                        "labels": {
+                            "app.kubernetes.io/instance": "tricky-e",
+                            "app.kubernetes.io/name": "shop"
+                        }
+                    },
+                    "spec": {
+                        "containers": [
+                            {
+                                "image": "nginx:1.27-alpine",
+                                "imagePullPolicy": "IfNotPresent",
+                                "name": "shop",
+                                "ports": [
+                                    {
+                                        "containerPort": 80,
+                                        "protocol": "TCP"
+                                    }
+                                ],
+                                "resources": {},
+                                "terminationMessagePath": "/dev/termination-log",
+                                "terminationMessagePolicy": "File"
+                            }
+                        ],
+                        "dnsPolicy": "ClusterFirst",
+                        "restartPolicy": "Always",
+                        "schedulerName": "default-scheduler",
+                        "securityContext": {},
+                        "terminationGracePeriodSeconds": 30
+                    }
+                }
+            },
+            "status": {}
+        },
+        {
+            "apiVersion": "apps/v1",
+            "kind": "Deployment",
+            "metadata": {
+                "annotations": {
+                    "deployment.kubernetes.io/revision": "1",
+                    "meta.helm.sh/release-name": "web-b",
+                    "meta.helm.sh/release-namespace": "tern-test-helm"
+                },
+                "creationTimestamp": "2026-01-01T00:00:00Z",
+                "generation": 1,
+                "labels": {
+                    "app.kubernetes.io/instance": "web-b",
+                    "app.kubernetes.io/managed-by": "Helm",
+                    "app.kubernetes.io/name": "web"
+                },
+                "name": "web-b-web",
+                "namespace": "tern-test-helm",
+                "resourceVersion": "5",
+                "uid": "00000000-0000-4000-8000-000000000005"
+            },
+            "spec": {
+                "progressDeadlineSeconds": 600,
+                "replicas": 1,
+                "revisionHistoryLimit": 10,
+                "selector": {
+                    "matchLabels": {
+                        "app.kubernetes.io/instance": "web-b",
+                        "app.kubernetes.io/name": "web"
+                    }
+                },
+                "strategy": {
+                    "rollingUpdate": {
+                        "maxSurge": "25%",
+                        "maxUnavailable": "25%"
+                    },
+                    "type": "RollingUpdate"
+                },
+                "template": {
+                    "metadata": {
+                        "labels": {
+                            "app.kubernetes.io/instance": "web-b",
+                            "app.kubernetes.io/name": "web"
+                        }
+                    },
+                    "spec": {
+                        "containers": [
+                            {
+                                "image": "nginx:1.27-alpine",
+                                "imagePullPolicy": "IfNotPresent",
+                                "name": "shop",
+                                "ports": [
+                                    {
+                                        "containerPort": 80,
+                                        "protocol": "TCP"
+                                    }
+                                ],
+                                "resources": {},
+                                "terminationMessagePath": "/dev/termination-log",
+                                "terminationMessagePolicy": "File"
+                            }
+                        ],
+                        "dnsPolicy": "ClusterFirst",
+                        "restartPolicy": "Always",
+                        "schedulerName": "default-scheduler",
+                        "securityContext": {},
+                        "terminationGracePeriodSeconds": 30
+                    }
+                }
+            },
+            "status": {}
+        },
+        {
+            "apiVersion": "v1",
+            "kind": "Service",
+            "metadata": {
+                "annotations": {
+                    "meta.helm.sh/release-name": "shop-a",
+                    "meta.helm.sh/release-namespace": "tern-test-helm"
+                },
+                "creationTimestamp": "2026-01-01T00:00:00Z",
+                "labels": {
+                    "app.kubernetes.io/instance": "shop-a",
+                    "app.kubernetes.io/managed-by": "Helm",
+                    "app.kubernetes.io/name": "shop"
+                },
+                "name": "shop-a-shop",
+                "namespace": "tern-test-helm",
+                "resourceVersion": "6",
+                "uid": "00000000-0000-4000-8000-000000000006"
+            },
+            "spec": {
+                "clusterIP": "10.96.0.11",
+                "clusterIPs": [
+                    "10.96.0.11"
+                ],
+                "internalTrafficPolicy": "Cluster",
+                "ipFamilies": [
+                    "IPv4"
+                ],
+                "ipFamilyPolicy": "SingleStack",
+                "ports": [
+                    {
+                        "port": 80,
+                        "protocol": "TCP",
+                        "targetPort": 80
+                    }
+                ],
+                "selector": {
+                    "app.kubernetes.io/instance": "shop-a",
+                    "app.kubernetes.io/name": "shop"
+                },
+                "sessionAffinity": "None",
+                "type": "ClusterIP"
+            },
+            "status": {}
+        },
+        {
+            "apiVersion": "v1",
+            "kind": "Service",
+            "metadata": {
+                "annotations": {
+                    "meta.helm.sh/release-name": "stuck-d",
+                    "meta.helm.sh/release-namespace": "tern-test-helm"
+                },
+                "creationTimestamp": "2026-01-01T00:00:00Z",
+                "labels": {
+                    "app.kubernetes.io/instance": "stuck-d",
+                    "app.kubernetes.io/managed-by": "Helm",
+                    "app.kubernetes.io/name": "shop"
+                },
+                "name": "stuck-d-shop",
+                "namespace": "tern-test-helm",
+                "resourceVersion": "7",
+                "uid": "00000000-0000-4000-8000-000000000007"
+            },
+            "spec": {
+                "clusterIP": "10.96.0.12",
+                "clusterIPs": [
+                    "10.96.0.12"
+                ],
+                "internalTrafficPolicy": "Cluster",
+                "ipFamilies": [
+                    "IPv4"
+                ],
+                "ipFamilyPolicy": "SingleStack",
+                "ports": [
+                    {
+                        "port": 80,
+                        "protocol": "TCP",
+                        "targetPort": 80
+                    }
+                ],
+                "selector": {
+                    "app.kubernetes.io/instance": "stuck-d",
+                    "app.kubernetes.io/name": "shop"
+                },
+                "sessionAffinity": "None",
+                "type": "ClusterIP"
+            },
+            "status": {}
+        },
+        {
+            "apiVersion": "v1",
+            "kind": "Service",
+            "metadata": {
+                "annotations": {
+                    "meta.helm.sh/release-name": "tricky-e",
+                    "meta.helm.sh/release-namespace": "tern-test-helm"
+                },
+                "creationTimestamp": "2026-01-01T00:00:00Z",
+                "labels": {
+                    "app.kubernetes.io/instance": "tricky-e",
+                    "app.kubernetes.io/managed-by": "Helm",
+                    "app.kubernetes.io/name": "shop"
+                },
+                "name": "tricky-e-shop",
+                "namespace": "tern-test-helm",
+                "resourceVersion": "8",
+                "uid": "00000000-0000-4000-8000-000000000008"
+            },
+            "spec": {
+                "clusterIP": "10.96.0.13",
+                "clusterIPs": [
+                    "10.96.0.13"
+                ],
+                "internalTrafficPolicy": "Cluster",
+                "ipFamilies": [
+                    "IPv4"
+                ],
+                "ipFamilyPolicy": "SingleStack",
+                "ports": [
+                    {
+                        "port": 80,
+                        "protocol": "TCP",
+                        "targetPort": 80
+                    }
+                ],
+                "selector": {
+                    "app.kubernetes.io/instance": "tricky-e",
+                    "app.kubernetes.io/name": "shop"
+                },
+                "sessionAffinity": "None",
+                "type": "ClusterIP"
+            },
+            "status": {}
+        },
+        {
+            "apiVersion": "v1",
+            "kind": "Service",
+            "metadata": {
+                "annotations": {
+                    "meta.helm.sh/release-name": "web-b",
+                    "meta.helm.sh/release-namespace": "tern-test-helm"
+                },
+                "creationTimestamp": "2026-01-01T00:00:00Z",
+                "labels": {
+                    "app.kubernetes.io/instance": "web-b",
+                    "app.kubernetes.io/managed-by": "Helm",
+                    "app.kubernetes.io/name": "web"
+                },
+                "name": "web-b-web",
+                "namespace": "tern-test-helm",
+                "resourceVersion": "9",
+                "uid": "00000000-0000-4000-8000-000000000009"
+            },
+            "spec": {
+                "clusterIP": "10.96.0.14",
+                "clusterIPs": [
+                    "10.96.0.14"
+                ],
+                "internalTrafficPolicy": "Cluster",
+                "ipFamilies": [
+                    "IPv4"
+                ],
+                "ipFamilyPolicy": "SingleStack",
+                "ports": [
+                    {
+                        "port": 80,
+                        "protocol": "TCP",
+                        "targetPort": 80
+                    }
+                ],
+                "selector": {
+                    "app.kubernetes.io/instance": "web-b",
+                    "app.kubernetes.io/name": "web"
+                },
+                "sessionAffinity": "None",
+                "type": "ClusterIP"
+            },
+            "status": {}
+        },
+        {
+            "apiVersion": "v1",
+            "data": {
+                "mode": "default"
+            },
+            "kind": "ConfigMap",
+            "metadata": {
+                "annotations": {
+                    "meta.helm.sh/release-name": "broken-c",
+                    "meta.helm.sh/release-namespace": "tern-test-helm"
+                },
+                "creationTimestamp": "2026-01-01T00:00:00Z",
+                "labels": {
+                    "app.kubernetes.io/managed-by": "Helm"
+                },
+                "name": "broken-c-shop-config",
+                "namespace": "tern-test-helm",
+                "resourceVersion": "10",
+                "uid": "00000000-0000-4000-8000-000000000010"
+            }
+        },
+        {
+            "apiVersion": "v1",
+            "data": {
+                "ca.crt": "REDACTED"
+            },
+            "kind": "ConfigMap",
+            "metadata": {
+                "annotations": {
+                    "kubernetes.io/description": "Contains a CA bundle that can be used to verify the kube-apiserver when using internal endpoints such as the internal service IP or kubernetes.default.svc. No other usage is guaranteed across distributions of Kubernetes clusters."
+                },
+                "creationTimestamp": "2026-01-01T00:00:00Z",
+                "name": "kube-root-ca.crt",
+                "namespace": "tern-test-helm",
+                "resourceVersion": "11",
+                "uid": "00000000-0000-4000-8000-000000000011"
+            }
+        },
+        {
+            "apiVersion": "v1",
+            "data": {
+                "mode": "staging"
+            },
+            "kind": "ConfigMap",
+            "metadata": {
+                "annotations": {
+                    "meta.helm.sh/release-name": "shop-a",
+                    "meta.helm.sh/release-namespace": "tern-test-helm"
+                },
+                "creationTimestamp": "2026-01-01T00:00:00Z",
+                "labels": {
+                    "app.kubernetes.io/managed-by": "Helm"
+                },
+                "name": "shop-a-shop-config",
+                "namespace": "tern-test-helm",
+                "resourceVersion": "12",
+                "uid": "00000000-0000-4000-8000-000000000012"
+            }
+        },
+        {
+            "apiVersion": "v1",
+            "data": {
+                "mode": "default"
+            },
+            "kind": "ConfigMap",
+            "metadata": {
+                "annotations": {
+                    "meta.helm.sh/release-name": "stuck-d",
+                    "meta.helm.sh/release-namespace": "tern-test-helm"
+                },
+                "creationTimestamp": "2026-01-01T00:00:00Z",
+                "labels": {
+                    "app.kubernetes.io/managed-by": "Helm"
+                },
+                "name": "stuck-d-shop-config",
+                "namespace": "tern-test-helm",
+                "resourceVersion": "13",
+                "uid": "00000000-0000-4000-8000-000000000013"
+            }
+        },
+        {
+            "apiVersion": "v1",
+            "data": {
+                "mode": "reused"
+            },
+            "kind": "ConfigMap",
+            "metadata": {
+                "annotations": {
+                    "meta.helm.sh/release-name": "tricky-e",
+                    "meta.helm.sh/release-namespace": "tern-test-helm"
+                },
+                "creationTimestamp": "2026-01-01T00:00:00Z",
+                "labels": {
+                    "app.kubernetes.io/managed-by": "Helm"
+                },
+                "name": "tricky-e-shop-config",
+                "namespace": "tern-test-helm",
+                "resourceVersion": "14",
+                "uid": "00000000-0000-4000-8000-000000000014"
+            }
+        },
+        {
+            "apiVersion": "v1",
+            "data": {
+                "dsn": "postgres://app:hunter2-REDACTME@db:5432/app",
+                "mode": "default"
+            },
+            "kind": "ConfigMap",
+            "metadata": {
+                "annotations": {
+                    "meta.helm.sh/release-name": "web-b",
+                    "meta.helm.sh/release-namespace": "tern-test-helm"
+                },
+                "creationTimestamp": "2026-01-01T00:00:00Z",
+                "labels": {
+                    "app.kubernetes.io/managed-by": "Helm"
+                },
+                "name": "web-b-web-config",
+                "namespace": "tern-test-helm",
+                "resourceVersion": "15",
+                "uid": "00000000-0000-4000-8000-000000000015"
+            }
+        },
+        {
+            "apiVersion": "v1",
+            "data": {
+                "installed": "true"
+            },
+            "kind": "ConfigMap",
+            "metadata": {
+                "annotations": {
+                    "helm.sh/hook": "post-install"
+                },
+                "creationTimestamp": "2026-01-01T00:00:00Z",
+                "name": "web-b-web-post-install",
+                "namespace": "tern-test-helm",
+                "resourceVersion": "16",
+                "uid": "00000000-0000-4000-8000-000000000016"
+            }
+        },
+        {
+            "apiVersion": "v1",
+            "data": {
+                "revision": "1"
+            },
+            "kind": "ConfigMap",
+            "metadata": {
+                "annotations": {
+                    "helm.sh/hook": "pre-upgrade,pre-rollback",
+                    "helm.sh/hook-delete-policy": "before-hook-creation",
+                    "helm.sh/hook-weight": "-5"
+                },
+                "creationTimestamp": "2026-01-01T00:00:00Z",
+                "name": "web-b-web-pre-upgrade",
+                "namespace": "tern-test-helm",
+                "resourceVersion": "17",
+                "uid": "00000000-0000-4000-8000-000000000017"
+            }
+        },
+        {
+            "apiVersion": "v1",
+            "data": {
+                "apiToken": "dG9rLVJFREFDVE1F",
+                "password": "aHVudGVyMi1SRURBQ1RNRQ=="
+            },
+            "kind": "Secret",
+            "metadata": {
+                "annotations": {
+                    "meta.helm.sh/release-name": "web-b",
+                    "meta.helm.sh/release-namespace": "tern-test-helm"
+                },
+                "creationTimestamp": "2026-01-01T00:00:00Z",
+                "labels": {
+                    "app.kubernetes.io/managed-by": "Helm"
+                },
+                "name": "web-b-web-auth",
+                "namespace": "tern-test-helm",
+                "resourceVersion": "18",
+                "uid": "00000000-0000-4000-8000-000000000018"
+            },
+            "type": "Opaque"
+        }
+    ],
+    "kind": "List",
+    "metadata": {
+        "resourceVersion": ""
+    }
+}
