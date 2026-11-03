@@ -7,6 +7,7 @@
 -- superseded load just ignores the late callback (state.luau compares
 -- generations; `stopped` covers a closed pane).
 
+local Blocksize = require("./lib/blocksize")
 local ConfigHost = require("./config_host")
 local EnvHost = require("./env_host")
 local GitopsHost = require("./gitops_host")
@@ -384,10 +385,11 @@ function M.register()
 		end,
 		view = function(h: Host, cx: BlockCx): BlockView
 			-- The visible window of long lists is sized from the block height.
-			if cx.rows ~= h.s.rows then
-				dispatch(h, { t = "resize", rows = cx.rows })
+			local rows = Blocksize.rows(cx.cols, cx.rows)
+			if rows ~= h.s.rows then
+				dispatch(h, { t = "resize", rows = rows })
 			end
-			local ok, v = pcall(Render.view, h.s, cx.cols, cx.rows)
+			local ok, v = pcall(Render.view, h.s, cx.cols, rows)
 			if not ok then
 				warnOnce(h, "view", v)
 				return errorView(v)
