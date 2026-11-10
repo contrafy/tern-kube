@@ -225,12 +225,18 @@ describe("explore events: links", function()
 		expect(Render.title(s)).toContain("Events all namespaces")
 	end)
 
-	-- The palette command opens Explore with only a cwd and the route.
-	it("route=events without a namespace follows the context's default namespace", function()
+	-- The palette command opens Explore with only a cwd and the route; the
+	-- last Explore used the context default namespace (W.env).
+	it("route=events without a namespace follows the last used scope", function()
 		local s, trace = open({ route = "events" })
 		expect(top(s).kind).toBe("events")
-		local argv = argvText(trace)
-		expect(argv[#argv]).toContain("get events -o json")
+		local found = false
+		for _, a in argvText(trace) do
+			if string.find(a, "get events -o json", 1, true) then
+				found = true
+			end
+		end
+		expect(found).toBe(true)
 	end)
 
 	it("an object link scopes the timeline to the object", function()

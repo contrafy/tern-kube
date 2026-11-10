@@ -11,6 +11,7 @@ local Blocksize = require("./lib/blocksize")
 local ConfigHost = require("./config_host")
 local EnvHost = require("./env_host")
 local GitopsHost = require("./gitops_host")
+local MutateHost = require("./mutate_host")
 local Quick = require("./lib/actions/quick")
 local Render = require("./lib/explore/render")
 local Shellenv = require("./lib/env/shellenv")
@@ -31,6 +32,8 @@ type Host = {
 	args: { string },
 	-- Bumped by every (re)start; a stale ready callback does nothing.
 	starts: number,
+	-- Drops the onApplied listener once the block is gone.
+	unsubscribe: (() -> ())?,
 }
 
 local M = {}
@@ -53,6 +56,23 @@ end
 
 local exec: (h: Host, effects: { Effect }) -> ()
 local start: (h: Host, saved: any) -> ()
+local rememberScope: (s: State.State) -> ()
+
+-- The tag this block puts on the mutations it starts (Link `origin`).
+function M.origin(cx: BlockCx): string
+	return "explore:" .. (string.gsub(tostring(cx.pane), "[^%w:%-_.]", "_"))
+end
+
+local function stop(h: Host)
+	h.stopped = true
+	if h.scan then
+		h.scan.cancel()
+	end
+	if h.unsubscribe then
+		h.unsubscribe()
+		h.unsubscribe = nil
+	end
+end
 
 -- Applies `msg`; true when the state or the screen changed.
 local function dispatch(h: Host, msg: Msg): boolean
@@ -64,6 +84,9 @@ local function dispatch(h: Host, msg: Msg): boolean
 	local changed = s ~= h.s
 	h.s = s
 	exec(h, effects)
+	if changed then
+		rememberScope(s)
+	end
 	return changed or #effects > 0
 end
 
@@ -274,10 +297,7 @@ function exec(h: Host, effects: { Effect })
 			start(h, State.save(h.s))
 			return
 		elseif e.t == "exit" then
-			h.stopped = true
-			if h.scan then
-				h.scan.cancel()
-			end
+			stop(h)
 			h.cx:exit(0)
 		end
 	end
@@ -297,10 +317,7 @@ local function watch(h: Host)
 				return
 			end
 		end
-		h.stopped = true
-		if h.scan then
-			h.scan.cancel()
-		end
+		stop(h)
 		log.debug("tern-kube explore pane gone", h.cx.pane)
 	end
 	tern.timer(M.LIVENESS_MS, tick)
@@ -325,6 +342,58 @@ local function errorView(err: any): BlockView
 	}
 end
 
+-- Seconds east of UTC now (Luau's os.time reads a date table as UTC).
+local function utcOffset(): number
+	local now = os.time()
+	return os.time(os.date("*t", now) :: any) - now
+end
+
+M.SCOPE_FILE = tern.plugin.data .. "/explore-scope.json"
+
+-- The namespace scope the last Explore used, shared by every block of this
+-- plugin VM and kept on disk, so a new block starts where the user was.
+local lastScope: State.Scope? = nil
+local scopeRead = false
+
+local function readLastScope(): State.Scope?
+	if not scopeRead then
+		scopeRead = true
+		local ok, doc = pcall(function()
+			return tern.json.decode(tern.fs.read(M.SCOPE_FILE))
+		end)
+		if ok and type(doc) == "table" and type(doc.context) == "string" then
+			lastScope = {
+				context = doc.context,
+				namespace = if type(doc.namespace) == "string" then doc.namespace else nil,
+				all = doc.all == true,
+			}
+		end
+	end
+	return lastScope
+end
+
+function rememberScope(s: State.State)
+	local t = s.target
+	if t.context == nil or not State.resolved(s) then
+		return
+	end
+	local last = readLastScope()
+	if
+		last
+		and last.context == t.context
+		and last.namespace == t.namespace
+		and last.all == (t.allNamespaces == true)
+	then
+		return
+	end
+	local scope: State.Scope = { context = t.context, namespace = t.namespace, all = t.allNamespaces == true }
+	lastScope = scope
+	pcall(function()
+		tern.fs.mkdir(tern.plugin.data)
+		tern.fs.write(M.SCOPE_FILE, tern.json.encode(scope))
+	end)
+end
+
 local function stateEnv(cx: BlockCx, pending: boolean): State.Env
 	local helm = EnvHost.resolve("helm")
 	return {
@@ -342,6 +411,9 @@ local function stateEnv(cx: BlockCx, pending: boolean): State.Env
 		null = tern.json.null,
 		-- Helm views only run helm when it was found.
 		helm = if helm.found then helm.program else nil,
+		utcOffset = utcOffset(),
+		lastScope = readLastScope(),
+		origin = M.origin(cx),
 	}
 end
 
@@ -382,13 +454,25 @@ function M.register()
 				scan = nil,
 				args = args,
 				starts = 0,
+				unsubscribe = nil,
 			}
 			start(h, saved)
+			-- A mutation this block started succeeded: refresh what it shows.
+			h.unsubscribe = MutateHost.onApplied(function(info)
+				if h.stopped or info.origin == nil or info.origin ~= h.s.origin then
+					return
+				end
+				log.debug("tern-kube explore refresh after", info.op)
+				dispatch(h, { t = "action", act = "applied", value = "" })
+				pcall(function()
+					h.cx:render()
+				end)
+			end)
 			watch(h)
 			return h
 		end,
 		view = function(h: Host, cx: BlockCx): BlockView
-			-- The visible window of long lists is sized from the block height.
+			-- Page keys move by about the rows the block shows.
 			local rows = Blocksize.rows(cx.cols, cx.rows)
 			if rows ~= h.s.rows then
 				dispatch(h, { t = "resize", rows = rows })
@@ -424,6 +508,18 @@ function M.register()
 				dispatch(h, { t = "edit", id = ev.id, edit = ev :: any })
 			elseif ev.ev == "undo" and type(ev.id) == "string" then
 				dispatch(h, { t = "undo", id = ev.id })
+			elseif (ev.ev == "select" or ev.ev == "activate") and type((ev :: any).item) == "string" then
+				-- Native tables: a click selects the row, a double click is enter.
+				dispatch(h, {
+					t = "action",
+					act = if ev.ev == "select" then "sel" else "open",
+					value = (ev :: any).item,
+				})
+			elseif ev.ev == "action" and ev.act == "sort" and type(ev.value) == "table" then
+				local v = ev.value :: any
+				if type(v.col) == "string" then
+					dispatch(h, { t = "action", act = "sort", value = v.col .. ":" .. tostring(v.dir) })
+				end
 			elseif ev.ev == "action" and type(ev.act) == "string" then
 				dispatch(h, {
 					t = "action",

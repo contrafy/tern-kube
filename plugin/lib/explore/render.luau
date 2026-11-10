@@ -18,6 +18,7 @@ local Grid = require("../render/grid")
 local Helm = require("./helm")
 local HelmView = require("../helm/view")
 local ObjTree = require("../render/objtree")
+local Keys = require("./keys")
 local Link = require("../mutation/link")
 local LogsStore = require("../logs/store")
 local LogsTypes = require("../logs/types")
@@ -25,8 +26,10 @@ local Query = require("./query")
 local Quick = require("../actions/quick")
 local Redact = require("../model/redact")
 local State = require("./state")
+local Table = require("../render/table")
 local Textfield = require("../textfield")
 local Types = require("../model/types")
+local Values = require("../model/values")
 local Viewstate = require("../lens/viewstate")
 local Timeline = require("../events/timeline")
 local ui = require("../ui")
@@ -119,11 +122,16 @@ local function typed(argv: { string }): string
 	return Command.format(copy)
 end
 
-local function clock(at: number?): string
+-- Explore shows local time everywhere, like the rest of the desktop.
+function M.localTime(s: State, at: number, fmt: string?): string
+	return os.date("!" .. (fmt or "%H:%M:%S"), at + s.utcOffset) :: string
+end
+
+local function clock(s: State, at: number?): string
 	if at == nil then
 		return "open time"
 	end
-	return os.date("!%H:%M:%S UTC", at) :: string
+	return M.localTime(s, at)
 end
 
 local function scopeText(s: State, route: Route): string
@@ -163,7 +171,7 @@ local function targetNodes(s: State): { Node }
 	end
 	local provenance = SOURCE_TEXT[t.contextSource] or t.contextSource
 	if t.contextSource == "inferred" then
-		provenance = "inferred: current-context at " .. clock(t.inferredAt)
+		provenance = "inferred: current-context at " .. clock(s, t.inferredAt)
 	end
 	table.insert(
 		out,
@@ -253,26 +261,31 @@ end
 
 local function header(s: State): Node
 	local load = State.currentLoad(s)
-	local live: { Node } = {
-		ui.badge("Live", "accent", {
-			key = "live",
-			role = "tern-kube.live",
-			title = "Fetched from the cluster on request; never refreshed automatically",
-		}),
-	}
-	if load and load.status == "loading" then
-		table.insert(live, ui.text({ ui.span("fetching via " .. (s.target.context or "kubeconfig"), "muted") }))
-	elseif load and load.fetchedAt then
-		local age = State.age(s.now, load.fetchedAt) or "just now"
+	local live: { Node } = {}
+	-- With live queries off nothing is fetched: no Live badge, no Refresh.
+	if s.config.explore.allow_live_queries then
 		table.insert(
 			live,
-			ui.text(
-				{ ui.span("fetched " .. age .. " via " .. (s.target.context or "kubeconfig"), "muted") },
-				{ key = "age", role = "tern-kube.fetched" }
-			)
+			ui.badge("Live", "accent", {
+				key = "live",
+				role = "tern-kube.live",
+				title = "Fetched from the cluster on request; never refreshed automatically",
+			})
 		)
+		if load and load.status == "loading" then
+			table.insert(live, ui.text({ ui.span("fetching via " .. (s.target.context or "kubeconfig"), "muted") }))
+		elseif load and load.fetchedAt then
+			local age = State.age(s.now, load.fetchedAt) or "just now"
+			table.insert(
+				live,
+				ui.text(
+					{ ui.span("fetched " .. age .. " via " .. (s.target.context or "kubeconfig"), "muted") },
+					{ key = "age", role = "tern-kube.fetched", title = "Fetched at " .. clock(s, load.fetchedAt) }
+				)
+			)
+		end
+		table.insert(live, chip("Refresh", "refresh", { key = "refresh", title = "Run the query again (r)" }))
 	end
-	table.insert(live, chip("Refresh", "refresh", { key = "refresh", title = "Run the query again (r)" }))
 	table.insert(live, chip("?", "help", { key = "help", title = "Keys and actions (?)" }))
 	for _, n in targetNodes(s) do
 		table.insert(live, n)
@@ -464,6 +477,102 @@ local function windowGrid(s: State, spec: WindowSpec): { Node }
 	return out
 end
 
+export type TableSpec = {
+	key: string,
+	headers: { string },
+	types: { Types.ColumnType },
+	rows: { GridRow },
+	selected: number,
+	cell: ((string, Types.ColumnType, string, boolean) -> Node)?,
+	sortable: boolean?,
+	sort: State.Sort?,
+	hide: { [string]: boolean }?,
+	now: number?,
+	-- Holder of the last built table (a list load's data): with the same
+	-- source rows and window only `selected` changes, so a key press does
+	-- not rebuild hundreds of rows.
+	cache: { view: any? }?,
+	source: any?,
+}
+
+-- A native table in its own scroller (explore.css makes it fill the pane
+-- under a sticky head). Up to general.max_rendered_rows rows around the
+-- selection; the rest are counted in clickable notes that page.
+local function tableNodes(s: State, spec: TableSpec): { Node }
+	local rows = spec.rows
+	local total = #rows
+	local first, last = State.window(spec.selected, total, s.offset[State.currentKey(s)], State.windowSize(s))
+	local shown = rows
+	if first > 1 or last < total then
+		shown = table.move(rows, first, last, 1, table.create(last - first + 1))
+	end
+	local selected = rows[spec.selected]
+	local selectedKey = if selected then selected.key else nil
+	local cache = spec.cache
+	local view = if cache then cache.view else nil
+	local node: Node
+	if
+		view
+		and spec.source ~= nil
+		and view.source == spec.source
+		and view.first == first
+		and view.last == last
+		and view.now == spec.now
+		and view.hide == (if spec.hide then "ns" else "")
+	then
+		local p = table.clone(view.node.p)
+		p.selected = selectedKey
+		node = { k = "table", p = p }
+	else
+		node = Table.table({
+			key = spec.key,
+			headers = spec.headers,
+			types = spec.types,
+			rows = shown :: { any },
+			selected = selectedKey,
+			cell = spec.cell,
+			sortable = spec.sortable,
+			sort = spec.sort,
+			hide = spec.hide,
+			now = spec.now,
+			empty = nil,
+		})
+		if cache and spec.source ~= nil then
+			cache.view = {
+				source = spec.source,
+				first = first,
+				last = last,
+				now = spec.now,
+				hide = if spec.hide then "ns" else "",
+				node = node,
+			}
+		end
+	end
+	local out: { Node } = {}
+	if first > 1 then
+		table.insert(
+			out,
+			ui.muted(string.format("↑ %d earlier rows (gg, PageUp)", first - 1), {
+				key = "above",
+				role = "tern-kube.overflow",
+				actions = { click = "page=up" },
+			})
+		)
+	end
+	table.insert(out, ui.el("div", { key = spec.key .. "-scroll", role = "tern-kube.scroller" }, { node }))
+	if last < total then
+		table.insert(
+			out,
+			ui.muted(string.format("↓ %d more rows (G, PageDown; / filters)", total - last), {
+				key = "overflow",
+				role = "tern-kube.overflow",
+				actions = { click = "page=down" },
+			})
+		)
+	end
+	return out
+end
+
 local function pagedGrid(
 	key: string,
 	headers: { string },
@@ -473,18 +582,19 @@ local function pagedGrid(
 	s: State,
 	cell: ((string, Types.ColumnType, string, boolean) -> Node)?
 ): { Node }
-	return windowGrid(s, {
+	return tableNodes(s, {
 		key = key,
 		headers = headers,
 		types = types,
-		total = #rows,
-		rowAt = function(i: number): GridRow
-			return rows[i]
-		end,
+		rows = rows,
 		selected = selected,
 		cell = cell,
-		inspector = nil,
-		separator = nil,
+		sortable = false,
+		sort = nil,
+		hide = nil,
+		now = nil,
+		cache = nil,
+		source = nil,
 	})
 end
 
@@ -554,21 +664,78 @@ local function selectedIndexIn(s: State, keys: { string }): number
 	return if #keys > 0 then 1 else 0
 end
 
+local RANK: { [string]: number } = { muted = 0, neutral = 0, success = 1, warning = 2, error = 3 }
+
+-- Head tiles of a list with a health column: how many rows are ready, not
+-- ready or failing, and the restarts; nil for kinds without one.
+function M.listStats(data: State.ListData, rows: { State.Row }, resource: string): Node?
+	local health: { number } = {}
+	for i, t in data.types do
+		if t == "status" or t == "ratio" then
+			table.insert(health, i)
+		end
+	end
+	if #health == 0 then
+		return nil
+	end
+	local restartsAt = table.find(data.headers, "RESTARTS")
+	local ready, waiting, failing, restarts = 0, 0, 0, 0
+	for _, row in rows do
+		if Cells.rowFinished(data.types, row.cells) then
+			continue
+		end
+		local worst = "neutral"
+		for _, i in health do
+			local tone = Values.statusTone(data.headers[i], row.cells[i] or "")
+			if (RANK[tone] or 0) > RANK[worst] then
+				worst = tone
+			end
+		end
+		if worst == "success" then
+			ready += 1
+		elseif worst == "warning" then
+			waiting += 1
+		elseif worst == "error" then
+			failing += 1
+		end
+		if restartsAt then
+			restarts += Values.count(row.cells[restartsAt] or "") or 0
+		end
+	end
+	local items: { { [string]: any } } = {
+		{ label = { { t = resource } }, value = { { t = tostring(#rows) } } },
+		{ label = { { t = "Ready" } }, value = { { t = tostring(ready) } } },
+		{
+			label = { { t = "Not ready" } },
+			value = { { t = tostring(waiting + failing) } },
+			sub = if failing > 0 then { { t = failing .. " failing" } } else nil,
+			tone = if failing > 0 then "error" elseif waiting > 0 then "warning" else nil,
+		},
+	}
+	if restartsAt then
+		table.insert(items, {
+			label = { { t = "Restarts" } },
+			value = { { t = tostring(restarts) } },
+			tone = if restarts > 0 then "warning" else nil,
+		})
+	end
+	return { k = "stats", p = { key = "stats", items = items } }
+end
+
 local function listBody(s: State, route: Route, load: Load?): { Node }
 	local pending = pendingNode(s, load)
 	if pending or load == nil then
 		return { pending :: Node }
 	end
 	local data = load.data :: State.ListData
-	local f = string.lower(s.filter[State.currentKey(s)] or "")
-	local rows: { GridRow } = {}
-	local keys: { string } = {}
-	for _, row in data.rows do
-		if f == "" or string.find(row.hay, f, 1, true) then
-			local n = #rows + 1
-			rows[n] = { key = row.key, cells = row.cells, action = "open=" .. row.key }
-			keys[n] = row.key
-		end
+	local key = State.currentKey(s)
+	local f = string.lower(s.filter[key] or "")
+	local list = State.listRows(s, route, data)
+	local rows: { GridRow } = table.create(#list)
+	local keys: { string } = table.create(#list)
+	for i, row in list do
+		rows[i] = { key = row.key, cells = row.cells, action = "open=" .. row.key }
+		keys[i] = row.key
 	end
 	local resource = route.resource or "pods"
 	if #data.rows == 0 then
@@ -578,20 +745,41 @@ local function listBody(s: State, route: Route, load: Load?): { Node }
 	if f ~= "" then
 		summary ..= string.format(" · %d match /%s", #rows, f)
 	end
-	local out: { Node } = {
-		ui.row({
-			ui.text({ ui.span(summary, "muted") }, { key = "count" }),
+	local countRow: { Node } = { ui.text({ ui.span(summary, "muted") }, { key = "count" }) }
+	if not State.singleContext(s) then
+		table.insert(
+			countRow,
 			chip("Compare list (x)", "nav=compare", {
 				key = "compare",
 				title = "This list in other contexts of the kubeconfig: present, same, changed, missing (read-only)",
-			}),
-		}, { key = "count-row", wrap = true, role = "tern-kube.chips" }),
-	}
+			})
+		)
+	end
+	local out: { Node } = { ui.row(countRow, { key = "count-row", wrap = true, role = "tern-kube.chips" }) }
+	local stats = M.listStats(data, list, resource)
+	if stats then
+		table.insert(out, stats)
+	end
 	if #rows == 0 then
 		table.insert(out, ui.muted("Nothing matches the filter. Esc clears it.", { key = "empty" }))
 		return out
 	end
-	for _, n in pagedGrid("grid", data.headers, data.types, rows, selectedIndexIn(s, keys), s) do
+	for _, n in
+		tableNodes(s, {
+			key = "grid",
+			headers = data.headers,
+			types = data.types,
+			rows = rows,
+			selected = selectedIndexIn(s, keys),
+			cell = nil,
+			sortable = true,
+			sort = s.sort[key],
+			hide = if State.scope(s, route).all then nil else { NAMESPACE = true },
+			now = load.fetchedAt,
+			cache = data,
+			source = list,
+		})
+	do
 		table.insert(out, n)
 	end
 	return out
@@ -626,11 +814,16 @@ local function actionChips(s: State, ref: Ref): Node
 		chip("Describe (d)", "nav=describe", { key = "a-describe" }),
 		chip("Object (y)", "nav=detail", { key = "a-detail" }),
 		chip("Relations (R)", "nav=relations", { key = "a-relations" }),
-		chip("Compare across contexts (x)", "nav=compare", {
-			key = "a-compare",
-			title = "This object in other contexts of the kubeconfig, side by side (read-only)",
-		}),
 	}
+	if not State.singleContext(s) then
+		table.insert(
+			chips,
+			chip("Compare across contexts (x)", "nav=compare", {
+				key = "a-compare",
+				title = "This object in other contexts of the kubeconfig, side by side (read-only)",
+			})
+		)
+	end
 	local workload = ref.kind == "Pod"
 		or ref.kind == "Deployment"
 		or ref.kind == "StatefulSet"
@@ -685,6 +878,7 @@ local function actionChips(s: State, ref: Ref): Node
 		local origin: Link.Origin = {
 			context = s.target.context,
 			source = Link.sourceOf(s.target.contextSource, s.target.confirmed),
+			origin = s.origin,
 			kubeconfig = s.target.kubeconfig,
 		}
 		for _, m in Link.chips(ref, origin, objState(obj)) do
@@ -741,7 +935,7 @@ local function pair(k: { ui.SpanLike }, v: { ui.SpanLike }): KvItem
 	return { k, v }
 end
 
-local function metaItems(obj: any, ref: Ref): ({ KvItem }, { Node })
+local function metaItems(s: State, obj: any, ref: Ref): ({ KvItem }, { Node })
 	local items: { KvItem } = {
 		pair({ "Kind" }, { (if ref.group then ref.group .. "/" else "") .. ref.kind }),
 		pair({ "Name" }, { ui.span(ref.name, "strong") }),
@@ -753,7 +947,13 @@ local function metaItems(obj: any, ref: Ref): ({ KvItem }, { Node })
 	local md = if type(obj) == "table" and type(obj.metadata) == "table" then obj.metadata else nil
 	if md then
 		if type(md.creationTimestamp) == "string" then
-			table.insert(items, pair({ "Created" }, { md.creationTimestamp }))
+			local at = Values.timestamp(md.creationTimestamp)
+			local text = if at
+				then M.localTime(s, math.floor(at), "%Y-%m-%d %H:%M:%S") .. (if s.now
+					then " (" .. Table.age(s.now - at) .. " ago)"
+					else "")
+				else md.creationTimestamp
+			table.insert(items, pair({ "Created" }, { text }))
 		end
 		if type(md.labels) == "table" then
 			local parts: { string } = {}
@@ -818,7 +1018,7 @@ local function detailBody(s: State, route: Route, load: Load?): { Node }
 			table.insert(out, pending)
 		end
 	end
-	local items, owners = metaItems(obj, ref)
+	local items, owners = metaItems(s, obj, ref)
 	local meta = ui.kv(items);
 	(meta.p :: any).key = "meta"
 	table.insert(out, meta)
@@ -870,7 +1070,8 @@ local function relationsBody(s: State, route: Route, load: Load?): { Node }
 		local ref = node.ref
 		local hay = string.lower(ref.kind .. " " .. ref.name .. " " .. (node.provenance or ""))
 		if f == "" or string.find(hay, f, 1, true) then
-			local indent = string.rep("  ", node.depth) .. (if node.depth > 0 then "↳ " else "")
+			-- Em spaces: table cells collapse leading ASCII spaces.
+			local indent = if node.depth > 0 then string.rep(utf8.char(0x2003), node.depth - 1) .. "↳ " else ""
 			local name = indent .. ref.name
 			if ref.namespace and ref.namespace ~= rootNs then
 				name ..= "  (" .. ref.namespace .. ")"
@@ -960,15 +1161,18 @@ local function cap(text: string, n: number): string
 	return string.sub(text, 1, n) .. " …"
 end
 
--- HH:MM:SS.mmm of a kubelet RFC3339 time (UTC, as kubectl prints it).
-function M.clock(ts: string?): string
+-- HH:MM:SS.mmm of a kubelet RFC3339 time, in local time (`offset` seconds
+-- east of UTC).
+function M.clock(ts: string?, offset: number?): string
 	if ts == nil then
 		return ""
 	end
-	local hms, frac = string.match(ts, "T(%d%d:%d%d:%d%d)%.?(%d*)")
-	if hms == nil then
+	local frac = string.match(ts, "T%d%d:%d%d:%d%d%.(%d+)")
+	local at = Values.timestamp(ts)
+	if at == nil then
 		return ts
 	end
+	local hms = os.date("!%H:%M:%S", math.floor(at) + (offset or 0)) :: string
 	return if frac and frac ~= "" then hms .. "." .. string.sub(frac .. "000", 1, 3) else hms
 end
 
@@ -1198,7 +1402,7 @@ local function logsBody(s: State, route: Route, load: Load?): { Node }
 		rowAt = function(i: number): GridRow
 			local idx = indices[i]
 			local rec = store.records[idx]
-			local cells = { M.clock(rec.ts) }
+			local cells = { M.clock(rec.ts, s.utcOffset) }
 			if withSource then
 				table.insert(cells, sourceText(store, rec.source, single))
 			end
@@ -1730,8 +1934,6 @@ end
 -- Dock and help --------------------------------------------------------------
 
 local HINTS: { [string]: string } = {
-	list = "j/k move · enter open · / filter · d describe · y object · R relations · s shell · l logs · F port-forward · : kinds · H helm · ? help",
-	detail = "enter relations · d describe · L logs · s shell · l follow logs · F port-forward · e edit · ctrl+d delete · ctrl+r restart · S scale · H helm release · ? more · esc back",
 	relations = "j/k move · enter open · / filter · r refresh · esc back",
 	describe = "y object · R relations · r refresh · esc back",
 	logs = "j/k move · enter inspect · / search · ] [ next/prev error · x level · w wrap · a container · o previous · l follow · esc back",
@@ -1749,6 +1951,64 @@ local function compareHint(s: State, route: Route): string
 		return HINTS["compare-pick"]
 	end
 	return HINTS[if Compare.isPair(s.compare, State.compareCtx(s), route) then "compare-pair" else "compare"]
+end
+
+-- Load errors a context change can fix; others only offer retry.
+local CONTEXT_ERRORS: { [string]: boolean } = { context = true, forbidden = true, unreachable = true, timeout = true }
+
+local LOG_KINDS: { [string]: boolean } =
+	{ Pod = true, Deployment = true, StatefulSet = true, DaemonSet = true, ReplicaSet = true, Job = true }
+
+local QUICK_WORDS: { [string]: string } =
+	{ shell = "shell", ["logs-follow"] = "follow logs", ["port-forward"] = "port-forward", edit = "edit" }
+
+-- The list and object hints name only the keys that apply to the focused
+-- object's kind and state (no shell on a ConfigMap, no Resume when running).
+local function objectHint(s: State, route: Route): string
+	local list = route.kind == "list"
+	local parts: { string } = if list
+		then { "j/k move", "enter open", "/ filter", "d describe", "y object", "R relations" }
+		else { "enter relations", "d describe" }
+	local ref = State.focusRef(s)
+	if ref then
+		if LOG_KINDS[ref.kind] then
+			table.insert(parts, "L logs")
+		end
+		local info, obj = quickInfo(s, ref)
+		if ref.kind ~= "Pod" and LOG_KINDS[ref.kind] then
+			info.pod = info.pod or "?"
+		end
+		local mutations = s.config.mutations.enabled
+		info.allowMutations = mutations
+		for _, action in Quick.available(ref.kind, ref, info :: any) do
+			local key, word = QUICK_KEYS[action.id], QUICK_WORDS[action.id]
+			local editor = Quick.gate(action.id) == "editor"
+			if key and word and (not list or not (action.mutates or editor)) then
+				table.insert(parts, key .. " " .. word)
+			end
+		end
+		if not list and mutations then
+			local origin: Link.Origin = {
+				context = s.target.context,
+				source = Link.sourceOf(s.target.contextSource, s.target.confirmed),
+				origin = s.origin,
+				kubeconfig = s.target.kubeconfig,
+			}
+			for _, m in Link.chips(ref, origin, objState(obj)) do
+				table.insert(parts, m.key .. " " .. string.lower(m.label))
+			end
+		end
+	end
+	if list then
+		table.insert(parts, ": kinds")
+		table.insert(parts, "H helm")
+		table.insert(parts, "? help")
+	else
+		table.insert(parts, "H helm release")
+		table.insert(parts, "? more")
+		table.insert(parts, "esc back")
+	end
+	return table.concat(parts, " · ")
 end
 
 -- Words of a hint segment ("ctrl+d delete", "A apply source") that name a
@@ -1804,12 +2064,14 @@ local function dock(s: State): Node
 		spans = { ui.span("loading … ", "accent"), ui.span(typed(load.argv), "muted mono") }
 	elseif load and load.status == "error" then
 		local first = string.match(load.error or "", "^[^\n]*") or ""
-		spans = { ui.span(first, "error"), ui.span("  · r retry · c contexts", "muted") }
+		local ways = if CONTEXT_ERRORS[load.errorKind or ""] then "  · r retry · c contexts" else "  · r retry"
+		spans = { ui.span(first, "error"), ui.span(ways, "muted") }
 	else
 		local hint = if Gitops.isRoute(route.kind)
-			then GitopsView.hint(route)
-			elseif Helm.isRoute(route.kind) then HelmView.hint(route)
+			then GitopsView.hint(route, s.gitops, State.gitopsCtx(s))
+			elseif Helm.isRoute(route.kind) then HelmView.hint(route, s.helm)
 			elseif Compare.isRoute(route.kind) then compareHint(s, route)
+			elseif route.kind == "list" or route.kind == "detail" then objectHint(s, route)
 			else HINTS[route.kind]
 		if hint and not s.config.mutations.enabled then
 			hint = M.withoutMutations(hint)
@@ -1822,121 +2084,51 @@ local function dock(s: State): Node
 	)
 end
 
--- { key, what, pointer equivalent, "mutates" when mutations.enabled gates it }
-M.KEYS = {
-	{ "j / k, down / up", "Move the selection", "Click a row" },
-	{ "gg / G, home / end", "First / last row", "" },
-	{ "PageDown / PageUp", "Move by a window (also ctrl+f / ctrl+b)", "" },
-	{ "enter", "Open the selected object (in an object: its relations)", "Click a row" },
-	{ "esc", "Back; at the root clear the filter, then esc twice closes the block", "Breadcrumbs" },
-	{ "backspace", "Back (never closes the block)", "" },
-	{ "/", "Filter rows (enter keeps, esc ends editing)", "Click the filter" },
-	{ "r", "Refresh this view (the only way data is re-read)", "Refresh" },
-	{ "c", "Choose the context", "context chip" },
-	{ "n", "Choose the namespace scope", "namespace chip" },
-	{ ":", "Choose a resource kind", "" },
-	{ "d", "Describe (native view)", "Describe" },
-	{ "y", "Object view (fields as a tree)", "Object" },
-	{ "R", "Related objects with provenance", "Relations" },
-	{ "L", "Log records: the last explore.logs_tail lines with level, source and time", "Logs" },
-	{ "v / V", "Events timeline of the namespace / of the focused object (with what it owns)", "Events" },
-	{ "] / [", "Logs: next / previous error; events: next / previous Warning", "Next error" },
-	{ "x", "Logs: level floor (all, warnings+, errors+); events: Warning only", "Level chips" },
-	{
-		"x",
-		"Compare across contexts: the list in view, or the focused object; pick one context, all, or the configured set",
-		"Compare across contexts",
-	},
-	{ "[ / ]", "Compare: previous / next other context (column, or the other side of the diff)", "Next context" },
-	{ "f", "Compare: show all objects / only what differs / only missing or extra", "Show chip" },
-	{ "enter", "Compare: pick the context; open the pairwise diff of a row (no new query)", "Click a row" },
-	{ "r / Y", "Compare: refetch every context / copy every pinned command, one per line", "Copy commands" },
-	{ "w / o / a", "Logs: wrap long lines, previous instance, cycle the container", "Wrap, previous, containers" },
-	{ "enter", "Logs: inspect the selected line (fields, stack, copy line / message / JSON)", "Click a line" },
-	{ "s", "Shell in a new split (workloads: a ready pod)", "Shell" },
-	{ "l", "Follow logs in a new split", "Follow logs" },
-	{ "shift+f", "Port-forward in a new split", "Port-forward" },
-	{ "ctrl+d", "Delete: preview, then typed confirmation in the approve block", "Delete", "mutates" },
-	{
-		"ctrl+r",
-		"Rollout restart (deployments, statefulsets, daemonsets): preview, then confirm",
-		"Restart",
-		"mutates",
-	},
-	{ "shift+s", "Scale: asks for replicas, previews, then confirm", "Scale", "mutates" },
-	{ "e", "Edit in a new split (kubectl edit); the approve block previews after you save", "Edit", "mutates" },
-	{
-		"t / T",
-		"Label / annotate: asks for KEY=VALUE or KEY-, previews, then confirm",
-		"Label, Annotate",
-		"mutates",
-	},
-	{ "X", "Patch: asks for [--type=strategic|merge|json] JSON, previews, then confirm", "Patch", "mutates" },
-	{
-		"U",
-		"Rollout undo (deployments, statefulsets, daemonsets): diff to the target revision",
-		"Undo",
-		"mutates",
-	},
-	{ "p / P", "Rollout pause / resume (deployments)", "Pause, Resume", "mutates" },
-	{ "C / u", "Cordon / uncordon the node", "Cordon, Uncordon", "mutates" },
-	{
-		"D",
-		"Drain the node: asks for options, previews evictions and PodDisruptionBudgets",
-		"Drain",
-		"mutates",
-	},
-	{ "Y", "Copy the kubectl command of this view", "Copy command" },
-	{ "m", "Open the object's manifest at its line (indexes the repository first)", "Manifest" },
-	{ "=", "Diff the live object against its manifest (kubectl diff)", "Diff vs manifest" },
-	{ "ctrl+g", "Drift report: choose a manifest source, compare it with the cluster", "" },
-	{ "E", "Export the object (or the filtered list) as clean manifests: preview, then w writes", "Export" },
-	{ "f / a / A / X", "Drift: filter, apply the selected manifest / the source, export all shown", "" },
-	{ "t / w / b", "Export: change directory, write the files, branch and commit", "" },
-	{ "b e p P o", "Git: branch, message, push, pull request, only exported files (enter runs)", "" },
-	{ "H", "Helm releases; on an object managed by Helm: its release", "Helm release chip" },
-	{
-		"h / v / M / N / K / R",
-		"Helm: history, values (v again: next mode), manifest, notes, hooks, resources of the release",
-		"Release chips",
-	},
-	{ "enter", "Helm: open the release, the revision or the object", "Click a row" },
-	{ "space", "Helm: mark a history revision for =", "" },
-	{ "=", "Helm: diff the selected revision against the latest (or the marked one)", "Diff vs previous" },
-	{
-		"ctrl+r",
-		"Helm: roll back to the selected revision (release: the last good one); previews in the approve block",
-		"Rollback",
-		"mutates",
-	},
-	{ "ctrl+g", "Helm: drift of the auto-detected chart directory", "" },
-	{ "Y", "Helm: copy the pinned helm command of this view", "Copy command" },
-	{ "?", "This help", "?" },
-}
-
+M.KEYS = Keys.KEYS
+-- The current view's keys first; j/k and the page keys scroll (the layer
+-- is longer than a pane and Tern does not scroll it from the keyboard).
 local function help(s: State): Node
-	local items: { KvItem } = {}
 	local mutations = s.config.mutations.enabled
-	for _, k in M.KEYS do
-		if k[4] == "mutates" and not mutations then
-			continue
-		end
-		local pointer = if k[3] ~= "" then "  ·  " .. k[3] else ""
-		table.insert(items, pair({ ui.span(k[1], "mono strong") }, { k[2], ui.span(pointer, "muted") }))
+	local kind = s.stack[#s.stack].kind
+	local skip = math.clamp(s.helpTop, 0, math.max(0, Keys.rows(kind, mutations) - 1))
+	local children: { Node } = {
+		ui.text({
+			ui.span("Tern Kube Explore keys", "strong"),
+			ui.span("   j/k, PageDown/PageUp scroll · esc or ? closes", "muted"),
+		}, { key = "title" }),
+	}
+	if skip > 0 then
+		table.insert(children, ui.muted(string.format("↑ %d rows above (k, gg)", skip), { key = "help-above" }))
 	end
-	local kv = ui.kv(items)
-	return ui.col({
-		ui.text(
-			{ ui.span("Tern Kube Explore keys", "strong"), ui.span("   esc or ? closes", "muted") },
-			{ key = "title" }
-		),
-		kv,
+	local row = 0
+	for i, sec in Keys.sections(kind, mutations) do
+		row += 1
+		if row > skip then
+			table.insert(children, ui.text({ ui.span(sec.title, "accent strong") }, { key = "sec" .. i }))
+		end
+		local items: { KvItem } = {}
+		for _, k in sec.entries do
+			row += 1
+			if row > skip then
+				local pointer = if k[3] ~= "" then "  ·  " .. k[3] else ""
+				table.insert(items, pair({ ui.span(k[1], "mono strong") }, { k[2], ui.span(pointer, "muted") }))
+			end
+		end
+		if #items > 0 then
+			local kv = ui.kv(items);
+			(kv.p :: any).key = "keys" .. i
+			table.insert(children, kv)
+		end
+	end
+	table.insert(
+		children,
 		ui.muted(
 			if mutations
 				then "Context changes only through the chooser; every query pins --context."
 				else "Context changes only through the chooser; every query pins --context. Mutation keys are hidden (mutations.enabled is false)."
-		),
-	}, { key = "help", role = "tern-kube.explore-help" })
+		)
+	)
+	return ui.col(children, { key = "help", role = "tern-kube.explore-help" })
 end
 
 -- View -----------------------------------------------------------------------
@@ -1955,9 +2147,7 @@ function M.view(s: State, cols: number, _rows: number): View
 				key = "filter",
 				text = text,
 				cursor = Textfield.caretFor(if s.editing and s.field == nil then s.input else nil, text),
-				placeholder = if route.kind == "logs"
-					then "press / to search messages, fields and sources"
-					else "press / to filter",
+				placeholder = if route.kind == "logs" then "search messages, fields and sources" else "filter rows",
 				prompt = "/",
 			},
 		})

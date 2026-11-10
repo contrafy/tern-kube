@@ -117,7 +117,7 @@
 }
 
 [data-role="tern-kube.explore"] .tk-cmp-error {
-	background: var(--bad-fill);
+	box-shadow: inset 2px 0 0 var(--bad);
 }
 
 [data-role="tern-kube.explore"] .tk-cmp-same,
@@ -134,4 +134,50 @@
 
 [data-role="tern-kube.compare-side"] {
 	white-space: pre-wrap;
+}
+
+/* Native tables (lists, pickers, relations, Helm and GitOps lists) scroll in
+   their own box that fills the pane under the header, filter and tiles; the
+   main region becomes a column only while such a box is on screen, so other
+   views keep scrolling as a whole. */
+.sf-main[data-surface='plugin.tern-kube.explore']:has([data-role="tern-kube.scroller"]) {
+	display: flex;
+	flex-direction: column;
+	overflow: hidden;
+}
+
+.sf-main[data-surface='plugin.tern-kube.explore'] [data-role="tern-kube.explore"]:has([data-role="tern-kube.scroller"]),
+.sf-main[data-surface='plugin.tern-kube.explore'] [data-role^="tern-kube.explore-"]:has(> [data-role="tern-kube.scroller"]) {
+	flex: 1 1 0;
+	min-height: 0;
+}
+
+[data-role="tern-kube.scroller"] {
+	flex: 1 1 0;
+	min-height: 0;
+	overflow: auto;
+}
+
+/* Tern's table head is not sticky; it needs an opaque background. */
+[data-role="tern-kube.scroller"] .sf-tbl-row.head {
+	position: sticky;
+	top: 0;
+	z-index: 1;
+	background: var(--card);
+}
+
+/* Selected row: a stronger tint and full-contrast text instead of status
+   tones on the accent (EXP-U1). */
+[data-role="tern-kube.explore"] .sf-tbl-row.sel {
+	--sf-sel: rgb(from var(--accent) r g b / 22%);
+	--sf-c-success: var(--t1);
+	--sf-c-warning: var(--t1);
+	--sf-c-error: var(--t1);
+	--sf-c-muted: var(--t1);
+}
+
+/* The help layer is longer than a pane: it scrolls (j/k scroll it too). */
+[data-role="tern-kube.explore-layer"] {
+	max-height: 80vh;
+	overflow: auto;
 }

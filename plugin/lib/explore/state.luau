@@ -23,6 +23,7 @@ local Helm = require("./helm")
 local HelmOwner = require("../helm/owner")
 local HelmQuery = require("../helm/query")
 local Json = require("../parse/json")
+local Keys = require("./keys")
 local Kinds = require("../kubectl/kinds")
 local Link = require("../mutation/link")
 local LogsParse = require("../logs/parse")
@@ -35,6 +36,7 @@ local Redact = require("../model/redact")
 local Relations = require("./relations")
 local Resource = require("../model/resource")
 local Shellenv = require("../env/shellenv")
+local Table = require("../render/table")
 local Textfield = require("../textfield")
 local Timeline = require("../events/timeline")
 local Types = require("../model/types")
@@ -71,7 +73,17 @@ export type Row = {
 	object: any?,
 }
 
-export type ListData = { kind: string?, headers: { string }, types: { ColumnType }, rows: { Row } }
+-- memo: the last filtered and sorted rows, so moving the selection does not
+-- re-sort a long list.
+export type ListData = {
+	kind: string?,
+	headers: { string },
+	types: { ColumnType },
+	rows: { Row },
+	memo: { key: string, rows: { Row } }?,
+	-- The last native table built from `memo.rows` (render.luau).
+	view: any?,
+}
 export type NamesData = { names: { string } }
 -- masked: the object view hides at least one value of the fetched object.
 export type DetailData = { object: any, masked: boolean }
@@ -128,7 +140,20 @@ export type Env = {
 	null: any?,
 	-- Resolved helm program (env_host.program("helm")); nil = not found.
 	helm: string?,
+	-- Seconds east of UTC: Explore shows local times.
+	utcOffset: number?,
+	-- The namespace scope the last Explore used, for a fresh block.
+	lastScope: Scope?,
+	-- Tag of this block on the mutations it starts ("explore:<pane>"); the
+	-- approve block reports success with it and the host refreshes.
+	origin: string?,
 }
+
+-- A namespace scope remembered with the context it was used with.
+export type Scope = { context: string, namespace: string?, all: boolean }
+
+-- A list's header sort: the header and "asc" / "desc".
+export type Sort = { col: string, dir: string }
 
 export type Resolve = { phase: "current" | "verify" | "done" | "failed", gen: number }
 
@@ -185,6 +210,16 @@ export type State = {
 	-- esc at the root armed a close at this clock (-1: the clock is unknown);
 	-- a second esc soon after closes. Any other key disarms.
 	escArmed: number?,
+	-- Header sort per list view (route key).
+	sort: { [string]: Sort },
+	utcOffset: number,
+	-- A fresh block (no link namespace, nothing restored) starts in the last
+	-- used scope of the same context, else all namespaces.
+	firstScope: Scope?,
+	firstRun: boolean,
+	origin: string?,
+	-- First help row shown (the help layer scrolls with j/k and page keys).
+	helpTop: number,
 }
 
 export type Effect = ExploreTypes.Effect
@@ -255,6 +290,30 @@ end
 
 local function top(s: State): Route
 	return s.stack[#s.stack]
+end
+
+-- Routes still drawn on the grid build only a height-sized window; native
+-- tables mount only what shows and scroll in their own box, so they hold up
+-- to general.max_rendered_rows.
+local GRID_ROUTES: { [string]: boolean } = { logs = true, events = true }
+
+-- Lines of a block above and below a native table's rows (header, crumbs,
+-- filter, count, stats tiles, table head, dock); a table row is about 4/3
+-- of a line.
+M.TABLE_CHROME_LINES = 14
+
+function M.windowSize(s: State): number
+	local cap = s.config.general.max_rendered_rows
+	return if GRID_ROUTES[top(s).kind] then M.viewport(s.rows, cap) else cap
+end
+
+-- Rows PageDown moves: about one screen of the list.
+function M.pageSize(s: State): number
+	if GRID_ROUTES[top(s).kind] then
+		return M.viewport(s.rows, s.config.general.max_rendered_rows)
+	end
+	local rows = s.rows or 45
+	return math.max(3, math.floor((rows - M.TABLE_CHROME_LINES) * 3 / 4))
 end
 
 local function splitLines(text: string): { string }
@@ -423,6 +482,13 @@ end
 
 function M.resolved(s: State): boolean
 	return s.target.context ~= nil and s.resolve.phase == "done" and s.targetError == nil
+end
+
+-- The kubeconfig is known to hold no other context (compare has nothing to
+-- show); false while the names are unknown.
+function M.singleContext(s: State): boolean
+	local load = s.cache[M.routeKey(s, { kind = "contexts" })]
+	return load ~= nil and load.status == "ok" and load.data ~= nil and #(load.data :: NamesData).names <= 1
 end
 
 local function timeout(s: State): number
@@ -629,6 +695,10 @@ function M.gitopsCtx(s: State): Gitops.Ctx
 		isList = s.isList,
 		null = s.null,
 		helm = s.helmProgram,
+		findObject = function(ref: Ref): any
+			return M.findObject(s, ref)
+		end,
+		origin = s.origin,
 	}
 end
 
@@ -647,6 +717,7 @@ function M.helmCtx(s: State): Helm.Ctx
 		dataDir = s.dataDir,
 		nonce = s.nonce,
 		chartDirs = Gitops.chartDirs(s.gitops),
+		origin = s.origin,
 	}
 end
 
@@ -693,6 +764,32 @@ function M.eventList(route: Route, data: EventsData, text: string): { EventsMode
 	return Timeline.filter(data.events, { warnings = route.warnings == true, text = text, scope = data.scope })
 end
 
+-- The rows of a list load that pass the filter, in the header sort's order.
+function M.listRows(s: State, route: Route, data: ListData): { Row }
+	local key = M.routeKey(s, route)
+	local f = string.lower(s.filter[key] or "")
+	local sort = s.sort[key]
+	local index = if sort then table.find(data.headers, sort.col) else nil
+	local memoKey = f .. "\0" .. (if sort and index then sort.col .. "\0" .. sort.dir else "")
+	local memo = data.memo
+	if memo and memo.key == memoKey then
+		return memo.rows
+	end
+	local rows: { Row } = {}
+	for _, row in data.rows do
+		if f == "" or string.find(row.hay, f, 1, true) then
+			table.insert(rows, row)
+		end
+	end
+	if sort and index then
+		rows = Table.sorted(rows, function(r: Row): { string }
+			return r.cells
+		end, data.types, index, sort.dir)
+	end
+	data.memo = { key = memoKey, rows = rows }
+	return rows
+end
+
 -- Selection over what the current route shows, after the filter.
 function M.items(s: State, route: Route?): { Item }
 	local r = route or top(s)
@@ -724,10 +821,8 @@ function M.items(s: State, route: Route?): { Item }
 		return out
 	end
 	if r.kind == "list" then
-		for _, row in (load.data :: ListData).rows do
-			if f == "" or string.find(row.hay, f, 1, true) then
-				table.insert(out, { key = row.key, ref = row.ref })
-			end
+		for _, row in M.listRows(s, r, load.data :: ListData) do
+			table.insert(out, { key = row.key, ref = row.ref })
 		end
 	elseif r.kind == "contexts" or r.kind == "namespaces" or r.kind == "kinds" then
 		for _, name in (load.data :: NamesData).names do
@@ -1450,9 +1545,11 @@ function M.init(args: { string }, saved: any, config: Config, env: Env): (State,
 	local stack = linkRoutes(params)
 	local sel: { [string]: string } = {}
 	local filter: { [string]: string } = {}
+	local firstRun = param(params, "namespace") == nil
 	if type(saved) == "table" and saved.v == M.SAVE_VERSION then
 		local st = saved.target
 		if type(st) == "table" and SOURCES[st.contextSource] and nonEmpty(st.context) then
+			firstRun = false
 			target = {
 				kubeconfig = nonEmpty(st.kubeconfig),
 				context = st.context,
@@ -1519,6 +1616,12 @@ function M.init(args: { string }, saved: any, config: Config, env: Env): (State,
 		helmProgram = env.helm,
 		compare = Compare.new(),
 		escArmed = nil,
+		sort = {},
+		utcOffset = env.utcOffset or 0,
+		firstScope = env.lastScope,
+		firstRun = firstRun,
+		origin = env.origin,
+		helpTop = 0,
 	}
 	local effects: { Effect } = {}
 	if s.envPending then
@@ -1838,6 +1941,28 @@ function M.refresh(s: State, effects: { Effect })
 	end
 end
 
+local STALE_AFTER_MUTATION: { [string]: boolean } =
+	{ list = true, detail = true, relations = true, describe = true, events = true }
+
+-- A mutation this block started succeeded (MUT-F9): the user asked for the
+-- change, so the view refreshes, and the other cluster views drop their
+-- data so going back fetches them again.
+function M.applied(s: State, effects: { Effect })
+	if not M.resolved(s) then
+		return
+	end
+	local current = M.currentKey(s)
+	local cache: { [string]: Load } = {}
+	for key, load in s.cache do
+		local kind = string.match(key, "^([^|]+)|")
+		if key == current or not (kind and STALE_AFTER_MUTATION[kind]) then
+			cache[key] = load
+		end
+	end
+	s.cache = cache
+	M.refresh(s, effects)
+end
+
 -- Copy -----------------------------------------------------------------------
 
 -- What a user would type: `kubectl`, not the daemon's resolved program path.
@@ -2109,6 +2234,7 @@ local function mutate(s: State, op: string, effects: { Effect })
 	local url, err = Link.forRef(op :: Link.Op, ref, {
 		context = s.target.context,
 		source = Link.sourceOf(s.target.contextSource, s.target.confirmed),
+		origin = s.origin,
 		kubeconfig = s.target.kubeconfig,
 	})
 	if url == nil then
@@ -2788,6 +2914,21 @@ local function onKey(s: State, key: Key, effects: { Effect }, clock: number?): b
 	s.pendingG = false
 	local armed = s.escArmed
 	s.escArmed = nil
+	if s.help then
+		local step: number? = if ch == "j" or name == "down"
+			then 1
+			elseif ch == "k" or name == "up" then -1
+			elseif name == "page_down" or (key.ctrl and name == "f") then 10
+			elseif name == "page_up" or (key.ctrl and name == "b") then -10
+			elseif ch == "g" or name == "home" then -math.huge
+			elseif ch == "G" or name == "end" then math.huge
+			else nil
+		if step then
+			local last = math.max(0, Keys.rows(top(s).kind, s.config.mutations.enabled) - 1)
+			s.helpTop = math.clamp(s.helpTop + step, 0, last)
+			return true
+		end
+	end
 	if s.help and (name == "escape" or ch == "?") then
 		s.help = false
 		return true
@@ -2824,9 +2965,9 @@ local function onKey(s: State, key: Key, effects: { Effect }, clock: number?): b
 	elseif ch == "k" or name == "up" then
 		move(s, -1)
 	elseif name == "page_down" or (key.ctrl and name == "f") then
-		move(s, M.viewport(s.rows, s.config.general.max_rendered_rows))
+		move(s, M.pageSize(s))
 	elseif name == "page_up" or (key.ctrl and (name == "b" or name == "u")) then
-		move(s, -M.viewport(s.rows, s.config.general.max_rendered_rows))
+		move(s, -M.pageSize(s))
 	elseif key.ctrl and name == "d" then
 		mutate(s, "delete", effects)
 	elseif key.ctrl and name == "r" then
@@ -2876,6 +3017,7 @@ local function onKey(s: State, key: Key, effects: { Effect }, clock: number?): b
 		end
 		return startEdit(s, effects)
 	elseif ch == "?" then
+		s.helpTop = 0
 		s.help = not s.help
 	elseif ch == "r" then
 		M.refresh(s, effects)
@@ -2928,6 +3070,33 @@ end
 
 -- Actions (pointer) ----------------------------------------------------------
 
+-- A header click on a list (`<column id>:<asc|desc>` from the table). A
+-- first click on a count column sorts largest first; Tern draws the arrow
+-- the view sends, so the flip shows.
+local function sortBy(s: State, value: string): boolean
+	local id, dir = string.match(value, "^(.+):(%a+)$")
+	local r = top(s)
+	local load = M.currentLoad(s)
+	if id == nil or r.kind ~= "list" or load == nil or load.status ~= "ok" or load.data == nil then
+		return false
+	end
+	local data = load.data :: ListData
+	local index = table.find(Table.ids(data.headers), id)
+	if index == nil then
+		return false
+	end
+	local key = M.currentKey(s)
+	local col = data.headers[index]
+	local before = s.sort[key]
+	if before == nil or before.col ~= col then
+		dir = Table.firstDir(data.types[index] or "text")
+	end
+	local sort = table.clone(s.sort)
+	sort[key] = { col = col, dir = if dir == "desc" then "desc" else "asc" }
+	s.sort = sort
+	return true
+end
+
 local function onAction(s: State, act: string, value: string, effects: { Effect }): boolean
 	if act == "open" then
 		selectKey(s, value)
@@ -2946,8 +3115,10 @@ local function onAction(s: State, act: string, value: string, effects: { Effect 
 		drill(s, effects)
 	elseif act == "sel" then
 		selectKey(s, value)
+	elseif act == "sort" then
+		return sortBy(s, value)
 	elseif act == "page" then
-		local size = M.viewport(s.rows, s.config.general.max_rendered_rows)
+		local size = M.windowSize(s)
 		move(s, if value == "up" then -size else size)
 	elseif act == "back" then
 		back(s, effects)
@@ -2955,10 +3126,19 @@ local function onAction(s: State, act: string, value: string, effects: { Effect 
 		truncate(s, tonumber(value) or 0, effects)
 	elseif act == "refresh" then
 		M.refresh(s, effects)
+	elseif act == "applied" then
+		M.applied(s, effects)
 	elseif act == "settings" then
 		table.insert(effects, { t = "open", url = M.SETTINGS_URL })
 	elseif act == "help" then
 		s.help = not s.help
+	elseif act == "palette-route" then
+		-- A palette command reuses this block in its context and scope (EXP-B9).
+		if value == "events" then
+			openEvents(s, nil, effects)
+		elseif value == "helm-releases" then
+			helmKey(s, effects)
+		end
 	elseif act == "nav" then
 		if value == "contexts" or value == "namespaces" or value == "kinds" then
 			pushPicker(s, value :: RouteKind, effects)
@@ -3121,6 +3301,26 @@ local function failLoad(s: State, key: string, load: Load, msg: Msg)
 	setLoad(s, key, upd)
 end
 
+-- A fresh block (no namespace named, nothing restored) starts in the scope
+-- the last Explore used on this context, else in all namespaces: the context
+-- default namespace is often empty and showed a new user nothing.
+local function applyFirstScope(s: State)
+	if not s.firstRun then
+		return
+	end
+	s.firstRun = false
+	local t = table.clone(s.target)
+	local last = s.firstScope
+	if last and last.context == t.context then
+		t.namespace = last.namespace
+		t.allNamespaces = last.all
+	else
+		t.namespace = nil
+		t.allNamespaces = true
+	end
+	s.target = t
+end
+
 local function contextsLoaded(s: State, names: { string }, effects: { Effect })
 	if s.resolve.phase ~= "verify" then
 		return
@@ -3128,6 +3328,7 @@ local function contextsLoaded(s: State, names: { string }, effects: { Effect })
 	local want = s.target.context
 	if want and table.find(names, want) then
 		s.resolve = { phase = "done", gen = s.resolve.gen }
+		applyFirstScope(s)
 		ensure(s, effects)
 		return
 	end
@@ -3168,7 +3369,16 @@ local function onResolve(s: State, msg: Msg, effects: { Effect })
 	t.confirmed = false
 	s.target = t
 	s.resolve = { phase = "done", gen = s.resolve.gen }
+	applyFirstScope(s)
 	ensure(s, effects)
+	-- The context names tell whether "Compare list" has another side to show.
+	local contextsRoute: Route = { kind = "contexts" }
+	local key = M.routeKey(s, contextsRoute)
+	if s.cache[key] == nil then
+		local argv = Query.contexts(s.program, s.target.kubeconfig)
+		setLoad(s, key, { status = "loading", argv = argv, gen = s.gen })
+		table.insert(effects, runEffect(s, key, argv, s.gen))
+	end
 end
 
 local function onQuick(s: State, msg: Msg, effects: { Effect })
@@ -3428,7 +3638,9 @@ local function onResult(s: State, msg: Msg, effects: { Effect }): boolean
 	elseif string.sub(tag, 1, 7) == "gitops|" then
 		local g = Gitops.clone(s.gitops)
 		Gitops.onResult(g, M.gitopsCtx(s), msg, effects)
+		local nav = Gitops.takeNav(g, M.gitopsCtx(s), top(s))
 		s.gitops = g
+		applyNav(s, nav, effects)
 		return true
 	end
 	local key, sub = string.match(tag, "^(.-)\n(.*)$")
@@ -3579,8 +3791,7 @@ function M.update(state: State, msg: Msg): (State, { Effect })
 	end
 	local items = M.items(s)
 	if #items > 0 then
-		offset =
-			M.window(M.selectedIndex(s, items), #items, offset, M.viewport(s.rows, s.config.general.max_rendered_rows))
+		offset = M.window(M.selectedIndex(s, items), #items, offset, M.windowSize(s))
 	end
 	if offset ~= s.offset[key] then
 		local map: { [string]: number? } = table.clone(s.offset)

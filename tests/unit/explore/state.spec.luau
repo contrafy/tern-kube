@@ -4,6 +4,7 @@
 -- ignored, and nothing the cluster returned is ever persisted.
 local Blocksize = require("../../../plugin/lib/blocksize")
 local State = require("../../../plugin/lib/explore/state")
+local Table = require("../../../plugin/lib/render/table")
 local W = require("../../lib/explore")
 local t = require("../../lib/test")
 local describe, it, expect = t.describe, t.it, t.expect
@@ -77,6 +78,43 @@ describe("explore state: target resolution", function()
 		expect(hasContext(trace.runs[2], W.CTX)).toBe(true)
 		local confirmed = W.action(s, "confirm")
 		expect(confirmed.target.confirmed).toBe(true)
+	end)
+
+	-- A first Explore landed on "No pods in ns (context default)": a new user
+	-- saw nothing (LENS-L12).
+	it("a first-ever block starts in all namespaces", function()
+		local env = W.env()
+		env.lastScope = nil
+		local s, effects = State.init({ W.link({}) }, nil, W.config(nil), env)
+		s = W.settle(s, effects)
+		expect(s.target.allNamespaces).toBe(true)
+		expect(table.find((State.currentLoad(s) :: State.Load).argv, "-A") ~= nil).toBe(true)
+	end)
+
+	it("a fresh block starts in the scope the last Explore used on the same context", function()
+		local env = W.env()
+		env.lastScope = { context = W.CTX, namespace = W.NS, all = false }
+		local s, effects = State.init({ W.link({}) }, nil, W.config(nil), env)
+		s = W.settle(s, effects)
+		expect(s.target.namespace).toBe(W.NS)
+		expect(s.target.allNamespaces).toBe(false)
+	end)
+
+	it("the last scope of another context is not carried over", function()
+		local env = W.env()
+		env.lastScope = { context = "other", namespace = W.NS, all = false }
+		local s, effects = State.init({ W.link({}) }, nil, W.config(nil), env)
+		s = W.settle(s, effects)
+		expect(s.target.namespace).toBeNil()
+		expect(s.target.allNamespaces).toBe(true)
+	end)
+
+	it("a namespace named by the link wins over the last scope", function()
+		local env = W.env()
+		env.lastScope = { context = W.CTX, namespace = "elsewhere", all = false }
+		local s, effects = State.init({ W.link({ namespace = W.NS }) }, nil, W.config(nil), env)
+		s = W.settle(s, effects)
+		expect(s.target.namespace).toBe(W.NS)
 	end)
 
 	-- Tern started from the Dock has PATH=/usr/bin:/bin:/usr/sbin:/sbin; the
@@ -595,26 +633,9 @@ describe("explore state: save", function()
 	end)
 end)
 
--- An el grid is not a Tern list: nothing scrolls it to the keyboard
--- selection, so the core only renders a window sized from the block height
--- and keeps the selection inside it, vim-style (scrolloff).
-describe("explore state: visible window", function()
-	-- 22 lines leave room for 3 grid rows: the 7 tern-test-apps pods overflow.
-	local function small(): State
-		local s = W.open()
-		return (State.update(s, { t = "resize", rows = 22 }))
-	end
-
-	local function shown(s: State): (number, number)
-		local items = State.items(s)
-		return State.window(
-			State.selectedIndex(s, items),
-			#items,
-			s.offset[State.currentKey(s)],
-			State.viewport(s.rows, s.config.general.max_rendered_rows)
-		)
-	end
-
+-- Logs and events stay on the el grid: nothing scrolls it to the keyboard
+-- selection, so those views build a window sized from the block height.
+describe("explore state: grid window (logs, events)", function()
 	it("sizes the window from the block height, capped by max_rendered_rows", function()
 		expect(State.viewport(22, 500)).toBe(3)
 		expect(State.viewport(nil, 500)).toBe(500)
@@ -623,8 +644,7 @@ describe("explore state: visible window", function()
 
 	-- Measured on Tern 0.9.8 with `tern ctl dump` at window heights 600, 800
 	-- and 1000 px: blocks of 33, 45 and 58 lines fit 7, 16 and 26 grid rows
-	-- under the chrome. With 18 chrome lines the window held 11, 20 and 30,
-	-- so G and j put the selected row below the visible area.
+	-- under the chrome.
 	it("never sizes the window past the rows that fit (measured)", function()
 		for _, m in { { 33, 7 }, { 45, 16 }, { 58, 26 } } do
 			local size = State.viewport(m[1], 500)
@@ -641,32 +661,44 @@ describe("explore state: visible window", function()
 		expect(size).toBe(State.viewport(45, 500))
 		expect(size >= 15).toBe(true)
 	end)
+end)
 
-	it("G puts the last row in the window", function()
-		local s = W.keys(small(), { "G" })
+-- Lists are native tables: they scroll in their own box and keep the
+-- selected row in view, so a short block no longer cuts the list to a few
+-- rows (EXP-U3); only general.max_rendered_rows bounds what is sent.
+describe("explore state: native list window", function()
+	local function capped(rows: number?): State
+		local s = W.open(nil, W.config('{"general":{"max_rendered_rows":3}}'))
+		return (State.update(s, { t = "resize", rows = rows or 22 }))
+	end
+
+	local function shown(s: State): (number, number)
+		local items = State.items(s)
+		return State.window(State.selectedIndex(s, items), #items, s.offset[State.currentKey(s)], State.windowSize(s))
+	end
+
+	it("holds max_rendered_rows rows whatever the block height", function()
+		local s = (State.update(W.open(), { t = "resize", rows = 22 }))
+		expect(State.windowSize(s)).toBe(500)
+		local first, last = shown(s)
+		expect(first).toBe(1)
+		expect(last).toBe(7)
+	end)
+
+	it("G puts the last row in the capped window", function()
+		local s = W.keys(capped(), { "G" })
 		local first, last = shown(s)
 		expect(last).toBe(7)
 		expect(first).toBe(5)
-		expect(s.offset[State.currentKey(s)]).toBe(5)
-	end)
-
-	it("j and k past the scrolloff edge shift the window by one row", function()
-		local s = W.keys(small(), { "j" })
-		expect((shown(s))).toBe(1)
-		s = W.keys(s, { "j" })
-		expect((shown(s))).toBe(2)
-		s = W.keys(s, { "j" })
-		expect((shown(s))).toBe(3)
-		s = W.keys(s, { "k" })
-		expect((shown(s))).toBe(2)
-		s = W.keys(s, { "k" })
-		expect((shown(s))).toBe(1)
 	end)
 
 	-- Tern 0.9.14 delivers PageDown/PageUp as `page_down`/`page_up` (logged
-	-- live); the 0.9.8 spelling stays accepted.
-	it("page_down and page_up move by a window, as do pagedown and pageup", function()
-		local s = W.keys(small(), { "page_down" })
+	-- live); the 0.9.8 spelling stays accepted. A page is about a screen of
+	-- table rows.
+	it("page_down and page_up move by a screen of rows, as do pagedown and pageup", function()
+		local s = (State.update(W.open(), { t = "resize", rows = 18 }))
+		expect(State.pageSize(s)).toBe(3)
+		s = W.keys(s, { "page_down" })
 		expect(State.selectedIndex(s, State.items(s))).toBe(4)
 		s = W.keys(s, { "page_up" })
 		expect(State.selectedIndex(s, State.items(s))).toBe(1)
@@ -674,30 +706,93 @@ describe("explore state: visible window", function()
 		expect(State.selectedIndex(s, State.items(s))).toBe(4)
 		s = W.keys(s, { "pageup" })
 		expect(State.selectedIndex(s, State.items(s))).toBe(1)
-		local clicked = W.action(s, "page", "down")
+	end)
+
+	it("a click on the overflow note moves a whole capped window", function()
+		local clicked = W.action(capped(), "page", "down")
 		expect(State.selectedIndex(clicked, State.items(clicked))).toBe(4)
 	end)
 
 	it("end and home jump like G and gg", function()
-		local s = W.keys(small(), { "end" })
+		local s = W.keys(capped(), { "end" })
 		expect(State.selectedIndex(s, State.items(s))).toBe(7)
 		s = W.keys(s, { "home" })
 		expect(State.selectedIndex(s, State.items(s))).toBe(1)
 	end)
 
-	it("shrinking the block keeps the selection visible", function()
-		local s = W.keys((State.update(W.open(), { t = "resize", rows = 40 })), { "G" })
-		expect((shown(s))).toBe(1)
-		s = (State.update(s, { t = "resize", rows = 22 }))
-		local first, last = shown(s)
-		expect(first <= 7 and 7 <= last).toBe(true)
-		expect(s.offset[State.currentKey(s)]).toBe(5)
-	end)
-
 	it("a new filter starts the window over", function()
-		local s = W.keys(small(), { "G" })
+		local s = W.keys(capped(), { "G" })
 		s = W.keys(s, { "/", "e" })
 		expect(s.offset[State.currentKey(s)]).toBe(1)
+	end)
+
+	it("a table click selects the row and a double click opens it", function()
+		local s = W.open()
+		local items = State.items(s)
+		local picked = W.action(s, "sel", items[3].key)
+		expect(State.selectedIndex(picked, State.items(picked))).toBe(3)
+		expect(top(picked).kind).toBe("list")
+		local opened = W.action(picked, "open", items[3].key)
+		expect(top(opened).kind).toBe("detail")
+	end)
+end)
+
+-- Header clicks sort in the core (typed: counts, quantities, ages), so the
+-- keys move through what the table shows.
+describe("explore state: header sort", function()
+	local function names(s: State): string
+		local out = {}
+		for _, item in State.items(s) do
+			table.insert(out, (item.ref :: any).name)
+		end
+		return table.concat(out, ",")
+	end
+
+	local function colId(s: State, header: string): string
+		local data = (State.currentLoad(s) :: State.Load).data :: State.ListData
+		return Table.ids(data.headers)[table.find(data.headers, header) :: number]
+	end
+
+	it("sorts by name both ways and keys follow the shown order", function()
+		local s = W.open()
+		local id = colId(s, "NAME")
+		local asc = W.action(s, "sort", id .. ":asc")
+		local desc = W.action(asc, "sort", id .. ":desc")
+		local a = string.split(names(asc), ",")
+		local d = string.split(names(desc), ",")
+		expect(a[1]).toBe(d[#d])
+		local moved = W.keys(desc, { "gg" })
+		expect((State.selectedItem(moved) :: any).ref.name).toBe(d[1])
+	end)
+
+	it("a first click on a count column sorts largest first", function()
+		local s = W.open()
+		local sorted = W.action(s, "sort", colId(s, "RESTARTS") .. ":asc")
+		expect(sorted.sort[State.currentKey(sorted)].dir).toBe("desc")
+		local again = W.action(sorted, "sort", colId(s, "RESTARTS") .. ":asc")
+		expect(again.sort[State.currentKey(again)].dir).toBe("asc")
+	end)
+
+	it("ignores a sort for a column the list does not have", function()
+		local s = W.open()
+		local same = State.update(s, { t = "action", act = "sort", value = "nope:asc" })
+		expect(same).toBe(s)
+	end)
+end)
+
+-- MUT-F9: after a mutation this block started succeeded, Explore still showed
+-- `replicas: 2` and "Cordon" on a cordoned node.
+describe("explore state: refresh after an applied mutation", function()
+	it("re-runs the focused view and drops the other cluster views' data", function()
+		local s = W.open()
+		local listKey = State.currentKey(s)
+		s = W.keys(s, { "enter" })
+		expect(top(s).kind).toBe("detail")
+		local after, effects = State.update(s, { t = "action", act = "applied", value = "" })
+		expect(#effectsOf(effects, "run")).toBe(1)
+		expect(after.cache[listKey]).toBeNil()
+		local back = W.keys(after, { "escape" })
+		expect((State.currentLoad(back) :: State.Load).status).toBe("ok")
 	end)
 end)
 
