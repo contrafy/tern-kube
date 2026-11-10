@@ -117,6 +117,73 @@ describe("settings render: editor", function()
 	it("shows why a broken file cannot be edited", function()
 		expect(nodes.text(main(open("{nope")))).toContain("not valid JSON")
 	end)
+
+	-- auto_refresh can only be false (LENS-L13): a toggle that always refuses
+	-- and an `invalid` badge made it look broken, so it reads as fixed.
+	it("shows auto_refresh as a fixed value with its reason and no toggle", function()
+		local s = select(open('{"explore": {"auto_refresh": true}}'), "explore.auto_refresh")
+		local m = main(s)
+		local row = nodes.find(m, nodes.key("explore.auto_refresh")) :: nodes.Node
+		local text = nodes.text(row)
+		expect(text).toContain("fixed")
+		expect(text).toContain("false")
+		expect((string.find(text, "invalid", 1, true))).toBeNil()
+		expect(table.find(nodes.actions(row), "toggle=explore.auto_refresh")).toBeNil()
+		expect(nodes.find(m, nodes.kind("input"))).toBeNil()
+		expect(nodes.text(m)).toContain("never polls")
+	end)
+
+	-- The always-visible input above the list looked editable for booleans
+	-- (LENS-L13): only text-edited kinds get the input; a boolean or choice
+	-- gets its toggle with the key that flips it.
+	it("offers a toggle, not a text input, when a boolean or choice is selected", function()
+		for _, path in { "general.native_default", "quick_actions.placement" } do
+			local m = main(select(open(nil), path))
+			expect(nodes.find(m, nodes.kind("input"))).toBeNil()
+			local current = nodes.find(m, nodes.key("current")) :: nodes.Node
+			local text = nodes.text(current)
+			expect(text).toContain(path)
+			local button = nodes.find(current, nodes.kind("button")) :: nodes.Node
+			expect(nodes.action(button)).toBe("toggle=" .. path)
+			expect((button.p :: any).keys).toEqual({ "enter" })
+		end
+	end)
+
+	-- Row actions are native buttons; the selected row names its keys as
+	-- keycaps, other rows stay quiet so the list does not repeat them.
+	it("draws row actions as buttons with keycaps on the selected row", function()
+		local s = select(open('{"general": {"max_rows": 42}}'), "general.max_rows")
+		local m = main(s)
+		local row = nodes.find(m, nodes.key("general.max_rows")) :: nodes.Node
+		local buttons = nodes.findAll(row, nodes.kind("button"))
+		local keys: { [string]: any } = {}
+		for _, b in buttons do
+			keys[nodes.action(b) :: string] = (b.p :: any).keys
+		end
+		expect(keys["edit=general.max_rows"]).toEqual({ "e" })
+		expect(keys["reset=general.max_rows"]).toEqual({ "r" })
+		local other = nodes.find(m, nodes.key("general.native_default")) :: nodes.Node
+		local toggle = nodes.find(other, nodes.kind("button")) :: nodes.Node
+		expect((toggle.p :: any).keys).toBeNil()
+		expect((toggle.p :: any).on).toBe(true)
+	end)
+
+	-- A narrow pane squeezed the value column until "true" broke into "tru e"
+	-- (MUT-F17). Tern's CSS has no container queries, so the view drops the
+	-- origin badge column itself below NARROW_COLS to leave key and value room.
+	it("drops the origin badge column in a narrow pane", function()
+		local s = open('{"general": {"max_rows": 42}}')
+		local wide = Render.view(s, Render.NARROW_COLS, 200).main :: any
+		local narrow = Render.view(s, Render.NARROW_COLS - 1, 200).main :: any
+		local grid = nodes.find(narrow, nodes.class("tk-set-grid")) :: nodes.Node
+		expect(nodes.class("tk-set-narrow")(grid)).toBe(true)
+		local row = nodes.find(narrow, nodes.key("general.max_rows")) :: nodes.Node
+		expect(#nodes.findAll(row, nodes.kind("badge"))).toBe(0)
+		expect(nodes.text(row)).toContain("42")
+		expect(nodes.actions(row)).toContain("reset=general.max_rows")
+		local wideRow = nodes.find(wide, nodes.key("general.max_rows")) :: nodes.Node
+		expect(#nodes.findAll(wideRow, nodes.kind("badge"))).toBe(1)
+	end)
 end)
 
 describe("settings render: status page", function()
@@ -244,12 +311,39 @@ describe("settings render: chrome", function()
 		end
 	end)
 
-	it("offers Open config file, Reload and the two pages as chips", function()
-		local acts = nodes.actions(main(open(nil)))
-		expect(acts).toContain("open")
-		expect(acts).toContain("reload")
-		expect(acts).toContain("page=settings")
-		expect(acts).toContain("page=status")
+	-- Header actions are native buttons that show their shortcut as keycaps,
+	-- so the keys are discoverable without opening help.
+	it("offers Open config file, Reload, help and the two pages as buttons with keycaps", function()
+		local header = nodes.find(main(open(nil)), nodes.role("tern-kube.settings-header")) :: nodes.Node
+		local keys: { [string]: any } = {}
+		local on: { [string]: any } = {}
+		for _, b in nodes.findAll(header, nodes.kind("button")) do
+			local act = nodes.action(b) :: string
+			keys[act] = (b.p :: any).keys
+			on[act] = (b.p :: any).on
+		end
+		expect(keys.open).toEqual({ "o" })
+		-- Tern draws single letters as capitals, so R is spelled shift + r to
+		-- stay distinct from r (reset).
+		expect(keys.reload).toEqual({ "shift", "r" })
+		expect(keys.help).toEqual({ "?" })
+		expect(keys["page=status"]).toEqual({ "tab" })
+		expect(on["page=settings"]).toBe(true)
+		expect(on["page=status"]).toBe(false)
+	end)
+
+	-- While editing, the input gets Save and Cancel buttons naming enter and
+	-- esc, so a pointer user can finish an edit.
+	it("offers Save and Cancel with their keys while editing", function()
+		local s = select(open(nil), "gitops.gh")
+		s = State.update(s, { t = "key", key = { name = "e", text = "e" } })
+		local current = nodes.find(main(s), nodes.key("current")) :: nodes.Node
+		local keys: { [string]: any } = {}
+		for _, b in nodes.findAll(current, nodes.kind("button")) do
+			keys[nodes.action(b) :: string] = (b.p :: any).keys
+		end
+		expect(keys["edit-apply"]).toEqual({ "enter" })
+		expect(keys["edit-cancel"]).toEqual({ "esc" })
 	end)
 
 	it("hints the edit keys in the dock while editing", function()

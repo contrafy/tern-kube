@@ -24,14 +24,14 @@ local LOAD_TEXT: { [string]: { string } } = {
 	resolving = { "resolving symlink", "warning" },
 }
 
-local function chip(text: string, action: string, props: { [string]: any }?): Node
-	local p: { [string]: any } = { actions = { click = action }, role = "tern-kube.chip" }
+local function button(text: string, action: string, props: { [string]: any }?): Node
+	local p: { [string]: any } = { actions = { click = action } }
 	if props then
 		for k, v in props do
 			p[k] = v
 		end
 	end
-	return ui.badge(text, p.tone or "neutral", p)
+	return ui.button(text, p)
 end
 
 local function problems(s: State): (number, number)
@@ -54,14 +54,16 @@ local function header(s: State): Node
 	local errors, warnings = problems(s)
 	local bar: { Node } = {
 		ui.text({ ui.span("Tern Kube Settings", "strong") }),
-		chip("Settings", "page=settings", {
+		button("Settings", "page=settings", {
 			key = "p-settings",
-			tone = if s.page == "settings" then "accent" else "neutral",
+			on = s.page == "settings",
+			keys = if s.page == "settings" then nil else { "tab" },
 			title = "Edit the config file (tab)",
 		}),
-		chip("Status", "page=status", {
+		button("Status", "page=status", {
 			key = "p-status",
-			tone = if s.page == "status" then "accent" else "neutral",
+			on = s.page == "status",
+			keys = if s.page == "status" then nil else { "tab" },
 			title = "Versions, kubectl, aliases, shell guard, safety (tab)",
 		}),
 		ui.badge(load[1], load[2], { key = "load", role = "tern-kube.settings-load" }),
@@ -75,9 +77,15 @@ local function header(s: State): Node
 			ui.badge(warnings .. (if warnings == 1 then " warning" else " warnings"), "warning", { key = "warns" })
 		)
 	end
-	table.insert(bar, chip("Open config file", "open", { key = "open", title = "Open it in Tern (o)" }))
-	table.insert(bar, chip("Reload", "reload", { key = "reload", title = "Re-read the file and status (R)" }))
-	table.insert(bar, chip("?", "help", { key = "help", title = "Keys and actions (?)" }))
+	table.insert(bar, button("Open config file", "open", { key = "open", keys = { "o" }, title = "Open it in Tern" }))
+	table.insert(
+		bar,
+		button("Reload", "reload", { key = "reload", keys = { "shift", "r" }, title = "Re-read the file and status" })
+	)
+	table.insert(
+		bar,
+		button("Help", "help", { key = "help", keys = { "?" }, variant = "quiet", title = "Keys and actions" })
+	)
 	local children: { Node } = {
 		ui.row(bar, { key = "bar", wrap = true, role = "tern-kube.bar" }),
 		ui.text({
@@ -105,22 +113,23 @@ end
 -- Settings page ---------------------------------------------------------------
 
 local function hintFor(f: Field): string
-	if f.kind == "bool" then
-		return "true or false · enter/space toggles"
+	if f.fixed then
+		return "read-only"
+	elseif f.kind == "bool" then
+		return "true or false"
 	elseif f.kind == "enum" then
-		return table.concat(f.values or {}, " | ") .. " · enter/space cycles"
+		return table.concat(f.values or {}, " | ")
 	elseif f.kind == "int" then
-		return string.format("integer %d-%d · e edits", f.min or 0, f.max or 0)
+		return string.format("integer %d-%d", f.min or 0, f.max or 0)
 	elseif f.kind == "list" then
-		return 'JSON list ["a", "b"]' .. (if f.optional then ", empty unsets" else "") .. " · e edits"
+		return 'JSON list ["a", "b"]' .. (if f.optional then ", empty unsets" else "")
 	elseif f.kind == "json" then
-		return "JSON list of objects · e edits"
+		return "JSON list of objects"
 	end
-	return (if f.optional then "text, empty unsets" else "text") .. " · e edits"
+	return if f.optional then "text, empty unsets" else "text"
 end
 
-local function editInput(s: State): Node
-	local f = State.selected(s)
+local function editInput(s: State, f: Field): Node
 	local editing = s.editing
 	local text = if editing then editing.field.text else State.editText(s, f)
 	return {
@@ -136,13 +145,58 @@ local function editInput(s: State): Node
 	}
 end
 
+local function isText(f: Field): boolean
+	return not f.fixed and f.kind ~= "bool" and f.kind ~= "enum"
+end
+
+-- The selected key above the list. Only text-edited kinds get the input
+-- (focusable as main.edit); a boolean or choice shows its value and the
+-- toggle, a fixed key its value alone, so nothing looks editable that is not.
+local function current(s: State, f: Field): { Node }
+	if isText(f) then
+		local out: { Node } = { editInput(s, f) }
+		if s.editing then
+			table.insert(
+				out,
+				ui.row({
+					button(
+						"Save",
+						"edit-apply",
+						{ key = "save", variant = "primary", size = "sm", keys = { "enter" } }
+					),
+					button("Cancel", "edit-cancel", { key = "cancel", size = "sm", keys = { "esc" } }),
+				}, { key = "current" })
+			)
+		end
+		return out
+	end
+	local value = State.display(s, f)
+	local items: { Node } = {
+		ui.text(
+			{ ui.span(f.path, "mono"), ui.span(" = ", "muted"), ui.span(value, "mono strong") },
+			{ title = f.path .. " = " .. value }
+		),
+	}
+	if f.fixed then
+		table.insert(items, ui.badge("fixed", "neutral"))
+	else
+		local label = "Next value"
+		if f.kind == "bool" then
+			label = if State.configValue(s.config, f) == true then "Turn off" else "Turn on"
+		end
+		table.insert(items, button(label, "toggle=" .. f.path, { key = "t", size = "sm", keys = { "enter" } }))
+	end
+	return { ui.row(items, { key = "current", role = "tern-kube.settings-current" }) }
+end
+
 local ORIGIN: { [string]: { string } } = {
 	default = { "default", "neutral" },
 	file = { "set", "accent" },
 	invalid = { "invalid", "error" },
+	fixed = { "fixed", "neutral" },
 }
 
-local function fieldRow(s: State, i: number, f: Field): Node
+local function fieldRow(s: State, i: number, f: Field, narrow: boolean): Node
 	local selected = i == s.sel
 	local origin = State.origin(s, f)
 	local o = ORIGIN[origin]
@@ -151,32 +205,38 @@ local function fieldRow(s: State, i: number, f: Field): Node
 		value = string.sub(value, 1, 77) .. "..."
 	end
 	local controls: { Node } = {}
-	if f.kind == "bool" then
-		local on = State.configValue(s.config, f) == true
-		table.insert(
-			controls,
-			chip(if on then "on" else "off", "toggle=" .. f.path, {
-				key = "t",
-				tone = if on then "success" else "neutral",
-				title = "Toggle (enter/space)",
-			})
-		)
-	elseif f.kind == "enum" then
-		table.insert(controls, chip("Cycle", "toggle=" .. f.path, { key = "t", title = "Next value (enter/space)" }))
-	else
-		table.insert(controls, chip("Edit", "edit=" .. f.path, { key = "t", title = "Edit (e)" }))
+	local function add(text: string, act: string, key: string, props: { [string]: any })
+		props.key = key
+		props.size = "sm"
+		props.keys = if selected then props.keys else nil
+		table.insert(controls, button(text, act .. "=" .. f.path, props))
 	end
-	if origin ~= "default" then
-		table.insert(controls, chip("Reset", "reset=" .. f.path, { key = "r", title = "Reset to default (r)" }))
+	if f.fixed == nil then
+		if f.kind == "bool" then
+			local on = State.configValue(s.config, f) == true
+			add(if on then "on" else "off", "toggle", "t", { on = on, keys = { "enter" }, title = "Toggle" })
+		elseif f.kind == "enum" then
+			add("Cycle", "toggle", "t", { keys = { "enter" }, title = "Next value" })
+		else
+			add("Edit", "edit", "t", { keys = { "e" }, title = "Edit" })
+		end
+	end
+	if State.rawValue(s.raw, f) ~= nil then
+		add("Reset", "reset", "r", { keys = { "r" }, variant = "quiet", title = "Reset to default" })
 	end
 	local cells: { Node } = {
-		ui.el("div", { class = "tk-set-c tk-set-key" }, { ui.text({ ui.span(f.key, "mono") }) }),
-		ui.el("div", { class = "tk-set-c tk-set-val", title = value }, {
+		ui.el("div", { class = "tk-set-c tk-set-key", title = f.path }, { ui.text({ ui.span(f.key, "mono") }) }),
+		ui.el("div", { class = "tk-set-c tk-set-val", title = f.fixed or value }, {
 			ui.text({ ui.span(value, if origin == "invalid" then "error mono" else "mono") }),
 		}),
-		ui.el("div", { class = "tk-set-c" }, { ui.badge(o[1], o[2]) }),
-		ui.el("div", { class = "tk-set-c tk-set-ctl" }, { ui.row(controls, { key = "ctl" }) }),
 	}
+	if not narrow then
+		table.insert(cells, ui.el("div", { class = "tk-set-c" }, { ui.badge(o[1], o[2]) }))
+	end
+	table.insert(
+		cells,
+		ui.el("div", { class = "tk-set-c tk-set-ctl" }, { ui.row(controls, { key = "ctl", wrap = narrow }) })
+	)
 	return ui.el("div", {
 		key = f.path,
 		class = if selected then "tk-set-r tk-set-sel" else "tk-set-r",
@@ -197,10 +257,9 @@ function M.window(sel: number, total: number, size: number): (number, number)
 	return first, first + size - 1
 end
 
-local function settingsPage(s: State, rows: number): { Node }
-	local out: { Node } = {}
-	table.insert(out, editInput(s))
+local function settingsPage(s: State, rows: number, narrow: boolean): { Node }
 	local f = State.selected(s)
+	local out: { Node } = current(s, f)
 	local docSpans: { ui.SpanLike } = { ui.span(f.doc, "muted"), ui.span("   " .. hintFor(f), "muted mono") }
 	table.insert(out, ui.text(docSpans, { key = "doc", role = "tern-kube.settings-doc" }))
 	for _, d in State.diagnosticsFor(s.diagnostics, f.path) do
@@ -223,7 +282,7 @@ local function settingsPage(s: State, rows: number): { Node }
 			section = name
 			table.insert(children, sectionRow(name))
 		end
-		table.insert(children, fieldRow(s, i, field))
+		table.insert(children, fieldRow(s, i, field, narrow))
 	end
 	if last < total then
 		table.insert(
@@ -233,7 +292,11 @@ local function settingsPage(s: State, rows: number): { Node }
 	end
 	table.insert(
 		out,
-		ui.el("div", { key = "fields", class = "tk-set-grid", role = "tern-kube.settings-fields" }, children)
+		ui.el("div", {
+			key = "fields",
+			class = if narrow then "tk-set-grid tk-set-narrow" else "tk-set-grid",
+			role = "tern-kube.settings-fields",
+		}, children)
 	)
 	return out
 end
@@ -488,13 +551,13 @@ end
 M.KEYS = {
 	{ "j / k, down / up", "Move the selection", "Click a row" },
 	{ "g / G, home / end, PageUp / PageDown", "First / last setting, by a window", "" },
-	{ "enter / space", "Toggle a boolean, cycle a choice, edit anything else", "on/off, Cycle, Edit" },
-	{ "e", "Edit the value (enter saves, esc cancels)", "Edit, or click the input" },
+	{ "enter / space", "Toggle a boolean, cycle a choice, edit anything else", "on/off, Cycle, Turn on/off, Edit" },
+	{ "e", "Edit the value (enter saves, esc cancels)", "Edit, Save, Cancel, or click the input" },
 	{ "r", "Reset to default (removes the key from the file)", "Reset" },
 	{ "o", "Open the config file in Tern (created when missing)", "Open config file" },
 	{ "tab", "Switch between Settings and Status", "Settings / Status" },
 	{ "R", "Re-read the file and the status", "Reload" },
-	{ "?", "This help", "?" },
+	{ "?", "This help", "Help" },
 	{ "esc", "Close help, cancel an edit, or close the block", "" },
 }
 
@@ -514,7 +577,11 @@ local function help(): Node
 	}, { key = "help", role = "tern-kube.settings-help" })
 end
 
-function M.view(s: State, _cols: number, rows: number): View
+-- Below this many columns the origin badge column is dropped so key and
+-- value keep their room (Tern's CSS has no container queries).
+M.NARROW_COLS = 64
+
+function M.view(s: State, cols: number, rows: number): View
 	local children: { Node } = { header(s) }
 	local msg = messageNode(s)
 	if msg then
@@ -523,7 +590,7 @@ function M.view(s: State, _cols: number, rows: number): View
 	if s.fileError and s.page == "settings" then
 		table.insert(children, ui.text({ ui.span(s.fileError, "error") }, { key = "ferr", role = "tern-kube.error" }))
 	end
-	local body: { Node } = if s.page == "settings" then settingsPage(s, rows) else statusPage(s)
+	local body: { Node } = if s.page == "settings" then settingsPage(s, rows, cols < M.NARROW_COLS) else statusPage(s)
 	for _, n in body do
 		table.insert(children, n)
 	end

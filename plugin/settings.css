@@ -1,6 +1,5 @@
-/* Tern Kube Settings block. Chips and the header bar come from
-   tern-kube.css; this sheet adds the settings grid, keyboard selection and
-   the help layer. */
+/* Tern Kube Settings block. The header bar comes from tern-kube.css; this
+   sheet adds the settings grid, keyboard selection and the help layer. */
 
 [data-role="tern-kube.settings-header"] {
 	padding-bottom: 4px;
@@ -11,8 +10,10 @@
 	align-items: center;
 }
 
-[data-role="tern-kube.settings"] [data-role="tern-kube.chip"] {
-	cursor: pointer;
+/* The block title never breaks inside a word; the buttons wrap instead. */
+[data-role="tern-kube.settings-header"] [data-role="tern-kube.bar"] > .sf-text:first-child {
+	flex: none;
+	white-space: nowrap;
 }
 
 [data-role="tern-kube.settings-message"] .sf-text,
@@ -20,9 +21,12 @@
 	white-space: pre-wrap;
 }
 
+/* Key and value shrink with an ellipsis (full text in the tooltip) instead
+   of breaking mid-word in a narrow pane; each keeps room for a readable
+   prefix and a short scalar such as true or 20000. */
 .tk-set-grid {
 	display: grid;
-	grid-template-columns: max-content minmax(0, 1fr) max-content max-content;
+	grid-template-columns: minmax(10ch, max-content) minmax(7ch, 1fr) max-content max-content;
 	column-gap: 14px;
 	width: 100%;
 }
@@ -39,10 +43,33 @@
 	padding: 2px 0;
 }
 
+.tk-set-key,
 .tk-set-val {
+	overflow: hidden;
+}
+
+.tk-set-key .sf-text,
+.tk-set-val .sf-text,
+[data-role="tern-kube.settings-current"] > .sf-text {
+	min-width: 0;
 	overflow: hidden;
 	white-space: nowrap;
 	text-overflow: ellipsis;
+}
+
+[data-role="tern-kube.settings-current"] > .sf-text {
+	flex: 0 1 auto;
+}
+
+[data-role="tern-kube.settings-current"] > :not(.sf-text) {
+	flex: none;
+}
+
+/* Narrow pane: render drops the origin badge column and lets a row's
+   buttons wrap onto a second line, whole buttons only. */
+.tk-set-grid.tk-set-narrow {
+	grid-template-columns: minmax(8ch, max-content) minmax(6ch, 1fr) minmax(min-content, max-content);
+	column-gap: 8px;
 }
 
 .tk-set-r:hover .tk-set-c {

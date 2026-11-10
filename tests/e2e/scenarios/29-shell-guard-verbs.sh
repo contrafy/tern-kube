@@ -85,6 +85,8 @@ eq "undo ran" "$(jp $MNS deploy/tk-e2e-web '{.spec.template.spec.containers[0].i
 
 guarded "$K cordon $node" || return
 contains "cordon diff" "$(atext)" "unschedulable: true"
+# kind's only node: cordoning it leaves nothing schedulable, so it is typed.
+ctl type "$node" >/dev/null
 xkey enter
 approved 0 || return
 eq "cordon ran" "$(kc get node "$node" -o jsonpath='{.spec.unschedulable}')" true

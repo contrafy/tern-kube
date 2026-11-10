@@ -367,7 +367,7 @@ describe("mutation preview steps: track 1 verbs", function()
 
 	it("drain runs a client dry run and a bounded server probe instead of the user's timeout", function()
 		local p = plan("kubectl drain n1 --ignore-daemonsets --timeout=2m")
-		expect(summary(p)).toEqual({ "targets:targets", "dry-run:dry-run", "evict:evict" })
+		expect(summary(p)).toEqual({ "targets:targets", "dry-run:dry-run", "evict:evict", "nodes:nodes" })
 		expect(p.steps[2].argv).toEqual(pinned("drain", "n1", "--ignore-daemonsets=true", "--dry-run=client"))
 		-- ENV preview budget 15 s: 10 s probe, 5 s left for kubectl itself.
 		expect(p.steps[3].argv).toEqual(
@@ -377,7 +377,75 @@ describe("mutation preview steps: track 1 verbs", function()
 	end)
 
 	it("drain --disable-eviction has no eviction probe: it would wait for deletions until timeout", function()
-		expect(summary(plan("kubectl drain n1 --disable-eviction"))).toEqual({ "targets:targets", "dry-run:dry-run" })
+		expect(summary(plan("kubectl drain n1 --disable-eviction"))).toEqual({
+			"targets:targets",
+			"dry-run:dry-run",
+			"nodes:nodes",
+		})
+	end)
+
+	-- MUT-F13: cordoning or draining the only schedulable node was a plain
+	-- confirm. Risk needs every node to tell; the read is soft so a missing
+	-- list permission becomes a stated unknown, not a failed preview.
+	it("cordon and drain read every node, softly; uncordon does not", function()
+		for _, line in { "kubectl cordon node/n1", "kubectl drain n1 --ignore-daemonsets" } do
+			local p = plan(line)
+			local last = p.steps[#p.steps]
+			expect(last.id).toBe("nodes")
+			expect(last.kind).toBe("nodes")
+			expect(last.argv).toEqual(pinned("get", "nodes", "-o", "json"))
+			expect(last.soft).toBe(true)
+		end
+		expect(summary(plan("kubectl uncordon n1"))).toEqual({ "targets:targets", "dry-run:dry-run" })
+	end)
+
+	-- MUT-F13: scaling to 0 under a PodDisruptionBudget was a plain confirm;
+	-- scale ignores budgets, so the preview reads them for risk.
+	it("scale to 0 reads the namespace's PodDisruptionBudgets, softly; other replica counts do not", function()
+		local p = plan("kubectl scale deploy/web --replicas=0 -n apps")
+		expect(summary(p)).toEqual({ "targets:targets", "dry-run:dry-run", "pdbs:pdbs" })
+		expect(p.steps[3].argv).toEqual(pinned("--namespace", "apps", "get", "poddisruptionbudgets", "-o", "json"))
+		expect(p.steps[3].soft).toBe(true)
+		expect(plan("kubectl scale -f web.yaml --replicas=0").steps[3].argv).toEqual(
+			pinned("get", "poddisruptionbudgets", "--all-namespaces", "-o", "json")
+		)
+		expect(summary(plan("kubectl scale deploy/web --replicas=1"))).toEqual({ "targets:targets", "dry-run:dry-run" })
+	end)
+
+	it("reads cluster facts from the runs, and says why a list is unknown", function()
+		local function run(id: string, kind: T.StepKind, ok: boolean, stdout: string): Steps.FactRun
+			local step: T.Step = { id = id, kind = kind, label = "Read", argv = {}, env = {}, timeoutMs = 1 }
+			return {
+				step = step,
+				outcome = {
+					status = if ok then "ok" else "failed",
+					ok = ok,
+					text = if ok then "ok" else "Read failed (exit 1): Forbidden",
+				},
+				stdout = stdout,
+			}
+		end
+		local function fold(runs: { Steps.FactRun }): T.ClusterFacts?
+			local out: T.ClusterFacts? = nil
+			for _, r in runs do
+				out = Steps.clusterFact(out, r, json.decode)
+			end
+			return out
+		end
+		expect(fold({ run("targets", "targets", true, "{}") })).toBeNil()
+		local f = fold({
+			run("nodes", "nodes", true, '{"kind":"List","items":[{"metadata":{"name":"n1"}}]}'),
+			run("pdbs", "pdbs", false, ""),
+		}) :: T.ClusterFacts
+		expect(#(f.nodes :: { any })).toBe(1)
+		expect(f.pdbs).toBeNil()
+		expect(f.pdbsUnknown).toBe("Read failed (exit 1): Forbidden")
+		local bad = fold({ run("nodes", "nodes", true, "not json") }) :: T.ClusterFacts
+		expect(bad.nodesUnknown).toBe("unreadable JSON")
+		local pending = fold({
+			{ step = run("nodes", "nodes", true, "").step, outcome = nil, stdout = nil },
+		}) :: T.ClusterFacts
+		expect(pending.nodesUnknown).toBe("Read did not finish")
 	end)
 
 	it("edit converts both files offline and reads the live objects", function()

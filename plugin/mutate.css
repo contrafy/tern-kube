@@ -1,7 +1,7 @@
 /* Tern Kube Approve block (mutation preview and confirmation). Grid, chips and
    the header bar come from tern-kube.css; this sheet adds the warning
-   header rule, the confirm/cancel buttons, long paths in the edit card and
-   the help layer. */
+   header rule, the button row, long paths in the edit card and the help
+   layer. */
 
 [data-role="tern-kube.approve-header"] {
 	padding-bottom: 6px;
@@ -15,34 +15,6 @@
 [data-role="tern-kube.approve-buttons"] {
 	margin-top: 6px;
 	align-items: center;
-}
-
-.tk-mbtn {
-	padding: 3px 14px;
-	border: 1px solid var(--l2);
-	border-radius: 6px;
-	background: var(--l1);
-	color: var(--t1);
-	cursor: pointer;
-}
-
-.tk-mbtn-primary {
-	background: var(--accent-fill);
-	border-color: var(--accent-fill);
-	color: #fff;
-	font-weight: 600;
-}
-
-.tk-mbtn-danger {
-	background: var(--bad-fill);
-	border-color: var(--bad-fill);
-	color: #fff;
-	font-weight: 600;
-}
-
-.tk-mbtn-off {
-	opacity: 0.45;
-	cursor: not-allowed;
 }
 
 [data-role="tern-kube.approve-blocked"] .sf-text,

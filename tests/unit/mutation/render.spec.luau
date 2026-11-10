@@ -24,7 +24,7 @@ local function ready(url: string, world: A.World?): Session.State
 end
 
 local function confirmButton(v: Render.View): N.Node
-	return N.find(v.main, N.all(N.kind("el"), N.key("confirm"))) :: N.Node
+	return N.find(v.main, N.all(N.kind("button"), N.key("confirm"))) :: N.Node
 end
 
 local function present(x: any)
@@ -44,7 +44,7 @@ describe("approve view: header", function()
 	it("warns when the context was inferred", function()
 		local v = Render.view(ready("tern-kube://mutate?op=restart&kind=deployment&name=web&namespace=apps"))
 		expect(N.text(v.main)).toContain("inferred from current-context")
-		present(N.find(v.main, N.all(N.kind("el"), N.key("tc"))))
+		present(N.find(v.main, N.all(N.kind("button"), N.key("tc"))))
 	end)
 
 	it("wraps the mode/op/tier bar so a narrow split never squeezes the op to one letter per line", function()
@@ -72,6 +72,24 @@ describe("approve view: confirm control per tier", function()
 		expect(N.text(v.dock :: N.Node)).toContain("enter confirm")
 		expect(N.find(v.main, N.key("typed"))).toBeNil()
 	end)
+
+	-- Tern 0.9.14 buttons draw the shortcut as keycaps and the tier as
+	-- chrome; a disabled one is inert with the reason as its tooltip.
+	it(
+		"draws actions as tern.ui buttons with keycaps, danger chrome for typed tiers, disabled until confirmable",
+		function()
+			local b = confirmButton(Render.view(ready(SCALE)))
+			local p = b.p :: any
+			expect(p.keys).toEqual({ "enter" })
+			expect(p.variant).toBe("primary")
+			expect(p.disabled).toBeNil()
+			local typed = confirmButton(Render.view(ready(DELETE))).p :: any
+			expect(typed.variant).toBe("danger")
+			expect(type(typed.disabled)).toBe("string")
+			local cancel = N.find(Render.view(ready(SCALE)).main, N.all(N.kind("button"), N.key("cancel"))) :: N.Node
+			expect((cancel.p :: any).keys).toEqual({ "esc" })
+		end
+	)
 
 	it("names t in the hints while an inferred target still needs confirming", function()
 		local s = ready("tern-kube://mutate?op=restart&kind=deployment&name=web&namespace=apps")
@@ -133,7 +151,7 @@ describe("approve view: confirm control per tier", function()
 		local s, effects = A.init(A.requestPath(), { request = A.request({}) })
 		A.drive(s, effects, A.cluster())
 		local v = Render.view(s)
-		expect(N.ownText(N.find(v.main, N.all(N.kind("el"), N.key("cancel"))) :: N.Node)).toBe("Deny")
+		expect(N.ownText(N.find(v.main, N.all(N.kind("button"), N.key("cancel"))) :: N.Node)).toBe("Deny")
 		expect(N.ownText(confirmButton(v))).toBe("Approve")
 		expect(N.text(v.main)).toContain("shell pane 7")
 	end)
@@ -145,8 +163,8 @@ describe("approve view: confirm control per tier", function()
 		A.send(s, A.key("t", "t"), A.cluster())
 		A.send(s, A.key("enter"), A.cluster({ current = "prod" }))
 		local v = Render.view(s)
-		expect(N.find(v.main, N.all(N.kind("el"), N.key("rerun")))).toBeNil()
-		expect(N.ownText(N.find(v.main, N.all(N.kind("el"), N.key("cancel"))) :: N.Node)).toBe("Deny")
+		expect(N.find(v.main, N.all(N.kind("button"), N.key("rerun")))).toBeNil()
+		expect(N.ownText(N.find(v.main, N.all(N.kind("button"), N.key("cancel"))) :: N.Node)).toBe("Deny")
 		local dock = N.text(v.dock :: N.Node)
 		expect(dock).toContain("esc deny")
 		expect((string.find(dock, "preview again", 1, true))).toBeNil()
@@ -184,6 +202,20 @@ describe("approve view: diffs and risks", function()
 		expect(N.text(N.find(v.main, N.key("unchanged")) :: N.Node)).toBe("Unchanged: service/web")
 	end)
 
+	-- MUT-F17: "1 to pause · 1 unchanged" for one already-paused object and
+	-- "1 to label" while blocked contradicted the preview.
+	it("counts only changing targets, and says matched (not 'to …') when the preview is blocked", function()
+		local s = ready(SCALE)
+		s.objects = { summary = s.diff :: any, unchanged = { "apps.v1.Deployment.apps.web" }, pairs = {} }
+		local summary = N.text(N.find(Render.view(s).main, N.key("summary")) :: N.Node)
+		expect((string.find(summary, "to scale", 1, true))).toBeNil()
+		expect(summary).toContain("1 unchanged")
+		local blocked = ready(SCALE, { ["step:dry-run"] = A.failed(1, "Error from server (Forbidden): no") })
+		local text = N.text(N.find(Render.view(blocked).main, N.key("summary")) :: N.Node)
+		expect(text).toContain("1 matched")
+		expect((string.find(text, "to scale", 1, true))).toBeNil()
+	end)
+
 	it("tab expands the next resource diff", function()
 		local s = ready(APPLY, world)
 		A.send(s, A.key("tab"), A.cluster(world))
@@ -210,6 +242,63 @@ describe("approve view: result and help", function()
 		local result = N.find(v.main, N.key("result")) :: N.Node
 		expect(N.text(result)).toContain("Result of an executed command")
 		expect(table.find(N.actions(result), "requery") ~= nil).toBe(true)
+	end)
+
+	it("offers the follow-up next to Close after a successful pause, and none for a scale", function()
+		local s =
+			ready("tern-kube://mutate?op=pause&kind=deployment&name=web&namespace=apps&context=kind-dev&source=chosen")
+		A.send(s, A.key("enter"), A.cluster())
+		local resume = N.find(Render.view(s).main, N.all(N.kind("button"), N.key("follow-resume"))) :: N.Node
+		expect(N.ownText(resume)).toBe("Resume")
+		expect(N.action(resume)).toBe("follow-resume")
+		local scaled = ready(SCALE)
+		A.send(scaled, A.key("enter"), A.cluster())
+		expect(N.find(Render.view(scaled).main, N.key("follow-resume"))).toBeNil()
+	end)
+
+	-- MUT-F13: the user sees which Job the run created and can follow it.
+	it("names the created Job after a confirmed run-now and offers Follow logs", function()
+		local s = ready("tern-kube://act/cronjob-run?kind=CronJob&name=nightly&namespace=batch&context=kind-dev")
+		A.send(s, A.key("enter"), A.cluster())
+		local v = Render.view(s)
+		local launched = N.find(v.main, N.key("launched")) :: N.Node
+		expect(N.text(launched)).toContain("nightly-manual-3e8")
+		present(N.find(v.main, N.all(N.kind("button"), N.key("follow-logs"))))
+		expect(N.text(v.dock :: N.Node)).toContain("esc close")
+	end)
+
+	-- MUT-F13: the run-now preview said "1 object(s) to be affected:
+	-- CronJob nightly"; what the confirm creates is a Job with this name.
+	it("previews run-now as the Job it creates, from the CronJob", function()
+		local s = ready("tern-kube://act/cronjob-run?kind=CronJob&name=nightly&namespace=batch&context=kind-dev")
+		local card = N.text(N.find(Render.view(s).main, N.key("objects")) :: N.Node)
+		expect(card).toContain("Job batch/nightly-manual-3e8 will be created")
+		expect(card).toContain("CronJob batch/nightly")
+		expect((string.find(card, "to be affected", 1, true))).toBeNil()
+	end)
+
+	-- MUT-F17: choosing a replica count without knowing the current one is
+	-- guesswork; the prompt reads it (read-only) while the user types.
+	it("shows the current replica count in the scale prompt", function()
+		local s, effects =
+			A.init("tern-kube://mutate?op=scale&kind=deployment&name=web&namespace=apps&context=kind-dev&source=chosen")
+		expect(s.phase).toBe("input")
+		local d = A.drive(s, effects, A.cluster({ ["replicas-now"] = A.ok("3") }))
+		local run = A.find(d.runs, "run", "replicas-now") :: Session.Effect
+		expect(run.argv).toEqual({
+			"kubectl",
+			"--kubeconfig",
+			"/k/config",
+			"--context",
+			"kind-dev",
+			"get",
+			"deployment/web",
+			"-n",
+			"apps",
+			"-o",
+			"jsonpath={.spec.replicas}",
+		})
+		expect(N.text(N.find(Render.view(s).main, N.key("prompt")) :: N.Node)).toContain("currently 3")
 	end)
 
 	it("shows the key help in the layer", function()
@@ -315,7 +404,7 @@ describe("approve view: track 1 verbs", function()
 	it("offers Change input after an input op's preview and lists i in the help", function()
 		local s = ready(linkFor({ op = "scale", kind = "deployment", name = "web", namespace = "apps", replicas = 2 }))
 		local v = Render.view(s)
-		present(N.find(v.main, N.all(N.kind("el"), N.key("input"))))
+		present(N.find(v.main, N.all(N.kind("button"), N.key("input"))))
 		expect(N.text(v.dock :: N.Node)).toContain("i change input")
 		A.send(s, A.key("?", "?"), A.cluster())
 		expect(N.text(Render.view(s).layer :: N.Node)).toContain("Change the input")

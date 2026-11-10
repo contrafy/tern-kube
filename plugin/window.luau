@@ -12,6 +12,7 @@ local log = tern.log
 
 local SCHEME = "tern-kube://"
 local APPROVE = "tern-kube.approve"
+local EXPLORE = "tern-kube.explore"
 local SETTINGS = "tern-kube.settings"
 local SETTINGS_URL = "tern-kube://settings"
 local SPOOL = tern.plugin.data .. "/spool"
@@ -78,7 +79,7 @@ end
 -- This machine's config governs only what a link does not carry (`place`,
 -- `tail` come from the pane host's config) and the window-scoped shell
 -- command. A remote pane resolves bare kubectl on its own PATH.
-local function launch(link: LinkRequest, req: Quick.Request, cx: WindowCx, host: PaneHost.PaneHost)
+local function launch(at: number, req: Quick.Request, cx: WindowCx, host: PaneHost.PaneHost)
 	local cfg = ConfigHost.load().config
 	local program = if host.remote then "kubectl" else quickProgram(cfg.kubectl)
 	local target = { context = req.target.context, kubeconfig = req.target.kubeconfig, program = program }
@@ -98,7 +99,7 @@ local function launch(link: LinkRequest, req: Quick.Request, cx: WindowCx, host:
 	if place.how == "tab" then
 		pane = cx.layout:new_tab({ command = cmd.line })
 	else
-		pane = cx.layout:split(link.pane, place.dir, { command = cmd.line })
+		pane = cx.layout:split(at, place.dir, { command = cmd.line })
 	end
 	log.info("tern-kube quick action", req.action, cmd.title, "pane=" .. tostring(pane))
 	if pane == nil then
@@ -141,11 +142,63 @@ local function launchTyped(link: LinkRequest, req: Quick.Request, cx: WindowCx)
 	cx:run(pane, typed.line .. "\r")
 end
 
+-- Approve blocks take the slot of the pane that asked ("over": that pane is
+-- parked and comes back when the block closes), so they never squeeze the
+-- layout (MUT-F10). Approve pane -> the pane it covers.
+local approveOrigin: { [number]: number } = {}
+
+local function isApprove(cx: WindowCx, pane: number): boolean
+	local info = cx.session:pane(pane)
+	return info ~= nil and info.block == APPROVE
+end
+
+-- A link clicked inside an approve block acts for the pane it covers.
+local function originOf(pane: number?): number?
+	return if pane then approveOrigin[pane] or pane else nil
+end
+
+-- One approve block per pane (MUT-F12): a second request for a pane that
+-- already has one (or for an approve block itself) focuses it; a follow-up
+-- link clicked in a finished approve block (`fromLink`) replaces that block
+-- over the same pane.
+local function showApprove(cx: WindowCx, args: { string }, origin: number?, fromLink: boolean): number?
+	local target = origin
+	if target and isApprove(cx, target) then
+		if not fromLink then
+			cx.layout:focus(target)
+			cx:toast("info", "Tern Kube: an approval is already open here", "Finish or close it first")
+			return nil
+		end
+		local prev = target
+		target = approveOrigin[prev]
+		approveOrigin[prev] = nil
+		cx.layout:close(prev)
+	elseif target then
+		for pane, covered in approveOrigin do
+			if covered == target then
+				if cx.session:pane(pane) then
+					cx.layout:focus(pane)
+					cx:toast("info", "Tern Kube: an approval is already open here", "Finish or close it first")
+					return nil
+				end
+				approveOrigin[pane] = nil
+			end
+		end
+	end
+	local pane = cx:new_block(APPROVE, args, "over", if target then { target = target } else nil)
+	if pane == nil then
+		cx:toast("error", "Tern Kube is not loaded on this host")
+	elseif target then
+		approveOrigin[pane] = target
+	end
+	return pane
+end
+
 -- The grant token authorizes running the mutation, so it comes from
 -- /dev/urandom (read by a process: route.link cannot wait, so the approve
 -- block opens from the process callback). No clean read, no grant and no
 -- approve block: fail closed.
-local function openApprove(url: string, base: string)
+local function openApprove(url: string, base: string, origin: number?)
 	tern.process.run(Entropy.ARGV, { timeout_ms = Entropy.TIMEOUT_MS }, function(result: ProcessResult, cx: WindowCx?)
 		if cx == nil then
 			log.warn("tern-kube quick action: no window to open the approve block in")
@@ -163,11 +216,10 @@ local function openApprove(url: string, base: string)
 			return
 		end
 		tern.kv.set(Link.GRANTS_KEY, grants)
-		if cx:new_block(APPROVE, { url, token }, "beside") == nil then
+		if showApprove(cx, { url, token }, origin, true) == nil then
 			local rest = table.clone(grants)
 			rest[token] = nil
 			tern.kv.set(Link.GRANTS_KEY, rest)
-			cx:toast("error", "Tern Kube is not loaded on this host")
 		end
 	end)
 end
@@ -194,7 +246,11 @@ local function quickAction(link: LinkRequest, cx: WindowCx): RouteDecision?
 			cx:toast("error", "Tern Kube: not confirmed", why)
 			return nil
 		end
-		launch(link, req, cx, host)
+		-- The confirmed link comes from the approve block, which sits in the
+		-- slot of the pane that asked: split beside it while it is open
+		-- (run-now stays), else beside that pane (it is back).
+		local at = if cx.session:pane(link.pane) then link.pane else originOf(link.pane) or link.pane
+		launch(at, req, cx, host)
 		return nil
 	end
 	-- Pane records live in this machine's spool; a remote pane's record is
@@ -230,10 +286,10 @@ local function quickAction(link: LinkRequest, cx: WindowCx): RouteDecision?
 			cx:toast("error", "Tern Kube: invalid quick action", "the link does not encode")
 			return nil
 		end
-		openApprove(url, base)
+		openApprove(url, base, link.pane)
 		return nil
 	end
-	launch(link, req, cx, host)
+	launch(link.pane, req, cx, host)
 	return nil
 end
 
@@ -261,7 +317,8 @@ tern.route.link(function(link: LinkRequest, cx: WindowCx): RouteDecision?
 	end
 	log.debug("tern-kube route.link", link.url)
 	if string.sub(link.url, 1, #Link.SCHEME) == Link.SCHEME then
-		return { block = APPROVE, args = { link.url } }
+		showApprove(cx, { link.url }, link.pane, true)
+		return { handled = true }
 	end
 	if link.url == SETTINGS_URL or string.sub(link.url, 1, #SETTINGS_URL + 1) == SETTINGS_URL .. "?" then
 		-- `key` selects that setting (Explore's kubectl-not-found card).
@@ -295,7 +352,7 @@ tern.route.link(function(link: LinkRequest, cx: WindowCx): RouteDecision?
 		end
 		return decision or { handled = true }
 	end
-	return { block = "tern-kube.explore", args = { link.url } }
+	return { block = EXPLORE, args = { link.url } }
 end)
 
 tern.route.open(function(req: OpenRequest, _cx: WindowCx): RouteDecision?
@@ -305,13 +362,42 @@ tern.route.open(function(req: OpenRequest, _cx: WindowCx): RouteDecision?
 	if string.match(req.path, "/tern%-kube/spool/req%-[%w%-]+%.json$") == nil then
 		return nil
 	end
+	-- Opens beside the waiting shell: Tern 0.9.14 ignores `how` on a block
+	-- decision (verified), and `tern open --wait` waits for the blocks its
+	-- own open created, so the route must open this one.
 	return { block = APPROVE, args = { req.path } }
 end)
 
+-- The Explore the palette should reuse (EXP-B9): the focused pane, else one
+-- in the focused pane's tab.
+local function openedExplore(cx: WindowCx, focused: number?): number?
+	local info = if focused then cx.session:pane(focused) else nil
+	if focused and info and info.block == EXPLORE then
+		return focused
+	end
+	local tab = if info then info.tab else nil
+	if tab == nil then
+		return nil
+	end
+	for _, p in cx.session:panes() do
+		if p.block == EXPLORE and p.tab == tab and not p.parked then
+			return p.pane
+		end
+	end
+	return nil
+end
+
 -- The focused pane's directory goes along: the GitOps views index the
--- repository that contains it.
+-- repository that contains it. An open Explore is reused, keeping its
+-- context and namespace; `route` switches it (nil keeps its route).
 local function openExplore(cx: WindowCx, route: string?)
 	local focused = cx.session:focused()
+	local open = openedExplore(cx, focused)
+	if open then
+		cx.layout:focus(open)
+		cx.session:event(open, { ev = "action", act = "palette-route", value = route or "" })
+		return
+	end
 	local info = if focused then cx.session:pane(focused) else nil
 	local cwd = if info and info.cwd and string.sub(info.cwd, 1, 1) == "/" then info.cwd else nil
 	local params: { string } = {}
@@ -322,7 +408,7 @@ local function openExplore(cx: WindowCx, route: string?)
 		table.insert(params, "route=" .. route)
 	end
 	local arg = if #params > 0 then "tern-kube://explore?" .. table.concat(params, "&") else "palette"
-	if cx:new_block("tern-kube.explore", { arg }, "beside") == nil then
+	if cx:new_block(EXPLORE, { arg }, "beside") == nil then
 		cx:toast("error", "Tern Kube is not loaded on this host")
 	end
 end
@@ -383,9 +469,7 @@ tern.command({
 			cx:toast("error", "Tern Kube: cannot apply from here", err)
 			return
 		end
-		if cx:new_block(APPROVE, { url }, "beside") == nil then
-			cx:toast("error", "Tern Kube is not loaded on this host")
-		end
+		showApprove(cx, { url }, focused, false)
 	end,
 })
 

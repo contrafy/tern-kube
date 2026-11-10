@@ -352,6 +352,7 @@ function M.register()
 			end
 		end,
 		features = Textfield.FEATURES,
+		font = "sans",
 		save = function(h: Host): any
 			return State.save(h.s)
 		end,

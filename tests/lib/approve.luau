@@ -202,6 +202,17 @@ function M.cluster(world: World?): (Effect) -> Result?
 			return M.ok("deployment.apps/web configured (server dry run)\n")
 		elseif tag == "step:diff" or tag == "rq:diff" then
 			return { status = w.diffExit or 1, stdout = w.diff or "", stderr = "", timed_out = false }
+		elseif tag == "step:nodes" then
+			-- Two Ready, schedulable nodes: cordon/drain of one leaves capacity.
+			local function node(name: string): string
+				return string.format(
+					'{"metadata":{"name":"%s"},"spec":{},"status":{"conditions":[{"type":"Ready","status":"True"}]}}',
+					name
+				)
+			end
+			return M.ok('{"kind":"List","items":[' .. node("n1") .. "," .. node("n2") .. "]}")
+		elseif tag == "step:pdbs" then
+			return M.ok('{"kind":"List","items":[]}')
 		elseif tag == "exec" then
 			return M.ok('deployment.apps "web" deleted\n')
 		elseif tag == "respond" then

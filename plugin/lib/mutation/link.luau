@@ -64,6 +64,8 @@ export type Request = {
 	wait: boolean?,
 	cleanup: boolean?,
 	force: boolean?,
+	-- Opaque requester tag, echoed to onApplied listeners; never part of argv.
+	origin: string?,
 }
 
 -- Programs a request's argv runs: helm nil = not found; `rollback` holds the
@@ -123,6 +125,7 @@ local FIELDS = {
 	"wait",
 	"cleanup",
 	"force",
+	"origin",
 }
 
 local OPS: { [string]: Op } = {
@@ -468,6 +471,12 @@ local CHECKS: { [string]: (string) -> string? } = {
 	wait = flagBit("wait"),
 	cleanup = flagBit("cleanup"),
 	force = flagBit("force"),
+	origin = function(v)
+		if #v <= 64 and string.find(v, "^[%w:%-_%.]+$") ~= nil then
+			return nil
+		end
+		return "origin must be at most 64 letters, digits or :-_."
+	end,
 }
 
 local function bit(v: boolean?): string?
@@ -514,6 +523,7 @@ local function fieldsOf(r: Request): { [string]: string }
 	put("wait", bit(r.wait))
 	put("cleanup", bit(r.cleanup))
 	put("force", bit(r.force))
+	put("origin", r.origin)
 	return f
 end
 
@@ -558,6 +568,7 @@ local function validate(f: { [string]: string }): (Request?, string?)
 		wait = if f.wait then f.wait == "1" else nil,
 		cleanup = if f.cleanup then f.cleanup == "1" else nil,
 		force = if f.force then f.force == "1" else nil,
+		origin = f.origin,
 	}
 	local extra = EXTRA[op] or {}
 	for _, k in OP_PARAMS do
@@ -1155,8 +1166,9 @@ end
 -- Shortcuts (Explore keys, lens chips) -----------------------------------------
 
 -- Where a shortcut's object was seen: the context it came from and how that
--- context was decided, plus the kubeconfig.
-export type Origin = { context: string?, source: Source?, kubeconfig: string? }
+-- context was decided, plus the kubeconfig. `origin` is an opaque tag the
+-- requester gets back from mutate_host's onApplied (Explore: "explore:<pane>").
+export type Origin = { context: string?, source: Source?, kubeconfig: string?, origin: string? }
 
 -- What the row or object says about the target; nil fields are unknown.
 export type ObjState = { paused: boolean?, unschedulable: boolean? }
@@ -1219,6 +1231,7 @@ function M.forRef(op: Op, ref: Types.ResourceRef, origin: Origin): (string?, str
 		context = origin.context,
 		source = if origin.context then origin.source else nil,
 		kubeconfig = origin.kubeconfig,
+		origin = origin.origin,
 	})
 end
 
@@ -1241,12 +1254,37 @@ function M.forRelease(
 		context = origin.context,
 		source = if origin.context then origin.source else nil,
 		kubeconfig = origin.kubeconfig,
+		origin = origin.origin,
 		release = key.name,
 		revision = revision,
 		wait = o.wait,
 		cleanup = o.cleanup,
 		force = o.force,
 	})
+end
+
+local FOLLOW_UP: { [string]: Op } = { cordon = "uncordon", drain = "uncordon", pause = "resume" }
+
+-- The request that undoes `r`'s obvious after-effect (a drained node stays
+-- cordoned, a paused rollout stays paused), same target and pins; nil when
+-- there is none.
+function M.followUp(r: Request): Request?
+	local op: Op? = FOLLOW_UP[r.op]
+	if op == nil then
+		return nil
+	end
+	return {
+		op = op,
+		kind = r.kind,
+		name = r.name,
+		namespace = r.namespace,
+		recursive = false,
+		overwrite = false,
+		context = r.context,
+		source = r.source,
+		kubeconfig = r.kubeconfig,
+		origin = r.origin,
+	}
 end
 
 -- One chip per op that applies to the object's kind (and, when known, its

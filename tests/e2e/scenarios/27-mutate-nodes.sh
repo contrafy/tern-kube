@@ -31,6 +31,10 @@ approve_open || return
 a_ready || return
 contains "cordon diff" "$(atext)" "unschedulable: true"
 contains "control-plane reason" "$(atext)" "control-plane"
+# kind has one node: cordoning it leaves nothing schedulable (MUT-F13).
+contains "typed tier" "$(atext)" "Typed confirm"
+contains "last node reason" "$(atext)" "Cordoning $node leaves no schedulable node"
+ctl type "$node" >/dev/null
 xkey enter
 a_done || return
 eq "cordoned" "$(unschedulable)" true
@@ -64,6 +68,7 @@ E2E_WAIT=40 a_ready || return
 contains "typed tier" "$(atext)" "Typed confirm"
 contains "eviction listed" "$(atext)" "tk-e2e-web-"
 contains "pdb reason" "$(atext)" "PodDisruptionBudget blocks eviction"
+contains "nowhere to reschedule" "$(atext)" "have nowhere to reschedule"
 xkey escape
 approve_closed || return
 eq "cancelled drain leaves the node schedulable" "$(unschedulable)" ""

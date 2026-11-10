@@ -320,8 +320,39 @@ tkg_scan_guarded() {
 		tkg_on_flag2 "$@"
 	}
 	tkg_on_unknown() { tkg_unknown2=$1; }
-	tkg_on_pos() { :; }
+	tkg_pos=
+	tkg_on_pos() { tkg_pos="$tkg_pos $1"; }
 	tkg_walk "$@"
+	tkg_describe
+}
+
+# Sets tkg_desc, the one-line "VERB TARGET [-f FILE] [-n NS]" of the waiting
+# line, from the scanned argv: several panes may wait at once.
+tkg_describe() {
+	tkg_d=${tkg_pos# }
+	tkg_d=${tkg_d#"$tkg_verb"}
+	tkg_label=$tkg_verb
+	if [ "$tkg_verb" = rollout ]; then
+		tkg_d=${tkg_d# }
+		tkg_d=${tkg_d#"$tkg_guarded"}
+		tkg_label="rollout $tkg_guarded"
+	fi
+	tkg_ifs=$IFS
+	IFS=$tkg_nl
+	set -f
+	for tkg_line in $tkg_raw; do
+		tkg_d="$tkg_d $(tkg_input_flag "${tkg_line%% *}") ${tkg_line#* }"
+	done
+	set +f
+	IFS=$tkg_ifs
+	[ -n "$tkg_ns_set" ] && tkg_d="$tkg_d -n $tkg_ns"
+	case $tkg_d in
+	*[[:cntrl:]]*) tkg_d=$(printf '%s' "$tkg_d" | tr '[:cntrl:]' ' ') ;;
+	esac
+	if [ ${#tkg_d} -gt 120 ]; then
+		tkg_d="$(printf '%s' "$tkg_d" | cut -c 1-120)..."
+	fi
+	tkg_desc=$tkg_label$tkg_d
 }
 
 # Commands that cannot change the cluster run without approval, unless a
@@ -613,6 +644,20 @@ tkg_status() {
 	printf 'tern-kube guard core: %s\n' "$0"
 	printf 'flag table: %s\n' "$(sed -n 's/^# BEGIN generated flags.*\(kubectl v[^;]*\);.*/\1/p' "$0")"
 	printf 'kubectl: %s\n' "$(command -v kubectl 2>/dev/null || echo 'not found on PATH')"
+	# Same calls as the guard (local kubeconfig reads, stdin closed); this
+	# shell's KUBECONFIG applies as it does to a guarded command.
+	tkg_ctx=$(command kubectl config current-context </dev/null 2>/dev/null) || tkg_ctx=
+	printf 'kubectl context: %s\n' "${tkg_ctx:-unknown}"
+	tkg_t=
+	[ -n "$tkg_ctx" ] && tkg_t=$(command kubectl config view --minify --context "$tkg_ctx" \
+		-o 'jsonpath={.contexts[0].context.namespace}{"\n"}{.contexts[0].context.user}{"\n"}.' </dev/null 2>/dev/null)
+	if [ -z "$tkg_t" ]; then
+		printf 'namespace: unknown\n'
+	elif [ -z "${tkg_t%%"$tkg_nl"*}" ]; then
+		printf 'namespace: default (none set in the context)\n'
+	else
+		printf 'namespace: %s\n' "${tkg_t%%"$tkg_nl"*}"
+	fi
 	if tkg_t=$(command -v "$tkg_tern" 2>/dev/null); then
 		printf 'tern: %s (%s)\n' "$tkg_t" "$tkg_tern_src"
 	else
@@ -690,7 +735,7 @@ tkg_request_approval() {
 	(set -C && : >"$tkg_req") 2>/dev/null || tkg_refuse "cannot create $tkg_req."
 	tkg_write_request "$@" || tkg_refuse "cannot write $tkg_req."
 
-	tkg_err "waiting for approval in Tern (context $tkg_ctx; Ctrl-C cancels)..."
+	tkg_err "waiting for approval in Tern: $tkg_desc (context $tkg_ctx; Ctrl-C cancels)..."
 	tkg_tern_pick
 	"$tkg_tern" open --wait "$tkg_req" </dev/null >/dev/null &
 	tkg_tpid=$!

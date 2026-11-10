@@ -397,6 +397,30 @@ core_cases() {
 	expect_not_run "denied with reason"
 	expect_spool_clean "denied with reason"
 
+	# MUT-F14: with several panes waiting, the line must say which command
+	# waits, not only the context.
+	for case_ in 'delete deployment/web -n apps|delete deployment/web -n apps' \
+		'rollout restart deploy/web|rollout restart deploy/web' \
+		'scale --replicas=1 deploy x|scale deploy x' \
+		'apply -f my dir/a b.yaml|apply -f my dir/a b.yaml'; do
+		fresh "$sh waiting line: ${case_%%|*}"
+		mode deny
+		want=${case_#*|}
+		if [ "${case_%%|*}" = 'apply -f my dir/a b.yaml' ]; then
+			run_k "$sh" apply -f 'my dir/a b.yaml'
+		else
+			# shellcheck disable=SC2086
+			run_k "$sh" ${case_%%|*}
+		fi
+		expect_out "waiting for approval in Tern: $want \\(context kind-dev; Ctrl-C cancels\\)\\.\\.\\.\$" "waiting line ${case_%%|*}"
+	done
+	fresh "$sh waiting line truncates long targets"
+	mode deny
+	long=$(printf 'p%.0s' $(seq 200))
+	run_k "$sh" delete pod "$long"
+	expect_out "waiting for approval in Tern: delete pod p{100,}\\.\\.\\. \\(context kind-dev; Ctrl-C cancels\\)" "long target truncated"
+	expect_no_out "p{200}" "long target truncated"
+
 	for f in '-f -' '--filename=-' '-f=-' '-f-' '--filename -' '-Rf -' '-f a.yaml,-'; do
 		fresh "$sh stdin refused: $f"
 		# shellcheck disable=SC2086
@@ -726,6 +750,24 @@ tern-kube-guard-status"
 	expect_no_out 'not installed' "re-source"
 	expect_out "kubectl function: tern-kube guard \\($sh\\)" "status after re-source"
 	expect_out 'guarded verbs ask for approval' "status in a Tern pane"
+	# MUT-F14: status names where a guarded command would go.
+	expect_out '^kubectl context: kind-dev$' "status names the context"
+	expect_out '^namespace: default \(none set in the context\)$' "status names the default namespace"
+
+	fresh "$sh status shows the context namespace"
+	echo apps >"$FAKE_DIR/ctx-namespace"
+	run_code "$sh" "$src
+tern-kube-guard-status"
+	expect_out '^namespace: apps$' "status names the context namespace"
+
+	fresh "$sh status survives kubectl config failures"
+	: >"$FAKE_DIR/ctx-fail"
+	: >"$FAKE_DIR/view-fail"
+	run_code "$sh" "$src
+tern-kube-guard-status"
+	expect_out '^kubectl context: unknown$' "unknown context"
+	expect_out '^namespace: unknown$' "unknown namespace"
+	expect_out 'guarded verbs ask for approval' "status continues after failures"
 
 	fresh "$sh k alias reaches the guard"
 	mode deny

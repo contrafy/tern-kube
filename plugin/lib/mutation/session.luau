@@ -73,7 +73,7 @@ export type Key = { name: string, text: string?, ctrl: boolean?, alt: boolean?, 
 --   read   tag gen paths                           -> Msg read
 --   write  tag gen path text argv  (write path, then run argv) -> Msg result
 --   remove path · audit line · open url
---   focus id · copy text · toast level text · exit
+--   focus id · copy text · toast level text · exit · applied applied
 export type Effect = {
 	t: string,
 	tag: string?,
@@ -90,7 +90,23 @@ export type Effect = {
 	url: string?,
 	id: string?,
 	level: string?,
+	applied: Applied?,
 }
+
+-- A native mutation that ran with exit 0 (`applied` effect): mutate_host
+-- hands it to onApplied listeners, which match `origin` (MUT-F9).
+export type Applied = {
+	origin: string?,
+	op: Link.Op,
+	context: string?,
+	namespace: string?,
+	kind: string?,
+	name: string?,
+}
+
+-- A one-click next step offered with a result (Uncordon after a drain,
+-- Resume after a pause, Follow logs of the Job a run-now created).
+export type FollowUp = { label: string, url: string, act: string }
 
 export type Msg = {
 	t: string,
@@ -281,6 +297,10 @@ export type State = {
 	resultView: Viewstate.ViewState,
 	requery: Requery?,
 	decided: boolean,
+	-- Quick mode: the confirmed link went to the window (run-now stays open).
+	launched: boolean?,
+	-- Scale input: the replica count read when the prompt opened.
+	replicasCurrent: number?,
 }
 
 local M = {}
@@ -717,6 +737,31 @@ local function parseTarget(s: State, r: ProcessResult, context: string): (Target
 		return nil, string.format("context %q has no cluster server", context)
 	end
 	return info, nil
+end
+
+-- A lens or Explore link without a kubeconfig resolves against the
+-- plugin's (config, else the daemon's KUBECONFIG), not the pane's: say so
+-- and how to pin the right one (MUT-F15). Guard requests carry the pane's.
+local function kubeconfigHint(s: State): string
+	if s.mode == "guard" then
+		return ""
+	end
+	local asked = if s.quick
+		then (s.quick :: Quick.Request).target.kubeconfig
+		elseif s.link then (s.link :: Link.Request).kubeconfig
+		else nil
+	if asked then
+		return ""
+	end
+	local env = s.env
+	local used = if env and env.kubeconfig
+		then env.kubeconfig :: string
+		elseif env and env.defaultKubeconfig then env.defaultKubeconfig :: string
+		else "~/.kube/config"
+	return ". Tern Kube read "
+		.. used
+		.. ", not the KUBECONFIG of the pane the command ran in. Run the command with --kubeconfig, or source the "
+		.. "tern-kube shell snippet so panes record their KUBECONFIG (shell/README.md)."
 end
 
 local function digestArgv(s: State, plan: T.Plan): { string }?
@@ -1186,6 +1231,10 @@ local function finishPreview(s: State, effects: { Effect })
 			failure = failure or why
 		end
 	end
+	local cluster: T.ClusterFacts? = nil
+	for _, run in s.steps do
+		cluster = Steps.clusterFact(cluster, run, s.decode)
+	end
 	local facts: Risk.Facts = {
 		previewOk = ok,
 		failure = failure,
@@ -1199,6 +1248,7 @@ local function finishPreview(s: State, effects: { Effect })
 		undo = s.undo,
 		edit = s.editFacts,
 		helm = s.helmFacts,
+		cluster = cluster,
 	}
 	s.assessment = Risk.assess(plan, facts)
 	s.requirements =
@@ -1369,7 +1419,13 @@ local function proceed(s: State, effects: { Effect })
 		end
 		audit(s, effects, "approved")
 		table.insert(effects, { t = "open", url = url })
-		exit(s, effects)
+		-- Run-now stays with its result: the Job it creates can be followed.
+		if (s.quick :: Quick.Request).action == "cronjob-run" then
+			s.phase = "done"
+			s.launched = true
+		else
+			exit(s, effects)
+		end
 	else
 		s.decided = true
 		s.phase = "executing"
@@ -1627,7 +1683,7 @@ local function rerun(s: State, effects: { Effect })
 end
 
 local function requery(s: State, effects: { Effect })
-	if s.phase ~= "done" or s.plan == nil then
+	if s.phase ~= "done" or s.plan == nil or s.exec == nil then
 		return
 	end
 	local plan = s.plan :: T.Plan
@@ -1742,6 +1798,34 @@ local function blank(env: Init, mode: Mode): State
 	}
 end
 
+-- Scale prompt: the current count, read-only and best effort (nothing
+-- depends on it; the preview reads the targets again).
+local function readReplicas(s: State, effects: { Effect }, req: Link.Request)
+	local env = s.env :: T.Env
+	local argv: { string } = { s.kubectl }
+	local penv: { [string]: string } = {}
+	local kc = env.kubeconfig
+	if kc and Steps.isPathList(kc) then
+		penv.KUBECONFIG = kc
+	elseif kc then
+		table.insert(argv, "--kubeconfig")
+		table.insert(argv, kc)
+	end
+	if req.context then
+		table.insert(argv, "--context")
+		table.insert(argv, req.context :: string)
+	end
+	table.insert(argv, "get")
+	table.insert(argv, (req.kind :: string) .. "/" .. (req.name :: string))
+	if req.namespace then
+		table.insert(argv, "-n")
+		table.insert(argv, req.namespace :: string)
+	end
+	table.insert(argv, "-o")
+	table.insert(argv, "jsonpath={.spec.replicas}")
+	emitRun(s, effects, "replicas-now", argv, { env = penv })
+end
+
 local function initNative(s: State, url: string, effects: { Effect })
 	local req, e = Link.decode(url)
 	if req == nil then
@@ -1770,6 +1854,9 @@ local function initNative(s: State, url: string, effects: { Effect })
 		s.typed = Link.prompt(req).prefill
 		s.focused = true
 		table.insert(effects, { t = "focus", id = M.TYPED_INPUT })
+		if req.op == "scale" then
+			readReplicas(s, effects, req)
+		end
 		return
 	end
 	s.argv = argv
@@ -1930,6 +2017,8 @@ local function onResult(s: State, tag: string, r: ProcessResult, effects: { Effe
 			s.canRespond = true
 			start(s, effects)
 		end
+	elseif tag == "replicas-now" then
+		s.replicasCurrent = if r.status == 0 then tonumber(firstLine(r.stdout)) else nil
 	elseif tag == "current" then
 		local ctx = if r.status == 0 then nonEmpty(firstLine(r.stdout)) else nil
 		if ctx == nil then
@@ -1944,7 +2033,7 @@ local function onResult(s: State, tag: string, r: ProcessResult, effects: { Effe
 		local env = s.env :: T.Env
 		local info, e = parseTarget(s, r, env.context :: string)
 		if info == nil then
-			fail(s, e or "?")
+			fail(s, (e or "?") .. kubeconfigHint(s))
 			return
 		end
 		s.target = info
@@ -2057,7 +2146,26 @@ local function onResult(s: State, tag: string, r: ProcessResult, effects: { Effe
 		ex.stdout = r.stdout
 		ex.stderr = r.stderr
 		s.phase = "done"
-		audit(s, effects, if r.status == 0 and not r.timed_out then "executed" else "failed", ex.status)
+		local ok = r.status == 0 and not r.timed_out
+		audit(s, effects, if ok then "executed" else "failed", ex.status)
+		local link = s.link
+		if ok and s.mode == "native" and link then
+			local env = s.env
+			table.insert(effects, {
+				t = "applied",
+				applied = {
+					origin = link.origin,
+					op = link.op,
+					context = if plan and plan.targetContext
+						then plan.targetContext
+						elseif env then env.context
+						else link.context,
+					namespace = link.namespace,
+					kind = link.kind,
+					name = link.name or link.release,
+				},
+			})
+		end
 		if plan and plan.helm then
 			-- The new revision row is the result: a rollback's stdout says little.
 			requery(s, effects)
@@ -2174,6 +2282,8 @@ local function submitInput(s: State, effects: { Effect })
 	s.input = nil
 	s.confirmError = nil
 	s.argv = Link.argv(req, programs(s))
+	-- The prompt's informational read must not hold up the preview.
+	s.pending["replicas-now"] = nil
 	start(s, effects)
 end
 
@@ -2254,6 +2364,12 @@ local function applyAction(s: State, act: string, value: string?, effects: { Eff
 		toggleOption(s, effects, "cleanup")
 	elseif act == "helm-force" then
 		toggleOption(s, effects, "force")
+	elseif string.sub(act, 1, 7) == "follow-" then
+		for _, f in M.followUps(s) do
+			if f.act == act then
+				table.insert(effects, { t = "open", url = f.url })
+			end
+		end
 	end
 end
 
@@ -2460,6 +2576,52 @@ function M.quickLabel(s: State): string
 	local label = if spec then spec.label else q.action
 	local r = q.ref
 	return if r then label .. " " .. string.lower(r.kind) .. "/" .. r.name else label
+end
+
+function M.followUps(s: State): { FollowUp }
+	local plan = s.plan
+	if s.phase ~= "done" or plan == nil then
+		return {}
+	end
+	if s.mode == "native" then
+		local link, ex = s.link, s.exec
+		if link == nil or ex == nil or ex.status ~= 0 or ex.timedOut then
+			return {}
+		end
+		local nextReq = Link.followUp(link)
+		if nextReq == nil then
+			return {}
+		end
+		-- The previewed (and, if inferred, confirmed) context, pinned.
+		nextReq.context = plan.targetContext
+		nextReq.source = "chosen"
+		local url = Link.encode(nextReq)
+		if url == nil then
+			return {}
+		end
+		local label = if nextReq.op == "uncordon" then "Uncordon" else "Resume"
+		return { { label = label, url = url, act = "follow-" .. nextReq.op } }
+	end
+	local q = s.quick
+	if s.mode ~= "quick" or not s.launched or q == nil or q.action ~= "cronjob-run" then
+		return {}
+	end
+	local ref, suffix = q.ref, q.opts.suffix
+	if ref == nil or suffix == nil then
+		return {}
+	end
+	local kubeconfig = if plan.kubeconfig and not Steps.isPathList(plan.kubeconfig) then plan.kubeconfig else nil
+	local url = Quick.encode("logs-follow", { context = plan.targetContext, kubeconfig = kubeconfig }, {
+		kind = "Job",
+		group = "batch",
+		name = ref.name .. "-manual-" .. suffix,
+		namespace = ref.namespace,
+		source = "live",
+	}, { place = q.opts.place })
+	if url == nil then
+		return {}
+	end
+	return { { label = "Follow logs", url = url, act = "follow-logs" } }
 end
 
 return M

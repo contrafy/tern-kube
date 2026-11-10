@@ -61,6 +61,8 @@ export type Facts = {
 	undo: { Rollout.UndoTarget }?,
 	edit: EditFacts?,
 	helm: HelmFacts?,
+	-- Every node (cordon/drain) and PodDisruptionBudgets (scale to 0).
+	cluster: T.ClusterFacts?,
 }
 
 local M = {}
@@ -164,6 +166,20 @@ local function deleteObjects(plan: Plan, facts: Facts): { Obj }
 		end
 	end
 	return out
+end
+
+-- What `kubectl debug node/NAME` creates under each --profile (kubectl
+-- 1.34 pkg/cmd/debug/profiles.go); kubectl's default is legacy.
+local function debugNodeText(profile: string?): string
+	if profile == "sysadmin" then
+		return "Creates a privileged pod in the node's host namespaces with the host filesystem mounted at /host"
+	elseif profile == "netadmin" then
+		return "Creates a pod in the node's host network, PID and IPC namespaces with NET_ADMIN and NET_RAW"
+	elseif profile == "baseline" or profile == "restricted" then
+		return "Creates a pod on the node (profile " .. profile .. ": no host namespaces or host filesystem)"
+	end
+	return "Creates a pod in the node's host network, PID and IPC namespaces with the host filesystem mounted "
+		.. "at /host (not privileged)"
 end
 
 local function argvReasons(b: Builder, plan: Plan, facts: Facts)
@@ -280,13 +296,7 @@ local function argvReasons(b: Builder, plan: Plan, facts: Facts)
 			add(b, "scale-zero", "medium", "simple", "--replicas=0 stops every pod of the workload")
 		end
 	elseif family == "debug-node" then
-		add(
-			b,
-			"debug-node",
-			"high",
-			"typed",
-			"Creates a privileged pod in the node's host namespaces with the host filesystem mounted"
-		)
+		add(b, "debug-node", "high", "typed", debugNodeText(flag(plan, "profile")))
 	end
 	if inv.flags.server or inv.cluster then
 		add(
@@ -740,8 +750,31 @@ local function labelReasons(b: Builder, plan: Plan, facts: Facts)
 			true
 		)
 	end
-	if #removals > 0 then
-		add(b, "removals", "info", "simple", "Removes " .. table.concat(removals, ", "))
+	-- A key no live object has is not removed (MUT-F17); unknown live keeps "Removes".
+	local live = liveObjects(facts)
+	local unset: { string } = {}
+	local removed: { string } = {}
+	for _, key in removals do
+		local present = #live == 0
+		for _, obj in live do
+			local map = field(obj, "metadata", field_)
+			if type(map) == "table" and map[key] ~= nil then
+				present = true
+			end
+		end
+		table.insert(if present then removed else unset, key)
+	end
+	if #removed > 0 then
+		add(b, "removals", "info", "simple", "Removes " .. table.concat(removed, ", "))
+	end
+	if #unset > 0 then
+		add(
+			b,
+			"removals-unset",
+			"info",
+			"simple",
+			table.concat(unset, ", ") .. (if #unset == 1 then " is" else " are") .. " not set; nothing to remove"
+		)
 	end
 	noChange(b, facts)
 end
@@ -786,6 +819,227 @@ local PREFLIGHT_TEXT: { [Drain.Category]: string } = {
 
 local function podCount(n: number): string
 	return string.format("%d pod%s", n, if n == 1 then "" else "s")
+end
+
+-- Taints that keep pods without a matching toleration off a node; the
+-- cordon taint is spec.unschedulable, checked on its own.
+local REPELS = { NoSchedule = true, NoExecute = true }
+
+local function schedulable(node: any): boolean
+	if field(node, "spec", "unschedulable") == true then
+		return false
+	end
+	local ready = false
+	for _, c in field(node, "status", "conditions") or {} do
+		if type(c) == "table" and c.type == "Ready" then
+			ready = c.status == "True"
+		end
+	end
+	if not ready then
+		return false
+	end
+	for _, t in field(node, "spec", "taints") or {} do
+		if type(t) == "table" and REPELS[t.effect] then
+			return false
+		end
+	end
+	return true
+end
+
+local function nodeNames(facts: Facts): { string }
+	local out: { string } = {}
+	for _, r in facts.targets or {} :: { Types.ResourceRef } do
+		table.insert(out, r.name)
+	end
+	if #out == 0 then
+		for _, obj in liveObjects(facts) do
+			local name = field(obj, "metadata", "name")
+			if type(name) == "string" then
+				table.insert(out, name)
+			end
+		end
+	end
+	return out
+end
+
+-- cordon/drain: whether any node besides the targets can still take pods.
+local function capacityReasons(b: Builder, plan: Plan, facts: Facts)
+	local c = facts.cluster
+	local names = nodeNames(facts)
+	if c == nil or #names == 0 then
+		return
+	end
+	local drain = plan.family == "drain"
+	local nodes = c.nodes
+	if nodes == nil then
+		add(
+			b,
+			"nodes-unknown",
+			"medium",
+			"typed",
+			"Could not list the nodes ("
+				.. (c.nodesUnknown or "no result")
+				.. "): whether another node can take the pods is unknown"
+		)
+		return
+	end
+	local targeted: { [string]: boolean } = {}
+	for _, n in names do
+		targeted[n] = true
+	end
+	for _, n in nodes do
+		local name = field(n, "metadata", "name")
+		if not targeted[name] and schedulable(n) then
+			return
+		end
+	end
+	if not drain then
+		local live = liveObjects(facts)
+		local changes = #live == 0
+		for _, obj in live do
+			if field(obj, "spec", "unschedulable") ~= true then
+				changes = true
+			end
+		end
+		if not changes then
+			return
+		end
+	end
+	add(
+		b,
+		"last-schedulable-node",
+		"high",
+		"typed",
+		string.format(
+			"%s %s leaves no schedulable node: no other node is Ready, uncordoned and free of "
+				.. "NoSchedule/NoExecute taints, so new pods stay Pending",
+			if drain then "Draining" else "Cordoning",
+			table.concat(names, ", ")
+		)
+	)
+	local d = facts.drain
+	if drain and (d == nil or #d.evictions > 0) then
+		add(
+			b,
+			"nowhere-to-reschedule",
+			"high",
+			"typed",
+			(if d then "The " .. podCount(#d.evictions) .. " to evict" else "Evicted pods")
+				.. " have nowhere to reschedule: their controllers' replacements stay Pending until a node is "
+				.. "uncordoned or added"
+		)
+	end
+end
+
+-- PodDisruptionBudget label selector (policy/v1): no selector selects
+-- nothing, an empty one every pod of the namespace.
+local function selects(selector: any, labels: { [string]: any }): boolean
+	if type(selector) ~= "table" then
+		return false
+	end
+	for k, v in selector.matchLabels or {} do
+		if labels[k] ~= v then
+			return false
+		end
+	end
+	for _, e in selector.matchExpressions or {} do
+		if type(e) ~= "table" then
+			return false
+		end
+		local value = labels[e.key]
+		local listed = value ~= nil and table.find(e.values or {}, value) ~= nil
+		local op = e.operator
+		local ok = if op == "In"
+			then listed
+			elseif op == "NotIn" then not listed
+			elseif op == "Exists" then value ~= nil
+			elseif op == "DoesNotExist" then value == nil
+			else false
+		if not ok then
+			return false
+		end
+	end
+	return true
+end
+
+-- An int-or-percent budget value as a number of units (pods or percent).
+local function amount(v: any): number?
+	if type(v) == "number" then
+		return v
+	elseif type(v) == "string" then
+		return tonumber(string.match(v, "^(%d+)%%?$"))
+	end
+	return nil
+end
+
+-- "minAvailable: 2" for a budget that requires pods to stay up, else nil.
+local function protection(pdb: any): string?
+	local min, max = field(pdb, "spec", "minAvailable"), field(pdb, "spec", "maxUnavailable")
+	local minN, maxN = amount(min), amount(max)
+	if minN and minN > 0 then
+		return "minAvailable: " .. tostring(min)
+	elseif maxN == 0 then
+		return "maxUnavailable: " .. tostring(max)
+	end
+	return nil
+end
+
+-- scale to 0 takes every pod down at once; budgets govern evictions only,
+-- so nothing stops it.
+local function pdbReasons(b: Builder, plan: Plan, facts: Facts)
+	local c = facts.cluster
+	if plan.replicas ~= 0 or c == nil then
+		return
+	end
+	local pdbs = c.pdbs
+	if pdbs == nil then
+		add(
+			b,
+			"pdb-unknown",
+			"medium",
+			"typed",
+			"Could not read the PodDisruptionBudgets ("
+				.. (c.pdbsUnknown or "no result")
+				.. "): whether one protects these pods is unknown"
+		)
+		return
+	end
+	local hits: { string } = {}
+	for _, obj in liveObjects(facts) do
+		local labels = field(obj, "spec", "template", "metadata", "labels")
+		local ns = field(obj, "metadata", "namespace")
+		if type(labels) ~= "table" then
+			continue
+		end
+		for _, pdb in pdbs do
+			local why = protection(pdb)
+			if
+				why
+				and field(pdb, "metadata", "namespace") == ns
+				and selects(field(pdb, "spec", "selector"), labels)
+			then
+				table.insert(
+					hits,
+					string.format(
+						"PodDisruptionBudget %s/%s (%s) selects %s",
+						tostring(ns),
+						tostring(field(pdb, "metadata", "name")),
+						why,
+						objectLabel(obj)
+					)
+				)
+			end
+		end
+	end
+	if #hits > 0 then
+		add(
+			b,
+			"scale-zero-pdb",
+			"high",
+			"typed",
+			table.concat(hits, "; ") .. ": scaling to 0 ignores the budget and stops every pod it protects"
+		)
+	end
 end
 
 local function drainReasons(b: Builder, plan: Plan, facts: Facts)
@@ -1097,8 +1351,14 @@ local function familyReasons(b: Builder, plan: Plan, facts: Facts)
 		labelReasons(b, plan, facts)
 	elseif f == "cordon" or f == "uncordon" then
 		cordonReasons(b, plan, facts)
+		if f == "cordon" then
+			capacityReasons(b, plan, facts)
+		end
 	elseif f == "drain" then
 		drainReasons(b, plan, facts)
+		capacityReasons(b, plan, facts)
+	elseif f == "scale" then
+		pdbReasons(b, plan, facts)
 	elseif f == "edit" then
 		editReasons(b, plan, facts)
 	elseif f == "helm-rollback" then
