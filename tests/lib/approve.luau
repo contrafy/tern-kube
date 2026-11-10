@@ -16,6 +16,7 @@ local M = {}
 M.SERVER = "https://127.0.0.1:6443"
 M.HOME = "/home/me"
 M.SPOOL = "/data/spool"
+M.TMP = "/data/tmp"
 M.NONCE = "0123456789abcdef0123456789abcdef"
 M.TOKEN = "fedcba9876543210fedcba9876543210"
 
@@ -93,6 +94,8 @@ export type Opts = {
 	-- Quick links get the window-minted grant token as args[2] (M.TOKEN);
 	-- `token = false` opens without one, a string replaces it.
 	token: (string | boolean)?,
+	-- <plugin data>/tmp (default M.TMP): apply bundles the block deletes.
+	tmp: string?,
 }
 
 function M.init(arg: string, opts: Opts?): (State, { Effect })
@@ -110,6 +113,7 @@ function M.init(arg: string, opts: Opts?): (State, { Effect })
 		kubeconfig = o.kubeconfig or "/k/config",
 		home = M.HOME,
 		spool = M.SPOOL,
+		tmp = o.tmp or M.TMP,
 		request = if o.request then { text = o.request } else nil,
 		panes = o.panes or { "7" },
 		decode = o.decode or json.decode,
@@ -131,6 +135,8 @@ export type World = {
 	current: string?,
 	server: string?,
 	namespace: string?,
+	-- The context's user (AuthInfo name); default "u".
+	user: string?,
 	files: { { path: string, size: number, sha256: string } }?,
 	replicas: number?,
 	diff: string?,
@@ -161,10 +167,11 @@ function M.cluster(world: World?): (Effect) -> Result?
 			local ns = if w.namespace then string.format(',"namespace":"%s"', w.namespace) else ""
 			return M.ok(
 				string.format(
-					'{"contexts":[{"name":"%s","context":{"cluster":"%s","user":"u"%s}}],'
+					'{"contexts":[{"name":"%s","context":{"cluster":"%s","user":"%s"%s}}],'
 						.. '"clusters":[{"name":"%s","cluster":{"server":"%s"}}]}',
 					ctx,
 					ctx,
+					w.user or "u",
 					ns,
 					ctx,
 					w.server or M.SERVER

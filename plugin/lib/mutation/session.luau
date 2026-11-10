@@ -139,6 +139,8 @@ export type Init = {
 	home: string?,
 	-- <plugin data>/spool as the host knows it (not canonicalized).
 	spool: string,
+	-- <plugin data>/tmp: Explore's apply bundles, deleted when the block closes.
+	tmp: string?,
 	-- Guard mode: the request file as the host read it.
 	request: { text: string?, error: string? }?,
 	-- Live pane ids at init.
@@ -199,6 +201,7 @@ export type State = {
 	helm: string?,
 	home: string?,
 	spool: string,
+	tmp: string?,
 	hostKubeconfig: string?,
 	link: Link.Request?,
 	quick: Quick.Request?,
@@ -264,6 +267,9 @@ export type State = {
 	targetConfirmed: boolean,
 	override: boolean,
 	stale: boolean,
+	-- A guard refusal no new preview can fix (the request pins its argv,
+	-- files and context): only running the command again helps.
+	final: boolean,
 	confirmError: string?,
 	notice: string?,
 	showCommand: boolean,
@@ -455,9 +461,28 @@ local function audit(s: State, effects: { Effect }, decision: Audit.Decision, ex
 	table.insert(effects, { t = "audit", line = Audit.line(record) })
 end
 
+-- The apply bundle Explore wrote for this block (it may hold Secret
+-- values): `<tmp>/apply-<unix seconds>-<nonce>.yaml` directly in the plugin
+-- tmp dir, nothing a user named.
+function M.bundlePath(s: State): string?
+	local link, tmp = s.link, s.tmp
+	if s.mode ~= "native" or link == nil or link.op ~= "apply" or tmp == nil or tmp == "" then
+		return nil
+	end
+	local file = link.file
+	if file == nil or string.sub(file, 1, #tmp + 1) ~= tmp .. "/" then
+		return nil
+	end
+	return if string.find(string.sub(file, #tmp + 2), "^apply%-%d+%-%w+%.yaml$") then file else nil
+end
+
 local function exit(s: State, effects: { Effect })
 	s.phase = "closed"
 	s.pending = {}
+	local bundle = M.bundlePath(s)
+	if bundle then
+		table.insert(effects, { t = "remove", path = bundle })
+	end
 	table.insert(effects, { t = "exit" })
 end
 
@@ -1242,12 +1267,28 @@ local function preview(s: State): Confirm.Preview
 	return { assessment = s.assessment :: T.Assessment, fingerprint = s.fingerprint }
 end
 
+-- A target confirmed for the previous state no longer counts.
 local function refuse(s: State, effects: { Effect }, why: string)
 	s.phase = "ready"
 	s.stale = true
 	s.pending = {}
 	s.confirmError = why
+	s.targetConfirmed = false
 	audit(s, effects, "blocked")
+end
+
+-- A guard request pins its argv, files and context: a new preview of it
+-- would fail the same way, so the user has to run the command again.
+local function refuseFinal(s: State, effects: { Effect }, why: string)
+	s.pending = {}
+	s.final = true
+	s.targetConfirmed = false
+	audit(s, effects, "blocked")
+	fail(s, why .. " Run the command again; esc denies this request.")
+end
+
+local function oneLine(v: string?): string
+	return (string.gsub(v or "", "%c", " "))
 end
 
 local function responseText(s: State, decision: string): string
@@ -1258,10 +1299,28 @@ local function responseText(s: State, decision: string): string
 		"decision=" .. decision,
 		"fingerprint=" .. (s.fingerprint or ""),
 		"context=" .. context,
-		string.format("approved_at=%d", s.now),
 	}
+	if decision == "approve" then
+		-- What the preview resolved from the context; the guard re-reads both
+		-- right before kubectl runs (kubens rewrites them in place).
+		local target = s.target
+		table.insert(out, "context_namespace=" .. oneLine(if target then target.namespace else nil))
+		table.insert(out, "context_user=" .. oneLine(if target then target.user else nil))
+	end
+	table.insert(out, string.format("approved_at=%d", s.now))
+	if decision == "approve" and s.plan then
+		-- The guard appends it to the audit log once kubectl has exited.
+		table.insert(out, "audit=" .. Audit.outcomeTemplate(s.plan :: T.Plan, {
+			mode = "guard",
+			tier = if s.assessment then s.assessment.tier else nil,
+			fingerprint = s.fingerprint,
+			previewedAt = s.previewedAt,
+			objects = previewObjects(s),
+			files = s.files,
+		}))
+	end
 	if decision == "deny" and s.denyReason then
-		table.insert(out, "reason=" .. (string.gsub(s.denyReason :: string, "%c", " ")))
+		table.insert(out, "reason=" .. oneLine(s.denyReason))
 	end
 	return table.concat(out, "\n") .. "\n"
 end
@@ -1389,12 +1448,14 @@ end
 local function finishVerify(s: State, effects: { Effect })
 	local plan = s.plan :: T.Plan
 	local v = s.verify
+	local guard = s.mode == "guard"
 	if not Fingerprint.equal(s.fingerprint, v.fingerprint) then
-		refuse(
-			s,
-			effects,
-			"The command or its input files changed since the preview (fingerprint mismatch). Press r to preview again."
-		)
+		local why = "The command or its input files changed since the preview (fingerprint mismatch)."
+		if guard then
+			refuseFinal(s, effects, why)
+		else
+			refuse(s, effects, why .. " Press r to preview again.")
+		end
 		return
 	end
 	local before = s.target :: TargetInfo
@@ -1412,16 +1473,44 @@ local function finishVerify(s: State, effects: { Effect })
 		)
 		return
 	end
-	if plan.contextSource == "inferred" and v.current ~= plan.targetContext then
+	if now.user ~= before.user then
 		refuse(
 			s,
 			effects,
 			string.format(
-				"The current-context changed from %s to %s since the preview. Refusing; press r to preview again.",
+				"Context %s now uses user %s (previewed: %s). Refusing; press r to preview again.",
 				plan.targetContext,
-				v.current or "(none)"
+				now.user or "(none)",
+				before.user or "(none)"
 			)
 		)
+		return
+	end
+	-- Without -n kubectl uses the context's namespace when it runs.
+	if plan.explicitNamespace == nil and now.namespace ~= before.namespace then
+		refuse(
+			s,
+			effects,
+			string.format(
+				"Context %s now defaults to namespace %s (previewed: %s). Refusing; press r to preview again.",
+				plan.targetContext,
+				now.namespace or "default",
+				before.namespace or "default"
+			)
+		)
+		return
+	end
+	if plan.contextSource == "inferred" and v.current ~= plan.targetContext then
+		local why = string.format(
+			"The current-context changed from %s to %s since the preview.",
+			plan.targetContext,
+			v.current or "(none)"
+		)
+		if guard then
+			refuseFinal(s, effects, why)
+		else
+			refuse(s, effects, why .. " Refusing; press r to preview again.")
+		end
 		return
 	end
 	local moved = rolloutMoved(s)
@@ -1517,8 +1606,13 @@ local function cancel(s: State, effects: { Effect })
 	exit(s, effects)
 end
 
+-- `r` before a decision: a new preview can change the outcome.
+function M.canRerun(s: State): boolean
+	return not s.decided and not s.final and s.argv ~= nil and (s.phase == "ready" or s.phase == "error")
+end
+
 local function rerun(s: State, effects: { Effect })
-	if s.decided or s.argv == nil or not (s.phase == "ready" or s.phase == "error") then
+	if not M.canRerun(s) then
 		return
 	end
 	if s.request and s.now > deadline(s.request :: GuardRequest) then
@@ -1528,6 +1622,7 @@ local function rerun(s: State, effects: { Effect })
 	resetPreview(s)
 	s.plan = nil
 	s.target = nil
+	s.targetConfirmed = false
 	start(s, effects)
 end
 
@@ -1583,6 +1678,7 @@ local function blank(env: Init, mode: Mode): State
 		helm = env.helm,
 		home = env.home,
 		spool = env.spool,
+		tmp = env.tmp,
 		hostKubeconfig = nonEmpty(env.kubeconfig),
 		link = nil,
 		quick = nil,
@@ -1631,6 +1727,7 @@ local function blank(env: Init, mode: Mode): State
 		targetConfirmed = false,
 		override = false,
 		stale = false,
+		final = false,
 		confirmError = nil,
 		notice = nil,
 		showCommand = false,
@@ -1911,6 +2008,7 @@ local function onResult(s: State, tag: string, r: ProcessResult, effects: { Effe
 		end
 		s.fingerprint = fp
 		if s.request and not Fingerprint.equal(fp, (s.request :: GuardRequest).fingerprint) then
+			s.final = true
 			fail(
 				s,
 				"The request does not match its inputs (fingerprint mismatch): the files, context or "
@@ -2179,6 +2277,15 @@ local function onKey(s: State, key: Key, effects: { Effect }): boolean
 	end
 	if name == "tab" then
 		return cycle(s, if key.shift then -1 else 1)
+	end
+	-- `t` would type into the confirmation field; ctrl+t works in both.
+	if key.ctrl and not key.meta and not key.alt and name == "t" then
+		if s.phase ~= "ready" then
+			return false
+		end
+		s.targetConfirmed = true
+		s.confirmError = nil
+		return true
 	end
 	if M.typing(s) then
 		if name == "enter" or name == "return" then

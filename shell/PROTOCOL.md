@@ -173,7 +173,10 @@ nonce=<nonce of the request>
 decision=approve|deny
 fingerprint=<64 hex the block computed and previewed>
 context=<context the block previewed>
+context_namespace=<the context's namespace the block previewed; approve only, may be empty>
+context_user=<the context's user the block previewed; approve only, may be empty>
 approved_at=<unix seconds>
+audit=<outcome record template, one line; approve only, optional>
 reason=<one printable line; optional, deny only>
 ```
 
@@ -194,12 +197,28 @@ The guard refuses, executing nothing, unless all hold:
    response `context` (context drift);
 7. a fresh fingerprint (argv, context, `$KUBECONFIG`, namespace, cwd,
    re-enumerated and re-hashed files) equals both the request and the
-   response `fingerprint`.
+   response `fingerprint`;
+8. `context_namespace` and `context_user` are present, and
+   `command kubectl [--kubeconfig K] config view --minify --context <context>`
+   now gives the same user and, when the command has no `-n/--namespace`,
+   the same namespace. `kubens` rewrites the context in place: the context
+   name and the fingerprint stay equal, but a command without `-n` would
+   run in another namespace than the one previewed.
 
 Then the guard removes its request, response and scratch files, restores the
-user's umask and runs `exec kubectl "$@"`: the exact argv, the user's
-terminal and environment, kubectl's exit status. Exit statuses of the guard
-itself: 1 refusal or denial, 130 cancelled, 2 usage.
+user's umask and runs `kubectl "$@"` as a child: the exact argv, the user's
+terminal and environment. Ctrl-C reaches kubectl (the foreground process
+group); the guard waits for it. When the response has an `audit` template,
+the guard fills in its fields and appends it to `<spool>/../audit.log` (the
+plugin's audit log, umask 077; not when that path is a symlink). The
+template is a JSON line in which these exact needles stand for what only
+the guard knows: `"decided_at":@`, `"decision":"@"`, `"exit_code":@`,
+`"started_at":@`, `"finished_at":@`. Each needle starts with an unescaped
+`"`, which never occurs inside a JSON string value, so each occurs once;
+the guard replaces it with the field and its value (`decision` is
+`executed` for exit status 0, else `failed`). Then it exits with kubectl's
+status. Exit statuses of the guard itself: 1 refusal or denial, 130
+cancelled, 2 usage.
 
 ## Edit approvals
 
@@ -217,13 +236,16 @@ resolves the context as for any request, then:
    physical path, refused if it contains whitespace) holding `hook`, a
    0700 sh script `exec '<core>' edit-hook "$@"` (so a core path with spaces
    still works), and `request`, sh assignments of the argv, the `kubectl`
-   program and the context;
+   program, the context and the context's namespace and user (as in check 8
+   above, resolved now: kubectl keeps the kubeconfig it loads at start);
 2. runs kubectl as a child, not with `exec`: `KUBE_EDITOR=<dir>/hook
    TKUBE_EDIT_DIR=<dir> TKUBE_EDIT_REAL=<editor> kubectl "$@"`, where
    `<editor>` is what kubectl would have used (`KUBE_EDITOR`, else `EDITOR`,
    else `vi`);
-3. removes the directory when kubectl exits (also on Ctrl-C) and exits with
-   kubectl's status.
+3. when kubectl exits (also on Ctrl-C: status 130), appends the outcome
+   record of the last approved round (if any) with kubectl's status,
+   removes the directory and exits with kubectl's status, or 1 when a round
+   was denied and kubectl exited 0.
 
 kubectl runs `<dir>/hook FILE` for every round (FILE is kubectl's
 `$TMPDIR/kubectl-edit-*.yaml`, or `.json` with `-o json`). The hook
@@ -246,13 +268,17 @@ kubectl runs `<dir>/hook FILE` for every round (FILE is kubectl's
    "original":<dir>/original.yaml}`. It refuses when the current context
    no longer equals the one resolved before kubectl started (kubectl keeps
    using that one). Waiting and every response check are those of a command
-   request; the fresh fingerprint re-hashes both files;
-5. approve: exit 0; kubectl reads FILE and applies it;
+   request, except that check 8 compares with the namespace and user
+   resolved before kubectl started; the fresh fingerprint re-hashes both
+   files;
+5. approve: notes the `audit` template in `<dir>/approved` and exits 0;
+   kubectl reads FILE and applies it;
 6. deny: copies FILE to `mktemp $TMPDIR/kubectl-edit-denied-XXXXXX`
    (printed: `your edit is saved at PATH`), writes the `round.before` bytes
-   back into FILE and exits 0. kubectl sees an unchanged file: round 1
-   prints `Edit cancelled, no changes made.` (exit 0), later rounds `Edit
-   cancelled, no valid changes were saved.` (exit 1);
+   back into FILE, marks `<dir>/denied` and exits 0. kubectl sees an
+   unchanged file: round 1 prints `Edit cancelled, no changes made.` (exit
+   0, which the guard turns into 1), later rounds `Edit cancelled, no valid
+   changes were saved.` (exit 1);
 7. any refusal (timeout, Ctrl-C, mismatch, Tern unreachable): the same copy
    and restore, exit 1 (kubectl: "there was a problem with the editor",
    exit 1). An EXIT trap restores FILE on every path except approval.

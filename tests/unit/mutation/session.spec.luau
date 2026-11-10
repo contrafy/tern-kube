@@ -361,11 +361,11 @@ describe("approve session: native confirm and execute", function()
 end)
 
 describe("approve session: guard requests", function()
-	local function guard(req: A.Req?, opts: A.Opts?): (Session.State, A.Drive)
+	local function guard(req: A.Req?, opts: A.Opts?, world: A.World?): (Session.State, A.Drive)
 		local o: A.Opts = opts or {}
 		o.request = o.request or A.request(req or {})
 		local s, effects = A.init(A.requestPath(), o)
-		return s, A.drive(s, effects, A.cluster())
+		return s, A.drive(s, effects, A.cluster(world))
 	end
 
 	it("previews with the request's program, cwd and kubeconfig and never executes", function()
@@ -379,13 +379,17 @@ describe("approve session: guard requests", function()
 		expect(A.find(d.runs, "run", "exec")).toBeNil()
 		local w = A.find(d.effects, "write") :: Effect
 		expect(w.path).toBe(A.SPOOL .. "/resp-" .. A.NONCE .. ".env.tmp")
-		expect(w.text).toBe(
-			"nonce="
-				.. A.NONCE
-				.. "\ndecision=approve\nfingerprint="
-				.. (s.fingerprint :: string)
-				.. "\ncontext=kind-dev\napproved_at=1000\n"
-		)
+		local head = "nonce="
+			.. A.NONCE
+			.. "\ndecision=approve\nfingerprint="
+			.. (s.fingerprint :: string)
+			.. "\ncontext=kind-dev\ncontext_namespace=\ncontext_user=u\napproved_at=1000\naudit="
+		expect(string.sub(w.text :: string, 1, #head)).toBe(head)
+		-- MUT-F5: the record the guard completes after kubectl exits.
+		local tpl = string.match(w.text :: string, "\naudit=([^\n]*)\n$") :: string
+		expect(tpl).toContain('{"v":1,"decided_at":@,"decision":"@","mode":"guard","op":"scale"')
+		expect(tpl).toContain('"exit_code":@,"previewed_at":')
+		expect(tpl).toContain('"started_at":@,"finished_at":@,"objects":["Deployment apps/web"]')
 		expect(argvOf(w)[#argvOf(w)]).toBe(A.SPOOL .. "/resp-" .. A.NONCE .. ".env")
 		present(A.find(d.effects, "exit"))
 	end)
@@ -490,6 +494,84 @@ describe("approve session: guard requests", function()
 	it("rejects `-f -` from the request with an actionable message", function()
 		local s = guard({ argv = { "kubectl", "apply", "-f", "-" } })
 		expect(s.errors[1]).toContain("save it to a file")
+	end)
+
+	-- MUT-F1: kubens rewrites the context's namespace in place; the request,
+	-- its fingerprint and the context name stay equal, so the namespace and
+	-- user the preview resolved are re-read at approval and sent to the
+	-- guard, which re-checks them right before kubectl runs.
+	it("refuses at approval when the context's default namespace changed since the preview", function()
+		local s = guard({}, nil, { namespace = "apps" })
+		expect((s.plan :: any).targetNamespace).toBe("apps")
+		local d = A.send(s, A.key("enter"), A.cluster({ namespace = "default" }))
+		expect(A.find(d.effects, "write")).toBeNil()
+		expect(s.confirmError).toContain("namespace default")
+		expect(s.confirmError).toContain("previewed: apps")
+		local audit = A.find(d.effects, "audit") :: Effect
+		expect(audit.line).toContain('"decision":"blocked"')
+		-- A fresh preview shows the new namespace; approving it binds that one.
+		A.send(s, A.key("r", "r"), A.cluster({ namespace = "default" }))
+		expect((s.plan :: any).targetNamespace).toBe("default")
+		d = A.send(s, A.key("enter"), A.cluster({ namespace = "default" }))
+		local w = A.find(d.effects, "write") :: Effect
+		expect(w.text).toContain("decision=approve\n")
+		expect(w.text).toContain("\ncontext_namespace=default\n")
+	end)
+
+	it("refuses at approval when the context's user changed since the preview", function()
+		local s = guard({}, nil, { user = "alice" })
+		local d = A.send(s, A.key("enter"), A.cluster({ user = "bob" }))
+		expect(A.find(d.effects, "write")).toBeNil()
+		expect(s.confirmError).toContain("user bob")
+		expect(s.confirmError).toContain("previewed: alice")
+	end)
+
+	it("ignores the context's namespace when the command names its own", function()
+		local argv = { "kubectl", "scale", "deploy/web", "--replicas=2", "-n", "apps" }
+		local s = guard({ argv = argv, namespace = "apps" }, nil, { namespace = "team-a" })
+		local d = A.send(s, A.key("enter"), A.cluster({ namespace = "team-b" }))
+		local w = A.find(d.effects, "write") :: Effect
+		expect(w.text).toContain("decision=approve\n")
+	end)
+
+	-- MUT-F2: the request pins its context, argv and files; previewing again
+	-- cannot make it match, so the block says what helps and offers no `r`.
+	it("tells the shell user to run the command again when the request no longer matches", function()
+		local s = guard({ source = "current-context" })
+		A.send(s, A.key("t", "t"), A.cluster())
+		expect(s.targetConfirmed).toBe(true)
+		local d = A.send(s, A.key("enter"), A.cluster({ current = "prod" }))
+		expect(A.find(d.effects, "write")).toBeNil()
+		expect(s.phase).toBe("error")
+		expect(s.errors[#s.errors]).toContain("Run the command again")
+		expect((string.find(s.errors[#s.errors], "press r", 1, true))).toBeNil()
+		expect(s.targetConfirmed).toBe(false)
+		expect(Session.canRerun(s)).toBe(false)
+		d = A.send(s, A.key("r", "r"), A.cluster())
+		expect(#d.runs).toBe(0)
+		d = A.send(s, A.key("escape"), A.cluster())
+		expect((A.find(d.effects, "write") :: Effect).text).toContain("decision=deny")
+	end)
+
+	it("treats input files changed after the preview of a guard request as final", function()
+		local files = { { path = "/work/a.yaml", size = 10, sha256 = string.rep("a", 64) } }
+		local world: A.World = { files = files }
+		local s = guard({ argv = { "kubectl", "apply", "-f", "a.yaml" }, files = files }, nil, world)
+		expect(s.phase).toBe("ready")
+		files[1] = { path = "/work/a.yaml", size = 11, sha256 = string.rep("b", 64) }
+		A.send(s, A.key("enter"), A.cluster(world))
+		expect(s.phase).toBe("error")
+		expect(s.errors[#s.errors]).toContain("Run the command again")
+		expect(Session.canRerun(s)).toBe(false)
+	end)
+
+	it("clears the target confirmation on a refusal that previewing again can fix", function()
+		local s = guard({ source = "current-context" }, nil, { namespace = "apps" })
+		A.send(s, A.key("t", "t"), A.cluster({ namespace = "apps" }))
+		A.send(s, A.key("enter"), A.cluster({ namespace = "default" }))
+		expect(s.targetConfirmed).toBe(false)
+		expect(s.confirmError).toContain("press r")
+		expect(Session.canRerun(s)).toBe(true)
 	end)
 end)
 
@@ -643,6 +725,55 @@ describe("approve session: two-stage previews (rollout undo)", function()
 		present(A.find(d.runs, "run", "v-history"))
 		local exec = A.find(d.runs, "run", "exec") :: Effect
 		expect(table.concat(argvOf(exec), " ")).toContain("rollout undo deployment/web")
+	end)
+end)
+
+-- GIT-F3: Explore's apply bundles may hold Secret values; the block that was
+-- given one deletes it when it closes, and only a bundle in the plugin tmp dir.
+describe("approve session: apply bundles", function()
+	local function applyLink(path: string): string
+		return "tern-kube://mutate?op=apply&file="
+			.. string.gsub(path, "/", "%%2F")
+			.. "&context=kind-dev&source=chosen"
+	end
+	local BUNDLE = A.TMP .. "/apply-1762790000-1a2b3c4d5e6f.yaml"
+
+	local function removed(effects: { Effect }): { string }
+		local out: { string } = {}
+		for _, e in effects do
+			if e.t == "remove" then
+				table.insert(out, e.path :: string)
+			end
+		end
+		return out
+	end
+
+	it("deletes the bundle when the block is cancelled", function()
+		local s = ready(applyLink(BUNDLE))
+		expect(s.phase).toBe("ready")
+		local d = A.send(s, A.key("escape"), A.cluster())
+		expect(removed(d.effects)).toEqual({ BUNDLE })
+		expect(Session.bundlePath(s)).toBe(BUNDLE)
+	end)
+
+	it("keeps it for requery after the run and deletes it when the result closes", function()
+		local s = ready(applyLink(BUNDLE))
+		local d = A.send(s, A.key("enter"), A.cluster())
+		present(A.find(d.runs, "run", "exec"))
+		expect(#removed(d.effects)).toBe(0)
+		d = A.send(s, A.key("escape"), A.cluster())
+		expect(removed(d.effects)).toEqual({ BUNDLE })
+	end)
+
+	it("never deletes a file the user named or another plugin tmp file", function()
+		for _, path in
+			{ "/w/apps.yaml", A.TMP .. "/diff-1-x.yaml", A.TMP .. "/sub/apply-1-x.yaml", "/data/tmpx/apply-1-x.yaml" }
+		do
+			local s = ready(applyLink(path))
+			local d = A.send(s, A.key("escape"), A.cluster())
+			expect(#removed(d.effects)).toBe(0)
+			expect(Session.bundlePath(s)).toBeNil()
+		end
 	end)
 end)
 

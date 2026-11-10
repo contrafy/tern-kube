@@ -13,6 +13,14 @@
 #   stale        appends to the first input file, then approves
 #   old          approval dated before the request
 #   dup          approval repeating the decision line
+#   nsdrift      approves the context's namespace, then switches it (kubens)
+#   userdrift    approves the context's user, then switches it
+#   nsearly      switches the context's namespace, then approves the new one
+#   nokeys       approval without context_namespace/context_user (older block)
+#   noaudit      approval without the audit template
+# An approval names the context's namespace and user as $FAKE_DIR/ctx-namespace
+# and ctx-user say (the fake kubectl's `config view`) and carries an audit
+# template whose argv repeats a needle (`"exit_code":@` escaped).
 # It copies the request to $FAKE_DIR/req.json (and appends it to reqs, one
 # line per request) and records the modes of the request file and spool dir
 # in $FAKE_DIR/req-mode and spool-mode.
@@ -53,14 +61,25 @@ stale)
 	echo "# edited" >>"$f"
 	;;
 old) at=$((at - 1)) ;;
-dup) ;;
+dup | nsdrift | userdrift | nokeys | noaudit) ;;
+nsearly) echo team-b >"$d/ctx-namespace" ;;
 *)
 	echo "fake tern: unknown mode $mode" >&2
 	exit 2
 	;;
 esac
-printf 'nonce=%s\ndecision=%s\nfingerprint=%s\ncontext=%s\napproved_at=%s\n' "$nonce" "$decision" "$fp" "$ctx" "$at" >"$resp.tmp"
+ns=$(cat "$d/ctx-namespace" 2>/dev/null)
+user=$(cat "$d/ctx-user" 2>/dev/null || echo kind-dev)
+tpl='{"v":1,"decided_at":@,"decision":"@","mode":"guard","op":"fake","argv":["\"exit_code\":@"],"exit_code":@,"started_at":@,"finished_at":@}'
+{
+	printf 'nonce=%s\ndecision=%s\nfingerprint=%s\ncontext=%s\n' "$nonce" "$decision" "$fp" "$ctx"
+	[ "$mode" = nokeys ] || printf 'context_namespace=%s\ncontext_user=%s\n' "$ns" "$user"
+	printf 'approved_at=%s\n' "$at"
+	[ "$decision" = approve ] && [ "$mode" != noaudit ] && printf 'audit=%s\n' "$tpl"
+} >"$resp.tmp"
 [ "$mode" = dup ] && echo 'decision=deny' >>"$resp.tmp"
 [ "$mode" = denyreason ] && printf 'reason=Mutations are disabled\033[31m (mutations.enabled is false)\n' >>"$resp.tmp"
+[ "$mode" = nsdrift ] && echo team-b >"$d/ctx-namespace"
+[ "$mode" = userdrift ] && echo mallory >"$d/ctx-user"
 mv "$resp.tmp" "$resp"
 exit 0
