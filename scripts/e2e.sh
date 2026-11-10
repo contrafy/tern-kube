@@ -162,7 +162,8 @@ E2E_WAIT=30 wait_for "the sandbox window" ctl ready || {
 	cat "$E2E_SB/window.out" >&2
 	exit 1
 }
-dev link "$E2E_SB/pkg" >/dev/null 2>&1 || need "cannot link the plugin"
+# Already a snapshot of the plugin files: link it as it is.
+dev link --live "$E2E_SB/pkg" >/dev/null 2>&1 || need "cannot link the plugin"
 E2E_WAIT=30 wait_for "the first prompt" ctl ready || exit 1
 ctl resize 1280 800 >/dev/null
 sleep 1
