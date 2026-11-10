@@ -44,6 +44,11 @@ observed is marked `[not observed]`.
 - Tern 0.9.8: still open, checked against 0.9.8. `@container` is still
   rejected, `@media` still compares to the window, and a lens `view` still
   gets no cols.
+- Tern 0.9.14: still open, checked live: `@container` is a parse error
+  ("unsupported at-rule"). A narrow split therefore cannot stand in for a
+  narrow window in e2e, and `ctl resize`/`ctl size` resize the real window,
+  which a tiling window manager (OmniWM) keeps in its tile; e2e 13 falls back
+  to checking the narrow column tier classes.
 - Reproduction: add `@container (max-width: 500px) { .x { display: none } }` to a
   manifest `styles` sheet (rejected); log the arguments of a lens `view`
   callback (no cols; only blocks get `cx.cols`).
