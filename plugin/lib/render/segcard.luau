@@ -42,7 +42,9 @@ local function segName(seg: Diffseg.Segment): string
 	return (seg.kind or "?") .. " " .. (if seg.namespace then seg.namespace .. "/" else "") .. (seg.name or seg.key)
 end
 
-function M.card(seg: Diffseg.Segment, key: string, collapsed: boolean): Node
+-- `verb` replaces the action word: a compare across contexts "differs", it
+-- is not a pending "modify".
+function M.card(seg: Diffseg.Segment, key: string, collapsed: boolean, verb: string?): Node
 	local text, hidden = hunks(seg)
 	local body: { Node } = {}
 	if seg.binary then
@@ -55,7 +57,7 @@ function M.card(seg: Diffseg.Segment, key: string, collapsed: boolean): Node
 	end
 	return ui.card(
 		{
-			ui.span(string.upper(seg.action) .. "  ", "strong"),
+			ui.span(string.upper(verb or seg.action) .. "  ", "strong"),
 			ui.span(segName(seg), "strong"),
 			ui.span(string.format("   +%d −%d", seg.added, seg.removed), "muted"),
 		},

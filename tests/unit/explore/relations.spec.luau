@@ -242,11 +242,21 @@ table.sort(WEB_PODS)
 describe("relations.queriesFor", function()
 	it("narrows workload children with the workload selector and pins the namespace", function()
 		local qs = Relations.queriesFor(objectNamed("deployments", APPS, "web"))
-		expect(#qs).toBe(1)
 		expect(qs[1].kind).toBe("replicasets.apps")
 		expect(qs[1].namespace).toBe(APPS)
 		expect(qs[1].selector).toBe("app=web")
 		expect(qs[1].provenance).toBe("ownerReference")
+	end)
+
+	it("lists the namespace's Services once to find those selecting a workload's pods", function()
+		-- A Service selector cannot be inverted into a -l query, so the
+		-- namespace list is fetched and matched against the pod template labels.
+		local qs = Relations.queriesFor(objectNamed("deployments", APPS, "web"))
+		expect(#qs).toBe(2)
+		expect(qs[2].kind).toBe("services")
+		expect(qs[2].namespace).toBe(APPS)
+		expect(qs[2].selector).toBeNil()
+		expect(qs[2].provenance).toBe("selector (heuristic)")
 	end)
 
 	it("asks for nodes cluster-scoped (no namespace, never all namespaces)", function()
@@ -304,6 +314,95 @@ describe("relations.build over the real world", function()
 		expect(count(g, "ReplicaSet")).toBe(1)
 		expect(count(g, "Pod")).toBe(2)
 		expect(g.truncated).toBe(false)
+	end)
+
+	-- Display order is the tree: each row sits directly under its parent row.
+	local function outline(g: Relations.Graph): { string }
+		local out: { string } = {}
+		for _, n in g.nodes do
+			table.insert(out, string.rep(" ", n.depth) .. n.ref.kind .. "/" .. n.ref.name)
+		end
+		return out
+	end
+
+	it("nests each ReplicaSet's Pods directly under it so the tree shows the ownership chain", function()
+		-- A rollout leaves an older ReplicaSet behind; with breadth-first order
+		-- every Pod would trail the last ReplicaSet and read as its child.
+		local deploy = objectNamed("deployments", APPS, "web")
+		local old = deepCopy(objectNamed("replicasets", APPS, WEB_RS))
+		old.metadata.name = "web-5f7c8d9b6a"
+		old.metadata.uid = "synthetic-old-rs-uid"
+		old.metadata.labels["pod-template-hash"] = "5f7c8d9b6a"
+		old.spec.selector.matchLabels["pod-template-hash"] = "5f7c8d9b6a"
+		local oldPod = deepCopy(webPods()[1])
+		oldPod.metadata.name = "web-5f7c8d9b6a-old01"
+		oldPod.metadata.uid = "synthetic-old-pod-uid"
+		oldPod.metadata.labels["pod-template-hash"] = "5f7c8d9b6a"
+		oldPod.metadata.ownerReferences =
+			{ { apiVersion = "apps/v1", kind = "ReplicaSet", name = old.metadata.name, uid = old.metadata.uid } }
+		local g = explore(deploy, nil, { replicasets = { old }, pods = { oldPod } })
+		expect(outline(g)).toEqual({
+			"Deployment/web",
+			" ReplicaSet/web-5f7c8d9b6a",
+			"  Pod/web-5f7c8d9b6a-old01",
+			" ReplicaSet/" .. WEB_RS,
+			"  Pod/" .. WEB_PODS[1],
+			"  Pod/" .. WEB_PODS[2],
+			" Service/web",
+			" Service/web-lb",
+			" Service/web-nodeport",
+		})
+		expect(node(g, "Pod", "web-5f7c8d9b6a-old01").parent).toBe(node(g, "ReplicaSet", "web-5f7c8d9b6a").key)
+		expect(node(g, "Pod", WEB_PODS[1]).parent).toBe(node(g, "ReplicaSet", WEB_RS).key)
+	end)
+
+	it("shows the Services routing to a Deployment's pods, matched by their template labels", function()
+		-- Users debugging traffic need to see which Service fronts the workload.
+		table.clear(seenQueries)
+		local g = explore(objectNamed("deployments", APPS, "web"))
+		local deploy = node(g, "Deployment", "web")
+		for _, name in { "web", "web-lb", "web-nodeport" } do
+			local svc = node(g, "Service", name)
+			expect(svc.depth).toBe(1)
+			expect(svc.parent).toBe(deploy.key)
+			expect(svc.provenance).toBe("selector (heuristic)")
+			expect(svc.relation).toBe("selects pods of")
+			local e = edge(g, svc, deploy, "selects pods of")
+			expect(e and e.provenance).toBe("selector (heuristic)")
+		end
+		expect(hasNode(g, "Service", "db-headless")).toBe(false)
+		expect(hasNode(g, "Service", "external-docs")).toBe(false)
+		-- The Service is where traffic comes from, not a branch to expand: its
+		-- slices and selected pods would only repeat the workload's own pods.
+		expect(count(g, "EndpointSlice")).toBe(0)
+		local serviceQueries = 0
+		for _, q in seenQueries do
+			if q.kind == "services" then
+				serviceQueries += 1
+			end
+		end
+		expect(serviceQueries).toBe(1)
+	end)
+
+	it("shows the Services selecting a StatefulSet's pods", function()
+		local g = explore(objectNamed("statefulsets", APPS, "db"))
+		local svc = node(g, "Service", "db-headless")
+		expect(svc.depth).toBe(1)
+		expect(edge(g, svc, node(g, "StatefulSet", "db"), "selects pods of") ~= nil).toBe(true)
+		expect(count(g, "Service")).toBe(1)
+	end)
+
+	it("shows the Services selecting a Pod alongside its owners", function()
+		local g = explore(objectNamed("pods", APPS, WEB_PODS[1]))
+		local root = node(g, "Pod", WEB_PODS[1])
+		local svc = node(g, "Service", "web")
+		expect(svc.depth).toBe(1)
+		expect(svc.parent).toBe(root.key)
+		expect(svc.relation).toBe("selects")
+		expect(svc.provenance).toBe("selector (heuristic)")
+		expect(edge(g, svc, root, "selects") ~= nil).toBe(true)
+		expect(count(g, "Service")).toBe(3)
+		expect(count(g, "Pod")).toBe(1)
 	end)
 
 	it("walks a Pod up to its owners without fanning out to siblings", function()

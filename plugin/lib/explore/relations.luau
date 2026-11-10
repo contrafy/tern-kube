@@ -73,7 +73,9 @@ export type Options = {
 	childKinds: { string }?,
 }
 
-type Direction = "up" | "down" | "ref"
+-- "selectedBy" points at a Service whose selector matches the object (or its
+-- pod template); like "up", the edge runs from the found object.
+type Direction = "up" | "down" | "ref" | "selectedBy"
 
 type Link = {
 	query: RelQuery,
@@ -532,6 +534,39 @@ local function podLinks(obj: any, ns: string?, out: { Link })
 	end
 end
 
+local TEMPLATED: { [string]: boolean } = {
+	Deployment = true,
+	ReplicaSet = true,
+	ReplicationController = true,
+	StatefulSet = true,
+	DaemonSet = true,
+}
+
+-- Services select pods, so a workload is matched through its pod template.
+-- A selector map cannot be inverted into a -l query: the namespace's Services
+-- are listed once and matched here.
+local function selectedByLinks(obj: any, ns: string?, out: { Link })
+	local kind = obj.kind
+	local labels: any = nil
+	if kind == "Pod" then
+		labels = meta(obj).labels
+	elseif TEMPLATED[kind] then
+		labels = meta(tbl(obj.spec) and obj.spec.template).labels
+	end
+	if ns == nil or tbl(labels) == nil or next(labels) == nil then
+		return
+	end
+	table.insert(out, {
+		query = query("services", ns, {}, "services selecting " .. kind, "selector (heuristic)"),
+		relation = if kind == "Pod" then "selects" else "selects pods of",
+		direction = "selectedBy",
+		match = function(item: any): boolean
+			local spec = fields(item.spec)
+			return spec.type ~= "ExternalName" and Selector.matchesMap(spec.selector, labels)
+		end,
+	})
+end
+
 local function links(obj: any, opts: Options): { Link }
 	local out: { Link } = {}
 	if type(obj) ~= "table" or type(obj.kind) ~= "string" then
@@ -550,6 +585,7 @@ local function links(obj: any, opts: Options): { Link }
 	elseif kind == "Pod" then
 		podLinks(obj, ns, out)
 	end
+	selectedByLinks(obj, ns, out)
 	return out
 end
 
@@ -695,6 +731,7 @@ local function traverse(root: any, results: Results, opts: Options?, wanted: { R
 
 	local graph: Graph = { nodes = {}, edges = {}, truncated = false, notes = {} }
 	local byKey: { [string]: Record } = {}
+	local childrenOf: { [string]: { GraphNode } } = {}
 	local byUid: { [string]: string } = {}
 	local edgeSeen: { [string]: boolean } = {}
 	local wantedSeen: { [string]: boolean } = {}
@@ -759,7 +796,9 @@ local function traverse(root: any, results: Results, opts: Options?, wanted: { R
 	while head <= #queue and not budgetHit do
 		local current = queue[head]
 		head += 1
-		if current.node.depth >= maxDepth or current.obj == nil then
+		-- A selecting Service is not expanded: its slices and pods would repeat
+		-- the root's pods and fan out to siblings.
+		if current.node.depth >= maxDepth or current.obj == nil or current.direction == "selectedBy" then
 			continue
 		end
 		local currentKey = current.node.key
@@ -771,6 +810,9 @@ local function traverse(root: any, results: Results, opts: Options?, wanted: { R
 			if current.direction == "up" and link.direction ~= "up" then
 				continue
 			elseif current.direction ~= "up" and current.direction ~= "root" and link.direction == "up" then
+				continue
+			elseif link.direction == "selectedBy" and current.direction ~= "root" then
+				-- Below the root the same Services would only be listed again.
 				continue
 			end
 			local q = link.query
@@ -840,7 +882,7 @@ local function traverse(root: any, results: Results, opts: Options?, wanted: { R
 			for i = 1, math.min(#found, fanOut) do
 				local c = found[i]
 				local edgeFrom, edgeTo = currentKey, c.key
-				if link.direction == "up" then
+				if link.direction == "up" or link.direction == "selectedBy" then
 					edgeFrom, edgeTo = c.key, currentKey
 				end
 				local existing = byKey[c.key]
@@ -879,12 +921,33 @@ local function traverse(root: any, results: Results, opts: Options?, wanted: { R
 						byUid[c.ref.uid] = c.key
 					end
 					table.insert(graph.nodes, record.node)
+					local siblings = childrenOf[currentKey]
+					if siblings then
+						table.insert(siblings, record.node)
+					else
+						childrenOf[currentKey] = { record.node }
+					end
 					table.insert(queue, record)
 					addEdge(edgeFrom, edgeTo, link.relation, q.provenance)
 				end
 			end
 		end
 	end
+	-- Discovery is breadth-first (shortest path decides the parent); display
+	-- is the tree in pre-order so every node follows its own parent.
+	local ordered: { GraphNode } = table.create(#graph.nodes)
+	local stack: { GraphNode } = { rootRecord.node }
+	while #stack > 0 do
+		local n = table.remove(stack) :: GraphNode
+		table.insert(ordered, n)
+		local kids = childrenOf[n.key]
+		if kids then
+			for i = #kids, 1, -1 do
+				table.insert(stack, kids[i])
+			end
+		end
+	end
+	graph.nodes = ordered
 	return graph
 end
 
