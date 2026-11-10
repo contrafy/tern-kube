@@ -539,6 +539,34 @@ local function unchangedNote(s: State): Node?
 	return ui.muted("Unchanged: " .. table.concat(names, ", "), { key = "unchanged" })
 end
 
+-- An apply's dry run can report an object changed while kubectl diff shows
+-- nothing for it (a Secret's stringData, fields the diff normalizes away):
+-- name those too, so every object of the inputs appears somewhere.
+local function noDiffNote(s: State): Node?
+	local dry = s.dryRun
+	if dry == nil or s.plan == nil or (s.plan :: T.Plan).family ~= "apply" then
+		return nil
+	end
+	local shown: { [string]: boolean } = {}
+	local segments: { Diffseg.Segment } = if s.diff then s.diff.segments else {}
+	for _, seg in segments do
+		if seg.kind and seg.name then
+			shown[string.lower(seg.kind :: string) .. "/" .. (seg.name :: string)] = true
+		end
+	end
+	local names: { string } = {}
+	for _, r in dry.results do
+		local name = string.lower(r.kind) .. "/" .. r.name
+		if r.action ~= "unchanged" and not shown[name] then
+			table.insert(names, if r.action == "configured" then name else name .. " (" .. r.action .. ")")
+		end
+	end
+	if #names == 0 then
+		return nil
+	end
+	return ui.muted("Configured, no visible diff: " .. table.concat(names, ", "), { key = "no-visible-diff" })
+end
+
 local function objectsCard(s: State): Node?
 	local plan = s.plan
 	local targets = s.targets
@@ -893,7 +921,7 @@ local function confirmNodes(s: State, out: { Node })
 		)
 	end
 	if s.phase == "ready" or s.phase == "error" then
-		if s.argv and not s.decided then
+		if Session.canRerun(s) then
 			table.insert(buttons, button("Preview again", "rerun", "tk-mbtn-plain", "rerun", "r"))
 		end
 		if Session.canReinput(s) then
@@ -1041,15 +1069,24 @@ end
 -- Dock and help -------------------------------------------------------------------
 
 local function hints(s: State): { SpanLike }
+	local denies = s.mode == "guard" and s.canRespond and not s.decided
 	if s.phase == "input" then
 		local link = s.link
 		local hint = if link then Link.prompt(link :: Link.Request).hint .. " · " else ""
 		return { ui.span(hint .. "enter preview · esc cancel", "muted") }
 	elseif s.phase == "ready" then
+		local esc = if denies then "esc deny · " else "esc cancel · "
+		local rerun = if Session.canRerun(s) then "r preview again · " else ""
+		local req = s.requirements
+		local pending = req ~= nil and req.targetConfirmation and not s.targetConfirmed
 		if Session.typing(s) then
 			return {
 				ui.span(
-					"type the name · enter confirms when it matches · tab next diff · esc cancel · ? help",
+					(if pending then "ctrl+t confirm target · " else "")
+						.. string.format("type %q · ", if req then req.typed or "" else "")
+						.. "enter confirms when it matches · tab next diff · "
+						.. esc
+						.. "? help",
 					"muted"
 				),
 			}
@@ -1057,23 +1094,15 @@ local function hints(s: State): { SpanLike }
 		local tier = s.assessment and s.assessment.tier
 		local reinput = if Session.canReinput(s) then "i change input · " else ""
 		if tier == "blocked" then
-			return {
-				ui.span(
-					"esc "
-						.. (if s.mode == "guard" then "deny" else "cancel")
-						.. " · r preview again · "
-						.. reinput
-						.. "c command · ? help",
-					"muted"
-				),
-			}
+			return { ui.span(esc .. rerun .. reinput .. "c command · ? help", "muted") }
 		end
-		local req = s.requirements
-		local target = if req and req.targetConfirmation and not s.targetConfirmed then "t confirm target · " else ""
 		return {
 			ui.span(
-				target
-					.. "enter confirm · esc cancel · tab next diff · r preview again · "
+				(if pending then "t confirm target · " else "")
+					.. "enter confirm · "
+					.. esc
+					.. "tab next diff · "
+					.. rerun
 					.. reinput
 					.. "c command · y copy · ? help",
 				"muted"
@@ -1088,9 +1117,10 @@ local function hints(s: State): { SpanLike }
 	elseif s.phase == "error" then
 		return {
 			ui.span(
-				if Session.canReinput(s)
-					then "esc close · i change input · c command · ? help"
-					else "esc close · c command · ? help",
+				(if denies then "esc deny · " else "esc close · ")
+					.. (if Session.canRerun(s) then "r preview again · " else "")
+					.. (if Session.canReinput(s) then "i change input · " else "")
+					.. "c command · ? help",
 				"muted"
 			),
 		}
@@ -1103,7 +1133,7 @@ M.KEYS = {
 	{ "esc", "Cancel; a guard request is denied" },
 	{ "typing", "Fills the confirmation field (typed tier)" },
 	{ "tab / shift+tab", "Next / previous resource diff" },
-	{ "t", "Confirm an inferred target context" },
+	{ "t / ctrl+t", "Confirm an inferred target context (ctrl+t also while typing the name)" },
 	{ "r", "Preview again (after a result: requery)" },
 	{ "i", "Change the input (scale, apply, label, annotate, patch, drain) and preview again" },
 	{ "c", "Show the exact command" },
@@ -1160,6 +1190,7 @@ function M.view(s: State): View
 	end
 	add(diffCards(s))
 	add(unchangedNote(s))
+	add(noDiffNote(s))
 	add(objectsCard(s))
 	add(drainCard(s))
 	add(editCard(s))

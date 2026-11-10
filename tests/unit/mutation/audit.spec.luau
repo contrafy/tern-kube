@@ -138,4 +138,44 @@ describe("audit record: previewed objects and input files", function()
 	end)
 end)
 
+-- MUT-F5: the guard runs kubectl after the block has closed, so the block
+-- hands it the outcome record with placeholders only the shell can fill.
+describe("audit record: guard outcome template", function()
+	local function fill(tpl: string, needle: string, value: string): string
+		local i, j = string.find(tpl, needle, 1, true)
+		expect(i ~= nil).toBe(true)
+		expect((string.find(tpl, needle, (j :: number) + 1, true))).toBeNil()
+		return string.sub(tpl, 1, (i :: number) - 1) .. value .. string.sub(tpl, (j :: number) + 1)
+	end
+
+	it("leaves exactly one placeholder per shell-known field, even when argv repeats them", function()
+		local p = plan({ "kubectl", "annotate", "cm", "x", 'a="exit_code":@', 'b="decision":"@"' })
+		local tpl = Audit.outcomeTemplate(p, {
+			mode = "guard",
+			tier = "simple",
+			fingerprint = string.rep("a", 64),
+			previewedAt = 1790000000,
+			objects = { "ConfigMap apps/x" },
+		})
+		expect((string.find(tpl, "\n", 1, true))).toBeNil()
+		tpl = fill(tpl, '"decided_at":@', '"decided_at":1790000009')
+		tpl = fill(tpl, '"decision":"@"', '"decision":"failed"')
+		tpl = fill(tpl, '"exit_code":@', '"exit_code":1')
+		tpl = fill(tpl, '"started_at":@', '"started_at":1790000008')
+		tpl = fill(tpl, '"finished_at":@', '"finished_at":1790000009')
+		expect(tpl .. "\n").toBe(Audit.line(Audit.record(p, {
+			mode = "guard",
+			decision = "failed",
+			tier = "simple",
+			fingerprint = string.rep("a", 64),
+			exitCode = 1,
+			previewedAt = 1790000000,
+			decidedAt = 1790000009,
+			startedAt = 1790000008,
+			finishedAt = 1790000009,
+			objects = { "ConfigMap apps/x" },
+		})))
+	end)
+end)
+
 return nil

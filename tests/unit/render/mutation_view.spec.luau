@@ -249,6 +249,20 @@ describe("mutation view: stopped by the shell guard", function()
 		)
 		expect(badge(view, "Executed") ~= nil).toBe(true)
 	end)
+
+	-- MUT-F3: Ctrl-C echoes "^C" and the guard's cancel line follows on the
+	-- same terminal line; dropping that line as a bare ^C showed "Executed".
+	it("says nothing was executed after a Ctrl-C echoed on the guard's line", function()
+		local line = "^Ctern-kube guard: cancelled; nothing was executed. To run it anyway, without preview "
+			.. "or confirmation, use: command kubectl ..."
+		local capture = captures.fromLines(command, { waiting, line }, 130)
+		expect(capture.interrupted).toBe(true)
+		local view = MutationView.render(capture, Viewstate.default(), Viewstate)
+		local text = nodes.text(nodes.find(view, nodes.role("tern-kube.mutation-banner")) :: Node)
+		expect(text).toContain(MutationView.GUARD_BANNER)
+		expect(text).toContain("cancelled; nothing was executed")
+		expect(badge(view, "Executed")).toBeNil()
+	end)
 end)
 
 return nil

@@ -100,6 +100,27 @@ describe("approve view: confirm control per tier", function()
 		expect(N.action(confirmButton(Render.view(s)))).toBe("confirm")
 	end)
 
+	-- MUT-F4: while the field takes the keyboard `t` is text, so the dock names
+	-- ctrl+t for the target step and the exact token to type.
+	it("typed tier with an inferred target: the dock names ctrl+t and the token", function()
+		local s = ready("tern-kube://mutate?op=delete&kind=deployment&name=web&namespace=apps")
+		local dock = N.text(Render.view(s).dock :: N.Node)
+		expect(dock).toContain('ctrl+t confirm target · type "web" · enter confirms when it matches')
+		local d = A.send(s, A.key("t", "t"), A.cluster())
+		expect(s.targetConfirmed).toBe(false)
+		expect(s.typed).toBe("t")
+		A.send(s, A.key("backspace"), A.cluster())
+		local ctrlT = A.key("t", "t")
+		ctrlT.key = { name = "t", text = "t", ctrl = true, alt = false, shift = false, meta = false }
+		A.send(s, ctrlT, A.cluster())
+		expect(s.targetConfirmed).toBe(true)
+		expect(s.typed).toBe("")
+		expect((string.find(N.text(Render.view(s).dock :: N.Node), "ctrl+t", 1, true))).toBeNil()
+		A.typeText(s, "web", A.cluster())
+		d = A.send(s, A.key("enter"), A.cluster())
+		present(A.find(d.runs, "run", "exec"))
+	end)
+
 	it("blocked tier: the reasons, no confirm action", function()
 		local v = Render.view(ready(SCALE, { ["step:dry-run"] = A.failed(1, "Error from server (Forbidden): no") }))
 		local blocked = N.find(v.main, N.key("blocked")) :: N.Node
@@ -115,6 +136,21 @@ describe("approve view: confirm control per tier", function()
 		expect(N.ownText(N.find(v.main, N.all(N.kind("el"), N.key("cancel"))) :: N.Node)).toBe("Deny")
 		expect(N.ownText(confirmButton(v))).toBe("Approve")
 		expect(N.text(v.main)).toContain("shell pane 7")
+	end)
+
+	-- MUT-F2: a request whose context moved cannot be previewed into a match.
+	it("guard mode: a final refusal offers Deny and no Preview again", function()
+		local s, effects = A.init(A.requestPath(), { request = A.request({ source = "current-context" }) })
+		A.drive(s, effects, A.cluster())
+		A.send(s, A.key("t", "t"), A.cluster())
+		A.send(s, A.key("enter"), A.cluster({ current = "prod" }))
+		local v = Render.view(s)
+		expect(N.find(v.main, N.all(N.kind("el"), N.key("rerun")))).toBeNil()
+		expect(N.ownText(N.find(v.main, N.all(N.kind("el"), N.key("cancel"))) :: N.Node)).toBe("Deny")
+		local dock = N.text(v.dock :: N.Node)
+		expect(dock).toContain("esc deny")
+		expect((string.find(dock, "preview again", 1, true))).toBeNil()
+		expect(N.text(v.main)).toContain("Run the command again")
 	end)
 end)
 
@@ -133,6 +169,19 @@ describe("approve view: diffs and risks", function()
 		expect(string.sub((diff.p :: any).text, 1, 2)).toBe("@@")
 		expect((cards[1].p :: any).collapsible).toBe(true)
 		expect((cards[1].p :: any).collapsed).toBe(true)
+	end)
+
+	-- GIT-F4: the dry run reports a Secret (stringData) configured while
+	-- kubectl diff shows nothing for it; every object must be accounted for.
+	it("lists objects the dry run configures but kubectl diff shows no change for", function()
+		local dry = Fixtures.read("real/mutate-preview/apply_--dry-run=server_-f_preview+apps-mix.yaml.txt")
+			.. "secret/app-secret configured (server dry run)\n"
+		local w = table.clone(world)
+		w["step:dry-run"] = A.ok(dry)
+		local v = Render.view(ready(APPLY, w))
+		local note = N.text(N.find(v.main, N.key("no-visible-diff")) :: N.Node)
+		expect(note).toBe("Configured, no visible diff: secret/app-secret")
+		expect(N.text(N.find(v.main, N.key("unchanged")) :: N.Node)).toBe("Unchanged: service/web")
 	end)
 
 	it("tab expands the next resource diff", function()

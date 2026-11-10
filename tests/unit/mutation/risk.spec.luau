@@ -304,6 +304,39 @@ spec:
 		expect(a.reasons[1].severity).toBe("high")
 		expect(a.reasons[#a.reasons].severity).toBe("low")
 	end)
+
+	-- GIT-F1: export writes REPLACE_ME for Secret values and kubectl diff
+	-- masks both sides, so applying an export as is looks like any change
+	-- while it overwrites the live values. Not a heuristic: typed, not advisory.
+	it("a Secret with export placeholders is typed, naming the keys", function()
+		local a = scan([[
+apiVersion: v1
+kind: Secret
+metadata:
+  name: db
+  namespace: apps
+stringData:
+  password: REPLACE_ME
+  user: admin
+data:
+  token: UkVQTEFDRV9NRQ==
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: ok
+stringData:
+  a: b
+]])
+		local r = reason(a, "secret-placeholder")
+		expect(r.severity).toBe("high")
+		expect(r.tier).toBe("typed")
+		expect(r.advisory).toBe(false)
+		expect(r.text).toBe(
+			"Secret apps/db sets placeholder values (password, token): REPLACE_ME from a tern-kube export would replace the live values"
+		)
+		expect(a.tier).toBe("typed")
+	end)
 end)
 
 local function cm(name: string, labels: { [string]: string }?, extra: { [string]: any }?): any
@@ -481,6 +514,21 @@ describe("risk: rollout undo, pause, resume", function()
 		local a = Risk.assess(plan("kubectl rollout resume deployment/web"), facts({ live = { o } }))
 		expect(reason(a, "resume-pending").severity).toBe("medium")
 		expect(a.tier).toBe("simple")
+	end)
+
+	-- MUT-F8: kubectl refuses to restart a paused Deployment after the
+	-- preview showed no finding at all.
+	it("restart of a paused deployment warns that kubectl will refuse it", function()
+		local paused = deploy("x", { spec = { paused = true } })
+		local a = Risk.assess(plan("kubectl rollout restart deployment/web"), facts({ live = { paused } }))
+		local r = reason(a, "restart-paused")
+		expect(r.severity).toBe("medium")
+		expect(r.text).toContain("paused")
+		expect(r.text).toContain("rollout resume")
+		local running = Risk.assess(plan("kubectl rollout restart deployment/web"), facts({ live = { deploy("x") } }))
+		for _, x in running.reasons do
+			expect(x.id ~= "restart-paused").toBe(true)
+		end
 	end)
 end)
 
