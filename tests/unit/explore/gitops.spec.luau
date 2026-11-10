@@ -669,6 +669,26 @@ describe("explore gitops: drift", function()
 		expect(w.opened).toEqual({ "/repo/drift/baseline/app.yaml:1" })
 	end)
 
+	-- ctrl+d from a report row opened a delete preview for a missing object
+	-- (nothing to delete) and for declared ones (the next apply restores
+	-- them); only unmanaged objects are the cluster's to delete.
+	it("refuses ctrl+d on drift entries that are not unmanaged", function()
+		local _, g, ctx = report()
+		local route = { kind = "drift", source = DRIFT } :: Gitops.Route
+		local byBucket: { [string]: any } = {}
+		for _, it_ in Gitops.items(g, ctx, route) do
+			local bucket = string.match(it_.key, "^(%a+):")
+			if bucket and byBucket[bucket] == nil then
+				byBucket[bucket] = it_
+			end
+		end
+		expect((Gitops.deleteRefusal(g, ctx, route, byBucket.missing))).toBe("Not in the cluster")
+		expect((Gitops.deleteRefusal(g, ctx, route, byBucket.changed))).toBe("Declared in the manifests")
+		expect((Gitops.deleteRefusal(g, ctx, route, byBucket.unmanaged))).toBeNil()
+		local item = { kind = "drift", source = DRIFT, item = byBucket.missing.key } :: Gitops.Route
+		expect((Gitops.deleteRefusal(g, ctx, item, nil))).toBe("Not in the cluster")
+	end)
+
 	it("m on an unmanaged entry says no manifest has it", function()
 		local w, g, ctx = report()
 		local route = { kind = "drift", source = DRIFT } :: Gitops.Route
@@ -1557,6 +1577,42 @@ describe("explore gitops: Helm-managed objects", function()
 		expect((load.doc :: any).rendered).toBe(true)
 		expect(driftOf(g, ctx, DEPLOYED) ~= nil).toBe(true)
 		expect(find(G.lines(w), " template shop-a ") ~= nil).toBe(true)
+	end)
+
+	-- From a lens chip the diff route is pushed before the object view has
+	-- read the object, so its Helm annotations were unknown and the diff
+	-- said "No manifest declares ... E exports it" (seen live).
+	it("= before the object is read reads it and goes to the chart", function()
+		local w, g, ctx = world()
+		local _, ref = managed("shop-a", "web-shop-config")
+		ctx.findObject = function(): any
+			return nil
+		end
+		w.answer = function(argv)
+			local joined = table.concat(argv, " ")
+			if string.find(joined, " get configmap web-shop-config ", 1, true) then
+				return {
+					status = 0,
+					stdout = '{"apiVersion":"v1","kind":"ConfigMap","metadata":{"name":"web-shop-config",'
+						.. '"namespace":"'
+						.. HELM_NS
+						.. '","annotations":{"meta.helm.sh/release-name":"shop-a",'
+						.. '"meta.helm.sh/release-namespace":"'
+						.. HELM_NS
+						.. '"}}}',
+					stderr = "",
+					timed_out = false,
+				}
+			end
+			return nil
+		end
+		local route = { kind = "diff", ref = ref, doc = 1 } :: Gitops.Route
+		step(w, g, ctx, function(effects)
+			Gitops.enter(g, ctx, route, false, effects)
+		end)
+		local load = g.diffs[Gitops.diffId(route)]
+		expect(load.status).toBe("ok")
+		expect((load.doc :: any).rendered).toBe(true)
 	end)
 
 	it("an object of a release without a chart here says so instead of offering export", function()

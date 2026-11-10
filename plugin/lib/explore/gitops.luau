@@ -116,6 +116,9 @@ export type DiffLoad = {
 	chart: string?,
 	-- An apply or export ran since: entering the route diffs again.
 	stale: boolean?,
+	-- No manifest matched before the block had read the object, so its Helm
+	-- release was unknown; reading it later checks again.
+	unread: boolean?,
 }
 
 export type SourceEntry = {
@@ -739,7 +742,7 @@ end
 local advanceDiff: (g: G, ctx: Ctx, id: string, effects: { Effect }) -> ()
 local startDrift: (g: G, ctx: Ctx, id: string, effects: { Effect }) -> ()
 local readExport: (g: G, ctx: Ctx, effects: { Effect }) -> ()
-local diffChart: (g: G, ctx: Ctx, id: string, load: DiffLoad, effects: { Effect }) -> ()
+local diffChart: (g: G, ctx: Ctx, id: string, load: DiffLoad, effects: { Effect }, obj: any?) -> ()
 
 local function requestStatus(g: G, effects: { Effect })
 	local index = g.index
@@ -964,6 +967,14 @@ local function onDiff(g: G, ctx: Ctx, part: string, msg: Msg, effects: { Effect 
 			effects,
 			runEffect(M.TAG .. "|diff|run", load.gen, load.argv :: { string }, diffTimeout(ctx), { env = diffEnv() })
 		)
+	elseif part == "obj" and load.unread then
+		local okj, obj = pcall(ctx.decode, r.stdout)
+		load.unread = nil
+		if okRun and okj and type(obj) == "table" then
+			diffChart(g, ctx, id, load, effects, obj)
+		else
+			setDiff(g, id, load)
+		end
 	elseif part == "run" and load.status == "diffing" then
 		if load.tmp then
 			table.insert(effects, removeTmp(M.TAG .. "|diff|rm", load.gen, load.tmp :: string))
@@ -1959,13 +1970,29 @@ end
 
 -- No manifest declares the diffed object: when Helm manages it, render the
 -- detected chart of its release (as ctrl+g does) and diff against that.
-function diffChart(g: G, ctx: Ctx, id: string, load: DiffLoad, effects: { Effect })
-	local owner = helmOwnerOf(ctx, load.ref)
+function diffChart(g: G, ctx: Ctx, id: string, load: DiffLoad, effects: { Effect }, obj: any?)
+	local owner = if obj then HelmOwner.fromObject(obj) else helmOwnerOf(ctx, load.ref)
 	load.status = "nomatch"
 	if owner == nil then
+		local find = ctx.findObject
+		if obj == nil and find and find(load.ref) == nil then
+			-- Opened before the block read the object (a lens chip): read it
+			-- to learn whether Helm manages it.
+			load.unread = true
+			table.insert(
+				effects,
+				runEffect(
+					M.TAG .. "|diff|obj",
+					load.gen,
+					Query.get(ctx.program, ctx.target, load.ref),
+					queryTimeout(ctx)
+				)
+			)
+		end
 		setDiff(g, id, load)
 		return
 	end
+	load.unread = nil
 	local release = owner.namespace .. "/" .. owner.release
 	load.helm = release
 	local chart = load.chart
@@ -3297,6 +3324,24 @@ function M.focusRef(g: G, ctx: Ctx, route: Route, selected: Item?): Ref?
 		return if selected then selected.ref else nil
 	end
 	return route.ref
+end
+
+-- ctrl+d in a drift view: only an unmanaged object is the cluster's to
+-- delete. A missing one does not exist, and deleting a declared one only
+-- lasts until the next apply. Returns the refusal (title, detail) or nil.
+function M.deleteRefusal(g: G, ctx: Ctx, route: Route, selected: Item?): (string?, string?)
+	if route.kind ~= "drift" then
+		return nil, nil
+	end
+	local load = M.driftLoad(g, ctx, route)
+	local key = route.item or (if selected then selected.key else nil)
+	local e = if load and key then M.entry(load, key :: string) else nil
+	if e == nil or e.bucket == "unmanaged" then
+		return nil, nil
+	elseif e.bucket == "missing" then
+		return "Not in the cluster", "The object is declared but missing; apply it (a) to create it"
+	end
+	return "Declared in the manifests", "Remove it from the source instead; ctrl+d deletes unmanaged objects only"
 end
 
 local function docByKey(docs: { Doc }, key: string?): Doc?

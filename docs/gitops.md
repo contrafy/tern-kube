@@ -44,6 +44,13 @@ The diff writes the matched document to a private temporary file (0600),
 runs `kubectl diff -f` pinned to the block's context and removes the file.
 Secret values are redacted as in the approve block.
 
+When no hand-written manifest declares the object but it belongs to a Helm
+release (`meta.helm.sh/release-name`), `=` renders the chart directory this
+repository has for that release (see [Helm chart auto-detect](#helm-chart-auto-detect))
+and diffs the object against the render. When no chart directory matches,
+the view and `m` say `Managed by Helm release ns/X` and point to `H` (the
+release view) instead of offering an export.
+
 ### Drift report
 
 `ctrl+g` picks a source (a directory, a Kustomization, a configured Helm
@@ -57,12 +64,26 @@ reported as unmanaged, and neither are objects of a Helm release
 or Helm hook objects (`helm.sh/hook`, ignored as `Helm hook (...)`), in
 every source and whatever reports were opened before.
 
+A directory source covers every manifest below it, subdirectories
+included. The CLI's `-f DIR` reads only the directory's own files, like
+`kubectl diff -f`; pass `-R` for the same scope as Explore.
+
+For an object missing in the cluster, the diff leaves out the
+`creationTimestamp` and `uid` the server dry run made up: the real create
+assigns its own. The approve block's preview and the CLI do the same.
+
 `f` cycles the filter, `enter` opens an entry, `a` applies one manifest and
 `A` the whole source (both through the approve block), `E` exports the
 selected live object and `X` everything shown. Applying several documents,
 or one that shares its file, writes them to a 0600 bundle under the plugin
 data directory (`tmp/apply-*.yaml`), deleted when the approve block closes
-(a sweep removes leftovers after 24 hours).
+(a sweep removes leftovers after 24 hours). `ctrl+d` (delete through the
+approve block) is offered on unmanaged items only.
+
+Starting an apply from a report or a diff, or writing an export, marks
+every open report and diff `Out of date`; going back to one compares
+again. After an export the manifest index is rescanned the next time it is
+used. `r` on a report rescans the manifests first, then compares.
 
 A Secret whose manifest still holds the export placeholder `REPLACE_ME`
 (in `stringData`, or base64 in `data`) is marked `placeholder` on its row,
@@ -91,6 +112,12 @@ this render does not produce them) and Helm hook objects
 unmanaged, so the report never offers to delete them; so are Helm's release
 records.
 
+On a Helm report, `E` and `X` export only the unmanaged objects (chips
+**Export unmanaged (E)** / **Export all unmanaged (X)**), into the
+repository's default export directory rather than the chart directory.
+Objects the chart renders are refused with `Chart objects are not
+exported`: change the chart instead.
+
 ### Helm chart auto-detect
 
 The index reads the `Chart.yaml` of every chart directory in the repository
@@ -100,6 +127,11 @@ default) and helm (Helm 3 or Helm 4) is found, opening the drift chooser runs
 (every status; Helm 4 removed `-a`) once per index (again after `r`) and offers each
 chart directory for every release whose chart name equals the `Chart.yaml`
 name, for example `helm/chart as tern-test-helm/shop-a with deployed values`.
+Until a guess is compared its DOCS column shows `-`, and documents from a
+render have no line range (there is no source line to point to). When
+releases in the block's namespace have guesses, guesses for releases in
+other namespaces are hidden (a shared chart matches every release of it)
+and the count line says how many; `n` changes the namespace.
 Equal chart version, equal app version, the release namespace as a path
 segment and a values file named after the release or namespace rank the
 candidates; the note says what matched (`auto: name+version match`). A
@@ -122,8 +154,16 @@ Each release comes in variants:
 
 The render is then compared like a configured release. **Copy as gitops.helm
 entry** copies the matching config entry (JSON); Explore never writes the
-config. On a Helm release view, `ctrl+g` opens the drift report of the best
-source for that release (its configured entry, else the best candidate).
+config. Deployed values (and `--set`) cannot be expressed in the config, so
+copying a **with deployed values** source copies the entry without values
+and the toast says so: list a values file in it, or keep using the auto
+source.
+
+On a Helm release view, `ctrl+g` opens the drift report of the best source
+for that release: its configured entry, else the best chart directory with
+deployed values rather than a values file. If the index is still being
+built, the chooser opens first and is replaced by that release's report
+when the scan finishes, unless you have moved on from the chooser.
 
 When a release's stored chart defaults cannot be trusted, the Helm values
 view falls back to a chart directory here with the same name and version,
@@ -286,6 +326,11 @@ unchanged.
 kubectl masks Secret data before diffing and prints a Secret missing from
 the cluster as the one line `-null`; such a Secret counts as create (in
 the CLI and in Explore), and that line is not counted as removed.
+
+A `create` diff leaves out the `creationTimestamp` and `uid` lines under
+`metadata` that the server dry run invented (the real create assigns its
+own), and its hunk header and `+` count shrink to match. Since 0.3.0; the
+JSON layout is unchanged.
 
 When a namespace of the source does not exist on the context, `kubectl
 diff` compares nothing. The CLI then diffs the objects in existing
