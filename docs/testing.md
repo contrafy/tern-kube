@@ -179,6 +179,13 @@ the newest 20 000 lines, so 40 would no longer find the first ones. The
 sandbox window usually stays behind other windows, where Tern sends blocks
 no pane size: Explore and Settings then size their lists for Tern's default
 window (see "Block size" in [sdk-capability-matrix.md](sdk-capability-matrix.md)).
+The runner asks for a 1280x800 window and says so when the window keeps
+another size: `ctl resize` resizes the real window, which a tiling window
+manager (OmniWM, yabai, AeroSpace) keeps in its tile. Scenarios do not
+depend on it (16 clicks pane edges); 13 checks a 500 px window's columns
+when it can resize the window and otherwise the narrow column tier classes
+(the tiers are window-width `@media` rules), and `--shots` fails with the
+size it got.
 70-79 cover compare across contexts (0.6.0) and run only
 with `E2E_MC=1` after `scripts/cluster.sh create-peer` (otherwise each
 prints a skip line); the runner applies the compare world to both
@@ -191,8 +198,7 @@ no kubectl (73), All contexts with an unreachable third context and
 drift matrix of a throwaway repository with drill-in and the read-only
 refusal (76), the `compare.contexts` preset with an unknown name (77), no
 refresh until `r` after the peer is scaled outside Tern (78; scaled back
-on exit), and help rows and short labels with a legend in a narrow window
-(79). Scenarios that need
+on exit), and help rows and short labels with a legend (79). Scenarios that need
 output a read-only cluster cannot produce switch the pane to the fake
 `tests/bin/kubectl`. `--shots` regenerates `docs/screenshots/`
 (`E2E_SHOTS="m3b m4"` limits it to some groups; `t1` is the 0.2.0 verbs and

@@ -54,11 +54,15 @@ focused_id() {
 	ctl state | jq -r '.focused.id'
 }
 
-# focus_pane ID X: click at window x X (inside that pane) and check that
-# pane ID has focus. `ctl focus` answers only after a 20 s timeout while a
-# split runs port-forward, so clicks are used instead.
+# focus_pane ID left|right: click 30 px inside that edge of the window's
+# panes (the window may be any size, see window_size) and check that pane
+# ID has focus. `ctl focus` answers only after a 20 s timeout while a split
+# runs port-forward, so clicks are used instead.
 focus_pane() {
-	ctl click "$2" 600 >/dev/null
+	xy=$(ctl tree '.tn-stage' | jq -r --arg edge "$2" '.nodes[0].rect // empty |
+		"\(if $edge == "left" then .[0] + 30 else .[0] + .[2] - 30 end) \(.[1] + .[3] / 2)"')
+	# shellcheck disable=SC2086
+	ctl click $xy >/dev/null
 	sleep 0.3
 	[ "$(focused_id)" = "$1" ] || fail "cannot focus pane $1 (focused: $(focused_id))"
 }
@@ -81,15 +85,15 @@ E2E_WAIT=15 quick_pane "tern-kube port-forward " || return
 contains "port-forward target" "$(focused_title)" "$qa_ns/tk-qa-shell 80 @ kind-tern-kube-dev"
 forward=$(focused_id)
 expect_grid "Forwarding from 127.0.0.1:8080" || return
-focus_pane "$home" 30 || return
+focus_pane "$home" left || return
 sh_line clear
 sh_line 'curl -s --max-time 5 http://127.0.0.1:8080/index.html | sed s/^/KLQA:/'
 expect_grid "KLQA:tk-qa-ok"
-focus_pane "$forward" 1250 || return
+focus_pane "$forward" right || return
 ctl close >/dev/null
 sleep 1
 eq "port-forward split closed" "$(pane_count)" "$before"
-focus_pane "$home" 30 || return
+focus_pane "$home" left || return
 sh_line clear
 sh_line 'curl -s --max-time 3 http://127.0.0.1:8080/index.html >/dev/null; echo KLQA-rc=$?'
 expect_grid "KLQA-rc=7"

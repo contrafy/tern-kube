@@ -3,9 +3,10 @@
 # <sandbox>/edit-script, which changes the ConfigMap's LEVEL. After the save
 # the approve block shows the edited file and the object diff; approve ->
 # kubectl applies it and the split says so until Enter (MUT-F11); a second
-# edit denied -> the object is unchanged, the split names the denial and the
-# edit is kept in $TMPDIR/kubectl-edit-denied-*. tk-e2e-* objects and the
-# script are deleted at the end.
+# edit denied -> the object is unchanged, the split names the denial, then
+# exits 1 and keeps Tern's exit sheet, and the edit is kept in
+# $TMPDIR/kubectl-edit-denied-*. tk-e2e-* objects and the script are
+# deleted at the end.
 edit_cleanup() {
 	rm -f "$E2E_SB/edit-script" "$E2E_SB/edit-tmpdir"
 	e2e_objects_delete
@@ -25,6 +26,15 @@ level_is() {
 }
 panes_back() {
 	[ "$(pane_count)" = "$before" ]
+}
+# `ctl state` leaves an exited split out of .panes; it stays focused.
+split_exited() {
+	[ "$(ctl state | jq -r '.focused.exited // empty')" = "$1" ]
+}
+focus_explore_pane() {
+	[ "$(ctl state | jq -r '.focused.id')" = "$explore_pane" ] || ctl focus right >/dev/null
+	sleep 0.3
+	eq "explore pane focused" "$(ctl state | jq -r '.focused.id')" "$explore_pane"
 }
 
 lens "kubectl --context kind-tern-kube-dev get configmap tk-e2e-cm -n $MNS"
@@ -62,9 +72,7 @@ eq "approved edit applied" "$(level)" debug
 
 # Deny: unchanged object, the edit saved in a kubectl-edit-denied-* file.
 echo trace >"$E2E_SB/edit-level"
-[ "$(ctl state | jq -r '.focused.id')" = "$explore_pane" ] || ctl focus right >/dev/null
-sleep 0.3
-eq "explore pane focused" "$(ctl state | jq -r '.focused.id')" "$explore_pane"
+focus_explore_pane
 xkey e
 approve_open || return
 a_ready || return
@@ -77,10 +85,16 @@ approve_closed || return
 E2E_WAIT=20 expect_grid "tern-kube: kubectl edit exited 1: denied in Tern" || return
 expect_grid "your edit is saved at" || return
 ctl key enter >/dev/null
-E2E_WAIT=20 wait_for "the edit split to close" panes_back || return
+E2E_WAIT=20 wait_for "the denied edit split to exit 1" split_exited 1 || return
+ctl close >/dev/null
+split_closed() {
+	panes_back && ! split_exited 1
+}
+E2E_WAIT=10 wait_for "the edit split to close" split_closed || return
 eq "denied edit left the value" "$(level)" debug
 saved=$(find "$denied_dir" -maxdepth 1 -name 'kubectl-edit-denied-*' -newer "$E2E_SB/edit-level" 2>/dev/null | head -1)
 [ -n "$saved" ] || fail "no kubectl-edit-denied-* copy in $denied_dir"
 [ -n "$saved" ] && contains "denied copy holds the edit" "$(cat "$saved")" "LEVEL: trace"
 [ -n "$saved" ] && rm -f "$saved"
+focus_explore_pane
 explore_close

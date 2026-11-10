@@ -8,6 +8,28 @@ release (0.x minor versions could break them).
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-11-10
+
+### Fixed
+
+- **Shell guard: an approval can no longer run in a namespace you did not preview.** A `kubectl --context X ...` without `-n` used whatever namespace the context pointed at when it finally ran, so a `kubens` while the approval waited ran it elsewhere. The approve block re-reads the context's namespace and user at confirm and the guard re-checks them right before kubectl runs; any change refuses.
+- **GitOps: exported Secret placeholders are never applied silently.** Drift shows `placeholder` instead of a masked change, apply leaves such Secrets out, `tern-kube-drift` flags them.
+- **Helm 4** (Homebrew ships 4.2): the Helm releases view, release lookups and chart auto-detect failed on `helm list -a`. Every Helm call now works with Helm 3 and 4; CI checks both.
+- Helm hooks no longer show as drift (CI drift jobs failed forever on charts with upgrade hooks) and are not applied as plain objects; objects of a Helm release never count as unmanaged.
+- A Secret that does not exist yet diffs as create, not modify (kubectl prints it as `-null`).
+- Apply bundles, which can hold Secret values, are deleted when the approve block closes instead of after 24 hours.
+- Guarded commands record their outcome (executed or failed, exit code) in the audit log; a refused guard request asks to run the command again instead of looping on `r`; Ctrl-C shows "Not executed"; a denied `kubectl edit` exits 1; `ctrl+t` confirms the target while typing; restart warns about a paused Deployment; apply previews account for every object.
+- Drift: a context without the namespace reports its objects as missing instead of an error; error reasons skip klog noise; an object declared twice is marked ambiguous.
+- Tern 0.9.14: PageUp/PageDown work again (the key names changed); the palette no longer lists the Explore and Settings blocks twice.
+- Explore: `esc` at the top asks for a second press and backspace never closes it; `m` opens the manifest without taking focus; pickers start with an empty filter; choosing the current context keeps the namespace; list compare uses the filtered rows; `o` reads previous logs per container; Manifest and Diff views survive a plugin reload; mutation keys are hidden when mutations are off; a kubeconfig whose context reads both fail no longer crashes the view.
+- Follow-logs and port-forward splits end cleanly on Ctrl-C (no failure dialog); port-forward uses the suggested local port only when it is free.
+
+### Changed
+
+- Tested on Tern 0.9.14; plugin types pinned to tern-sdk `a933069`.
+- The guard protocol (still version 1) gains `context_namespace`, `context_user` and `audit` in approve responses; the guard refuses without them, so the shell snippet and the plugin must come from the same release.
+- `scripts/dev-tern.sh link` links a snapshot without `.git`: Tern 0.9.14 reloads a linked plugin on any file change below it.
+
 ## [1.0.0] - 2026-11-03
 
 Every feature on the v1.0 list is done; no code changes since 0.6.0.
@@ -238,7 +260,8 @@ First public beta.
 - Docs: SDK capability matrix, configuration, performance, architecture,
   security model, testing, releasing.
 
-[Unreleased]: https://github.com/contrafy/tern-kube/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/contrafy/tern-kube/compare/v1.0.1...HEAD
+[1.0.1]: https://github.com/contrafy/tern-kube/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/contrafy/tern-kube/compare/v0.6.0...v1.0.0
 [0.6.0]: https://github.com/contrafy/tern-kube/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/contrafy/tern-kube/compare/v0.4.0...v0.5.0
