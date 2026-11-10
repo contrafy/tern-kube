@@ -115,7 +115,8 @@ xkey escape
 approve_closed || return
 expect_grid "your edit is saved at" || return
 expect_grid "Edit cancelled, no changes made." || return
-expect_grid "GUARD-RC=0" || return
+# kubectl itself exits 0 ("Edit cancelled"); the guard reports the denial.
+expect_grid "GUARD-RC=1" || return
 saved=$(find "$gdir/tmp" -name 'kubectl-edit-denied-*' | head -1)
 [ -n "$saved" ] || fail "no kubectl-edit-denied-* copy in $gdir/tmp"
 [ -n "$saved" ] && contains "denied copy holds the edit" "$(cat "$saved")" "LEVEL: edited"

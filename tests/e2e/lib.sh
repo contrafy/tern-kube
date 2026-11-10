@@ -156,8 +156,8 @@ restart_window() {
 		return 1
 	}
 	E2E_WAIT=30 wait_for "the first prompt" ctl ready || return 1
-	ctl resize 1280 800 >/dev/null
-	sleep 1
+	window_size 1280 800 || true
+	sleep 0.5
 	reset_pane
 }
 
@@ -201,6 +201,20 @@ click_text() {
 	ctl click $xy >/dev/null
 	sleep 0.5
 	top
+}
+
+# window_size W H: ask for a W x H viewport; fails when the window keeps
+# another size. Tern's `ctl resize` resizes the real window, and a tiling
+# window manager (OmniWM, yabai, AeroSpace) may keep it in its tile.
+window_size() {
+	ctl resize "$1" "$2" >/dev/null
+	sleep 0.5
+	[ "$(viewport)" = "$1x$2" ]
+}
+
+# viewport: the window's viewport as WxH (CSS px).
+viewport() {
+	ctl stats | jq -r '.viewport[:2] | map(floor) | join("x")'
 }
 
 # --- Assertions --------------------------------------------------------------
@@ -608,7 +622,7 @@ hcol() {
 	texts "$EX .tk-grid .tk-r .tk-c" | jq -c --argjson n "$1" --argjson w "$2" '[range($n - 1; length; $w) as $i | .[$i]]'
 }
 
-# explore_close_all: esc through a deep Helm route stack until Explore closes.
+# explore_close_all: esc through a deep route stack until Explore closes.
 explore_close_all() {
 	i=0
 	while has "$EX" && [ $i -lt 20 ]; do
