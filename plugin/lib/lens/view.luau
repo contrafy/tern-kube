@@ -58,6 +58,47 @@ function M.render(capture: Capture, vs: ViewState, opts: Options?): Node?
 	return wrap(capture, Header.render(capture, vs, nil, notes), body)
 end
 
+-- Output past general.max_rows / max_capture_bytes is not parsed (it would
+-- stall the pane). `preview`: the first lines the host kept.
+export type Overflow = { lines: number, bytes: number, maxLines: number, maxBytes: number, preview: { string } }
+
+local function size(bytes: number): string
+	if bytes >= 1048576 then
+		return string.format("%.1f MiB", bytes / 1048576)
+	elseif bytes >= 1024 then
+		return string.format("%d KiB", bytes // 1024)
+	end
+	return bytes .. " bytes"
+end
+
+function M.renderOverflow(inv: Types.Invocation, o: Overflow): Node
+	local why = if o.lines > o.maxLines
+		then string.format("%d lines (general.max_rows is %d)", o.lines, o.maxLines)
+		else string.format("%s (general.max_capture_bytes is %s)", size(o.bytes), size(o.maxBytes))
+	local bar = ui.row({
+		ui.badge("Too large", "warning", { title = "Not parsed: the native view would stall the pane" }),
+		ui.text({ ui.span(Header.commandSummary(inv), "mono strong") }),
+		ui.text(Header.target(inv)),
+	}, { key = "bar", wrap = true, role = "tern-kube.bar" })
+	local note = ui.text({
+		ui.span("Too large for the native view: " .. why .. ". ", "warning"),
+		ui.span(
+			if #o.preview > 0
+				then string.format("The first %d lines are below; the block's Raw toggle shows everything.", #o.preview)
+				else "The block's Raw toggle shows everything.",
+			"muted"
+		),
+	}, { key = "why", role = "tern-kube.overflow" })
+	local children: { Node } = { ui.col({ bar, note }, { key = "header", role = "tern-kube.header" }) }
+	if #o.preview > 0 then
+		table.insert(children, ui.code(table.concat(o.preview, "\n"), nil, 1, { key = "preview" }))
+		if o.lines > #o.preview then
+			table.insert(children, ui.overflow(o.lines - #o.preview))
+		end
+	end
+	return ui.col(children, { key = "lens", role = "tern-kube.too-large" })
+end
+
 -- Running policy (general.streaming_view): while an event watch runs, Raw
 -- is live and a plugin view trails it (Tern hands lens lines over late), so
 -- the lens stays raw until the watch stops unless the user opted in.

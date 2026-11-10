@@ -4,6 +4,7 @@
 local Argv = require("../../../plugin/lib/kubectl/argv")
 local Capture = require("../../../plugin/lib/lens/capture")
 local Command = require("../../../plugin/lib/kubectl/command")
+local Header = require("../../../plugin/lib/render/header")
 local HelmChip = require("../../../plugin/lib/render/helm_chip")
 local View = require("../../../plugin/lib/lens/view")
 local fixtures = require("../../lib/fixtures")
@@ -37,6 +38,33 @@ describe("lens view", function()
 
 	it("empty output renders nil", function()
 		expect(View.render(fromLines("kubectl get secrets", {}, 0), vsm.default())).toBeNil()
+	end)
+
+	-- LENS-L4: a 30k-line `-o yaml` fell back to raw with no hint why.
+	it("output over the native limits says why and shows a preview", function()
+		local r = runs.run("kubectl get cm -n big -o yaml")
+		local inv = Argv.parse(r.program, r.args)
+		local node = View.renderOverflow(inv, {
+			lines = 30214,
+			bytes = 900000,
+			maxLines = 20000,
+			maxBytes = 16777216,
+			preview = { "apiVersion: v1", "items:" },
+		})
+		local text = nodes.text(node)
+		expect(text).toContain("30214 lines")
+		expect(text).toContain("general.max_rows")
+		expect(text).toContain("Raw")
+		expect(text).toContain("kubectl get cm -o yaml")
+		expect((nodes.find(node, nodes.kind("code")) :: any).p.text).toBe("apiVersion: v1\nitems:")
+		local bytes = nodes.text(View.renderOverflow(inv, {
+			lines = 10,
+			bytes = 70000,
+			maxLines = 20000,
+			maxBytes = 65536,
+			preview = {},
+		}))
+		expect(bytes).toContain("general.max_capture_bytes")
 	end)
 
 	it("every native mode gets the snapshot header", function()
@@ -95,6 +123,79 @@ describe("lens view", function()
 	it("missing context error shows natively too", function()
 		local node = View.render(build("errors-context/get_pods"), vsm.default()) :: any
 		expect(nodes.text(node)).toContain("does-not-exist")
+	end)
+
+	-- kubectl 1.34 with a kubeconfig path prints this instead of `error:`;
+	-- the lens showed it as an unrecognised line instead of an error.
+	it("an unknown context in the kubeconfig is a kubectl error", function()
+		local c = fromLines(
+			"kubectl --context nonexistent get pods",
+			{ "Error in configuration: context was not found for specified context: nonexistent" },
+			1
+		)
+		local diag = nodes.find(View.render(c, vsm.default()) :: any, nodes.role("tern-kube.diagnostics")) :: any
+		expect(nodes.text(diag)).toContain("1 error")
+		expect(c.unparsed).toBe(0)
+	end)
+
+	-- LENS-L10: an unreachable server printed 5 identical memcache.go klog
+	-- lines before the one sentence that explains it ("6 errors").
+	it("collapses repeated klog errors and leads with kubectl's own sentence", function()
+		local klog =
+			'E1110 11:06:29.65%d   60233 memcache.go:265] "Unhandled Error" err="couldn\'t get current server API group list"'
+		local lines: { string } = {}
+		for i = 1, 5 do
+			table.insert(lines, string.format(klog, i))
+		end
+		table.insert(
+			lines,
+			"The connection to the server 127.0.0.1:1 was refused - did you specify the right host or port?"
+		)
+		local diag = nodes.find(
+			View.render(fromLines("kubectl get pods", lines, 1), vsm.default()) :: any,
+			nodes.role("tern-kube.diagnostics")
+		) :: any
+		local text = nodes.text(diag)
+		expect(text).toContain("2 errors")
+		expect(string.find(text, "The connection to the server", 1, true) < string.find(text, "memcache", 1, true)).toBe(
+			true
+		)
+		expect(text).toContain("×5")
+		local _, copies = string.gsub(text, "memcache", "")
+		expect(copies).toBe(1)
+	end)
+
+	-- LENS-L6: `-l app=web` and `--previous` views looked identical to the
+	-- unfiltered and current ones.
+	it("the command summary keeps the flags that change what is shown", function()
+		local function summary(line: string): string
+			local r = runs.run(line)
+			return Header.commandSummary(Argv.parse(r.program, r.args))
+		end
+		expect(summary("kubectl get pods -l app=web --field-selector status.phase=Running -n x")).toBe(
+			"kubectl get pods -l app=web --field-selector status.phase=Running"
+		)
+		expect(summary("kubectl logs web-1 -c app --previous -n x")).toBe("kubectl logs web-1 -c app --previous")
+		expect(summary("kubectl logs -l app=tk-logmix --all-containers --prefix")).toBe(
+			"kubectl logs -l app=tk-logmix --all-containers"
+		)
+		expect(summary("kubectl get events -w")).toBe("kubectl get events -w")
+	end)
+
+	-- LENS-L7: `ns: default for context` on nodes, CRDs and namespaces meant
+	-- nothing.
+	it("cluster-scoped kinds show no namespace", function()
+		local function target(line: string): string
+			local r = runs.run(line)
+			return nodes.spansText(Header.target(Argv.parse(r.program, r.args)))
+		end
+		for _, line in
+			{ "kubectl get nodes", "kubectl describe nodes", "kubectl top nodes", "kubectl get crds", "kubectl get ns" }
+		do
+			expect((string.find(target(line), "ns:", 1, true))).toBeNil()
+		end
+		expect(target("kubectl get pods")).toContain("ns:")
+		expect(target("kubectl get nodes,pods")).toContain("ns:")
 	end)
 
 	-- Live: a failed `kubectl scale` showed the error twice (header
@@ -168,13 +269,15 @@ describe("lens view", function()
 		expect(nodes.text(nodes.find(withHelp, nodes.role("tern-kube.help")) :: any)).toContain("Click a column header")
 	end)
 
-	-- Track 2 plan 5: event listings render through the table pipeline.
+	-- Track 2 plan 5: event listings render through the table pipeline. The
+	-- Warning count is the TYPE facet chip (a summary badge repeated it).
 	it("kubectl events renders natively with ×N notes and a Warning count", function()
 		local node = View.render(build("ns-apps/events"), vsm.default()) :: any
 		assert(node, "events rendered nil")
 		local text = nodes.text(node)
 		expect(text).toContain("×12 over 4h30m")
-		expect(nodes.text(nodes.find(node, nodes.role("tern-kube.summary")) :: any)).toContain("warning")
+		expect(nodes.find(node, nodes.role("tern-kube.summary"))).toBeNil()
+		expect(nodes.find(node, nodes.key("TYPE=Warning")) ~= nil).toBe(true)
 	end)
 
 	-- A watch ends in Ctrl-C (status 130): that is how the user stops it, not

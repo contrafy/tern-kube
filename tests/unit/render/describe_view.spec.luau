@@ -69,6 +69,16 @@ describe("describe view: crashloop pod", function()
 		expect(nodes.ownText(state)).toContain("Terminated")
 	end)
 
+	-- LENS-L3: the badge said "Running" (the pod phase) while `get` says
+	-- CrashLoopBackOff, and the reason and exit code hid behind two folds.
+	it("badges the container's waiting reason and names reasons in the state heads", function()
+		local badge = nodes.find(cards(view)[1], nodes.kind("badge")) :: any
+		expect(badge.p.text).toBe("CrashLoopBackOff")
+		expect(badge.p.tone).toBe("error")
+		expect(nodes.ownText(section(view, "State"))).toContain("Waiting (CrashLoopBackOff)")
+		expect(nodes.ownText(section(view, "Last State"))).toContain("Terminated (Error, exit 1)")
+	end)
+
 	it("flags restarts and a failed last state", function()
 		local found = false
 		for _, kv in nodes.findAll(view, nodes.kind("kv")) do

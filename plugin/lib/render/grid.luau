@@ -8,6 +8,10 @@
 -- Narrow panes hide low-priority columns through container queries in
 -- tern-kube.css. Hidden cells leave the grid flow, so the grid also carries
 -- the visible column count for each width tier (tk-a-N, tk-b-N, tk-c-N).
+--
+-- `middle` columns (NAME, a log's SOURCE) truncate in the middle: the head
+-- shrinks with an ellipsis, the tail that tells rows apart stays, and its
+-- width is the column's minimum, so NAME keeps priority over long cells.
 
 local Cells = require("./cells")
 local Types = require("../model/types")
@@ -47,11 +51,57 @@ export type Spec = {
 	class: string?,
 	-- Columns never hidden on narrow windows (a log's LEVEL and MESSAGE).
 	keep: { [string]: boolean }?,
+	-- Columns truncated in the middle (see the top of this file).
+	middle: { [string]: boolean }?,
 }
 
 local M = {}
 
 M.MAX_COLUMNS = 16
+
+local MIDDLE_MIN = 12
+local TAIL_MIN = 4
+local TAIL_MAX = 17
+local TAIL_FALLBACK = 8
+
+-- Head and tail of a value: the tail starts at the last separator that
+-- leaves at least TAIL_MIN characters (`-6jsgc`, `-x-0`); without one, the
+-- last TAIL_FALLBACK characters. Short values are not split ("" tail).
+function M.splitMiddle(s: string): (string, string)
+	local n = #s
+	if n <= MIDDLE_MIN then
+		return s, ""
+	end
+	local pos = n
+	while pos > 1 do
+		local at = string.find(string.sub(s, 1, pos - 1), "[%-%._/][^%-%._/]*$")
+		if at == nil or n - at + 1 > TAIL_MAX then
+			break
+		end
+		if n - at + 1 >= TAIL_MIN and at > 1 then
+			return string.sub(s, 1, at - 1), string.sub(s, at)
+		end
+		pos = at
+	end
+	return string.sub(s, 1, n - TAIL_FALLBACK), string.sub(s, n - TAIL_FALLBACK + 1)
+end
+
+-- A middle-truncated cell body; `style` is the span style of both parts.
+function M.middleNode(value: string, style: string?): Node
+	local head, tail = M.splitMiddle(value)
+	local function part(class: string, text: string): Node
+		return {
+			k = "el",
+			p = { tag = "div", class = class },
+			c = { { k = "text", p = { spans = { if style then { t = text, s = style } else { t = text } } } } },
+		}
+	end
+	local parts: { Node } = { part("tk-mid-h", head) }
+	if tail ~= "" then
+		table.insert(parts, part("tk-mid-t", tail))
+	end
+	return { k = "el", p = { tag = "div", class = "tk-mid" }, c = parts }
+end
 
 -- Never hidden: what identifies the row and whether it is healthy.
 local ESSENTIAL: { [string]: boolean } = { NAME = true, STATUS = true, READY = true }
@@ -136,9 +186,12 @@ function M.grid(spec: Spec): Node
 	local classes, gridClass = columnClasses(headers, spec.keep)
 	local cellFn: (string, ColumnType, string, boolean) -> Node = spec.cell or Cells.cell
 	local numeric = Cells.NUMERIC
+	local middle = spec.middle
+	local isMiddle: { boolean } = table.create(ncol, false)
 	local cellClass: { string } = table.create(ncol)
 	for i = 1, ncol do
-		cellClass[i] = if numeric[types[i] or "text"] then "tk-c tk-num " .. classes[i] else "tk-c " .. classes[i]
+		isMiddle[i] = middle ~= nil and middle[headers[i]] == true
+		cellClass[i] = (if numeric[types[i] or "text"] then "tk-c tk-num " else "tk-c ") .. classes[i]
 	end
 
 	local sortable = spec.sortable ~= false
@@ -175,9 +228,15 @@ function M.grid(spec: Spec): Node
 		local finished = Cells.rowFinished(types, values)
 		for i = 1, ncol do
 			local v = values[i] or ""
-			local node = if prebuilt and prebuilt[i]
-				then prebuilt[i]
-				else cellFn(headers[i], types[i] or "text", v, finished)
+			local split = isMiddle[i] and #v > MIDDLE_MIN
+			local node: Node
+			if prebuilt and prebuilt[i] then
+				node = prebuilt[i]
+			elseif split then
+				node = M.middleNode(v, Cells.style(headers[i], types[i] or "text", v, finished))
+			else
+				node = cellFn(headers[i], types[i] or "text", v, finished)
+			end
 			local note = if notes then notes[i] else nil
 			if note and node.k == "text" and node.p then
 				local spans = table.clone(node.p.spans)
@@ -186,7 +245,11 @@ function M.grid(spec: Spec): Node
 			end
 			cells[i] = {
 				k = "el",
-				p = { tag = "div", class = cellClass[i], title = if note then v .. " " .. note else v },
+				p = {
+					tag = "div",
+					class = if split then cellClass[i] .. " tk-midc" else cellClass[i],
+					title = if note then v .. " " .. note else v,
+				},
 				c = { node },
 			}
 		end

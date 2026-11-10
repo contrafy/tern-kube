@@ -14,6 +14,8 @@ export type ViewState = {
 	full: boolean,
 	page: number,
 	help: boolean,
+	-- Facet columns whose chips are all shown (no "+N" overflow), sorted.
+	expanded: { string },
 }
 
 local M = {}
@@ -28,6 +30,7 @@ function M.default(): ViewState
 		full = false,
 		page = 0,
 		help = false,
+		expanded = {},
 	}
 end
 
@@ -41,6 +44,7 @@ local function copy(vs: ViewState): ViewState
 		full = vs.full,
 		page = vs.page,
 		help = vs.help,
+		expanded = vs.expanded,
 	}
 end
 
@@ -117,6 +121,13 @@ function M.encode(vs: ViewState): string
 	if vs.help then
 		table.insert(parts, "help:1")
 	end
+	if #vs.expanded > 0 then
+		local xs: { string } = table.create(#vs.expanded)
+		for i, col in vs.expanded do
+			xs[i] = escape(col)
+		end
+		table.insert(parts, "x:" .. table.concat(xs, ","))
+	end
 	return table.concat(parts, ";")
 end
 
@@ -157,6 +168,12 @@ function M.decode(s: string): ViewState
 			end
 		elseif k == "help" then
 			vs.help = on
+		elseif k == "x" then
+			local xs: { string } = {}
+			for item in string.gmatch(val, "[^,]+") do
+				table.insert(xs, unescape(item))
+			end
+			vs.expanded = normalized(xs)
 		end
 	end
 	if vs.open == nil then
@@ -169,10 +186,11 @@ function M.action(vs: ViewState): string
 	return "v=" .. M.encode(vs)
 end
 
--- Same column flips direction; a new column starts ascending.
-function M.sortedBy(vs: ViewState, col: string): ViewState
+-- Same column flips direction; a new column starts ascending unless
+-- `descFirst` (counts and quantities, read for their largest values).
+function M.sortedBy(vs: ViewState, col: string, descFirst: boolean?): ViewState
 	local out = copy(vs)
-	out.desc = vs.sort == col and not vs.desc
+	out.desc = if vs.sort == col then not vs.desc else descFirst == true
 	out.sort = col
 	out.page = 0
 	return out
@@ -255,6 +273,24 @@ end
 function M.toggledHelp(vs: ViewState): ViewState
 	local out = copy(vs)
 	out.help = not vs.help
+	return out
+end
+
+function M.toggledExpanded(vs: ViewState, col: string): ViewState
+	local xs: { string } = {}
+	local removed = false
+	for _, existing in vs.expanded do
+		if existing == col then
+			removed = true
+		else
+			table.insert(xs, existing)
+		end
+	end
+	if not removed then
+		table.insert(xs, col)
+	end
+	local out = copy(vs)
+	out.expanded = normalized(xs)
 	return out
 end
 

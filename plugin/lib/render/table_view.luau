@@ -141,7 +141,7 @@ local function problemCount(tables: { SnapshotTable }): number
 	return n
 end
 
-local function chipsNode(tables: { SnapshotTable }, vs: ViewState, events: boolean): Node?
+local function chipsNode(capture: Capture, tables: { SnapshotTable }, vs: ViewState, events: boolean): Node?
 	local groups: { Node } = {}
 	local problems = problemCount(tables)
 	if problems > 0 or vs.problems then
@@ -151,13 +151,13 @@ local function chipsNode(tables: { SnapshotTable }, vs: ViewState, events: boole
 				"Problems " .. problems,
 				Viewstate.action(Viewstate.toggledProblems(vs)),
 				vs.problems,
-				"Only rows that are failing, not ready or restarting",
+				"Only rows that are failing, not ready, or restarted in the last hour",
 				"problems"
 			)
 		)
 	end
 	for _, f in facets(tables, events) do
-		local items: { Node } = { ui.text({ ui.span(f.col, "muted") }) }
+		local items: { Node } = { ui.text({ ui.span(f.col, "muted") }, { role = "tern-kube.facet-label" }) }
 		local shown = 0
 		local active: { [string]: boolean } = {}
 		for _, filter in vs.filters do
@@ -166,9 +166,10 @@ local function chipsNode(tables: { SnapshotTable }, vs: ViewState, events: boole
 				active[value] = true
 			end
 		end
+		local expanded = table.find(vs.expanded, f.col) ~= nil
 		for _, entry in f.values do
 			local on = active[entry.value] == true
-			if shown >= M.FACET_VALUES and not on then
+			if not expanded and shown >= M.FACET_VALUES and not on then
 				continue
 			end
 			shown += 1
@@ -183,13 +184,44 @@ local function chipsNode(tables: { SnapshotTable }, vs: ViewState, events: boole
 				)
 			)
 		end
+		local toggle = Viewstate.action(Viewstate.toggledExpanded(vs, f.col))
 		if #f.values > shown then
-			table.insert(items, ui.text({ ui.span("+" .. (#f.values - shown), "muted") }))
+			table.insert(
+				items,
+				ui.badge("+" .. (#f.values - shown), "neutral", {
+					key = f.col .. "/more",
+					title = "Show every " .. f.col .. " value",
+					actions = { click = toggle },
+					role = "tern-kube.more",
+				})
+			)
+		elseif expanded and #f.values > M.FACET_VALUES then
+			table.insert(
+				items,
+				ui.badge("Fewer", "neutral", {
+					key = f.col .. "/more",
+					title = "Show the " .. M.FACET_VALUES .. " most frequent " .. f.col .. " values",
+					actions = { click = toggle },
+					role = "tern-kube.more",
+				})
+			)
 		end
-		table.insert(groups, ui.row(items, { key = "facet-" .. f.col }))
+		table.insert(groups, ui.row(items, { key = "facet-" .. f.col, wrap = true, role = "tern-kube.facet" }))
 	end
 	if #vs.filters > 0 or vs.problems then
 		table.insert(groups, chip("Clear filters", Viewstate.action(Viewstate.clearedFilters(vs)), false, nil, "clear"))
+	end
+	-- Explore lists the same query and filters it by text; lenses take no input.
+	if Command.exploreFilterUrl(capture.invocation) then
+		table.insert(
+			groups,
+			ui.badge("Filter in Explore", "accent", {
+				key = "explore-filter",
+				title = "The same list in the Explore block with its text filter open (runs kubectl)",
+				actions = { click = "explore-filter=1" },
+				role = "tern-kube.explore-filter",
+			})
+		)
 	end
 	if #groups == 0 then
 		return nil
@@ -448,27 +480,36 @@ local function sourceLines(capture: Capture, row: ResourceRow): string?
 	return if #out > 0 then table.concat(out, "\n") else nil
 end
 
+-- `single`: the capture's only object (`-o json` of one name), shown
+-- without a table to go back to.
 function M.inspectView(
 	capture: Capture,
 	tbl: SnapshotTable,
 	row: ResourceRow,
 	vs: ViewState,
 	mutations: boolean?,
-	quick: Quick.Settings?
+	quick: Quick.Settings?,
+	single: boolean?
 ): Node
 	local back = Viewstate.action(Viewstate.back(vs))
 	local name = if row.ref then row.ref.name else row.cells[1] or row.key
 	local crumbs = ui.row({
-		ui.badge("Snapshot", "neutral", { actions = { click = back }, title = "Back to the table" }),
+		if single
+			then ui.badge("Snapshot", "neutral")
+			else ui.badge("Snapshot", "neutral", { actions = { click = back }, title = "Back to the table" }),
 		ui.text({ ui.span("›", "muted") }),
 		ui.text({ ui.span(tbl.kind or "rows", "muted") }),
 		ui.text({ ui.span("›", "muted") }),
 		ui.text({ ui.span(name, "strong") }),
 	}, { key = "crumbs", role = "tern-kube.breadcrumb" })
+	local chips = actionChips(capture, tbl, row, vs, mutations == true, quick)
+	if single then
+		table.remove(chips)
+	end
 	local children: { Node } = {
 		crumbs,
-		ui.row(actionChips(capture, tbl, row, vs, mutations == true, quick), { key = "actions", wrap = true }),
-		ui.section({ "Columns" }, { ui.kv(cellItems(capture, tbl, row)) }, { key = "cells" }),
+		ui.row(chips, { key = "actions", wrap = true }),
+		ui.section({ "Columns" }, { ui.kv(cellItems(capture, tbl, row)) }, { key = "cells", collapsible = single }),
 	}
 	local source = sourceLines(capture, row)
 	if source then
@@ -508,7 +549,27 @@ local function pageChips(matched: number, vs: ViewState, size: number): Node
 	return ui.row(items, { key = "pages", wrap = true, role = "tern-kube.pages" })
 end
 
-function M.render(capture: Capture, vs: ViewState, opts: Options?): (Node?, Counts)
+-- Counts and quantities are read for their largest values first.
+local DESC_FIRST: { [Types.ColumnType]: boolean } = { count = true, quantity = true, percent = true, number = true }
+local MIDDLE: { [string]: boolean } = { NAME = true }
+
+-- Event listings read newest first (LAST SEEN ascending) unless the user
+-- chose an order (a column click or kubectl's --sort-by).
+local function effectiveView(capture: Capture, tables: { SnapshotTable }, vs: ViewState): ViewState
+	if vs.sort ~= nil or capture.events == nil or capture.invocation.sortBy ~= nil then
+		return vs
+	end
+	for _, tbl in tables do
+		if columnIndex(tbl, "LAST SEEN") then
+			local out = table.clone(vs)
+			out.sort = "LAST SEEN"
+			return out
+		end
+	end
+	return vs
+end
+
+function M.render(capture: Capture, given: ViewState, opts: Options?): (Node?, Counts)
 	local size = if opts and opts.pageSize and opts.pageSize >= 1 then opts.pageSize else M.PAGE_SIZE
 	local mutations = opts ~= nil and opts.mutations == true
 	local quick = if opts then opts.quick else nil
@@ -520,6 +581,14 @@ function M.render(capture: Capture, vs: ViewState, opts: Options?): (Node?, Coun
 	end
 	if #tables == 0 then
 		return nil, { shown = 0, matched = 0, total = 0 }
+	end
+	local vs = effectiveView(capture, tables, given)
+
+	if capture.mode == "json" and total == 1 then
+		local tbl = tables[1]
+		local row = tbl.rows[1]
+		return M.inspectView(capture, tbl, row, Viewstate.inspect(vs, row.key), mutations, quick, true),
+			{ shown = 1, matched = 1, total = 1 }
 	end
 
 	if vs.full and vs.open then
@@ -543,15 +612,12 @@ function M.render(capture: Capture, vs: ViewState, opts: Options?): (Node?, Coun
 
 	local children: { Node } = {}
 	local events = capture.events
-	local chips = chipsNode(tables, vs, events ~= nil)
+	local chips = chipsNode(capture, tables, vs, events ~= nil)
 	if chips then
 		table.insert(children, chips)
 	end
 	local multi = #tables > 1
 	local shown = 0
-	local sortAction = function(col: string): string
-		return Viewstate.action(Viewstate.sortedBy(vs, col))
-	end
 	for _, slice in slices do
 		local tbl = slice.tbl
 		local rows = slice.rows
@@ -562,6 +628,11 @@ function M.render(capture: Capture, vs: ViewState, opts: Options?): (Node?, Coun
 			from = skipped + 1
 		end
 		local to = math.min(#rows, from + budget - 1)
+		local function sortAction(col: string): string
+			local index = columnIndex(tbl, col)
+			local descFirst = index ~= nil and DESC_FIRST[tbl.types[index]] == true
+			return Viewstate.action(Viewstate.sortedBy(vs, col, descFirst))
+		end
 		local count = math.max(0, to - from + 1)
 		budget -= count
 		shown += count
@@ -612,6 +683,7 @@ function M.render(capture: Capture, vs: ViewState, opts: Options?): (Node?, Coun
 				sortCol = vs.sort,
 				desc = vs.desc,
 				sortAction = sortAction,
+				middle = MIDDLE,
 				inspector = function(rowKey: string): Node?
 					local row = Capture.findRow(capture, rowKey)
 					return if row then inspector(capture, tbl, row, vs, mutations, quick) else nil

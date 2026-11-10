@@ -144,18 +144,59 @@ local function shape(store: Store): Shape
 	return { pods = np, containers = nc }
 end
 
-function M.sourceLabel(store: Store, index: number): string
-	local src = store.sources[index]
-	if index == 0 or src == nil then
-		return "unattributed"
+-- The pod-name prefix all distinct pods share, cut after a `-` so each
+-- label keeps a whole segment (`web-65d7d99975-` of two ReplicaSet pods);
+-- "" for fewer than two pods or nothing in common.
+function M.commonPodPrefix(pods: { string }): string
+	local first: string? = nil
+	local common: string? = nil
+	for _, pod in pods do
+		if first == nil then
+			first = pod
+			common = pod
+		elseif pod ~= first then
+			local c = common :: string
+			local n = 0
+			while n < #c and n < #pod and string.byte(c, n + 1) == string.byte(pod, n + 1) do
+				n += 1
+			end
+			common = string.sub(c, 1, n)
+		end
 	end
+	if common == nil or common == first then
+		return ""
+	end
+	return string.match(common, "^(.*%-)") or ""
+end
+
+-- Display label of every source, computed once per render: the container
+-- for one pod, the pod for one container, else both; pod names lose the
+-- prefix every pod shares (stern style).
+function M.sourceLabels(store: Store): { [number]: string }
 	local s = shape(store)
-	if s.pods <= 1 then
-		return src.container or src.pod or "?"
-	elseif s.containers <= 1 then
-		return src.pod or src.container or "?"
+	local pods: { string } = {}
+	for _, src in store.sources do
+		if src.pod then
+			table.insert(pods, src.pod)
+		end
 	end
-	return (src.pod or "?") .. "·" .. (src.container or "?")
+	local prefix = if s.pods > 1 then M.commonPodPrefix(pods) else ""
+	local out: { [number]: string } = { [0] = "unattributed" }
+	for i, src in store.sources do
+		local pod = if src.pod then string.sub(src.pod, #prefix + 1) else nil
+		if s.pods <= 1 then
+			out[i] = src.container or src.pod or "?"
+		elseif s.containers <= 1 then
+			out[i] = pod or src.container or "?"
+		else
+			out[i] = (pod or "?") .. "·" .. (src.container or "?")
+		end
+	end
+	return out
+end
+
+function M.sourceLabel(store: Store, index: number): string
+	return M.sourceLabels(store)[index] or "unattributed"
 end
 
 local function sourceTitle(store: Store, index: number): string
@@ -448,6 +489,7 @@ local function sourceChips(store: Store, vs: LogsView, live: { number }): Node?
 		on[s] = true
 	end
 	local items: { Node } = { ui.text({ ui.span("SOURCE", "muted") }) }
+	local labels = M.sourceLabels(store)
 	for _, idx in live do
 		local active = on[idx] == true
 		local action = with(vs, function(v)
@@ -467,7 +509,7 @@ local function sourceChips(store: Store, vs: LogsView, live: { number }): Node?
 		table.insert(
 			items,
 			chip(
-				M.sourceLabel(store, idx) .. " " .. (store.sourceCounts[idx] or 0),
+				(labels[idx] or "unattributed") .. " " .. (store.sourceCounts[idx] or 0),
 				action,
 				active,
 				sourceTitle(store, idx),
@@ -730,6 +772,7 @@ local function gridNode(store: Store, indices: { number }, vs: LogsView, timeSho
 	local types: { ModelTypes.ColumnType } = table.create(#headers, "text" :: ModelTypes.ColumnType)
 	local rows: { Grid.GridRow } = table.create(#indices)
 	local prevDate: string? = nil
+	local labels = if showSource then M.sourceLabels(store) else {}
 	for n, i in indices do
 		local r = store.records[i]
 		local cells: { string } = {}
@@ -743,9 +786,9 @@ local function gridNode(store: Store, indices: { number }, vs: LogsView, timeSho
 		end
 		if showSource then
 			col += 1
-			local label = M.sourceLabel(store, r.source)
+			local label = labels[r.source] or "unattributed"
 			cells[col] = label
-			nodes[col] = ui.text({ ui.span(label, "muted") })
+			nodes[col] = Grid.middleNode(label, "muted")
 		end
 		col += 1
 		local tone = LEVEL_TONE[r.level]
@@ -787,6 +830,7 @@ local function gridNode(store: Store, indices: { number }, vs: LogsView, timeSho
 		sortable = false,
 		class = if vs.wrap then "tk-logs tk-lwrap" else "tk-logs",
 		keep = { LEVEL = true, MESSAGE = true },
+		middle = { SOURCE = true },
 		inspector = function(rowKey: string): Node?
 			local r = Store.get(store, tonumber(rowKey) or 0)
 			return if r then inspectorNode(store, r, vs) else nil

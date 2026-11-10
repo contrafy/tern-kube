@@ -49,6 +49,7 @@ local PREFIXES: { { prefix: string, severity: "error" | "warning" | "info" } } =
 	{ prefix = "Error from server", severity = "error" },
 	{ prefix = "error: ", severity = "error" },
 	{ prefix = "Error: ", severity = "error" },
+	{ prefix = "Error in configuration: ", severity = "error" },
 	{ prefix = "Unable to connect to the server", severity = "error" },
 	{ prefix = "The connection to the server ", severity = "error" },
 	{ prefix = "No resources found", severity = "info" },

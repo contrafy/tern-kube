@@ -2,6 +2,7 @@
 -- One table cell as a text node, styled by what kubectl's value means:
 -- status tones, short ratios, restarts, muted placeholders, mono numbers.
 
+local Query = require("../lens/query")
 local Types = require("../model/types")
 local Values = require("../model/values")
 local ui = require("../ui")
@@ -46,8 +47,7 @@ function M.style(col: string, columnType: ColumnType, value: string, finished: b
 		return if tone then tone .. " strong" else nil
 	end
 	if columnType == "count" then
-		local n = Values.count(value)
-		if col == "RESTARTS" and n and n > 0 then
+		if col == "RESTARTS" and Query.recentRestart(value) then
 			return "warning mono"
 		end
 		return "mono"

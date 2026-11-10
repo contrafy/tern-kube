@@ -27,9 +27,25 @@ local function columnIndex(tbl: SnapshotTable, name: string): number?
 	return nil
 end
 
+-- A restart counts as a problem only while it is recent: after a node or
+-- Docker restart every healthy pod shows `2 (25h ago)` for days.
+M.RECENT_RESTART_SECONDS = 3600
+
+-- RESTARTS cell `N (D ago)` with N > 0 and D under RECENT_RESTART_SECONDS. A
+-- bare count carries no time, so it is not recent.
+function M.recentRestart(cell: string): boolean
+	local n = Values.count(cell)
+	local ago = string.match(cell, "^%d+ %((%S+) ago%)$")
+	if n == nil or n == 0 or ago == nil then
+		return false
+	end
+	local seconds = Values.duration(ago)
+	return seconds ~= nil and seconds < M.RECENT_RESTART_SECONDS
+end
+
 -- A row is a problem when kubectl's own columns say so: a status-typed cell
 -- with a warning/error tone, a ratio short of its target (READY 0/1) unless
--- the row's status says it finished, or restarts above zero.
+-- the row's status says it finished, or a recent restart.
 function M.isProblem(tbl: SnapshotTable, row: ResourceRow): boolean
 	local shortRatio = false
 	local finished = false
@@ -47,8 +63,7 @@ function M.isProblem(tbl: SnapshotTable, row: ResourceRow): boolean
 				shortRatio = true
 			end
 		elseif t == "count" and tbl.headers[i] == "RESTARTS" then
-			local n = Values.count(cell)
-			if n and n > 0 then
+			if M.recentRestart(cell) then
 				return true
 			end
 		end

@@ -20,6 +20,10 @@ mark=$(log_lines)
 start=$(date +%s)
 E2E_WAIT=30 lens 'kubectl get pods'
 took=$(($(date +%s) - start))
-raw
+# Past general.max_rows the lens does not parse; it says why and previews
+# the first lines (Raw keeps everything).
+native
+contains "overflow reason" "$(alltext '[data-role="tern-kube.overflow"]')" "general.max_rows"
+has '[data-role="tern-kube.too-large"] .sf-code' || fail "no preview of the first lines"
 [ $took -le 15 ] || fail "200000-row output took ${took}s with the lens"
 tail -n +"$((mark + 1))" "$(daemon_log)" | grep -q 'overflow=true' || fail "no overflow logged"

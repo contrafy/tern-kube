@@ -134,12 +134,45 @@ end
 
 local fieldNodes: (fields: { DescribeField }, depth: number, parentKey: string, id: string) -> { Node }
 
+local function childField(field: DescribeField, key: string): DescribeField?
+	for _, c in field.children do
+		if c.key == key then
+			return c
+		end
+	end
+	return nil
+end
+
+-- `(CrashLoopBackOff)` / `(Error, exit 1)` of a container State or Last
+-- State, so the reason shows while the block stays folded.
+local function stateDetail(field: DescribeField): string?
+	if field.key ~= "State" and field.key ~= "Last State" then
+		return nil
+	end
+	local parts: { string } = {}
+	local reason = childField(field, "Reason")
+	if reason and reason.value ~= "" then
+		table.insert(parts, reason.value)
+	end
+	local exit = childField(field, "Exit Code")
+	if exit and exit.value ~= "" then
+		table.insert(parts, "exit " .. exit.value)
+	end
+	return if #parts > 0 then "(" .. table.concat(parts, ", ") .. ")" else nil
+end
+
 local function sectionNode(field: DescribeField, depth: number, parentKey: string, id: string): Node
 	local head: { ui.SpanLike } = { ui.span(field.key, "strong") }
 	if field.value ~= "" then
 		table.insert(head, ui.span(":  ", "muted"))
 		for _, s in valueSpans(field.key, field.value) do
 			table.insert(head, s)
+		end
+		local detail = stateDetail(field)
+		if detail then
+			local reason = childField(field, "Reason")
+			local tone = if reason then TONE_STYLE[Values.statusTone("STATUS", reason.value)] else nil
+			table.insert(head, ui.span(" " .. detail, tone or "muted"))
 		end
 	end
 	local body = fieldNodes(field.children, depth + 1, field.key, id)
@@ -264,6 +297,34 @@ local function topField(obj: DescribeObject, key: string): DescribeField?
 	return nil
 end
 
+local TONE_RANK: { [string]: number } = { error = 2, warning = 1 }
+
+-- What `kubectl get` prints as a pod's STATUS when a container is not
+-- running: the worst waiting or terminated reason of its containers.
+local function containerReason(obj: DescribeObject): string?
+	local best: string? = nil
+	local rank = 0
+	for _, group in { "Init Containers", "Containers" } do
+		local containers = topField(obj, group)
+		if containers == nil then
+			continue
+		end
+		for _, container in containers.children do
+			local state = childField(container, "State")
+			local reason = if state and (state.value == "Waiting" or state.value == "Terminated")
+				then childField(state, "Reason")
+				else nil
+			if reason and reason.value ~= "" then
+				local r = TONE_RANK[Values.statusTone("STATUS", reason.value)] or 0
+				if r > rank then
+					best, rank = reason.value, r
+				end
+			end
+		end
+	end
+	return best
+end
+
 local HIDDEN_TOP: { [string]: boolean } = { Name = true, Namespace = true, Events = true }
 
 local function objectCard(obj: DescribeObject, index: number, collapsed: boolean): Node
@@ -280,8 +341,8 @@ local function objectCard(obj: DescribeObject, index: number, collapsed: boolean
 	local badges: { Node } = {}
 	local status = topField(obj, "Status")
 	if status and status.value ~= "" and #status.children == 0 then
-		local tone = Values.statusTone("STATUS", status.value)
-		table.insert(badges, ui.badge(status.value, tone))
+		local shown = if obj.kind == "Pod" then containerReason(obj) or status.value else status.value
+		table.insert(badges, ui.badge(shown, Values.statusTone("STATUS", shown)))
 	end
 	local warnings = warningCount(obj)
 	if warnings > 0 then

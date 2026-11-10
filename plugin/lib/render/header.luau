@@ -4,6 +4,7 @@
 -- kubectl errors, Secret data in Raw, values the native view masks).
 
 local Capture = require("../lens/capture")
+local Kinds = require("../kubectl/kinds")
 local Redact = require("../model/redact")
 local Types = require("../model/types")
 local Viewstate = require("../lens/viewstate")
@@ -23,6 +24,18 @@ local function basename(path: string): string
 	return string.match(path, "([^/]+)$") or path
 end
 
+local function lastFlag(inv: Types.Invocation, name: string): string?
+	local list = inv.flags[name]
+	return if list then list[#list] else nil
+end
+
+local function flagOn(inv: Types.Invocation, name: string): boolean
+	local v = lastFlag(inv, name)
+	return v ~= nil and v ~= "false"
+end
+
+-- The command as typed minus connection flags, keeping every flag that
+-- changes which rows or lines are shown.
 function M.commandSummary(inv: Types.Invocation): string
 	local parts: { string } = { basename(inv.program) }
 	if inv.verb then
@@ -37,18 +50,63 @@ function M.commandSummary(inv: Types.Invocation): string
 	if inv.output ~= "table" then
 		table.insert(parts, "-o " .. (if inv.outputSpec then inv.output .. "=" .. inv.outputSpec else inv.output))
 	end
+	if inv.selector then
+		table.insert(parts, "-l " .. inv.selector)
+	end
+	if inv.fieldSelector then
+		table.insert(parts, "--field-selector " .. inv.fieldSelector)
+	end
+	if inv.verb == "logs" then
+		local all = flagOn(inv, "all-containers")
+		local container = lastFlag(inv, "container")
+		if all then
+			table.insert(parts, "--all-containers")
+		elseif container then
+			table.insert(parts, "-c " .. container)
+		end
+		if flagOn(inv, "previous") then
+			table.insert(parts, "--previous")
+		end
+		if flagOn(inv, "follow") then
+			table.insert(parts, "-f")
+		end
+	end
+	if inv.watch then
+		table.insert(parts, "-w")
+	end
 	return table.concat(parts, " ")
+end
+
+-- Every named resource type is cluster-scoped (nodes, namespaces, CRDs), so
+-- a namespace means nothing for this command.
+local function clusterScoped(inv: Types.Invocation): boolean
+	if inv.verb == "top" then
+		return inv.subverb == "node" or inv.subverb == "nodes"
+	end
+	if #inv.resources == 0 then
+		return false
+	end
+	for _, r in inv.resources do
+		if Kinds.normalize(r.kind).namespaced ~= false then
+			return false
+		end
+	end
+	return true
 end
 
 function M.target(inv: Types.Invocation): { ui.Span }
 	local ctx = inv.context or "current context at run time"
-	local ns = if inv.allNamespaces then "all" else inv.namespace or "default for context"
-	return {
+	local out = {
 		ui.span("context: ", "muted"),
 		ui.span(ctx, if inv.context then "mono" else "muted"),
-		ui.span("   ns: ", "muted"),
-		ui.span(ns, if inv.namespace or inv.allNamespaces then "mono" else "muted"),
 	}
+	if clusterScoped(inv) then
+		return out
+	end
+	local ns = if inv.allNamespaces then "all" else inv.namespace or "default for context"
+	table.insert(out, ui.span("   ns: ", "muted"))
+	table.insert(out, ui.span(ns, if inv.namespace or inv.allNamespaces then "mono" else "muted"))
+	return out
 end
 
 local function plural(n: number, word: string): string
@@ -66,16 +124,55 @@ end
 
 local SEVERITY_TONE: { [string]: string } = { error = "error", warning = "warning", info = "muted" }
 
+-- klog's `E1110 11:06:29.652110   60233 ` head differs on every repeat.
+local KLOG_HEAD = "^[EWIF]%d%d%d%d %d%d:%d%d:%d%d%.%d+%s+%d+ "
+
+type Entry = { text: string, severity: string, count: number, klog: boolean }
+
+-- Identical messages once each with a ×N count; kubectl's own sentences
+-- before klog lines, which repeat the cause in Go terms.
+local function collapsed(diagnostics: { Types.Diagnostic }): { Entry }
+	local out: { Entry } = {}
+	local byText: { [string]: Entry } = {}
+	for _, d in diagnostics do
+		local stripped, n = string.gsub(d.text, KLOG_HEAD, "")
+		local key = d.severity .. "\0" .. stripped
+		local entry = byText[key]
+		if entry then
+			entry.count += 1
+		else
+			local created: Entry = { text = stripped, severity = d.severity, count = 1, klog = n > 0 }
+			byText[key] = created
+			table.insert(out, created)
+		end
+	end
+	local order: { [Entry]: number } = {}
+	for i, e in out do
+		order[e] = i
+	end
+	table.sort(out, function(a: Entry, b: Entry): boolean
+		if a.klog ~= b.klog then
+			return not a.klog
+		end
+		return order[a] < order[b]
+	end)
+	return out
+end
+
 local function diagnosticsNode(diagnostics: { Types.Diagnostic }): Node?
 	local errors, warnings = 0, 0
 	local lines: { Node } = {}
 	local infos: { Node } = {}
-	for _, d in diagnostics do
-		local node = ui.text({ ui.span(d.text, SEVERITY_TONE[d.severity] or "muted") })
-		if d.severity == "error" then
+	for _, e in collapsed(diagnostics) do
+		local spans: { ui.SpanLike } = { ui.span(e.text, SEVERITY_TONE[e.severity] or "muted") }
+		if e.count > 1 then
+			table.insert(spans, ui.span("  ×" .. e.count, "muted"))
+		end
+		local node = ui.text(spans)
+		if e.severity == "error" then
 			errors += 1
 			table.insert(lines, node)
-		elseif d.severity == "warning" then
+		elseif e.severity == "warning" then
 			warnings += 1
 			table.insert(lines, node)
 		else

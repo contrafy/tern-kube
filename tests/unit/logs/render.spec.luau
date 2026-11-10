@@ -447,6 +447,36 @@ describe("logs render helpers", function()
 		expect(Render.sourceLabel(multi, 1)).toContain("·")
 		expect(Render.sourceLabel(multi, 0)).toBe("unattributed")
 	end)
+
+	-- LENS-L2: every SOURCE cell read `tk-logmix-56888bd8bc-8…`, losing the
+	-- pod suffix and container that tell the sources apart. Like stern, the
+	-- pod name part all pods share is dropped.
+	it("source labels drop the pod name prefix every pod shares", function()
+		local multi = fixture("ns-logs/logs_-l_app=tk-logmix_--all-containers_--prefix_--timestamps")
+		local pods: { [string]: boolean } = {}
+		for i, src in multi.sources do
+			local label = Render.sourceLabel(multi, i)
+			expect((string.find(label, "tk-logmix-", 1, true))).toBeNil()
+			expect(label).toContain(src.container :: string)
+			pods[label] = true
+		end
+		local n = 0
+		for _ in pods do
+			n += 1
+		end
+		expect(n).toBe(#multi.sources)
+		expect(Render.commonPodPrefix({ "web-65d7d99975-6jsgc", "web-65d7d99975-mtxxk" })).toBe("web-65d7d99975-")
+		expect(Render.commonPodPrefix({ "web-a-x", "web-b-y" })).toBe("web-")
+		expect(Render.commonPodPrefix({ "api", "web" })).toBe("")
+		expect(Render.commonPodPrefix({ "web-1" })).toBe("")
+	end)
+
+	it("the SOURCE column truncates in the middle", function()
+		local s, inv = fixture("ns-logs/logs_-l_app=tk-logmix_--all-containers_--prefix_--timestamps")
+		local node = rendered(s, inv)
+		local grid = nodes.find(node, nodes.class("tk-grid")) :: any
+		expect(nodes.find(grid, nodes.class("tk-mid")) ~= nil).toBe(true)
+	end)
 end)
 
 return nil

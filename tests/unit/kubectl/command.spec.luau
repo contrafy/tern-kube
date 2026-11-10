@@ -158,6 +158,29 @@ describe("kubectl command", function()
 		})
 	end)
 
+	-- The lens "Filter in Explore" chip: the same list (type, namespace or -A,
+	-- -l, pinned target) with Explore's text filter open.
+	it("filter URL reopens the listed type in Explore with its filter focused", function()
+		expect(params(Command.exploreFilterUrl(inv("--context kind get deploy -n web -l app=x")) :: string)).toEqual({
+			kind = "Deployment",
+			group = "apps",
+			namespace = "web",
+			context = "kind",
+			selector = "app=x",
+			search = "1",
+		})
+		expect(params(Command.exploreFilterUrl(inv("get widgets.lens.example.com -A")) :: string)).toEqual({
+			kind = "widgets",
+			group = "lens.example.com",
+			namespace = "*",
+			search = "1",
+		})
+		expect(Command.exploreFilterUrl(inv("get pods,svc"))).toBeNil()
+		expect(Command.exploreFilterUrl(inv("get all"))).toBeNil()
+		expect(Command.exploreFilterUrl(inv("get pod db-0"))).toBeNil()
+		expect(Command.exploreFilterUrl(inv("describe pods"))).toBeNil()
+	end)
+
 	-- Lens chips on Helm-managed objects open the release in Explore: the
 	-- release namespace must win over the lensed command's -n (a describe
 	-- in another namespace still names the release's own).

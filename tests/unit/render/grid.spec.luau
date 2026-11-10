@@ -158,6 +158,34 @@ describe("render grid", function()
 			"tk-grid tk-cols-9 tk-a-7 tk-b-6 tk-c-4"
 		)
 	end)
+
+	-- Pods of one ReplicaSet differ only in their last segment; an end
+	-- ellipsis made `web-65d7d99975-6j…` and `web-65d7d99975-mt…` identical.
+	it("splits long names so the unique end stays visible", function()
+		expect({ Grid.splitMiddle("web-65d7d99975-6jsgc") }).toEqual({ "web-65d7d99975", "-6jsgc" })
+		expect({ Grid.splitMiddle("kube-apiserver-tern-kube-dev-control-plane") }).toEqual({
+			"kube-apiserver-tern-kube-dev-control",
+			"-plane",
+		})
+		expect({ Grid.splitMiddle("statefulset-x-0") }).toEqual({ "statefulset", "-x-0" })
+		expect({ Grid.splitMiddle("db-0") }).toEqual({ "db-0", "" })
+		expect({ Grid.splitMiddle("abcdefghijklmnopqrstuvwxyz") }).toEqual({ "abcdefghijklmnopqr", "stuvwxyz" })
+	end)
+
+	it("middle columns draw a shrinking head and a fixed tail, titled with the whole value", function()
+		local s = spec()
+		s.rows[1].cells[1] = "web-65d7d99975-6jsgc"
+		s.middle = { NAME = true }
+		local row = nodes.findAll(Grid.grid(s), nodes.class("tk-r"))[1]
+		local cell = nodes.findAll(row, nodes.class("tk-c"))[1] :: any
+		expect(classesOf(cell)).toContain("tk-midc")
+		expect(cell.p.title).toBe("web-65d7d99975-6jsgc")
+		expect(nodes.text(nodes.find(cell, nodes.class("tk-mid-h")) :: any)).toBe("web-65d7d99975")
+		expect(nodes.text(nodes.find(cell, nodes.class("tk-mid-t")) :: any)).toBe("-6jsgc")
+		-- Short names and grids without `middle` keep the plain text cell.
+		local plain = nodes.findAll(Grid.grid(spec()), nodes.class("tk-r"))[1]
+		expect(nodes.find(plain, nodes.class("tk-mid-h"))).toBeNil()
+	end)
 end)
 
 describe("render cells", function()
@@ -176,6 +204,14 @@ describe("render cells", function()
 		expect(table.find(tones("READY", "ratio", "1/1"), "success") ~= nil).toBe(true)
 		expect(table.find(tones("RESTARTS", "count", "3 (2m ago)"), "warning") ~= nil).toBe(true)
 		expect(table.find(tones("RESTARTS", "count", "0"), "warning")).toBeNil()
+	end)
+
+	-- Every pod restarted by a Docker restart a day ago glowed yellow, the
+	-- same as a pod crashing now; the tone follows the Problems rule.
+	it("tones only recent restarts as warnings", function()
+		expect(table.find(tones("RESTARTS", "count", "2 (25h ago)"), "warning")).toBeNil()
+		expect(table.find(tones("RESTARTS", "count", "4"), "warning")).toBeNil()
+		expect(table.find(tones("RESTARTS", "count", "1 (40s ago)"), "warning") ~= nil).toBe(true)
 	end)
 
 	it("mutes a short ratio on a finished row, keeps a full one green", function()

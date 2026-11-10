@@ -119,6 +119,42 @@ describe("mutation view: successful runs", function()
 		local del = render("real/mutate-ops/delete_pod_scratch", "kubectl delete pod scratch " .. NS)
 		expect(badgeTexts(del)).toContain("1 deleted")
 	end)
+
+	-- MUT-F17: a label, annotate or pause result showed a "1 other" chip.
+	it("names the track-1 verbs instead of counting them as other", function()
+		for _, case in
+			{
+				{ "kubectl label pod web-1 a=b " .. NS, "pod/web-1 labeled", "1 labeled", "info" },
+				{ "kubectl annotate pod web-1 a=b " .. NS, "pod/web-1 annotated", "1 annotated", "info" },
+				{ "kubectl patch deployment api -p {} " .. NS, "deployment.apps/api patched", "1 patched", "info" },
+				{ "kubectl rollout pause deployment/api " .. NS, "deployment.apps/api paused", "1 paused", "info" },
+				{ "kubectl rollout resume deployment/api " .. NS, "deployment.apps/api resumed", "1 resumed", "info" },
+				{
+					"kubectl rollout undo deployment/api " .. NS,
+					"deployment.apps/api rolled back",
+					"1 rolled back",
+					"info",
+				},
+				{ "kubectl cordon n1", "node/n1 cordoned", "1 cordoned", "warning" },
+				{ "kubectl uncordon n1", "node/n1 uncordoned", "1 uncordoned", "info" },
+			}
+		do
+			local view =
+				MutationView.render(captures.fromLines(case[1], { case[2] }, 0), Viewstate.default(), Viewstate)
+			expect(toneOf(badge(view, case[3]))).toBe(case[4])
+			expect(badge(view, "1 other")).toBeNil()
+		end
+	end)
+
+	it("counts one stray output line in the singular", function()
+		local view = MutationView.render(
+			captures.fromLines("kubectl delete pod scratch " .. NS, { 'pod "scratch" deleted', "something odd" }, 0),
+			Viewstate.default(),
+			Viewstate
+		)
+		local other = nodes.find(view, nodes.key("other")) :: Node
+		expect(nodes.ownText(other)).toBe("Other output  1 line")
+	end)
 end)
 
 describe("mutation view: failures", function()
