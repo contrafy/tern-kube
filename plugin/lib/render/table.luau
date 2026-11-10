@@ -87,7 +87,8 @@ local EXTRA: { [string]: boolean } = {
 }
 
 -- Long identifiers: cut in the middle so both ends (a pod's hash suffix, a
--- file name) stay readable.
+-- file name) stay readable; Tern cuts the text itself, so the whole value is
+-- the cell's title.
 local MIDDLE: { [string]: boolean } = { NAME = true, PATH = true, FILE = true, SOURCE = true, OBJECT = true }
 
 local DESC_FIRST: { [string]: boolean } = { count = true, quantity = true, percent = true, number = true }
@@ -106,7 +107,9 @@ function M.priority(headers: { string }, index: number): number
 		return ESSENTIAL[h]
 	elseif EXTRA[h] then
 		return 200 - index
-	elseif SECONDARY[h] then
+	elseif SECONDARY[h] or h == "" then
+		-- A header-less column holds short tags (Helm history's latest,
+		-- running, marked): kept before the prose around it.
 		return 600 - index
 	end
 	return 400 - index
@@ -265,6 +268,9 @@ function M.table(spec: Spec): Node
 			else
 				local style = Cells.style(headers[i], columnType, v, finished)
 				cell = { if style then { t = v, s = style } else { t = v } }
+			end
+			if MIDDLE[headers[i]] and v ~= "" and type(cell) == "table" and cell.text == nil and cell.badge == nil then
+				cell = { text = cell, title = v }
 			end
 			local note = if notes then notes[i] else nil
 			if note then

@@ -56,6 +56,17 @@ describe("native table columns", function()
 		expect(col(node, "NAMESPACE").priority > col(node, "LABELS").priority).toBe(true)
 	end)
 
+	-- Helm history's header-less column holds the row's state (latest,
+	-- running, marked): in a narrow split it hid first, before the
+	-- DESCRIPTION prose, so marking a revision showed nothing in its row.
+	it("keeps a header-less tag column longer than prose columns", function()
+		local h = { "REV", "STATUS", "UPDATED", "CHART", "APP VERSION", "DESCRIPTION", "" }
+		expect(Table.priority(h, 7) > Table.priority(h, 6)).toBe(true)
+		expect(Table.priority(h, 7) > Table.priority(h, 5)).toBe(true)
+		expect(Table.priority(h, 7) > Table.priority(h, 3)).toBe(true)
+		expect(Table.priority(h, 2) > Table.priority(h, 7)).toBe(true)
+	end)
+
 	it("lets NAME take the spare width and cut in the middle so pod suffixes stay unique", function()
 		local c = col(Table.table(spec()), "NAME")
 		expect(c.grow).toBe(1)
@@ -133,9 +144,30 @@ describe("native table rows", function()
 		local s = spec()
 		s.rows[1].notes = { [2] = "(other ns)" }
 		local node = Table.table(s)
-		local cell = (node.p :: any).rows[1].cells[col(node, "NAME").id]
+		local cell = (node.p :: any).rows[1].cells[col(node, "NAME").id].text
 		expect(cell[#cell].t).toBe(" (other ns)")
 		expect(cell[#cell].s).toBe("muted")
+	end)
+
+	-- Tern cuts the text itself (the DOM holds "charts/shop as tern-tes…"):
+	-- rows that differ only in the cut part look the same, and the title is
+	-- the only place the whole value is left to read.
+	it("gives middle-cut cells their whole value as title", function()
+		local node = Table.table(spec())
+		local p = node.p :: any
+		local name = p.rows[1].cells[col(node, "NAME").id]
+		expect(name.text[1].t).toBe("web-1")
+		expect(name.title).toBe("web-1")
+		expect(p.rows[1].cells[col(node, "NODE").id].title).toBeNil()
+	end)
+
+	it("keeps a cell function's own title on a middle-cut cell", function()
+		local s = spec()
+		s.cell = function(_c: string, _t: Types.ColumnType, value: string): ui.Node
+			return ui.text({ ui.span(value) }, { title = "full " .. value })
+		end
+		local node = Table.table(s)
+		expect((node.p :: any).rows[1].cells[col(node, "NAME").id].title).toBe("full web-1")
 	end)
 end)
 
