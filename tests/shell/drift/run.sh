@@ -723,6 +723,20 @@ expect_out 'create  Secret/new-creds  apps       +9 -0  placeholders: pw'
 expect_out "+  pw: 'REPLACE_ME (placeholder)'"
 expect_out "+  user: '***'"
 
+# Real kubectl output: kubectl masks Secret data and prints the missing live
+# object as the document `null`, so the old side is one `-null` line. It is
+# still a create, never a modify of a live Secret.
+fresh "a new Secret diffed against null is a create"
+diff_from "$here/cases/secret-create-null.diff"
+printf 'v1\tSecret\tapps\tnew-creds\tpw,\n' >"$FAKE_DIR/manifest.tsv"
+run sh -f a.yaml --format text
+expect_rc 1
+expect_out 'create  Secret/new-creds  apps       +10 -0  placeholders: pw'
+expect_out '1 create, 0 modify, 0 delete; +10 -0'
+run sh -f a.yaml --format json
+expect_rc 1
+expect_out '"action":"create","added":10,"removed":0'
+
 fresh "placeholders: without placeholder values nothing changes"
 diff_from "$here/cases/secret-last-applied.diff"
 printf 'v1\tSecret\ttern-test-apps\tapp-secret\t\n' >"$FAKE_DIR/manifest.tsv"

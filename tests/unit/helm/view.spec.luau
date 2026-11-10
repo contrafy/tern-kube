@@ -178,4 +178,21 @@ describe("helm view: helm missing", function()
 	end)
 end)
 
+describe("helm view: empty release list", function()
+	-- The list query names every status (Query.LIST_STATUSES) because Helm 4
+	-- dropped `helm list -a`; the empty state must not tell a Helm 4 user to
+	-- run a flag their helm rejects.
+	it("names the listing without helm list -a", function()
+		local v: any = {
+			h = { lists = { ["tern-test-helm"] = { status = "ok", data = {} } } },
+			hctx = { helm = "helm" },
+			route = { kind = "helm-releases", namespace = "tern-test-helm" },
+			filter = "",
+		}
+		local text = nodes.text({ k = "col", c = HelmView.body(v) :: any })
+		expect(text).toContain("No Helm releases (any status) in this namespace scope")
+		expect((string.find(text, "list -a", 1, true))).toBeNil()
+	end)
+end)
+
 return nil

@@ -161,6 +161,31 @@ describe("drift.report over a whole source (kubectl diff -R -f drift)", function
 		end
 	end)
 
+	-- kubectl prints a brand-new Secret's live side as `-null`; the row must
+	-- say "missing" (A creates it), not "changed" against a live Secret.
+	it("reports a new Secret as missing although kubectl diffs it against null", function()
+		local docs: { Drift.Doc } = {}
+		addDocs(
+			docs,
+			"s.yaml",
+			"apiVersion: v1\nkind: Secret\nmetadata:\n  name: fresh\n  namespace: tern-test-drift\n",
+			SOURCE
+		)
+		local segs = Diffseg.parse(table.concat({
+			"diff -u -N /tmp/LIVE-1/v1.Secret.tern-test-drift.fresh /tmp/MERGED-2/v1.Secret.tern-test-drift.fresh",
+			"--- /tmp/LIVE-1/v1.Secret.tern-test-drift.fresh\t2026-01-01",
+			"+++ /tmp/MERGED-2/v1.Secret.tern-test-drift.fresh\t2026-01-01",
+			"@@ -1 +1,2 @@",
+			"-null",
+			"+apiVersion: v1",
+			"+kind: Secret",
+		}, "\n")).segments
+		local r = Drift.report(SOURCE, { docs = docs }, segs, {}, {})
+		expect(keys(r.changed)).toEqual({})
+		expect(keys(r.missing)).toEqual({ "/Secret/tern-test-drift/fresh" })
+		expect(r.missing[1].reason).toBe("create")
+	end)
+
 	it("reports cluster objects no manifest declares, but not defaults", function()
 		local r = full()
 		expect(keys(r.unmanaged)).toEqual({ "/ConfigMap/tern-test-drift/hand-made" })

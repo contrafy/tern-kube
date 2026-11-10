@@ -69,7 +69,7 @@ export type Ctx = {
 	origin: string?,
 }
 
--- `helm list -a -A` for chart auto-detect, read once per index (scanGen).
+-- `helm list -A` of every status for chart auto-detect, read once per index (scanGen).
 export type Releases = {
 	status: "idle" | "loading" | "ok" | "error",
 	gen: number,

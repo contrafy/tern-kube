@@ -61,8 +61,8 @@ every source and whatever reports were opened before.
 `A` the whole source (both through the approve block), `E` exports the
 selected live object and `X` everything shown. Applying several documents,
 or one that shares its file, writes them to a 0600 bundle under the plugin
-data directory (`tmp/apply-*.yaml`); the approve block deletes it when it
-finishes or is cancelled (a sweep removes leftovers after 24 hours).
+data directory (`tmp/apply-*.yaml`), deleted when the approve block closes
+(a sweep removes leftovers after 24 hours).
 
 A Secret whose manifest still holds the export placeholder `REPLACE_ME`
 (in `stringData`, or base64 in `data`) is marked `placeholder` on its row,
@@ -282,6 +282,10 @@ Secrets in the source that still hold the export placeholder `REPLACE_ME`
 says `placeholders: KEYS`, a warning line follows the summary, and their
 `*** (after)` diff lines read `REPLACE_ME (placeholder)`. The exit status is
 unchanged.
+
+kubectl masks Secret data before diffing and prints a Secret missing from
+the cluster as the one line `-null`; such a Secret counts as create (in
+the CLI and in Explore), and that line is not counted as removed.
 
 When a namespace of the source does not exist on the context, `kubectl
 diff` compares nothing. The CLI then diffs the objects in existing
