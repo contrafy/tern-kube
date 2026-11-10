@@ -466,7 +466,7 @@ local function releasesBody(v: Ctx): { Node }
 	local rows = Helm.releases(v.h, v.hctx, v.route, v.filter)
 	if #all == 0 then
 		return {
-			ui.muted("No Helm releases (helm list -a) in this namespace scope; n changes it.", { key = "empty" }),
+			ui.muted("No Helm releases (any status) in this namespace scope; n changes it.", { key = "empty" }),
 		}
 	end
 	local problems = 0

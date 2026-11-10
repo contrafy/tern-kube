@@ -286,7 +286,7 @@ and refuses when the latest revision or its status moved since the preview.
 
 ```
  Explore H / kinds picker / palette / lens chip
-   -> helm-releases (helm list -a, -A or -n by the namespace scope)
+   -> helm-releases (helm list, every status, -A or -n by the namespace scope)
    -> helm-release: status, history, extras (get all --template), computed
       values (get values --all) -> header, values summary, notes, hooks
       -> h history -> = revision diff (two statuses + extras -> revdiff)
