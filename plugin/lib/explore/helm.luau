@@ -65,6 +65,9 @@ export type Ctx = {
 	nonce: (() -> string)?,
 	-- Chart directories of the manifest index (empty until it is built).
 	chartDirs: { HelmTypes.ChartDir },
+	-- Opaque tag of the Explore block; the approve block hands it back after
+	-- a successful rollback so the block refreshes (Link origin).
+	origin: string?,
 }
 
 export type Nav = Gitops.Nav
@@ -1350,6 +1353,7 @@ local function rollback(h: H, ctx: Ctx, route: Route, revision: number?, effects
 		context = t.context,
 		source = Link.sourceOf(t.contextSource, t.confirmed),
 		kubeconfig = t.kubeconfig,
+		origin = ctx.origin,
 	}, nil)
 	if url == nil then
 		toast(effects, "error", "Cannot roll back " .. (route.release or ""), err)

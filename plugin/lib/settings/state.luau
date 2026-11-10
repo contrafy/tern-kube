@@ -31,6 +31,8 @@ export type Field = {
 	values: { string }?,
 	-- Unset is meaningful (kubeconfig, unmanaged_kinds): an empty edit removes the key.
 	optional: boolean?,
+	-- Why the value cannot change (the schema allows one value): shown, never toggled.
+	fixed: string?,
 	doc: string,
 }
 
@@ -44,6 +46,7 @@ local function field(spec: Config.Spec, section: string?): Field
 		max = spec.max,
 		values = spec.values,
 		optional = spec.optional,
+		fixed = if spec.schema.const ~= nil then spec.doc else nil,
 		doc = spec.doc,
 	})
 end
@@ -501,10 +504,12 @@ end
 
 -- Display ----------------------------------------------------------------------
 
-export type Origin = "default" | "file" | "invalid"
+export type Origin = "default" | "file" | "invalid" | "fixed"
 
 function M.origin(s: State, f: Field): Origin
-	if M.rawValue(s.raw, f) == nil then
+	if f.fixed then
+		return "fixed"
+	elseif M.rawValue(s.raw, f) == nil then
 		return "default"
 	end
 	for _, d in M.diagnosticsFor(s.diagnostics, f.path) do
@@ -616,6 +621,10 @@ local function commit(s: State, f: Field, value: any, effects: { Effect }): bool
 end
 
 local function toggle(s: State, f: Field, effects: { Effect }): boolean
+	if f.fixed then
+		s.message = { level = "info", text = f.path .. " is fixed. " .. f.fixed .. "." }
+		return true
+	end
 	if f.kind == "bool" then
 		return commit(s, f, not M.configValue(s.config, f), effects)
 	elseif f.kind == "enum" then
@@ -628,7 +637,7 @@ end
 
 local function startEdit(s: State, effects: { Effect }): boolean
 	local f = M.selected(s)
-	if f.kind == "bool" or f.kind == "enum" then
+	if f.kind == "bool" or f.kind == "enum" or f.fixed then
 		return toggle(s, f, effects)
 	end
 	if s.fileError then

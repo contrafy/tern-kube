@@ -255,6 +255,52 @@ describe("mutate links", function()
 			expect(type(e)).toBe("string")
 		end
 	end)
+
+	-- Explore refreshes its route after a mutation it started (MUT-F9): the
+	-- link carries an opaque origin tag back to mutate_host's onApplied.
+	it("carries an origin tag through forRef, forRelease and decode, and refuses a malformed one", function()
+		local ref: any = { kind = "Deployment", group = "apps", name = "web", namespace = "apps", source = "live" }
+		local url = Link.forRef("restart", ref, { context = "kind-dev", source = "chosen", origin = "explore:12" })
+		expect(url).toContain("origin=explore%3A12")
+		expect((Link.decode(url :: string) :: Link.Request).origin).toBe("explore:12")
+		local rb = Link.forRelease({ name = "web", namespace = "apps" }, 2, { origin = "explore:3" })
+		expect((Link.decode(rb :: string) :: Link.Request).origin).toBe("explore:3")
+		local noTag = Link.forRef("restart", ref, {}) :: string
+		expect((string.find(noTag, "origin", 1, true))).toBeNil()
+		local bad, e = Link.forRef("restart", ref, { origin = "explore 12; rm" })
+		expect(bad).toBeNil()
+		expect(e).toContain("origin")
+		local long = Link.forRef("restart", ref, { origin = string.rep("a", 65) })
+		expect(long).toBeNil()
+	end)
+
+	it("follows a cordon or drain with uncordon and a pause with resume, keeping the pins", function()
+		local base: Link.Request = {
+			op = "drain",
+			kind = "node",
+			name = "w1",
+			recursive = false,
+			overwrite = false,
+			context = "kind-dev",
+			source = "chosen",
+			kubeconfig = "/k",
+			drainFlags = { "--ignore-daemonsets" },
+			origin = "explore:2",
+		}
+		local after = Link.followUp(base) :: Link.Request
+		expect(after.op).toBe("uncordon")
+		expect(after.drainFlags).toBeNil()
+		expect(after.name).toBe("w1")
+		expect(after.kubeconfig).toBe("/k")
+		expect(after.origin).toBe("explore:2")
+		local cordon = table.clone(base)
+		cordon.op = "cordon"
+		cordon.drainFlags = nil
+		expect((Link.followUp(cordon) :: Link.Request).op).toBe("uncordon")
+		local scale = table.clone(cordon)
+		scale.op = "scale"
+		expect(Link.followUp(scale)).toBeNil()
+	end)
 end)
 
 describe("mutate link input", function()

@@ -5,6 +5,7 @@
 -- fields, and command() rebuilds the line with POSIX quoting. The target
 -- cluster must always be visible: context pinned with --context, or echoed
 -- when the lensed command did not pin one.
+local Command = require("../../../plugin/lib/kubectl/command")
 local Quick = require("../../../plugin/lib/actions/quick")
 local t = require("../../lib/test")
 local describe, it, expect = t.describe, t.it, t.expect
@@ -31,6 +32,11 @@ local function unquoteLine(line: string): string
 	assert(body, "line is not sh -c '<script>': " .. line)
 	body = string.gsub(body, "'\"'\"'", "'")
 	return (string.gsub(body, "'\\\\'", "\\"))
+end
+
+-- POSIX single quoting of one word (what `printf '+ %s'` receives).
+local function sq(s: string): string
+	return "'" .. string.gsub(s, "'", "'\\''") .. "'"
 end
 
 -- fish (a login shell Tern may run the line with) reads backslash escapes
@@ -163,19 +169,55 @@ describe("quick actions", function()
 				"deployment.apps/web",
 			})
 			expect(launch.title).toBe("tern-kube edit apps/web @ kind-tern-kube-dev")
-			expect(unquoteLine(launch.line)).toBe(
-				"printf '\\033]0;%s\\007' 'tern-kube edit apps/web @ kind-tern-kube-dev'; "
-					.. "PATH='/opt/k 8s/bin':$PATH; export PATH; "
-					.. "exec '/plugins/tern kube/shell/tern-kube-guard' kubectl edit --context kind-tern-kube-dev "
-					.. "--kubeconfig '/tmp/kube config' -n apps deployment.apps/web"
+			local script = unquoteLine(launch.line)
+			expect(script).toContain(
+				"PATH='/opt/k 8s/bin':$PATH; export PATH; "
+					.. "printf '\\033]0;%s\\007' 'tern-kube edit apps/web @ kind-tern-kube-dev'; "
+					.. "printf 'tern-kube: context %s\\n' kind-tern-kube-dev; "
+			)
+			expect(script).toContain(
+				"; trap : INT; '/plugins/tern kube/shell/tern-kube-guard' kubectl edit --context kind-tern-kube-dev "
+					.. "--kubeconfig '/tmp/kube config' -n apps deployment.apps/web; s=$?; "
 			)
 		end)
 
 		it("leaves PATH alone for a bare kubectl and pins no kubeconfig when unknown", function()
 			local launch = Quick.command("edit", { context = "c" }, ref("Node", "w1"), {}, SETTINGS) :: Quick.Launch
-			expect(unquoteLine(launch.line)).toBe(
-				"printf '\\033]0;%s\\007' 'tern-kube edit w1 @ c'; "
-					.. "exec '/plugins/tern kube/shell/tern-kube-guard' kubectl edit --context c node/w1"
+			expect(unquoteLine(launch.line)).toContain(
+				"printf '\\033]0;%s\\007' 'tern-kube edit w1 @ c'; printf 'tern-kube: context %s\\n' c; "
+					.. "printf '+ %s\\n' 'kubectl edit --context c node/w1'; trap : INT; "
+					.. "'/plugins/tern kube/shell/tern-kube-guard' kubectl edit --context c node/w1; s=$?; "
+			)
+		end)
+
+		-- MUT-F11: the edit split closed as soon as kubectl edit exited, so "Edit
+		-- cancelled", kubectl's result and the path of a denied edit's copy
+		-- (which may hold Secret data) were never seen.
+		it("stays open after the edit with its outcome until Enter; Ctrl-C closes it cleanly", function()
+			local script =
+				unquoteLine((Quick.command("edit", { context = "c" }, ref("Node", "w1"), {}, SETTINGS) :: any).line)
+			expect((string.find(script, "exec ", 1, true))).toBeNil()
+			-- A handler, not an ignore: the guard and kubectl still get Ctrl-C.
+			expect(script).toContain("; trap : INT; ")
+			expect(script).toContain("; s=$?; trap 'exit \"$s\"' INT; case $s in 0) ")
+			expect(script).toContain("applied, or there was nothing to apply")
+			expect(script).toContain(
+				"1) printf '\\ntern-kube: kubectl edit exited 1: denied in Tern, refused or failed"
+			)
+			expect(script).toContain("kubectl-edit-denied-* path printed above")
+			expect(script).toContain("130) s=0; printf '\\ntern-kube: kubectl edit cancelled (Ctrl-C)\\n';;")
+			expect(script).toContain(
+				"*) printf '\\ntern-kube: kubectl edit failed (exit %s); see above\\n' \"$s\";; esac"
+			)
+			expect(script).toContain("; printf 'tern-kube: press Enter to close\\n'; read -r _; exit \"$s\"")
+		end)
+
+		-- LENS-L15: an unpinned split titled itself "@ current context".
+		it("names the resolved current context in the title when none is pinned", function()
+			local script = unquoteLine((Quick.command("edit", {}, ref("Node", "w1"), {}, SETTINGS) :: any).line)
+			expect(script).toContain(
+				"tk_ctx=$(kubectl config current-context); "
+					.. "printf '\\033]0;%s @ %s\\007' 'tern-kube edit w1' \"${tk_ctx:-current context}\"; "
 			)
 		end)
 
@@ -335,11 +377,31 @@ describe("quick actions", function()
 				"command -v bash >/dev/null 2>&1 && exec bash || exec sh",
 			})
 			expect(l.title).toBe("tern-kube shell apps/web-0:app @ kind-tern-kube-dev")
+			local run = "kubectl exec -it --kubeconfig '/tmp/kube config' --context kind-tern-kube-dev -n apps web-0 -c app"
+				.. " -- sh -c 'command -v bash >/dev/null 2>&1 && exec bash || exec sh'"
 			expect(unquoteLine(l.line)).toBe(
 				"printf '\\033]0;%s\\007' 'tern-kube shell apps/web-0:app @ kind-tern-kube-dev'; "
-					.. "exec kubectl exec -it --kubeconfig '/tmp/kube config' --context kind-tern-kube-dev -n apps web-0 -c app"
-					.. " -- sh -c 'command -v bash >/dev/null 2>&1 && exec bash || exec sh'"
+					.. "printf 'tern-kube: context %s\\n' kind-tern-kube-dev; "
+					.. "printf '+ %s\\n' "
+					.. sq(run)
+					.. "; exec "
+					.. run
 			)
+		end)
+
+		-- LENS-L15: a pane whose container is silent looked dead; the split now
+		-- says which context and which exact command it runs before running it.
+		it("echoes the pinned context and the exact command line before running it", function()
+			local l = Quick.command("logs-follow", PINNED, ref("Pod", "p", "ns"), {}) :: Quick.Launch
+			local script = unquoteLine(l.line)
+			expect(script).toContain("printf 'tern-kube: context %s\\n' kind-tern-kube-dev; ")
+			expect(script).toContain(
+				"; printf '+ %s\\n' " .. sq(Command.format(l.argv)) .. "; " .. Command.format(l.argv)
+			)
+			local pf = unquoteLine(
+				(Quick.command("port-forward", UNPINNED, ref("Service", "web", "apps"), { port = 80 }) :: any).line
+			)
+			expect(pf).toContain("; printf '+ %s %s\\n' 'kubectl port-forward -n apps service/web' \"$a\"; ")
 		end)
 
 		it("execs into the resolved pod of a workload", function()
@@ -348,12 +410,15 @@ describe("quick actions", function()
 			expect(l.argv[10]).toBe("web-abc")
 		end)
 
-		it("echoes the effective context first when the target is not pinned", function()
+		it("resolves and echoes the effective context first when the target is not pinned", function()
 			local l = Quick.command("logs-follow", { kubeconfig = "/k/c" }, ref("Pod", "p", "ns"), {})
 			assert(l, "builds")
 			local script = unquoteLine(l.line)
+			expect(string.sub(script, 1, #"tk_ctx=")).toBe("tk_ctx=")
 			expect(script).toContain(
-				"; printf 'tern-kube: context %s\\n' \"$(kubectl --kubeconfig /k/c config current-context)\"; kubectl logs"
+				"tk_ctx=$(kubectl --kubeconfig /k/c config current-context); "
+					.. "printf '\\033]0;%s @ %s\\007' 'tern-kube logs pod ns/p' \"${tk_ctx:-current context}\"; "
+					.. "printf 'tern-kube: context %s (current-context)\\n' \"${tk_ctx:-?}\"; "
 			)
 			expect(l.title).toContain("@ current context")
 			local pinned = Quick.command("logs-follow", PINNED, ref("Pod", "p", "ns"), {})
@@ -467,6 +532,26 @@ describe("quick actions", function()
 			expect((string.find(sh, "trap", 1, true))).toBeNil()
 		end)
 
+		-- A follow of a finished Job (run-now's Follow logs) ends at once and
+		-- the split closed before its logs could be read; a forward that fails
+		-- ("address already in use") vanished the same way. Ctrl-C still
+		-- closes at once with 0 through the trap, without the prompt.
+		it("keeps follow-logs and port-forward splits open when kubectl ends on its own", function()
+			for _, action in { "logs-follow", "port-forward" } do
+				local l = Quick.command(action, PINNED, ref("Job", "once", "apps", "batch"), {})
+				if action == "port-forward" then
+					l = Quick.command(action, PINNED, ref("Pod", "p", "apps"), { port = 80 })
+				end
+				local script = unquoteLine((l :: Quick.Launch).line)
+				local word = if action == "logs-follow" then "logs" else "port-forward"
+				expect(script).toContain(
+					"; s=$?; printf '\\ntern-kube: "
+						.. word
+						.. ' ended (exit %s); press Enter to close\\n\' "$s"; read -r _; exit "$s"'
+				)
+			end
+		end)
+
 		it("resolves the first declared port at run time when none is known", function()
 			local l = Quick.command("port-forward", PINNED, ref("Deployment", "web", "apps", "apps"), {})
 			assert(l, "builds")
@@ -485,14 +570,19 @@ describe("quick actions", function()
 			expect(svc).toContain("jsonpath={.spec.ports[*].port}")
 		end)
 
+		-- MUT-F17: without --profile kubectl 1.34 warns that legacy is
+		-- deprecated on every debug; general is the least privilege that still
+		-- debugs: SYS_PTRACE for --target, host namespaces and / for a node.
 		it("builds the mutating commands for the M3 confirm tier", function()
 			local dp = Quick.command("debug-pod", UNPINNED, ref("Pod", "p", "ns"), { container = "app" })
 			assert(dp, "builds")
-			expect(table.concat(dp.argv, " ")).toBe("kubectl debug -it -n ns p --image=busybox:1.36 --target=app")
+			expect(table.concat(dp.argv, " ")).toBe(
+				"kubectl debug -it -n ns p --image=busybox:1.36 --profile=general --target=app"
+			)
 			local dn = Quick.command("debug-node", PINNED, ref("Node", "kind-control-plane"), { image = "alpine:3.20" })
 			assert(dn, "builds")
 			expect(table.concat(dn.argv, " ", 2)).toBe(
-				"debug -it --kubeconfig /tmp/kube config --context kind-tern-kube-dev node/kind-control-plane --image=alpine:3.20"
+				"debug -it --kubeconfig /tmp/kube config --context kind-tern-kube-dev node/kind-control-plane --image=alpine:3.20 --profile=general"
 			)
 			local cj =
 				Quick.command("cronjob-run", UNPINNED, ref("CronJob", "nightly", "b", "batch"), { suffix = "k3x9" })
@@ -746,6 +836,17 @@ describe("quick actions", function()
 	end)
 
 	describe("chipsFor", function()
+		-- MUT-F17: a known container (a single-container pod, the lensed -c)
+		-- becomes the debug container's --target, so it sees the app's processes.
+		it("passes a known container to the debug chip only", function()
+			local chips =
+				Quick.chipsFor("Pod", ref("Pod", "web-0", "apps"), PINNED, { allowMutations = true, container = "app" })
+			for _, c in chips do
+				local req = Quick.decode(c.url) :: Quick.Request
+				expect(req.opts.container).toBe(if req.action == "debug-pod" then "app" else nil)
+			end
+		end)
+
 		it("gives lens pods three chips whose links decode", function()
 			local chips = Quick.chipsFor("Pod", ref("Pod", "web-0", "apps"), { context = "kind-tern-kube-dev" })
 			local labels: { string } = {}
@@ -942,8 +1043,11 @@ describe("quick actions", function()
 			local l = Quick.command("edit", PINNED, POD, {}, s) :: Quick.Launch
 			local script = unquoteLine(l.line)
 			expect((string.find(script, "/Users/me", 1, true))).toBeNil()
-			expect(script).toContain('exec "$TKUBE_GUARD_CORE" kubectl edit')
-			expect(script).toContain('[ -x "${TKUBE_GUARD_CORE:-}" ]')
+			expect(script).toContain(
+				'; trap : INT; if [ -x "${TKUBE_GUARD_CORE:-}" ]; then "$TKUBE_GUARD_CORE" kubectl edit'
+			)
+			-- A missing guard is reported in the split, which then waits for Enter.
+			expect(script).toContain(" >&2; false; fi; s=$?; ")
 		end)
 	end)
 

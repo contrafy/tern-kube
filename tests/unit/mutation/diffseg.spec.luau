@@ -51,12 +51,46 @@ describe("diffseg over real kubectl diff output", function()
 	it("classifies objects missing from the cluster as creates", function()
 		local s = real("mutate-create/diff_-f_mutate+app.yaml.txt")
 		expect(brief(s)).toEqual({
-			"create|apps|v1|Deployment|tern-test-mutate|api|+40-0",
-			"create||v1|ConfigMap|tern-test-mutate|api-config|+9-0",
-			"create||v1|Service|tern-test-mutate|api|+28-0",
+			"create|apps|v1|Deployment|tern-test-mutate|api|+38-0",
+			"create||v1|ConfigMap|tern-test-mutate|api-config|+7-0",
+			"create||v1|Service|tern-test-mutate|api|+26-0",
 		})
 		expect(counts(s)).toEqual({ 3, 0, 0, 0 })
-		expect(s.added).toBe(77)
+		expect(s.added).toBe(71)
+	end)
+
+	-- The server dry-run assigns a creationTimestamp and uid that the real
+	-- create replaces, so showing them as "added" misstates what is written;
+	-- the hunk header must shrink with them or viewers misplace lines.
+	it("drops server-set metadata lines from create diffs only", function()
+		local text = table.concat({
+			"diff -u -N /tmp/LIVE-1/v1.ConfigMap.ns.new /tmp/MERGED-2/v1.ConfigMap.ns.new",
+			"--- /tmp/LIVE-1/v1.ConfigMap.ns.new\t2026-10-08 03:15:44",
+			"+++ /tmp/MERGED-2/v1.ConfigMap.ns.new\t2026-10-08 03:15:44",
+			"@@ -0,0 +1,9 @@",
+			"+apiVersion: v1",
+			"+data:",
+			"+  uid: kept-because-data",
+			"+kind: ConfigMap",
+			"+metadata:",
+			'+  creationTimestamp: "2026-10-08T08:15:44Z"',
+			"+  name: new",
+			"+  namespace: ns",
+			"+  uid: 5f554128-298f-4b1d-b72d-d31d160dee51",
+			"diff -u -N /tmp/LIVE-1/v1.ConfigMap.ns.old /tmp/MERGED-2/v1.ConfigMap.ns.old",
+			"--- /tmp/LIVE-1/v1.ConfigMap.ns.old\t2026-10-08 03:15:44",
+			"+++ /tmp/MERGED-2/v1.ConfigMap.ns.old\t2026-10-08 03:15:44",
+			"@@ -1,2 +1,2 @@",
+			" metadata:",
+			"-  uid: a",
+			"+  uid: b",
+		}, "\n")
+		local s = Diffseg.parse(text)
+		expect(brief(s)).toEqual({ "create||v1|ConfigMap|ns|new|+7-0", "modify||v1|ConfigMap|ns|old|+1-1" })
+		expect(s.added).toBe(8)
+		expect(s.segments[1].lines[4]).toBe("@@ -0,0 +1,7 @@")
+		expect(table.find(s.segments[1].lines, "+  name: new")).toBe(10)
+		expect(table.find(s.segments[1].lines, "+  uid: kept-because-data")).toBe(7)
 	end)
 
 	it("returns nothing for an unchanged apply (diff exit 0, empty output)", function()
@@ -70,7 +104,7 @@ describe("diffseg over real kubectl diff output", function()
 		expect(brief(s)).toEqual({
 			"modify|apps|v1|Deployment|tern-test-apps|web|+2-2",
 			"modify||v1|ConfigMap|tern-test-apps|app-config|+1-1",
-			"create||v1|ConfigMap|tern-test-apps|preview-extra|+11-0",
+			"create||v1|ConfigMap|tern-test-apps|preview-extra|+9-0",
 		})
 		expect(s.notes).toEqual({})
 	end)
@@ -78,7 +112,7 @@ describe("diffseg over real kubectl diff output", function()
 	it("reads CRD objects whose group and name both contain dots", function()
 		local s = real("mutate-preview/diff_-f_preview+widgets.yaml.txt")
 		expect(brief(s)).toEqual({
-			"create|lens.example.com|v1alpha1|Widget|tern-test-crd|gadget.v2|+13-0",
+			"create|lens.example.com|v1alpha1|Widget|tern-test-crd|gadget.v2|+11-0",
 			"modify|lens.example.com|v1alpha1|Widget|tern-test-crd|gizmo|+2-2",
 		})
 	end)
@@ -94,8 +128,8 @@ describe("diffseg over real kubectl diff output", function()
 	it("reads cluster-scoped objects (empty namespace in kubectl's file name)", function()
 		local s = real("mutate-preview/diff_-f_preview+cluster-scoped.yaml.txt")
 		expect(brief(s)).toEqual({
-			"create|rbac.authorization.k8s.io|v1|ClusterRole||tern-test-preview-wildcard|+13-0",
-			"create||v1|Namespace||tern-test-preview|+13-0",
+			"create|rbac.authorization.k8s.io|v1|ClusterRole||tern-test-preview-wildcard|+11-0",
+			"create||v1|Namespace||tern-test-preview|+11-0",
 		})
 	end)
 

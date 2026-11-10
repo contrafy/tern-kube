@@ -118,6 +118,53 @@ local function diffLineKey(line: string): string?
 	return if merged then basename(merged) else nil
 end
 
+-- A dry-run create returns the creationTimestamp and uid the server picked
+-- for this dry run only; the real create assigns its own, so they are not
+-- part of what the user approves. Only top-level metadata keys are dropped,
+-- and each hunk header shrinks (and later hunks shift) to stay consistent.
+local SERVER_SET = { creationTimestamp = true, uid = true }
+
+local function stripServerSet(seg: Segment)
+	local out = {}
+	local top: string? = nil
+	local header: number? = nil
+	local dropped, shift = 0, 0
+	local function close()
+		local at = header
+		if at and (dropped > 0 or shift > 0) then
+			local line = out[at]
+			local a, b, c, d, rest = string.match(line, "^@@ %-(%d+)(,?%d*) %+(%d+),?(%d*)( @@.*)$")
+			if a then
+				local count = (if d == "" then 1 else tonumber(d) :: number) - dropped
+				local startAt = math.max(tonumber(c) :: number - shift, if count > 0 then 1 else 0)
+				out[at] = string.format("@@ -%s%s +%d,%d%s", a, b :: string, startAt, count, rest :: string)
+			end
+		end
+		shift += dropped
+		dropped = 0
+	end
+	for _, line in seg.lines do
+		if string.sub(line, 1, 3) == "@@ " then
+			close()
+			header = #out + 1
+		elseif header then
+			local key = string.match(line, "^[+ ]([%w_]+):")
+			if key then
+				top = key
+			end
+			local sub = string.match(line, "^%+  ([%w_]+): ")
+			if top == "metadata" and sub and SERVER_SET[sub] then
+				dropped += 1
+				seg.added -= 1
+				continue
+			end
+		end
+		table.insert(out, line)
+	end
+	close()
+	seg.lines = out
+end
+
 type Hunk = { oldLeft: number, newLeft: number }
 
 function M.parse(text: string): Summary
@@ -164,6 +211,9 @@ function M.parse(text: string): Summary
 			seg.action = "modify"
 		end
 		local action = seg.action
+		if action == "create" then
+			stripServerSet(seg)
+		end
 		if action == "create" then
 			summary.create += 1
 		elseif action == "modify" then

@@ -5,7 +5,7 @@
 
 mc_object "$MCA" deploy tkm-web deployment || return
 xkey escape
-xwait 'tkm-api' '.tk-grid *' || return
+xwait 'tkm-api' "$XT *" || return
 mc_pick_first || return
 E2E_WAIT=20 wait_for "the list matrix" has "$EX [data-role='tern-kube.compare-matrix']" || return
 xkey '?'

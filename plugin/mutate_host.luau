@@ -171,6 +171,31 @@ local function appendAudit(line: string)
 	end
 end
 
+-- Explore (same host VM) subscribes to refresh the route that started a
+-- mutation; a failing listener never affects the approve block.
+local listeners: { (Session.Applied) -> () } = {}
+
+function M.onApplied(fn: (Session.Applied) -> ()): () -> ()
+	table.insert(listeners, fn)
+	return function()
+		local i = table.find(listeners, fn)
+		if i then
+			table.remove(listeners, i)
+		end
+	end
+end
+
+local function notifyApplied(info: Session.Applied)
+	for _, fn in table.clone(listeners) do
+		local ok, err = pcall(function()
+			fn(table.clone(info))
+		end)
+		if not ok then
+			log.warn("tern-kube onApplied listener failed", tostring(err))
+		end
+	end
+end
+
 function exec(h: Host, effects: { Effect })
 	for _, e in effects do
 		if h.stopped then
@@ -204,6 +229,8 @@ function exec(h: Host, effects: { Effect })
 			h.cx:copy(e.text or "")
 		elseif t == "toast" then
 			h.cx:toast((e.level or "info") :: any, e.text or "")
+		elseif t == "applied" then
+			notifyApplied(e.applied :: Session.Applied)
 		elseif t == "exit" then
 			h.stopped = true
 			-- `tern open --wait` ignores the exit code, and a non-zero exit
@@ -360,6 +387,8 @@ function M.register()
 			end
 		end,
 		features = Textfield.FEATURES,
+		-- People's text in the UI face; commands, diffs and names stay mono.
+		font = "sans",
 	})
 end
 

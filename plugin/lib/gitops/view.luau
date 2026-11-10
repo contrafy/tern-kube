@@ -107,12 +107,18 @@ local function refText(ref: Ref): string
 	return string.lower(ref.kind) .. "/" .. ref.name .. (if ref.namespace then " -n " .. ref.namespace else "")
 end
 
+-- A rendered document (helm template, kustomize build) has no lines in the
+-- file it names: a line would point at the wrong text.
 local function docPlace(v: Ctx, d: Doc): string
 	local where = Gitops.rel(v.g, d.file)
-	if d.startLine > 1 or d.endLine > 1 then
+	if not d.rendered and (d.startLine > 1 or d.endLine > 1) then
 		where ..= string.format(":%d", d.startLine)
 	end
 	return where
+end
+
+local function lineRange(d: Doc): string
+	return if d.rendered then "-" else string.format("%d-%d", d.startLine, d.endLine)
 end
 
 local function docKind(d: Doc): string
@@ -306,7 +312,7 @@ local function manifestBody(v: Ctx): { Node }
 			key = key,
 			cells = {
 				Gitops.rel(g, d.file),
-				string.format("%d-%d", d.startLine, d.endLine),
+				lineRange(d),
 				d.source.label,
 				docKind(d),
 				gitState(v, d.file),
@@ -381,10 +387,20 @@ end
 
 local STEP_TEXT: { [string]: string } = {
 	index = "Waiting for the manifest index …",
+	chart = "No manifest declares it: rendering the chart of its Helm release …",
 	reading = "Reading the manifest …",
 	writing = "Writing the manifest to a temporary file (0600) …",
 	diffing = "Running kubectl diff …",
 }
+
+-- After an apply was offered or an export written; leaving and coming back
+-- (or r) compares again.
+local function staleNode(): Node
+	return ui.text({
+		ui.span("Out of date: ", "warning strong"),
+		ui.span("an apply or export ran since this comparison; r compares again.", "muted"),
+	}, { key = "stale", role = "tern-kube.gitops-stale" })
+end
 
 local function diffBody(v: Ctx): { Node }
 	local g = v.g
@@ -425,19 +441,30 @@ local function diffBody(v: Ctx): { Node }
 		table.insert(out, ui.row(docChips, { key = "docs", wrap = true, role = "tern-kube.chips" }))
 	end
 	local status = load.status
+	if load.stale and (status == "ok" or status == "error" or status == "nomatch") then
+		table.insert(out, staleNode())
+	end
 	if STEP_TEXT[status] then
 		local text = STEP_TEXT[status]
 		if status == "diffing" and load.argv then
 			text = "Running " .. typed(load.argv :: { string }) .. " …"
 		end
 		table.insert(out, ui.muted(text, { key = "status" }))
+	elseif status == "nomatch" and load.helm then
+		table.insert(
+			out,
+			ui.text({
+				ui.span("Managed by Helm release " .. (load.helm :: string) .. ".", "warning"),
+				ui.span("  No chart directory in this repository renders it; H opens the release.", "muted"),
+			}, { key = "status", role = "tern-kube.gitops-none" })
+		)
 	elseif status == "nomatch" then
 		table.insert(
 			out,
 			ui.text({
 				ui.span("No manifest declares " .. refText(ref) .. ".", "warning"),
 				ui.span("  E exports it.", "muted"),
-			}, { key = "status" })
+			}, { key = "status", role = "tern-kube.gitops-none" })
 		)
 	elseif status == "error" then
 		table.insert(
@@ -524,7 +551,7 @@ local function chooserBody(v: Ctx): { Node }
 	if not Gitops.ready(g) then
 		return out
 	end
-	local sources = Gitops.sources(g, v.gctx)
+	local sources, hidden = Gitops.chooserSources(g, v.gctx)
 	if #sources == 0 then
 		table.insert(out, ui.muted("No manifest sources found under the repository.", { key = "empty" }))
 		return out
@@ -537,7 +564,7 @@ local function chooserBody(v: Ctx): { Node }
 			cells = {
 				s.label,
 				TYPE_TEXT[s.type] or s.type,
-				tostring(s.docs),
+				if s.auto and s.docs == 0 then "-" else tostring(s.docs),
 				table.concat(s.namespaces, " "),
 				s.note or "",
 			},
@@ -545,10 +572,14 @@ local function chooserBody(v: Ctx): { Node }
 		}
 		keys[i] = s.id
 	end
-	table.insert(
-		out,
-		ui.muted(count(#sources, "source") .. " · enter compares one with the cluster", { key = "count" })
-	)
+	local summary = count(#sources, "source") .. " · enter compares one with the cluster"
+	if hidden > 0 then
+		summary ..= string.format(
+			" · %s of releases in other namespaces hidden (n changes the namespace)",
+			count(hidden, "chart match", "chart matches")
+		)
+	end
+	table.insert(out, ui.muted(summary, { key = "count" }))
 	for _, n in
 		v.grid(
 			"src",
@@ -643,6 +674,9 @@ local function reportBody(v: Ctx, load: Gitops.DriftLoad): { Node }
 			)
 			else "Rendered with " .. Gitops.rel(g, (auto.values :: { string })[1]) .. "."
 		table.insert(out, ui.muted(how, { key = "auto" }))
+	end
+	if load.stale and (load.status == "ok" or load.status == "error") then
+		table.insert(out, staleNode())
 	end
 	if load.status == "index" then
 		table.insert(out, M.scanLine(g))
@@ -752,13 +786,23 @@ local function reportBody(v: Ctx, load: Gitops.DriftLoad): { Node }
 	if src.type ~= "helm" then
 		table.insert(list, { "Export (E)", "gitops-key=E", "accent", "Write the selected live object to manifests" })
 		table.insert(list, { "Export all shown (X)", "gitops-key=X", "accent" })
+	elseif #Gitops.entries(load, "unmanaged") > 0 then
+		table.insert(list, {
+			"Export unmanaged (E)",
+			"gitops-key=E",
+			"accent",
+			"Write the selected unmanaged object to manifests; chart objects stay in the chart",
+		})
+		table.insert(list, { "Export all unmanaged (X)", "gitops-key=X", "accent" })
 	end
 	if src.auto then
 		table.insert(list, {
 			"Copy as gitops.helm entry",
 			"gitops-copyhelm=",
 			"accent",
-			"Copies the config entry for this source; the config is not changed",
+			if src.auto.useDeployedValues
+				then "Copies a config entry without values: the deployed values (and --set) cannot be configured"
+				else "Copies the config entry for this source; the config is not changed",
 		})
 	end
 	table.insert(list, { "Filter (f)", "gitops-key=f" })
@@ -867,7 +911,7 @@ local function itemBody(v: Ctx, load: Gitops.DriftLoad, e: Gitops.Entry): { Node
 			local key = d.file .. ":" .. d.startLine
 			rows[i] = {
 				key = key,
-				cells = { Gitops.rel(v.g, d.file), string.format("%d-%d", d.startLine, d.endLine), docKind(d) },
+				cells = { Gitops.rel(v.g, d.file), lineRange(d), docKind(d) },
 				action = "open=" .. key,
 			}
 			keys[i] = key
@@ -1477,9 +1521,15 @@ end
 M.HINTS = {
 	manifest = "j/k move · m open at line · = diff · E export · r rescan · esc back",
 	diff = "m open manifest · a apply · [ ] other manifests · r diff again · esc back",
+	["diff-none"] = "E export · r diff again · esc back",
+	["diff-helm"] = "H helm release · r diff again · esc back",
 	drift = "j/k move · enter open · r rescan · esc back",
-	["drift-report"] = "enter details · f filter · m manifest · a apply · A apply source · E export · X export all · ctrl+d delete · x across contexts · r again",
+	["drift-report"] = "enter details · f filter · m manifest · a apply · A apply source · E export · X export all · ctrl+d delete unmanaged · x across contexts · r again",
+	["drift-report-helm"] = "enter details · f filter · m manifest · a apply · A apply source · E export unmanaged · X all unmanaged · ctrl+d delete unmanaged · x across contexts · r again",
 	["drift-item"] = "m open manifest · a apply · E export · ctrl+d delete (unmanaged) · x across contexts · esc back",
+	["drift-changed"] = "m open manifest · a apply · E export · x across contexts · esc back",
+	["drift-chart"] = "m open manifest · a apply · x across contexts · esc back",
+	["drift-unmanaged"] = "E export · ctrl+d delete · x across contexts · esc back",
 	["drift-other"] = "m open manifest · read-only: c switches context · x across contexts · esc back",
 	["matrix-pick"] = "j/k move · enter choose · esc back",
 	matrix = "enter open cell · [ ] context · f filter · x contexts · Y copy commands · r again · esc back",
@@ -1487,12 +1537,33 @@ M.HINTS = {
 	git = "b branch · e message · p push · P pull request · o only exported files · enter run · esc back",
 }
 
-function M.hint(route: Route): string
+-- The drift item's keys follow its bucket (and a Helm source: its chart
+-- objects are not exported); without the state the generic line is used.
+local function itemHint(load: Gitops.DriftLoad?, key: string): string
+	local e = if load then Gitops.entry(load, key) else nil
+	if load == nil or e == nil then
+		return M.HINTS["drift-item"]
+	elseif e.bucket == "unmanaged" then
+		return M.HINTS["drift-unmanaged"]
+	elseif e.bucket == "changed" and load.source.type ~= "helm" then
+		return M.HINTS["drift-changed"]
+	end
+	return M.HINTS["drift-chart"]
+end
+
+function M.hint(route: Route, g: Gitops.G?, gctx: Gitops.Ctx?): string
+	local load = if g and gctx then Gitops.driftLoad(g, gctx, route) else nil
 	if route.kind == "drift" then
 		if route.item then
-			return M.HINTS[if route.context then "drift-other" else "drift-item"]
+			return if route.context then M.HINTS["drift-other"] else itemHint(load, route.item)
 		elseif route.source then
-			return M.HINTS["drift-report"]
+			local helm = load ~= nil and load.source.type == "helm"
+			return M.HINTS[if helm then "drift-report-helm" else "drift-report"]
+		end
+	elseif route.kind == "diff" and g and route.ref then
+		local diff = g.diffs[Gitops.diffId(route)]
+		if diff and diff.status == "nomatch" then
+			return if diff.helm then M.HINTS["diff-helm"] else M.HINTS["diff-none"]
 		end
 	elseif route.kind == "matrix" and route.across == nil then
 		return M.HINTS["matrix-pick"]

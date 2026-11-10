@@ -3,9 +3,9 @@ Drift: a.yaml (context kind-tern-kube-dev, namespace tern-test-apps)
 CHANGE  RESOURCE                 NAMESPACE       +/-
 modify  Deployment.apps/web      tern-test-apps  +2 -2
 modify  ConfigMap/app-config     tern-test-apps  +1 -1
-create  ConfigMap/preview-extra  tern-test-apps  +11 -0
+create  ConfigMap/preview-extra  tern-test-apps  +9 -0
 
-3 resources drifted (1 create, 2 modify, 0 delete; +14 -3).
+3 resources drifted (1 create, 2 modify, 0 delete; +12 -3).
 
 === modify Deployment.apps tern-test-apps/web (+2 -2)
 @@ -6,7 +6,7 @@
@@ -38,16 +38,14 @@ create  ConfigMap/preview-extra  tern-test-apps  +11 -0
      server.port=8080
      cache.ttl=30s
 
-=== create ConfigMap tern-test-apps/preview-extra (+11 -0)
-@@ -0,0 +1,11 @@
+=== create ConfigMap tern-test-apps/preview-extra (+9 -0)
+@@ -0,0 +1,9 @@
 +apiVersion: v1
 +data:
 +  MODE: preview
 +kind: ConfigMap
 +metadata:
-+  creationTimestamp: "2026-10-08T16:18:54Z"
 +  labels:
 +    app: web
 +  name: preview-extra
 +  namespace: tern-test-apps
-+  uid: d6cb540e-f719-4e97-b9aa-66bc6a927d25

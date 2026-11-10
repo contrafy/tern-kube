@@ -276,9 +276,75 @@ xtext() {
 	alltext "$EX ${1:-*}" | tr '\n' ' '
 }
 
-# The first cell of the selected Explore row.
+# Explore lists are native tables: rows `.sf-tbl-row` keyed by the item
+# (`data-key`, ending in `/NAME`), head `.head`, the selection `.sel`; cells
+# `.sf-tbl-c`, hidden columns are not in the DOM. Tern mounts only the rows
+# near the scroll position, inside the list's own scroller. XT is relative to
+# the Explore block (for xtext/xwait), XROW absolute.
+XT=".sf-tbl-row:not(.head)"
+XROW="$EX $XT"
+
+# The first cell (NAME) of the selected Explore row.
 xsel() {
-	texts "$EX .tk-sel .tk-c" | jq -r '.[0] // empty'
+	texts "$EX .sf-tbl-row.sel > .sf-tbl-c" | jq -r '.[0] // empty'
+}
+
+# xnames: the first cell of every mounted Explore row (JSON array).
+xnames() {
+	hcol 1
+}
+
+# xrow_xy ROW: the center of the mounted Explore row ROW shown in the list's
+# scroller below its sticky head (24 px). ROW is `key=K` (the row whose
+# data-key ends in `/K` or is K), `text=T` (the first row with T in a cell or
+# a cut cell's whole value, its title), or the row whose first cell (or its
+# title) is ROW, a trailing * matching a prefix. Prints nothing when no such
+# row is in view.
+xrow_xy() {
+	box=$(ctl tree "$EX [data-role='tern-kube.scroller']" | jq -c '.nodes[0].rect // [0, 0, 100000, 100000]')
+	case $1 in
+	key=*)
+		k=${1#key=}
+		sel="$EX .sf-tbl-row[data-key\$='/$k'], $EX .sf-tbl-row[data-key='$k']"
+		filter='true'
+		;;
+	text=*)
+		sel="$XROW > .sf-tbl-c"
+		filter='($t[5:]) as $s | ((.text // "") | contains($s)) or ((.title // "") | contains($s))'
+		;;
+	*)
+		sel="$XROW > .sf-tbl-c:first-child"
+		filter='[.text // "", .title // empty] | any(if ($t | endswith("*")) then startswith($t[:-1]) else . == $t end)'
+		;;
+	esac
+	ctl tree "$sel" | jq -r --arg t "$1" --argjson b "$box" "
+		def inview: .rect[1] >= \$b[1] + 24 and .rect[1] + .rect[3] <= \$b[1] + \$b[3];
+		first(.nodes[]? | select($filter) | select(inview)) | .rect |
+			\"\\(.[0] + 20) \\(.[1] + .[3] / 2)\""
+}
+
+# xclick_row ROW: click an Explore row (see xrow_xy), which selects it.
+xclick_row() {
+	xy=$(xrow_xy "$1")
+	[ -n "$xy" ] || {
+		fail "no Explore row \"$1\" in view"
+		return 1
+	}
+	# shellcheck disable=SC2086
+	ctl click $xy >/dev/null
+	sleep 0.4
+}
+
+# xopen_row ROW: double-click an Explore row, which opens it like enter.
+xopen_row() {
+	xy=$(xrow_xy "$1")
+	[ -n "$xy" ] || {
+		fail "no Explore row \"$1\" in view"
+		return 1
+	}
+	# shellcheck disable=SC2086
+	ctl dblclick $xy >/dev/null
+	sleep 0.5
 }
 
 # xkey KEY...: send keys to the focused pane (the Explore block once open).
@@ -612,14 +678,17 @@ helm_world_down() {
 	kc delete namespace "$HNS" "$HNS2" --ignore-not-found --wait=false >/dev/null 2>&1
 }
 
-# hsel_has TEXT: the selected Explore row contains TEXT.
+# hsel_has TEXT: the selected Explore row contains TEXT in a cell or in a cut
+# cell's whole value (its title), cells joined by spaces.
 hsel_has() {
-	case $(texts "$EX .tk-sel .tk-c" | jq -r 'join(" ")') in *"$1"*) true ;; *) false ;; esac
+	case $(ctl tree "$EX .sf-tbl-row.sel > .sf-tbl-c" | jq -r '[.nodes[]? | .text // "", .title // empty] | join(" ")') in *"$1"*) true ;; *) false ;; esac
 }
 
-# hcol N COLUMNS: cell N of every visible row of the Explore grid (JSON array).
+# hcol N [COLUMNS]: cell N of every mounted row of the Explore table (JSON
+# array). COLUMNS is ignored (the native table has no flat cell list); hidden
+# columns are not in the DOM, so N counts the shown ones.
 hcol() {
-	texts "$EX .tk-grid .tk-r .tk-c" | jq -c --argjson n "$1" --argjson w "$2" '[range($n - 1; length; $w) as $i | .[$i]]'
+	texts "$XROW > .sf-tbl-c:nth-child($1)"
 }
 
 # explore_close_all: esc through a deep route stack until Explore closes.

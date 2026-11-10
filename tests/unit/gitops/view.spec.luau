@@ -31,6 +31,18 @@ local function dockText(s: State): string
 	return nodes.text(Render.view(s, 160, 60).dock :: any)
 end
 
+-- Row ids of the native tables in `b`: Tern sends `open` with the id on
+-- activation, so the id is what a row opens.
+local function rowIds(b: nodes.Node): { string }
+	local out: { string } = {}
+	for _, tbl in nodes.findAll(b, nodes.kind("table")) do
+		for _, row in (tbl.p :: any).rows do
+			table.insert(out, row.id)
+		end
+	end
+	return out
+end
+
 local function onWeb(w: G.World, cfg: string?): State
 	return X.selectName(w, X.open(w, nil, cfg), "web")
 end
@@ -53,7 +65,7 @@ describe("gitops view: manifest", function()
 		expect(text).toContain("1-7")
 		expect(text).toContain("clean")
 		local actions = nodes.actions(b)
-		expect(actions).toContain("open=/repo/apps/web.yaml:1")
+		expect(rowIds(b)).toContain("/repo/apps/web.yaml:1")
 		expect(actions).toContain("gitops-key=m")
 		expect(actions).toContain("gitops-diff=1")
 		expect(actions).toContain("refresh")
@@ -146,7 +158,7 @@ describe("gitops view: drift", function()
 		expect(text).toContain("4 sources · enter compares one with the cluster")
 		expect(text).toContain("drift/baseline/")
 		expect(text).toContain("directory")
-		expect(nodes.actions(b)).toContain("open=" .. DRIFT)
+		expect(rowIds(b)).toContain(DRIFT)
 		expect(dockText(s)).toContain("enter open")
 	end)
 
@@ -276,7 +288,7 @@ describe("gitops view: drift", function()
 		expect(text).toContain("helm/chart as tern-test-helm/shop-a with deployed values")
 		expect(text).toContain("helm/chart as tern-test-helm/shop-a with helm/values-staging.yaml")
 		expect(text).toContain("auto: name+version+app version match")
-		expect(nodes.actions(b)).toContain("open=helm:/repo/helm/chart:tern-test-helm/shop-a:deployed")
+		expect(rowIds(b)).toContain("helm:/repo/helm/chart:tern-test-helm/shop-a:deployed")
 	end)
 
 	it("a failed helm list is said in the chooser", function()
@@ -311,12 +323,19 @@ describe("gitops view: drift", function()
 		expect(table.find(nodes.actions(b), "gitops-key=E")).toBeNil()
 		local _, effects = State.update(s, { t = "action", act = "gitops-copyhelm", value = "" })
 		local copied: string? = nil
+		local warned: string? = nil
 		for _, e in effects do
 			if e.t == "copy" then
 				copied = e.text
+			elseif e.t == "toast" then
+				warned = (e.text or "") .. " | " .. (e.sub or "")
 			end
 		end
 		expect(copied).toBe('{"chart":"helm/chart","release":"shop-a","namespace":"tern-test-helm","values":[]}')
+		-- GIT-F14: pasted, this entry renders with the chart defaults, not
+		-- the deployed values: a different report, so the copy says so.
+		expect(warned).toContain("without values")
+		expect(warned).toContain("Deployed values (and --set) cannot go in the config")
 	end)
 end)
 

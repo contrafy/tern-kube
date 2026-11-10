@@ -156,6 +156,18 @@ On confirm the block, possibly on another host with its own kv, emits one
 resolved fields (`context`, `kubeconfig`, `image`, `suffix`) may be added.
 No randomness, no grant, no block: fail closed.
 
+### Approve placement
+
+Native and quick-action approvals open `"over"` the pane that asked (lens
+terminal or Explore): that pane is parked and comes back when the approve
+block closes, so approvals never squeeze the layout. One approve block per
+pane: another request for a covered pane focuses the open block; a
+follow-up button in a finished result (Uncordon, Resume, Follow logs)
+replaces it. Guard approvals open beside the waiting shell (`route.open`).
+After a native mutation succeeds the approve host calls
+`MutateHost.onApplied` listeners with the link's `origin` tag; Explore
+passes `explore:<pane>` and refreshes that route.
+
 ### Lens
 
 - Claims are broad, views strict: globs such as `kubectl -* get *`

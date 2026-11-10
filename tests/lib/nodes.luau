@@ -63,6 +63,23 @@ function M.ownText(node: Node): string
 	if node.k == "tree" then
 		treeText(p.nodes, out)
 	end
+	if node.k == "table" and type(p.cols) == "table" then
+		for _, c in p.cols do
+			table.insert(out, spansText(c.head))
+		end
+		for _, row in p.rows or {} do
+			for _, c in p.cols do
+				local cell = row.cells[c.id]
+				if type(cell) == "table" and cell.badge then
+					table.insert(out, cell.badge.text)
+				elseif type(cell) == "table" and cell.text then
+					table.insert(out, spansText(cell.text))
+				elseif cell ~= nil then
+					table.insert(out, spansText(cell))
+				end
+			end
+		end
+	end
 	return table.concat(out, " ")
 end
 

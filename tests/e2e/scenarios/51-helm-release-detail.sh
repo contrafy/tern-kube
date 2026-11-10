@@ -28,16 +28,16 @@ contains "app version" "$head" "app 2.1"
 contains "status badge" "$(texts "$EX [data-role='tern-kube.helm-head'] .sf-badge")" "deployed"
 contains "unknown key warning" "$(xtext '[data-role="tern-kube.helm-values-summary"] *')" "1 unknown key (typo? the chart never reads it)"
 contains "hooks summary" "$(xtext '[data-role="tern-kube.helm-hooks-summary"] *')" "Hooks"
-contains "notes excerpt masked" "$(xtext '[data-role="tern-kube.helm-notes"] *')" "API token: <redacted: 12 bytes>"
+contains "notes excerpt masked" "$(xtext '[data-role="tern-kube.helm-notes"] *')" "API token: <redacted>"
 no_secrets "release"
 
 # v: values in changed mode; the typo is flagged, secrets masked.
 xkey v
 xwait 'Values web-b (changed)'
-E2E_WAIT=20 xwait 'unknown-key' '.tk-grid *' || return
+E2E_WAIT=20 xwait 'unknown-key' "$XT *" || return
 eq "changed rows" "$(hcol 1 5)" '["auth.apiToken","auth.password","config.mode","typo"]'
 eq "typo state" "$(hcol 2 5 | jq -r '.[3]')" "unknown-key"
-eq "password masked" "$(hcol 4 5 | jq -r '.[1]')" "<redacted: 16 bytes>"
+eq "password masked" "$(hcol 4 5 | jq -r '.[1]')" "<redacted>"
 contains "suspect defaults banner" "$(xtext)" "may include values reused from an earlier revision"
 no_secrets "values (changed)"
 for mode in user computed defaults diff changed; do
@@ -50,7 +50,7 @@ done
 xkey N
 xwait 'Notes web-b'
 contains "notes text" "$(xtext '[data-role="tern-kube.helm-notes"] *')" "web-b serves on port 80 in $HNS."
-contains "notes token masked" "$(xtext '[data-role="tern-kube.helm-notes"] *')" "API token: <redacted: 12 bytes>"
+contains "notes token masked" "$(xtext '[data-role="tern-kube.helm-notes"] *')" "API token: <redacted>"
 no_secrets "notes"
 
 # K: hooks with events and the last run of revision 3.
@@ -60,14 +60,15 @@ hooks=$(xtext '[data-role="tern-kube.helm-hook"] *')
 contains "pre-upgrade hook" "$hooks" "ConfigMap web-b-web-pre-upgrade"
 contains "hook events" "$hooks" "pre-upgrade, pre-rollback"
 contains "hook last run" "$hooks" "Succeeded"
-contains "hook that never ran" "$hooks" "never ran"
+contains "hook that never ran" "$hooks" "never ran in this revision"
 
 # M: manifest; the Secret's values and the ConfigMap's DSN are masked.
 xkey M
 xwait 'Manifest web-b'
 docs=$(xtext '[data-role="tern-kube.helm-doc"] *')
 contains "Secret in the manifest" "$docs" "web-b-web-auth"
-contains "Secret password masked" "$docs" "password: '<redacted: 16 bytes>'"
-contains "DSN echo masked" "$docs" "postgres://app:<redacted: 16 bytes>@db:5432/app"
+contains "Secret password masked" "$docs" "password: '<redacted>'"
+contains "DSN echo masked" "$docs" "postgres://app:<redacted>@db:5432/app"
+excludes "no mask sizes" "$docs" "bytes>"
 no_secrets "manifest"
 explore_close_all

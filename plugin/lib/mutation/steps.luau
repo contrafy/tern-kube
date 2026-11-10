@@ -277,6 +277,40 @@ local function getOne(plan: Plan, kind: string, name: string, label: string): St
 	return step(plan, "targets", "targets", label, argv)
 end
 
+-- Read-only context for risk (types.luau `nodes`, `pdbs`). Soft: a denied
+-- list is an unknown risk states, not a failed preview.
+local function factStep(plan: Plan, kind: T.StepKind, label: string, argv: { string }): Step
+	local s = step(plan, kind, kind, label, argv)
+	s.soft = true
+	return s
+end
+
+local function nodesStep(plan: Plan): Step
+	return factStep(
+		plan,
+		"nodes",
+		"Read every node (is another one schedulable?)",
+		prefixed(plan, nil, {
+			"get",
+			"nodes",
+			"-o",
+			"json",
+		})
+	)
+end
+
+-- The pinned namespace's budgets; -f/-k inputs may name any namespace.
+local function pdbsStep(plan: Plan): Step
+	local ns = M.pinnedNamespace(plan)
+	local words = { "get", "poddisruptionbudgets" }
+	if ns == nil then
+		table.insert(words, "--all-namespaces")
+	end
+	table.insert(words, "-o")
+	table.insert(words, "json")
+	return factStep(plan, "pdbs", "Read the PodDisruptionBudgets", prefixed(plan, ns, words))
+end
+
 local function helmTarget(plan: Plan): Query.Target
 	return { context = plan.targetContext, kubeconfig = plan.kubeconfig }
 end
@@ -353,6 +387,9 @@ function M.forPlan(plan: Plan, timeoutMs: number?): { Step }
 			targets(plan, "Read current replicas"),
 			dryRun(plan, { "scale" }, "Server-side dry run"),
 		}
+		if plan.replicas == 0 then
+			table.insert(out, pdbsStep(plan))
+		end
 	elseif family == "restart" then
 		-- kubectl v1.34 `rollout restart` has no --dry-run: resolving the
 		-- targets is the whole preview.
@@ -385,6 +422,9 @@ function M.forPlan(plan: Plan, timeoutMs: number?): { Step }
 		}
 	elseif family == "cordon" or family == "uncordon" then
 		out = { nodeTargets(plan), dryRun(plan, { family }, "Server-side dry run") }
+		if family == "cordon" then
+			table.insert(out, nodesStep(plan))
+		end
 	elseif family == "drain" then
 		local budget = timeoutMs or M.DEFAULT_TIMEOUT_MS
 		out = {
@@ -414,6 +454,7 @@ function M.forPlan(plan: Plan, timeoutMs: number?): { Step }
 				)
 			)
 		end
+		table.insert(out, nodesStep(plan))
 	else
 		local edit = plan.edit :: T.EditInput
 		out = {
@@ -784,6 +825,39 @@ function M.targets(decoded: any): { Types.ResourceRef }
 	local ref = Resource.fromObject(decoded, "live")
 	if ref then
 		table.insert(out, ref)
+	end
+	return out
+end
+
+export type FactRun = { step: Step, outcome: Outcome?, stdout: string? }
+
+local function listItems(run: FactRun, decode: (string) -> any): ({ any }?, string?)
+	local o = run.outcome
+	if o == nil then
+		return nil, run.step.label .. " did not finish"
+	elseif not o.ok then
+		return nil, o.text
+	end
+	local ok, doc = pcall(decode, run.stdout or "")
+	if not ok or type(doc) ~= "table" or type(doc.items) ~= "table" then
+		return nil, "unreadable JSON"
+	end
+	return doc.items, nil
+end
+
+-- Folds one step run into what the `nodes` and `pdbs` steps read; stays
+-- nil while no run is one of them. One run at a time: a session's own run
+-- records are wider than FactRun, and arrays of them would not convert.
+function M.clusterFact(facts: T.ClusterFacts?, run: FactRun, decode: (string) -> any): T.ClusterFacts?
+	local kind = run.step.kind
+	if kind ~= "nodes" and kind ~= "pdbs" then
+		return facts
+	end
+	local out: T.ClusterFacts = if facts then table.clone(facts) else {}
+	if kind == "nodes" then
+		out.nodes, out.nodesUnknown = listItems(run, decode)
+	else
+		out.pdbs, out.pdbsUnknown = listItems(run, decode)
 	end
 	return out
 end

@@ -56,6 +56,17 @@ function M.badge(text: string, tone: string, props: { [string]: any }?): Node
 	return { k = "badge", p = p }
 end
 
+-- tern.ui.button: `keys` draws keycaps, `actions.click` names the action.
+function M.button(text: string?, props: { [string]: any }?): Node
+	local p: { [string]: any } = { text = text or "" }
+	if props then
+		for k, v in props do
+			p[k] = v
+		end
+	end
+	return { k = "button", p = p }
+end
+
 function M.col(children: { Node }, props: { [string]: any }?): Node
 	local p: { [string]: any } = { gap = "sm" }
 	if props then

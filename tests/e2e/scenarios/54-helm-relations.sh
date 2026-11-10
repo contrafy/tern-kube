@@ -33,7 +33,7 @@ xwait 'rev 3 of 3'
 contains "chip opened the release" "$(xtext '[data-role="tern-kube.explore-header"] *')" "release $HNS/shop-a"
 xkey R
 xwait "Resources shop-a"
-E2E_WAIT=20 xwait 'present' '.tk-grid *' || return
+E2E_WAIT=20 xwait 'present' "$XT *" || return
 eq "resource kinds" "$(hcol 1 5)" '["ConfigMap","Service","Deployment"]'
 eq "resource names" "$(hcol 2 5)" '["shop-a-shop-config","shop-a-shop","shop-a-shop"]'
 eq "all present" "$(hcol 4 5)" '["present","present","present"]'

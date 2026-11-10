@@ -2,8 +2,9 @@
 # shell/tern-kube-guard; the sandbox KUBE_EDITOR (scripts/e2e.sh) runs
 # <sandbox>/edit-script, which changes the ConfigMap's LEVEL. After the save
 # the approve block shows the edited file and the object diff; approve ->
-# kubectl applies it; a second edit denied -> the split exits 1 and keeps
-# its exit sheet, the object is unchanged and the edit is kept in
+# kubectl applies it and the split says so until Enter (MUT-F11); a second
+# edit denied -> the object is unchanged, the split names the denial, then
+# exits 1 and keeps Tern's exit sheet, and the edit is kept in
 # $TMPDIR/kubectl-edit-denied-*. tk-e2e-* objects and the script are
 # deleted at the end.
 edit_cleanup() {
@@ -46,7 +47,8 @@ contains "edit key listed" "$(xtext)" "Edit (e)"
 before=$(pane_count)
 explore_pane=$(ctl state | jq -r '.focused.id')
 
-# Approve: the diff shows the edit, kubectl applies it, the split closes.
+# Approve: the diff shows the edit, kubectl applies it, the split reports
+# the outcome and closes on Enter.
 echo debug >"$E2E_SB/edit-level"
 xkey e
 approve_open || return
@@ -61,6 +63,9 @@ contains "object diff" "$(atext)" "MODIFY ConfigMap tern-test-mutate/tk-e2e-cm"
 contains "new value in the diff" "$(atext)" "LEVEL: debug"
 xkey enter
 approve_closed || return
+E2E_WAIT=20 expect_grid "tern-kube: kubectl edit exited 0" || return
+expect_grid "configmap/tk-e2e-cm edited" || return
+ctl key enter >/dev/null
 E2E_WAIT=20 wait_for "the edit split to close" panes_back || return
 E2E_WAIT=10 wait_for "the edited value" level_is debug
 eq "approved edit applied" "$(level)" debug
@@ -77,6 +82,9 @@ contains "denied edit diff" "$(atext)" "LEVEL: trace"
 denied_dir=$(cat "$E2E_SB/edit-tmpdir")
 xkey escape
 approve_closed || return
+E2E_WAIT=20 expect_grid "tern-kube: kubectl edit exited 1: denied in Tern" || return
+expect_grid "your edit is saved at" || return
+ctl key enter >/dev/null
 E2E_WAIT=20 wait_for "the denied edit split to exit 1" split_exited 1 || return
 ctl close >/dev/null
 split_closed() {

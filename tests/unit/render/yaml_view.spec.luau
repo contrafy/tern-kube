@@ -65,7 +65,7 @@ describe("yaml view: lists", function()
 		local pods = decoder.decode(fixtures.read("real/ns-apps/get_pods_-o_json.txt")).items
 		local rows = gridRows(view)
 		expect(#rows).toBe(#pods)
-		expect(nodes.text(rows[1])).toContain(pods[1].metadata.name)
+		expect((nodes.findAll(rows[1], nodes.class("tk-c"))[2] :: any).p.title).toBe(pods[1].metadata.name)
 		expect(#codes(view)).toBe(0)
 	end)
 

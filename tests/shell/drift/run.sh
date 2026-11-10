@@ -239,8 +239,8 @@ for s in $shells; do
 	grep -q 'current-context' "$FAKE_DIR/argv" && bad "--context given, current context still queried" || ok
 	expect_out "Drift: dir with space/a.yaml it's.yaml (context ctx, namespace ns)"
 	expect_out "modify  Deployment.apps/web      tern-test-apps  +2 -2"
-	expect_out "create  ConfigMap/preview-extra  tern-test-apps  +11 -0"
-	expect_out "3 resources drifted (1 create, 2 modify, 0 delete; +14 -3)."
+	expect_out "create  ConfigMap/preview-extra  tern-test-apps  +9 -0"
+	expect_out "3 resources drifted (1 create, 2 modify, 0 delete; +12 -3)."
 
 	fresh "$s: kustomize source, current context reported"
 	diff_from "$mix"
@@ -332,7 +332,7 @@ for s in $shells; do
 	expect_rc 2
 	expect_out 'Drift: a.yaml across 3 contexts (namespace tern-test-apps)'
 	expect_out 'kind-tern-kube-down: error: kubectl diff exited 1 without a diff: Unable to connect to the server: dial tcp 127.0.0.1:1: connect: connection refused'
-	expect_out 'kind-tern-kube-dev2: 3 resources drifted (1 create, 2 modify, 0 delete; +14 -3).'
+	expect_out 'kind-tern-kube-dev2: 3 resources drifted (1 create, 2 modify, 0 delete; +12 -3).'
 	expect_out '=== [kind-tern-kube-dev2] modify Deployment.apps tern-test-apps/web (+2 -2)'
 	expect_err '[kind-tern-kube-down] Unable to connect to the server'
 	expect_err 'tern-kube-drift: [kind-tern-kube-down] kubectl diff exited 1 without a diff'
@@ -375,7 +375,7 @@ expect_rc 0
 expect_out "usage: tern-kube-drift"
 run sh --version
 expect_rc 0
-expect_out "tern-kube-drift 0.2.0"
+expect_out "tern-kube-drift 0.3.0"
 
 # --- Markdown is safe to post as a PR comment ------------------------------
 
@@ -424,10 +424,10 @@ fresh "--max-diff-lines truncates every format"
 diff_from "$mix"
 run sh -f a.yaml --format markdown --max-diff-lines 2
 expect_out '_Truncated: 2 of 18 lines shown (--max-diff-lines)._'
-expect_out '_Truncated: 2 of 12 lines shown (--max-diff-lines)._'
+expect_out '_Truncated: 2 of 10 lines shown (--max-diff-lines)._'
 expect_no_out '+  MODE: preview'
 run sh -f a.yaml --format json --max-diff-lines 2
-expect_out '"lineCount":15,"truncated":true,"lines":["diff -u -N /tmp/LIVE-2795433448/v1.ConfigMap.tern-test-apps.preview-extra /tmp/MERGED-2701522766/v1.ConfigMap.tern-test-apps.preview-extra","--- /tmp/LIVE-2795433448/v1.ConfigMap.tern-test-apps.preview-extra\t2026-10-08 11:18:54"]'
+expect_out '"lineCount":13,"truncated":true,"lines":["diff -u -N /tmp/LIVE-2795433448/v1.ConfigMap.tern-test-apps.preview-extra /tmp/MERGED-2701522766/v1.ConfigMap.tern-test-apps.preview-extra","--- /tmp/LIVE-2795433448/v1.ConfigMap.tern-test-apps.preview-extra\t2026-10-08 11:18:54"]'
 run sh -f a.yaml --format markdown --max-diff-lines 0
 expect_no_out '_Truncated'
 
@@ -437,7 +437,7 @@ run sh -f a.yaml --format markdown --max-bytes 1500
 expect_rc 1
 size=$(wc -c <"$root/out" | tr -d ' ')
 [ "$size" -le 1500 ] && ok || bad "markdown is $size bytes, limit 1500"
-expect_out '| create | ConfigMap/preview-extra | tern-test-apps | 11 | 0 |'
+expect_out '| create | ConfigMap/preview-extra | tern-test-apps | 9 | 0 |'
 expect_out 'omitted to stay under --max-bytes._'
 [ "$(grep -c '^<details>$' "$root/out")" = "$(grep -c '^</details>$' "$root/out")" ] && ok || bad "unbalanced <details>"
 
@@ -501,7 +501,7 @@ unmanaged_setup
 diff_from "$mix"
 run sh -f a.yaml --unmanaged secrets,serviceaccounts --format markdown
 expect_rc 1
-expect_out '**3 resources drifted** (1 create, 2 modify, 0 delete; +14 -3), **1 unmanaged** in the cluster.'
+expect_out '**3 resources drifted** (1 create, 2 modify, 0 delete; +12 -3), **1 unmanaged** in the cluster.'
 expect_out '| Secret/stray | apps |'
 expect_no_out 'helm.release'
 expect_no_out '| ServiceAccount/default'
@@ -612,7 +612,7 @@ expect_rc 1
 size=$(wc -c <"$root/out" | tr -d ' ')
 [ "$size" -le 2000 ] && ok || bad "markdown is $size bytes, limit 2000"
 expect_out '| Deployment.apps/web | tern-test-apps | in sync | modify +2 -2 |'
-expect_out '| kind-tern-kube-dev2 | **3 resources drifted** (1 create, 2 modify, 0 delete; +14 -3), 0 unmanaged |'
+expect_out '| kind-tern-kube-dev2 | **3 resources drifted** (1 create, 2 modify, 0 delete; +12 -3), 0 unmanaged |'
 expect_out '<summary>[kind-tern-kube-dev] modify ConfigMap tern-test-apps/app-config (+1 -1)</summary>'
 expect_no_out '<summary>[kind-tern-kube-dev2]'
 expect_out '_3 diffs omitted to stay under --max-bytes._'
@@ -731,11 +731,11 @@ diff_from "$here/cases/secret-create-null.diff"
 printf 'v1\tSecret\tapps\tnew-creds\tpw,\n' >"$FAKE_DIR/manifest.tsv"
 run sh -f a.yaml --format text
 expect_rc 1
-expect_out 'create  Secret/new-creds  apps       +10 -0  placeholders: pw'
-expect_out '1 create, 0 modify, 0 delete; +10 -0'
+expect_out 'create  Secret/new-creds  apps       +8 -0  placeholders: pw'
+expect_out '1 create, 0 modify, 0 delete; +8 -0'
 run sh -f a.yaml --format json
 expect_rc 1
-expect_out '"action":"create","added":10,"removed":0'
+expect_out '"action":"create","added":8,"removed":0'
 
 fresh "placeholders: without placeholder values nothing changes"
 diff_from "$here/cases/secret-last-applied.diff"

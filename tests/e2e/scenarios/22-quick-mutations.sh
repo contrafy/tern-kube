@@ -1,8 +1,8 @@
 # Mutating quick actions go through the approve block, then run in a split
 # via a single-use grant: CronJob "Run now" (cancel creates no Job; confirm
-# creates exactly the previewed Job) and pod "Debug" (ephemeral busybox
-# container, shell round trip). Created Jobs and tk-e2e-web are deleted at
-# the end.
+# creates exactly the previewed Job and the approve block stays with it and
+# a Follow logs button) and pod "Debug" (ephemeral busybox container, shell
+# round trip). Created Jobs and tk-e2e-web are deleted at the end.
 manual_jobs() {
 	kc -n tern-test-batch get jobs -o name | grep '^job.batch/nightly-report-manual-' || true
 }
@@ -42,7 +42,13 @@ E2E_WAIT=15 quick_pane "tern-kube run cronjob tern-test-batch/nightly-report @ k
 expect_grid "job.batch/$job created" || return
 [ -n "$(jp tern-test-batch "job/$job" '{.metadata.name}')" ] || fail "previewed job $job not created"
 ctl key enter >/dev/null
+# The approve block stays (over the lens pane) with the Job it created.
 E2E_WAIT=10 wait_for "the run split to close" panes_back
+contains "names the created job" "$(atext)" "$job"
+contains "offers follow logs" "$(texts "$AP button")" "Follow logs"
+# Buttons carry their key hint in their text ("Closeesc").
+click_text 'Close*' "$AP button" || return
+approve_closed || return
 
 lens "kubectl --context kind-tern-kube-dev get pods -n $MNS -l app=tk-e2e-web"
 native
@@ -50,7 +56,7 @@ click_text 'tk-e2e-web-*' '.tk-grid .tk-c'
 click_text Debug "$INS"
 approve_open || return
 a_ready || return
-contains "debug command" "$(atext)" "--image=busybox:1.36"
+contains "debug command" "$(atext)" "--image=busybox:1.36 --profile=general"
 xkey enter
 E2E_WAIT=15 quick_pane "tern-kube debug $MNS/tk-e2e-web-" || return
 sleep 3

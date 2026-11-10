@@ -97,6 +97,8 @@ export type DrainOpts = {
 -- helm-status   `helm status [--revision N] -o json` (release manifest and values)
 -- helm-extras   `helm get all --template` (stored chart metadata and hooks)
 -- helm-history  `helm history --max N -o json` (latest revision and status)
+-- nodes     `get nodes -o json` (cordon/drain: is another node schedulable?)
+-- pdbs      `get poddisruptionbudgets -o json` (scale to 0: does a budget protect the pods?)
 export type StepKind =
 	"dry-run"
 	| "diff"
@@ -109,6 +111,8 @@ export type StepKind =
 	| "helm-status"
 	| "helm-extras"
 	| "helm-history"
+	| "nodes"
+	| "pdbs"
 
 export type Step = {
 	id: string,
@@ -126,6 +130,16 @@ export type Step = {
 	-- Bytes for the process's stdin (the rollback's target manifest for
 	-- `kubectl diff -f -`); never written to disk.
 	stdin: string?,
+}
+
+-- What the `nodes` and `pdbs` steps read. A list is nil when its step is
+-- not part of the plan or could not be read; `*Unknown` then says why the
+-- read failed, so risk states the unknown instead of assuming nothing.
+export type ClusterFacts = {
+	nodes: { any }?,
+	nodesUnknown: string?,
+	pdbs: { any }?,
+	pdbsUnknown: string?,
 }
 
 -- `helm rollback RELEASE REVISION`: what the plan targets and how it runs.

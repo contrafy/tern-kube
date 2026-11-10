@@ -25,11 +25,13 @@ local function render(c: Capture.Capture, vs: vsm.ViewState): (any, TableView.Co
 	return node, counts
 end
 
+-- The cell's title is its whole value; a middle-truncated NAME draws it in
+-- two parts.
 local function rowNames(node: any): { string }
 	local out: { string } = {}
 	for _, r in nodes.findAll(node, nodes.class("tk-r")) do
 		local first = nodes.find(r, nodes.class("tk-c")) :: any
-		table.insert(out, nodes.text(first))
+		table.insert(out, first.p.title)
 	end
 	return out
 end
@@ -205,6 +207,100 @@ describe("table view", function()
 		assert(node, "expected a table body")
 		expect(counts).toEqual({ shown = 200, matched = 1000, total = 1000 })
 		expect(nodes.text(nodes.find(node, nodes.role("tern-kube.pages")) :: any)).toContain("801-1000")
+	end)
+end)
+
+local function fromLines(command: string, lines: { string }): Capture.Capture
+	return Capture.build(runs.run(command), lines, 0, { decode = json.decode })
+end
+
+local function headerAction(node: any, label: string): vsm.ViewState
+	for _, h in nodes.findAll(node, nodes.class("tk-h")) do
+		if (h.p :: any).text == label then
+			return decodeAction(nodes.action(h) :: string) :: vsm.ViewState
+		end
+	end
+	error("no header " .. label)
+end
+
+describe("table view (v1.1 lens fixes)", function()
+	-- In a 520 px pane the facet labels rendered one character per line and
+	-- chips past the edge could not be clicked (LENS-T1).
+	it("every facet group wraps on its own", function()
+		local node = render(build("all-namespaces/get_pods_-A"), vsm.default())
+		for _, key in { "facet-STATUS", "facet-NAMESPACE" } do
+			expect((nodes.find(node, nodes.key(key)) :: any).p.wrap).toBe(true)
+		end
+	end)
+
+	-- LENS-L11: the `+N` after the shown chips was text, so the hidden values
+	-- could not be reached.
+	it("the +N facet overflow expands the facet and collapses it again", function()
+		local lines = { "NAMESPACE   NAME   READY   STATUS    RESTARTS   AGE" }
+		for i = 1, 11 do
+			table.insert(lines, string.format("ns-%02d       p%02d    1/1     Running   0          1m", i, i))
+		end
+		local c = fromLines("kubectl get pods -A", lines)
+		local node = render(c, vsm.default())
+		local facet = nodes.find(node, nodes.key("facet-NAMESPACE")) :: any
+		expect(#nodes.findAll(facet, nodes.role("tern-kube.chip"))).toBe(TableView.FACET_VALUES)
+		local more = decodeAction(chipAction(facet, "+3")) :: vsm.ViewState
+		expect(more.expanded).toEqual({ "NAMESPACE" })
+		local wide = nodes.find(render(c, more), nodes.key("facet-NAMESPACE")) :: any
+		expect(#nodes.findAll(wide, nodes.role("tern-kube.chip"))).toBe(11)
+		expect((decodeAction(chipAction(wide, "Fewer")) :: vsm.ViewState).expanded).toEqual({})
+	end)
+
+	it("count columns sort descending on the first click, names ascending", function()
+		local node = render(build("ns-apps/get_pods"), vsm.default())
+		expect(headerAction(node, "RESTARTS").desc).toBe(true)
+		expect(headerAction(node, "NAME").desc).toBe(false)
+		local sorted = render(build("ns-apps/get_pods"), headerAction(node, "RESTARTS"))
+		expect(headerAction(sorted, "RESTARTS ▼").desc).toBe(false)
+	end)
+
+	-- LENS-L9: `get events` keeps kubectl's namespace order, so LAST SEEN read
+	-- 28m, 28m, 129m, 27m. Newest first unless the user asked for --sort-by.
+	it("event listings show the newest first unless --sort-by was given", function()
+		local lines = {
+			"LAST SEEN   TYPE      REASON    OBJECT      MESSAGE",
+			"28m         Normal    Pulled    pod/a       x",
+			"129m        Warning   BackOff   pod/b       y",
+			"27m         Normal    Created   pod/c       z",
+		}
+		local node = render(fromLines("kubectl get events -n x", lines), vsm.default())
+		local seen: { string } = {}
+		for _, r in nodes.findAll(node, nodes.class("tk-r")) do
+			table.insert(seen, (nodes.find(r, nodes.class("tk-c")) :: any).p.title)
+		end
+		expect(seen).toEqual({ "27m", "28m", "129m" })
+		local kept = render(fromLines("kubectl get events -n x --sort-by=.lastTimestamp", lines), vsm.default())
+		expect((nodes.find(kept, nodes.class("tk-c")) :: any).p.title).toBe("28m")
+	end)
+
+	-- LENS-L8: `-o json` of one object is a request for the object; the
+	-- one-row table put the tree two clicks away.
+	it("one object from -o json opens its tree directly, without Back", function()
+		local node = render(build("ns-edge/get_pod_labels-odd_-o_json"), vsm.default())
+		expect(nodes.find(node, nodes.class("tk-grid"))).toBeNil()
+		expect(nodes.find(node, nodes.kind("tree")) ~= nil).toBe(true)
+		expect(nodes.find(node, function(n)
+			return n.k == "badge" and nodes.ownText(n) == "Back"
+		end)).toBeNil()
+		-- Several objects keep the table.
+		local many = render(build("ns-apps/get_pods_-o_json"), vsm.default())
+		expect(nodes.find(many, nodes.class("tk-grid")) ~= nil).toBe(true)
+	end)
+
+	-- No text input in lenses: the free-text filter lives in Explore.
+	it("offers Filter in Explore next to the facet chips", function()
+		local node = render(build("ns-apps/get_pods"), vsm.default())
+		expect(chipAction(node, "Filter in Explore")).toBe("explore-filter=1")
+	end)
+
+	it("NAME cells truncate in the middle", function()
+		local node = render(build("all-namespaces/get_pods_-A"), vsm.default())
+		expect(#nodes.findAll(node, nodes.class("tk-midc")) > 0).toBe(true)
 	end)
 end)
 
@@ -481,12 +577,18 @@ describe("table view events overlay", function()
 
 	it("tints Warning rows and shows the LAST SEEN note in the cell", function()
 		local node = render(build("ns-apps/events"), vsm.default())
-		local rows = nodes.findAll(node, nodes.class("tk-r"))
-		local first = rows[1]
-		expect(string.find((first.p :: any).class, "tk-lvl-warn", 1, true) ~= nil).toBe(true)
-		expect(nodes.text(nodes.findAll(first, nodes.class("tk-c"))[1])).toBe("11m ×12 over 4h30m")
-		local normal = rows[2]
-		expect((string.find((normal.p :: any).class, "tk-lvl-warn", 1, true))).toBeNil()
+		local warned, plain = nil, nil
+		for _, r in nodes.findAll(node, nodes.class("tk-r")) do
+			local first = nodes.findAll(r, nodes.class("tk-c"))[1]
+			if nodes.text(first) == "11m ×12 over 4h30m" then
+				warned = r
+			elseif nodes.text(r):find("Normal", 1, true) then
+				plain = plain or r
+			end
+		end
+		assert(warned and plain, "expected the ×12 Warning row and a Normal row")
+		expect(string.find((warned.p :: any).class, "tk-lvl-warn", 1, true) ~= nil).toBe(true)
+		expect((string.find((plain.p :: any).class, "tk-lvl-warn", 1, true))).toBeNil()
 	end)
 
 	it("the inspector acts on the involved object and opens its events timeline", function()

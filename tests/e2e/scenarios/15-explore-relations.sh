@@ -19,9 +19,9 @@ xwait 'Pod' '[data-role="tern-kube.explore-relations"] *'
 rel=$(xtext '[data-role="tern-kube.explore-relations"] *')
 contains "deployment owns its replicaset" "$rel" "ReplicaSet"
 contains "replicaset owns pods" "$rel" "Pod"
-eq "owner provenance badges" "$(texts "$EX [data-role='tern-kube.explore-relations'] .tk-c" | jq -c 'map(select(. == "owner")) | length')" 3
+eq "owner provenance badges" "$(texts "$EX [data-role='tern-kube.explore-relations'] $XT > .sf-tbl-c" | jq -c 'map(select(. == "owner")) | length')" 3
 excludes "no long provenance text" "$rel" "ownerReference"
-pods=$(texts "$EX [data-role='tern-kube.explore-relations'] .tk-c" | jq '[.[] | select(test("^↳ web-[a-z0-9]+-[a-z0-9]{5}$"))] | length')
+pods=$(texts "$EX [data-role='tern-kube.explore-relations'] $XT > .sf-tbl-c" | jq '[.[] | select(test("^↳ web-[a-z0-9]+-[a-z0-9]{5}$"))] | length')
 eq "both web pods" "$pods" 2
 explore_close
 

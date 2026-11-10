@@ -159,6 +159,9 @@ local EXPLORE_FIELDS = {
 
 export type ExploreExtra = {
 	route: string?,
+	-- The listed type when there is no object (`Filter in Explore`).
+	kind: string?,
+	group: string?,
 	-- helm-release / helm-history: the release, its revision and namespace
 	-- (the namespace replaces the object's or invocation's).
 	release: string?,
@@ -189,8 +192,8 @@ function M.exploreUrl(inv: Invocation, ref: Ref?, extra: ExploreExtra?): string
 		elseif inv.allNamespaces then "*"
 		else inv.namespace
 	local values: { [string]: string? } = {
-		kind = ref and ref.kind,
-		group = ref and ref.group,
+		kind = if ref then ref.kind else e.kind,
+		group = if ref then ref.group else e.group,
 		name = ref and ref.name,
 		namespace = namespace,
 		context = inv.context,
@@ -216,6 +219,27 @@ function M.exploreUrl(inv: Invocation, ref: Ref?, extra: ExploreExtra?): string
 		end
 	end
 	return "tern-kube://explore?" .. table.concat(parts, "&")
+end
+
+-- The lens "Filter in Explore" chip: one listed resource type of `get`
+-- (no names) reopened in Explore with the same namespace scope, selector and
+-- pinned target, its text filter focused. nil when Explore cannot list the
+-- same thing.
+function M.exploreFilterUrl(inv: Invocation, cwd: string?): string?
+	local first = inv.resources[1]
+	if inv.verb ~= "get" or #inv.resources ~= 1 or first == nil or first.name ~= nil then
+		return nil
+	end
+	if string.lower(first.kind) == "all" then
+		return nil
+	end
+	return M.exploreUrl(inv, nil, {
+		kind = first.kind,
+		group = first.group,
+		selector = inv.selector,
+		search = true,
+		cwd = cwd,
+	})
 end
 
 export type LogsSource = {

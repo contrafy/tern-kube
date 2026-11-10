@@ -13,7 +13,7 @@ click_text 'Explore live'
 explore_open || return
 xwait 'Object deployment/web-b-web'
 xkey escape
-xwait 'web-b-web' '.tk-grid *'
+xwait 'web-b-web' "$XT *"
 
 # : kinds picker: "helm releases" is the first row and the only match of "helm".
 xkey :
@@ -30,9 +30,9 @@ eq "chart column" "$(hcol 5 8)" '["shop","shop","shop","web"]'
 eq "version column" "$(hcol 6 8)" '["0.1.0","0.1.0","0.1.0","0.2.1"]'
 eq "app version column" "$(hcol 7 8)" '["1.27","1.27","1.27","2.1"]'
 eq "revision column" "$(hcol 3 8)" '["1","3","2","3"]'
-eq "failed badge" "$(texts "$EX .tk-grid .sf-t-error")" '["failed"]'
-eq "pending badge" "$(texts "$EX .tk-grid .sf-t-warning")" '["pending-upgrade"]'
-eq "deployed badges" "$(texts "$EX .tk-grid .sf-t-success")" '["deployed","deployed"]'
+eq "failed badge" "$(texts "$XROW .sf-t-error")" '["failed"]'
+eq "pending badge" "$(texts "$XROW .sf-t-warning")" '["pending-upgrade"]'
+eq "deployed badges" "$(texts "$XROW .sf-t-success")" '["deployed","deployed"]'
 contains "problems chip" "$(xtext)" "2 need attention"
 
 # n: every namespace adds side-g from the second namespace.
@@ -40,7 +40,7 @@ xkey n
 xwait 'Namespaces'
 xselect 'all namespaces' || return
 xkey enter
-xwait 'side-g' '.tk-grid *'
+xwait 'side-g' "$XT *"
 contains "all namespaces scope" "$(xtext '[data-role="tern-kube.explore-header"] *')" "all namespaces"
 eq "releases across namespaces" "$(hcol 1 8 | jq -c '[.[] | select(. == "side-g" or . == "shop-a")]')" '["shop-a","side-g"]'
 contains "second namespace listed" "$(hcol 2 8)" "$HNS2"
@@ -51,7 +51,7 @@ ctl type fail >/dev/null
 xkey enter
 eq "status filter" "$(hcol 1 8)" '["broken-c"]'
 xkey escape
-xwait 'side-g' '.tk-grid *'
+xwait 'side-g' "$XT *"
 
 # n again: one namespace narrows the list to its release.
 xkey n

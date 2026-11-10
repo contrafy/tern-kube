@@ -39,32 +39,34 @@ local function badges(list: { nodes.Node }): { Badge }
 	return out
 end
 
+-- The facet chips above the table already count STATUS, TYPE and the rows
+-- (header); the summary only adds what no chip says (LENS-L11: `1 Error`,
+-- `4 Running`, `N rows` and `N warnings` repeated a chip one line below).
 describe("summary badges", function()
-	-- Fixtures are recaptured from a live cluster; restart counts and pod
-	-- names vary, so expectations are derived from the fixture's own cells.
-	it("counts pod statuses with problems first and totals restarts from the RESTARTS column", function()
+	-- Fixtures are recaptured from a live cluster; restart counts vary, so
+	-- expectations are derived from the fixture's own cells.
+	it("pods: totals restarts only, toned by whether any restart is recent", function()
 		local tbl = snapshotTable("real/ns-apps/get_pods.txt", "Pod")
-		local running, restarts = 0, 0
+		local restarts = 0
 		for _, row in tbl.rows do
-			running += if row.cells[3] == "Running" then 1 else 0
 			restarts += tonumber(string.match(row.cells[4], "^%d+")) or 0
 		end
 		local out = badges(Summary.summarize(tbl))
-		-- Problems lead so a user sees what is broken before what is fine.
-		expect(out[1].tone).toBe("error")
-		expect(out).toContain({ text = string.format("%d Running", running), tone = "success" })
-		expect(out).toContain({ text = "1 CrashLoopBackOff", tone = "error" })
-		expect(out).toContain({ text = "1 ImagePullBackOff", tone = "error" })
-		expect(out).toContain({ text = "1 Pending", tone = "warning" })
 		-- "4 (80s ago)" counts as 4, not as unparseable text.
 		expect(restarts > 0).toBe(true)
-		expect(out[#out]).toEqual({ text = string.format("%d restarts", restarts), tone = "warning" })
+		expect(#out).toBe(1)
+		expect(out[1].text).toBe(string.format("%d restarts", restarts))
+		local old = snapshotTable("real/ns-apps/get_pods.txt", "Pod")
+		for _, row in old.rows do
+			row.cells[4] = "2 (25h ago)"
+		end
+		expect(badges(Summary.summarize(old))[1].tone).toBe("muted")
+		old.rows[1].cells[4] = "3 (2m ago)"
+		expect(badges(Summary.summarize(old))[1].tone).toBe("warning")
 	end)
 
 	it("does not invent restart counts when RESTARTS is not shown", function()
-		local tbl = snapshotTable("real/ns-apps/top_pods.txt", "Pod")
-		local out = badges(Summary.summarize(tbl))
-		expect(out).toEqual({ { text = string.format("%d rows", #tbl.rows), tone = "muted" } })
+		expect(Summary.summarize(snapshotTable("real/ns-apps/top_pods.txt", "Pod"))).toEqual({})
 	end)
 
 	it("sums ready/desired replicas and counts deployments that are not fully available", function()
@@ -75,50 +77,34 @@ describe("summary badges", function()
 		})
 	end)
 
-	it("counts node readiness", function()
-		local out = badges(Summary.summarize(snapshotTable("real/cluster/get_nodes.txt", "Node")))
-		expect(out).toEqual({ { text = "1 Ready", tone = "success" } })
-	end)
-
-	it("counts complete and failed jobs", function()
-		local out = badges(Summary.summarize(snapshotTable("real/ns-batch/get_jobs.txt", "Job")))
-		expect(out).toEqual({ { text = "1 Failed", tone = "error" }, { text = "1 Complete", tone = "success" } })
-	end)
-
-	it("counts Warning events", function()
-		local tbl = snapshotTable("real/ns-apps/get_events.txt", "Event")
-		local expected = 0
-		for _, row in tbl.rows do
-			if row.cells[2] == "Warning" then
-				expected += 1
-			end
+	it("leaves node, job, event and service status counts to the facet chips", function()
+		for _, case in
+			{
+				{ "real/cluster/get_nodes.txt", "Node" },
+				{ "real/ns-batch/get_jobs.txt", "Job" },
+				{ "real/ns-apps/get_events.txt", "Event" },
+				{ "real/ns-apps/get_services.txt", "Service" },
+				{ "real/ns-crd/get_widgets.txt", "Widget" },
+			}
+		do
+			expect(Summary.summarize(snapshotTable(case[1], case[2]))).toEqual({})
 		end
-		expect(expected > 0).toBe(true)
-		local out = badges(Summary.summarize(tbl))
-		expect(out).toEqual({ { text = string.format("%d warnings", expected), tone = "warning" } })
+	end)
+
+	it("counts complete jobs from COMPLETIONS when there is no STATUS column", function()
+		local tbl = snapshotTable("real/ns-batch/get_jobs.txt", "Job")
+		local status = table.find(tbl.headers, "STATUS") :: number
+		table.remove(tbl.headers, status)
+		table.remove(tbl.types, status)
+		for _, row in tbl.rows do
+			table.remove(row.cells, status)
+		end
+		expect(badges(Summary.summarize(tbl))).toEqual({ { text = "1 complete", tone = "success" } })
 	end)
 
 	it("counts suspended cronjobs", function()
 		local out = badges(Summary.summarize(snapshotTable("real/ns-batch/get_cronjobs.txt", "CronJob")))
 		expect(out).toEqual({ { text = "1 suspended", tone = "warning" } })
-	end)
-
-	it("groups services by TYPE without status colouring", function()
-		local out = badges(Summary.summarize(snapshotTable("real/ns-apps/get_services.txt", "Service")))
-		expect(#out > 1).toBe(true)
-		for _, b in out do
-			expect(b.tone).toBe("neutral")
-		end
-		expect(
-			nodes.text({ k = "row", c = Summary.summarize(snapshotTable("real/ns-apps/get_services.txt", "Service")) })
-		).toContain("ClusterIP")
-	end)
-
-	it("shows only the row count for kinds it knows nothing about", function()
-		local out = badges(Summary.summarize(snapshotTable("real/ns-crd/get_widgets.txt", "Widget")))
-		expect(#out).toBe(1)
-		expect(out[1].tone).toBe("muted")
-		expect(out[1].text).toContain("rows")
 	end)
 end)
 

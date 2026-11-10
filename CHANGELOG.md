@@ -8,6 +8,25 @@ release (0.x minor versions could break them).
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-11-10
+
+### Added
+
+- Explore lists (resources, pickers, relations, Helm and GitOps lists) are Tern native tables: they fill the pane and scroll with a sticky header, sort by header click (counts descending first), keep the unique end of long names, show AGE, hide NAMESPACE for a single namespace, and carry ready / not ready / restart tiles. Logs, events and the compare matrix keep their own layout.
+- Explore refreshes after a change it started (scale, pause, cordon, rollback, apply); approval results offer the next step (Uncordon, Resume, Follow logs).
+- Lens: a **Filter in Explore** chip opens Explore on the same query with the filter focused, honouring `-l`; the `+N` facet overflow expands; output too large for the native view says why and shows the first lines.
+- Risk: cordon or drain of the last schedulable node, drain with nowhere to reschedule and scale to 0 under a PodDisruptionBudget need the typed confirmation; run-now names the Job it creates.
+- Quick-action splits echo the kubectl command and the context they pinned; the edit split shows its outcome and the path of a denied copy until Enter.
+
+### Changed
+
+- Approval blocks open over the pane that asked (it comes back when they close), one per pane; approve and Settings use Tern's sans font and native buttons.
+- Lens: names and log sources are cut in the middle; facet chips wrap in narrow panes; opening a row no longer shifts the columns; the selected row stays readable in both themes; Problems counts only restarts in the last hour; `describe` shows the real container state (CrashLoopBackOff, Terminated with exit code); the header echoes `-l`, `-c` and `--previous`; cluster-scoped kinds show no namespace; a single object with `-o json`/`-o yaml` opens as a tree; events sort newest first; repeated klog errors fold into one; an unknown context gets an error card.
+- Explore: times are local; help scrolls and lists the current view's keys first; hints follow the focused kind; relations nest pods under their ReplicaSet and show the Services that select them; a new block starts in the last scope used; palette commands reuse the open Explore; chips that can only refuse are hidden; `allow_live_queries: false` hides the live controls.
+- GitOps and Helm: reports go stale after an apply or export and rerun on return, and `r` rescans changed manifests; `ctrl+g` on a release opens its own drift with deployed values; `=` on a Helm-managed object diffs against its chart; Helm reports export only unmanaged objects; Helm masks no longer show byte counts; `ctrl+d` on drift rows is offered only for unmanaged objects.
+- Create diffs omit server-set `creationTimestamp` and `uid`; `tern-kube-drift` 0.3.0 (same JSON layout).
+- Debug uses `--profile=general` (and `--target` when the container is known); the guard's waiting line names the verb and target and `tern-kube-guard-status` prints the context and namespace; Settings shows `explore.auto_refresh` read-only.
+
 ## [1.0.1] - 2026-11-10
 
 ### Fixed
@@ -260,7 +279,8 @@ First public beta.
 - Docs: SDK capability matrix, configuration, performance, architecture,
   security model, testing, releasing.
 
-[Unreleased]: https://github.com/contrafy/tern-kube/compare/v1.0.1...HEAD
+[Unreleased]: https://github.com/contrafy/tern-kube/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/contrafy/tern-kube/compare/v1.0.1...v1.1.0
 [1.0.1]: https://github.com/contrafy/tern-kube/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/contrafy/tern-kube/compare/v0.6.0...v1.0.0
 [0.6.0]: https://github.com/contrafy/tern-kube/compare/v0.5.0...v0.6.0

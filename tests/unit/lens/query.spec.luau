@@ -102,9 +102,27 @@ describe("lens query", function()
 		expect(#Query.apply(tbl, vsm.toggledFilter(vsm.default(), "KIND", "Service")).rows).toBe(0)
 	end)
 
-	it("problems: bad status, short READY, restarts > 0", function()
+	it("problems: bad status, short READY, recent restarts", function()
 		local tbl = tableOf("kubectl get pods", PODS)
 		expect(names(Query.apply(tbl, vsm.toggledProblems(vsm.default())))).toEqual({ "b", "c" })
+	end)
+
+	-- After a node or Docker restart every healthy pod shows `2 (25h ago)`:
+	-- counting any restart ever flagged 27 of 33 pods. Only a restart within
+	-- the last hour says the pod is unstable now.
+	it("problems count only recent restarts of ready, running pods", function()
+		local tbl = tableOf("kubectl get pods", {
+			"NAME     READY   STATUS    RESTARTS        AGE",
+			"old      1/1     Running   2 (25h ago)     32d",
+			"recent   1/1     Running   3 (12m ago)     32d",
+			"edge     1/1     Running   1 (59m59s ago)  32d",
+			"hour     1/1     Running   1 (60m ago)     32d",
+			"plain    1/1     Running   4               32d",
+		})
+		expect(names(Query.apply(tbl, vsm.toggledProblems(vsm.default())))).toEqual({ "recent", "edge" })
+		expect(Query.recentRestart("3 (12m ago)")).toBe(true)
+		expect(Query.recentRestart("2 (25h ago)")).toBe(false)
+		expect(Query.recentRestart("0")).toBe(false)
 	end)
 
 	it("problems on real pods find the crashloop, image pull and pending pods", function()

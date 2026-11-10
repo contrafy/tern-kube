@@ -13,7 +13,8 @@ original output one click away (**Raw**).
 - **Click a row** for an inline inspector; **Inspect** shows every field,
   the source line and, with `-o json`, the object tree.
 - **Filter chips** by status, namespace and kind, plus **Problems**
-  (failing, not ready, restarting).
+  (failing, not ready, restarted in the last hour), and **Filter in Explore**
+  for free text.
 - **Copy** the name, a qualified id, or a ready `describe`, `logs` or
   `get -o yaml` command for the same context and namespace.
 - `describe` renders as cards with an events timeline, `-o yaml` as a
@@ -43,9 +44,10 @@ Pipelines and redirected output are never lensed.
 ## Explore
 
 **Explore live** on a row, or **Tern Kube: Explore** in the palette, opens a
-live block beside the pane. It pins the context it queries, shows where that
-context came from, and only refreshes when you ask (or when Tern reloads the
-plugin: the block then re-runs its queries).
+live block beside the pane. Its lists are sortable tables that fill the
+pane, with ready / not ready / restart counts on top. It pins the context it
+queries, shows where that context came from, and refreshes only when you ask,
+after a change it made itself, or when Tern reloads the plugin.
 
 ![Relations of a Deployment](docs/screenshots/m2-relations-dark-wide.png)
 
@@ -101,13 +103,15 @@ clicks from any row). They open beside the pane by default; see
 Delete, rollout restart/undo/pause/resume, scale, patch, label, annotate,
 cordon, uncordon, drain, debug, CronJob run-now (Explore keys or inspector
 chips) and **Tern Kube: Apply file or directory** open an approval block
-first: server dry run, `kubectl diff` or a before/after object diff per
-resource, then a confirmation scaled to the risk. Edit (`e` or the Edit
-chip) opens `kubectl edit` in a split; after you save, the approval block
-shows the diff before kubectl applies it. Deletes and other broad changes need the target typed.
-Helm rollback (`ctrl+r` on a release or revision) shows the recorded change
-between the two revisions and the live `kubectl diff`, then needs the release
-name typed.
+over the pane that asked: server dry run, `kubectl diff` or a before/after
+object diff per resource, then a confirmation scaled to the risk. Edit (`e`
+or the Edit chip) opens `kubectl edit` in a split; after you save, the
+approval block shows the diff before kubectl applies it. Deletes, other broad
+changes, and cordon, drain or scale-to-zero that would leave nothing
+running need the target typed. Results offer the obvious next step
+(Uncordon, Resume, Follow logs). Helm rollback (`ctrl+r` on a release or
+revision) shows the recorded change between the two revisions and the live
+`kubectl diff`, then needs the release name typed.
 Nothing runs if the preview fails or the inputs or target change before
 you confirm.
 

@@ -167,6 +167,7 @@ local function docsGrid(docs: { Doc }, lines: { string }, vs: ViewState, vsm: ty
 			sortAction = function(col: string): string
 				return vsm.action(vsm.sortedBy(vs, col))
 			end,
+			middle = { NAME = true },
 			inspector = function(rowKey: string): Node?
 				local index = docIndex(rowKey)
 				local doc = if index then docs[index] else nil

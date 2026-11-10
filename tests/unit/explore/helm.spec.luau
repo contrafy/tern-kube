@@ -557,4 +557,88 @@ describe("explore helm: values defaults fallbacks", function()
 	end)
 end)
 
+-- v1.1 Helm UX (EXP-U6, U8, U10): chips that can only toast "nothing to do"
+-- are noise, a mask that tells the secret's length leaks part of it (compare
+-- already masks without one), and internal source names read as jargon.
+describe("explore helm: release view wording and chips", function()
+	local Render = require("../../../plugin/lib/explore/render")
+	local nodes = require("../../lib/nodes")
+
+	local function main(s: State): nodes.Node
+		return Render.view(s, 160, 50).main :: any
+	end
+
+	local function openRelease(name: string): State
+		local s = W.openHelm()
+		s = W.helmAction(s, "sel", NS .. "/" .. name)
+		s = W.helmKeys(s, { "enter" })
+		expect(top(s).kind).toBe("helm-release")
+		return s
+	end
+
+	local function openRevision(name: string, revision: number): State
+		local s = W.helmKeys(openRelease(name), { "h" })
+		s = W.helmAction(s, "sel", tostring(revision))
+		s = W.helmKeys(s, { "enter" })
+		expect(top(s).kind).toBe("helm-release")
+		expect(top(s).revision).toBe(revision)
+		return s
+	end
+
+	it("a single-revision release offers neither diff vs previous nor rollback", function()
+		local actions = nodes.actions(main(openRelease("broken-c")))
+		expect(table.find(actions, "helm-nav=diff")).toBeNil()
+		expect(table.find(actions, "helm-rollback")).toBeNil()
+		expect(table.find(actions, "helm-nav=history") ~= nil).toBe(true)
+		local HelmView = require("../../../plugin/lib/helm/view")
+		local s = openRelease("broken-c")
+		local hint = HelmView.hint(top(s), s.helm) :: string
+		expect((string.find(hint, "= diff", 1, true))).toBeNil()
+		expect((string.find(hint, "ctrl+r", 1, true))).toBeNil()
+		local shop = openRelease("shop-a")
+		local full = HelmView.hint(top(shop), shop.helm) :: string
+		expect(full).toContain("= diff vs previous")
+		expect(full).toContain("ctrl+r rollback")
+	end)
+
+	it("revision 1 of a longer history has no diff vs previous, the latest has both chips", function()
+		local first = nodes.actions(main(openRevision("shop-a", 1)))
+		expect(table.find(first, "helm-nav=diff")).toBeNil()
+		local latest = nodes.actions(main(openRelease("shop-a")))
+		expect(table.find(latest, "helm-nav=diff") ~= nil).toBe(true)
+		expect(table.find(latest, "helm-rollback") ~= nil).toBe(true)
+	end)
+
+	it("masks never print a byte count in release, values, notes, manifest and diff", function()
+		local s = openRelease("web-b")
+		local seen: { [string]: string } = { release = nodes.text(main(s)) }
+		for _, k in { "v", "M", "=" } do
+			local v = W.helmKeys(s, { k })
+			seen[k] = nodes.text(main(v))
+		end
+		seen.notes = nodes.text(main((W.helmKeys(openRevision("web-b", 2), { "N" }))))
+		for what, text in seen do
+			if string.find(text, "bytes>", 1, true) then
+				error(what .. " shows a mask with a length: " .. text)
+			end
+		end
+		expect(seen.M).toContain("password: '<redacted>'")
+		expect(seen.M).toContain("postgres://app:<redacted>@db:5432/app")
+		expect(seen.v).toContain("<redacted>")
+	end)
+
+	it("a hook that did not run says so for this revision", function()
+		local text = nodes.text(main((W.helmKeys(openRevision("web-b", 2), { "K" }))))
+		expect(text).toContain("never ran in this revision")
+	end)
+
+	it("the values summary names where the chart defaults came from in words", function()
+		local s = openRelease("web-b")
+		local summary = nodes.find(main(s), nodes.role("tern-kube.helm-values-summary")) :: nodes.Node
+		local text = nodes.text(summary)
+		expect(text).toContain("chart defaults")
+		expect((string.find(text, "record", 1, true))).toBeNil()
+	end)
+end)
+
 return nil

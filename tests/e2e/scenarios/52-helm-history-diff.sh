@@ -66,8 +66,8 @@ E2E_WAIT=20 xwait 'MODIFY Secret' || return
 all=$(xtext)
 contains "chart change" "$all" "web-0.2.0 (app 2.0) → web-0.2.1 (app 2.1)"
 eq "password row masked" "$(hcol 4 4 | jq -r '.[0]')" "values changed (masked)"
-eq "password shown masked" "$(hcol 3 4 | jq -r '.[0]')" "<redacted: 16 bytes>"
+eq "password shown masked" "$(hcol 3 4 | jq -r '.[0]')" "<redacted>"
 contains "secret segment" "$all" "MODIFY Secret $HNS/web-b-web-auth"
-contains "DSN echo masked" "$all" "postgres://app:<redacted: 16 bytes>@db:5432/app"
+contains "DSN echo masked" "$all" "postgres://app:<redacted>@db:5432/app"
 excludes "no secret in the diff" "$all" "REDACTME"
 explore_close_all

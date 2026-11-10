@@ -13,8 +13,8 @@
 -- Tern runs a Launch command as `$SHELL -l -c <line>` (login rc files only,
 -- not .zshrc/.bashrc), so the line is a single `sh -c '<script>'`: it
 -- behaves the same under zsh, bash and fish, sets the pane title to the
--- target, echoes the effective context when it is not pinned, and execs
--- kubectl so its exit status is the pane's.
+-- target and its context, echoes the context and the command line, and
+-- execs kubectl so its exit status is the pane's.
 --
 -- `logs` ("Run in split") is the exception: Tern lenses only commands typed
 -- at a prompt, so typedLine() builds a plain kubectl line the window types
@@ -61,6 +61,9 @@ export type Info = {
 	selector: string?,
 	-- Declared ports; the first one is forwarded.
 	ports: { number }?,
+	-- The pod's container when known (single container, lensed -c): the
+	-- debug container targets it.
+	container: string?,
 	-- Offer the mutating actions (config mutations.enabled); they go through the approve block.
 	allowMutations: boolean?,
 }
@@ -140,6 +143,10 @@ M.SCHEME = "tern-kube://act/"
 M.DEFAULT_IMAGE = "busybox:1.36"
 M.TAIL = "200"
 M.MAX_LOG_REQUESTS = "10"
+-- kubectl 1.34 deprecates its default (legacy). general is the least
+-- privilege that still debugs: SYS_PTRACE for --target on a pod; host
+-- namespaces and the root filesystem, not privileged, on a node.
+M.DEBUG_PROFILE = "general"
 
 local KINDS: { [string]: { token: string, group: string, namespaced: boolean } } = {
 	Pod = { token = "pod", group = "", namespaced = true },
@@ -746,6 +753,42 @@ local function dirname(path: string): string?
 	return string.match(path, "^(.*)/[^/]*$")
 end
 
+-- The pane title and the split's first line name the context: the pinned
+-- one, else kubeconfig's current-context, resolved once by the split.
+local function preamble(title: string, ctx: string?, program: string, kubeconfig: string?): { string }
+	if ctx then
+		return {
+			"printf '\\033]0;%s\\007' " .. Command.quote(title .. " @ " .. ctx),
+			"printf 'tern-kube: context %s\\n' " .. Command.quote(ctx),
+		}
+	end
+	local current = { program }
+	append(current, connection({ kubeconfig = kubeconfig }))
+	append(current, { "config", "current-context" })
+	return {
+		"tk_ctx=$(" .. Command.format(current) .. ")",
+		"printf '\\033]0;%s @ %s\\007' " .. Command.quote(title) .. ' "${tk_ctx:-current context}"',
+		"printf 'tern-kube: context %s (current-context)\\n' \"${tk_ctx:-?}\"",
+	}
+end
+
+-- `+ <command>` as the split runs it, so a silent command is not a dead pane.
+local function echo(run: string): string
+	return "printf '+ %s\\n' " .. Command.quote(run)
+end
+
+-- After kubectl edit exits the split says what the status means and waits
+-- for Enter: kubectl's result, "Edit cancelled" and the path of a denied
+-- edit's copy stay readable. The guard exits 1 for a denial, 130 for Ctrl-C.
+local EDIT_OUTCOME = "case $s in "
+	.. "0) printf '\\ntern-kube: kubectl edit exited 0: the change was applied, or there was nothing to apply "
+	.. "(kubectl says which above)\\n';; "
+	.. "1) printf '\\ntern-kube: kubectl edit exited 1: denied in Tern, refused or failed (see above). "
+	.. "A denied edit is kept at the kubectl-edit-denied-* path printed above; it may hold Secret data, "
+	.. "delete it when done.\\n';; "
+	.. "130) s=0; printf '\\ntern-kube: kubectl edit cancelled (Ctrl-C)\\n';; "
+	.. "*) printf '\\ntern-kube: kubectl edit failed (exit %s); see above\\n' \"$s\";; esac"
+
 -- `kubectl edit` through the guard core, which approves the saved edit
 -- before kubectl applies it. A configured kubectl path goes first on PATH:
 -- the guard runs `command kubectl`.
@@ -768,28 +811,46 @@ local function editCommand(req: Request, target: Target, s: Settings): (Launch?,
 	end
 	table.insert(argv, Command.resourceType(r) .. "/" .. r.name)
 	local where = (if r.namespace then r.namespace .. "/" else "") .. r.name
-	local title = "tern-kube edit " .. where .. " @ " .. (ctx or "current context")
-	local script: { string } = { "printf '\\033]0;%s\\007' " .. Command.quote(title) }
+	local title = "tern-kube edit " .. where
+	local script: { string } = {}
 	local program = target.program
 	local dir = if program and string.find(program, "/", 1, true) then dirname(program) else nil
 	if dir and dir ~= "" then
 		table.insert(script, "PATH=" .. Command.quote(dir) .. ":$PATH")
 		table.insert(script, "export PATH")
 	end
+	append(script, preamble(title, ctx, "kubectl", req.target.kubeconfig))
+	table.insert(script, echo(Command.format(argv)))
+	-- A handler, not an ignore: the guard and kubectl still get Ctrl-C.
+	table.insert(script, "trap : INT")
 	if s.remote then
 		-- This machine's plugin path means nothing there; the host's spawn
 		-- hook exports its own guard core.
 		table.insert(
 			script,
-			"[ -x \"${TKUBE_GUARD_CORE:-}\" ] || { printf 'tern-kube: %s has no TKUBE_GUARD_CORE; is tern-kube the same version there?\\n' "
+			'if [ -x "${TKUBE_GUARD_CORE:-}" ]; then "$TKUBE_GUARD_CORE" '
+				.. Command.format(argv)
+				.. "; else printf 'tern-kube: %s has no TKUBE_GUARD_CORE; is tern-kube the same version there?\\n' "
 				.. Command.quote(s.remote.name)
-				.. " >&2; exit 1; }"
+				.. " >&2; false; fi"
 		)
-		table.insert(script, 'exec "$TKUBE_GUARD_CORE" ' .. Command.format(argv))
 	else
-		table.insert(script, "exec " .. Command.quote(core :: string) .. " " .. Command.format(argv))
+		table.insert(script, Command.quote(core :: string) .. " " .. Command.format(argv))
 	end
-	return { argv = argv, line = "sh -c " .. anyShellQuote(table.concat(script, "; ")), title = title }, nil
+	append(script, {
+		"s=$?",
+		"trap 'exit \"$s\"' INT",
+		EDIT_OUTCOME,
+		"printf 'tern-kube: press Enter to close\\n'",
+		"read -r _",
+		'exit "$s"',
+	})
+	return {
+		argv = argv,
+		line = "sh -c " .. anyShellQuote(table.concat(script, "; ")),
+		title = title .. " @ " .. (ctx or "current context"),
+	},
+		nil
 end
 
 -- kubectl on a remote host listens on that host's loopback; say where, and
@@ -974,7 +1035,7 @@ function M.command(action: string, target: Target, ref: Ref?, opts: Opts?, setti
 		append(argv, { "debug", "-it" })
 		append(argv, conn)
 		append(argv, ns)
-		append(argv, { r.name, "--image=" .. imageOf(o, s) })
+		append(argv, { r.name, "--image=" .. imageOf(o, s), "--profile=" .. M.DEBUG_PROFILE })
 		if o.container then
 			table.insert(argv, "--target=" .. o.container)
 		end
@@ -982,7 +1043,7 @@ function M.command(action: string, target: Target, ref: Ref?, opts: Opts?, setti
 	elseif action == "debug-node" then
 		append(argv, { "debug", "-it" })
 		append(argv, conn)
-		append(argv, { typed, "--image=" .. imageOf(o, s) })
+		append(argv, { typed, "--image=" .. imageOf(o, s), "--profile=" .. M.DEBUG_PROFILE })
 		title = "debug node/" .. r.name
 	else
 		append(argv, { "create", "job" })
@@ -997,14 +1058,24 @@ function M.command(action: string, target: Target, ref: Ref?, opts: Opts?, setti
 	end
 
 	local ctx = req.target.context
-	title = "tern-kube " .. title .. " @ " .. (ctx or "current context")
+	title = "tern-kube " .. title
 
-	local script: { string } = { "printf '\\033]0;%s\\007' " .. Command.quote(title) }
-	-- Ctrl-C is how a follow or a forward is stopped: the split exits 0 so
-	-- Tern does not report it as a failure; other exits keep their status.
+	local script = preamble(title, ctx, program, req.target.kubeconfig)
+	-- Ctrl-C is how a follow or a forward is stopped: the split exits 0 at
+	-- once so Tern does not report it as a failure. When kubectl ends on its
+	-- own (a finished Job's logs, a port in use) the split stays until Enter
+	-- so its output can be read, then exits with kubectl's status.
 	local interruptible = action == "logs-follow" or action == "port-forward"
 	if interruptible then
 		table.insert(script, "trap 'exit 0' INT")
+		append(post, {
+			"s=$?",
+			"printf '\\ntern-kube: "
+				.. (if action == "logs-follow" then "logs" else "port-forward")
+				.. ' ended (exit %s); press Enter to close\\n\' "$s"',
+			"read -r _",
+			'exit "$s"',
+		})
 	end
 	if s.remote and req.target.kubeconfig == nil then
 		table.insert(
@@ -1012,20 +1083,17 @@ function M.command(action: string, target: Target, ref: Ref?, opts: Opts?, setti
 			"printf 'tern-kube: %s: kubeconfig from the login environment\\n' " .. Command.quote(s.remote.name)
 		)
 	end
-	if ctx == nil then
-		local current = { program }
-		append(current, connection({ kubeconfig = req.target.kubeconfig }))
-		append(current, { "config", "current-context" })
-		table.insert(script, "printf 'tern-kube: context %s\\n' \"$(" .. Command.format(current) .. ')"')
-	end
 	append(script, pre)
 	local run: string
 	if forwards then
 		local words = table.clone(argv)
 		words[#words] = "$a"
 		run = (string.gsub(Command.format(words), "'%$a'$", '"$a"'))
+		table.remove(words)
+		table.insert(script, "printf '+ %s %s\\n' " .. Command.quote(Command.format(words)) .. ' "$a"')
 	else
 		run = Command.format(argv)
+		table.insert(script, echo(run))
 	end
 	if #post > 0 or interruptible then
 		table.insert(script, run)
@@ -1033,7 +1101,12 @@ function M.command(action: string, target: Target, ref: Ref?, opts: Opts?, setti
 	else
 		table.insert(script, "exec " .. run)
 	end
-	return { argv = argv, line = "sh -c " .. anyShellQuote(table.concat(script, "; ")), title = title }, nil
+	return {
+		argv = argv,
+		line = "sh -c " .. anyShellQuote(table.concat(script, "; ")),
+		title = title .. " @ " .. (ctx or "current context"),
+	},
+		nil
 end
 
 -- Explore opens manifest files through the window without giving them the
@@ -1235,6 +1308,8 @@ function M.chipsFor(kind: string, ref: Ref, target: Target, info: Info?, setting
 			o.selector = opts.selector
 		elseif a.id == "port-forward" then
 			o.port = opts.port
+		elseif a.id == "debug-pod" then
+			o.container = i.container
 		end
 		o = M.withHost(a.id, o, settings)
 		local url = M.encode(a.id, target, ref, o)

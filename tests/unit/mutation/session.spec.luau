@@ -232,6 +232,62 @@ describe("approve session: native confirm and execute", function()
 		present(A.find(d.runs, "run", "exec"))
 	end)
 
+	-- Explore refreshes its route only after its own mutation really ran
+	-- (MUT-F9): one `applied` effect after a successful execute, none after
+	-- a failed one, carrying the link's origin tag back.
+	it("emits one applied effect with the origin after a successful execute, none after a failure", function()
+		local tagged = SCALE .. "&origin=explore%3A7"
+		local s = ready(tagged)
+		local d = A.send(s, A.key("enter"), A.cluster())
+		expect(s.phase).toBe("done")
+		expect(A.count(d.effects, "applied")).toBe(1)
+		local applied = (A.find(d.effects, "applied") :: Effect).applied :: Session.Applied
+		expect(applied).toEqual({
+			origin = "explore:7",
+			op = "scale",
+			context = "kind-dev",
+			namespace = "apps",
+			kind = "deployment",
+			name = "web",
+		})
+		local failing = A.cluster({ exec = A.failed(1, "error: forbidden") })
+		local s2 = ready(tagged)
+		local d2 = A.send(s2, A.key("enter"), failing)
+		expect(s2.phase).toBe("done")
+		expect(A.count(d2.effects, "applied")).toBe(0)
+	end)
+
+	-- One click undoes the obvious next step: Resume after a pause (and
+	-- Uncordon after a cordon or drain, see link.spec), same target pins.
+	it("offers Resume after a successful pause, opening a pinned resume link; none after a failure", function()
+		local pause = Link.encode({
+			op = "pause",
+			kind = "deployment",
+			name = "web",
+			namespace = "apps",
+			recursive = false,
+			overwrite = false,
+			context = "kind-dev",
+			source = "chosen",
+			origin = "explore:7",
+		}) :: string
+		local s = ready(pause)
+		A.send(s, A.key("enter"), A.cluster())
+		expect(s.phase).toBe("done")
+		local follow = Session.followUps(s)
+		expect(#follow).toBe(1)
+		expect(follow[1].label).toBe("Resume")
+		local r = Link.decode(follow[1].url) :: Link.Request
+		expect(r.op).toBe("resume")
+		expect(r.context).toBe("kind-dev")
+		expect(r.origin).toBe("explore:7")
+		local d = A.send(s, { t = "action", act = follow[1].act }, A.cluster())
+		expect((A.find(d.effects, "open") :: Effect).url).toBe(follow[1].url)
+		local failed = ready(pause)
+		A.send(failed, A.key("enter"), A.cluster({ exec = A.failed(1, "error: forbidden") }))
+		expect(#Session.followUps(failed)).toBe(0)
+	end)
+
 	it("ignores edits to the typed field while it does not take the keyboard", function()
 		local s = ready(SCALE)
 		local _, _, changed = Session.update(s, {
@@ -650,6 +706,70 @@ describe("approve session: quick-action mutations", function()
 		local req = Quick.decode(open.url :: string) :: Quick.Request
 		expect(req.opts.suffix).toBe("3e8")
 		expect(A.find(d.runs, "run", "exec")).toBeNil()
+	end)
+
+	-- The approve block stays with the result so the user can follow the
+	-- Job it created (MUT-F9 follow-ups) instead of hunting for its name.
+	it("stays open after a confirmed run-now and offers Follow logs of the created Job", function()
+		local s = ready("tern-kube://act/cronjob-run?kind=CronJob&name=nightly&namespace=batch&context=kind-dev")
+		local d = A.send(s, A.key("enter"), A.cluster())
+		present(A.find(d.effects, "open"))
+		expect(A.find(d.effects, "exit")).toBeNil()
+		expect(s.phase).toBe("done")
+		local follow = Session.followUps(s)
+		expect(#follow).toBe(1)
+		expect(follow[1].label).toBe("Follow logs")
+		local req = Quick.decode(follow[1].url) :: Quick.Request
+		expect(req.action).toBe("logs-follow")
+		expect((req.ref :: any).kind).toBe("Job")
+		expect((req.ref :: any).name).toBe("nightly-manual-3e8")
+		expect(req.target.context).toBe("kind-dev")
+		d = A.send(s, { t = "action", act = follow[1].act }, A.cluster())
+		expect((A.find(d.effects, "open") :: Effect).url).toBe(follow[1].url)
+		d = A.send(s, A.key("escape"), A.cluster())
+		present(A.find(d.effects, "exit"))
+	end)
+
+	-- MUT-F15: a lens in a pane with its own KUBECONFIG names a context the
+	-- approve block's kubeconfig lacks; the error says why and how to fix it.
+	it("names the kubeconfig it used and the fixes when the context is missing there", function()
+		local s = ready(
+			"tern-kube://act/cronjob-run?kind=CronJob&name=nightly&namespace=batch&context=xm-other",
+			{ context = "kind-dev" }
+		)
+		expect(s.phase).toBe("error")
+		local e = s.errors[1]
+		expect(e).toContain("xm-other")
+		expect(e).toContain("/k/config")
+		expect(e).toContain("--kubeconfig")
+		expect(e).toContain("shell snippet")
+		local pinned = ready(
+			"tern-kube://act/cronjob-run?kind=CronJob&name=nightly&namespace=batch&context=xm-other&kubeconfig=%2Fk%2Fpane",
+			{ context = "kind-dev" }
+		)
+		expect((string.find(pinned.errors[1], "shell snippet", 1, true))).toBeNil()
+	end)
+
+	-- kubectl reports a missing --kubeconfig file as "cannot locate context",
+	-- which sends the user hunting for a context that is fine. The Command
+	-- line must still show the pins, or the copied command targets a
+	-- different kubeconfig than the one that failed.
+	it("says the kubeconfig file is missing and keeps the pins in the command", function()
+		local url = SCALE .. "&kubeconfig=%2Fk%2Fgone"
+		local s, d = ready(url, {
+			target = A.failed(1, "error: cannot locate context kind-dev"),
+			["kc-check"] = A.failed(1, ""),
+		})
+		expect(s.phase).toBe("error")
+		local check = argvOf(A.find(d.runs, "run", "kc-check"))
+		expect(check[#check]).toBe("/k/gone")
+		expect(s.errors[1]).toContain("kubeconfig file /k/gone does not exist")
+		local text = Session.commandText(s)
+		expect(text).toContain("--kubeconfig /k/gone")
+		expect(text).toContain("--context kind-dev")
+		local found = ready(url, { target = A.failed(1, "error: cannot locate context kind-dev") })
+		expect(found.errors[1]).toContain("cannot locate context")
+		expect((string.find(found.errors[1], "does not exist", 1, true))).toBeNil()
 	end)
 end)
 

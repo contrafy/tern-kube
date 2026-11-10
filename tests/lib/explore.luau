@@ -37,8 +37,17 @@ function M.config(text: string?): Config.Config
 	return cfg
 end
 
+-- The last Explore used the context default namespace of M.CTX, so a fresh
+-- block starts there (a first-ever block starts in all namespaces).
 function M.env(): State.Env
-	return { kubeconfig = nil, home = "/home/u", kubectl = "kubectl", decode = M.decode, now = M.AT }
+	return {
+		kubeconfig = nil,
+		home = "/home/u",
+		kubectl = "kubectl",
+		decode = M.decode,
+		now = M.AT,
+		lastScope = { context = M.CTX, namespace = nil, all = false },
+	}
 end
 
 local function ok(stdout: string): Result

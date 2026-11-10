@@ -73,7 +73,7 @@ local function parse(text: string, namespace: string, opts: Options?): Parsed
 		local ref = placed(doc.ref, namespace)
 		local key = if ref then keyOf(ref) else string.format("unidentified.%d", i)
 		local raw = slice(source, doc.startLine, doc.endLine)
-		local masked = if opts then slice(shown, doc.startLine, doc.endLine) else raw
+		local masked = if opts then Redact.lengthless(slice(shown, doc.startLine, doc.endLine)) else raw
 		if echoes then
 			masked = Redact.maskEchoes(masked, (opts :: Options).secrets)
 		end

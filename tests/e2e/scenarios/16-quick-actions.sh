@@ -106,6 +106,8 @@ before=$(pane_count)
 click_text 'tk-qa-shell-*' '.tk-grid .tk-c'
 click_text Shell '[data-role="tern-kube.inspector"] .sf-act'
 E2E_WAIT=15 quick_pane "tern-kube shell $qa_ns/tk-qa-shell-" || return
-contains "unpinned lens command names the current context" "$(focused_title)" "@ current context"
+contains "unpinned lens command names the resolved current context" "$(focused_title)" "@ kind-tern-kube-dev"
+expect_grid "tern-kube: context kind-tern-kube-dev (current-context)" || return
+expect_grid "kubectl exec -it -n $qa_ns tk-qa-shell-" || return
 shell_roundtrip $((before + 1)) || return
 grep -q 'tern-kube quick action.*shell' "$(window_log)" || fail "no quick action logged"

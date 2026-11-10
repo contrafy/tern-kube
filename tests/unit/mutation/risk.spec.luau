@@ -435,6 +435,19 @@ describe("risk: label and annotate", function()
 		)
 		expect(reason(a, "no-change").severity).toBe("info")
 	end)
+
+	-- MUT-F17: `annotate owner-` on an object without that key said "Removes
+	-- owner" although nothing changes.
+	it("says a removed key that the live objects lack is not set, and keeps Removes for set ones", function()
+		local live = { cm("cm", nil, { annotations = { team = "a" } }) }
+		local a = Risk.assess(plan("kubectl annotate configmap/cm owner- team-"), facts({ live = live }))
+		expect(reason(a, "removals").text).toBe("Removes team")
+		local r = reason(a, "removals-unset")
+		expect(r.severity).toBe("info")
+		expect(r.text).toBe("owner is not set; nothing to remove")
+		local unknown = Risk.assess(plan("kubectl annotate configmap/cm owner-"), OK)
+		expect(reason(unknown, "removals").text).toBe("Removes owner")
+	end)
 end)
 
 describe("risk: patch", function()
@@ -604,6 +617,207 @@ describe("risk: cordon, uncordon, drain", function()
 		expect(r.overridable).toBe(true)
 		expect(r.text).toContain("kubectl would cordon the node, then stop")
 		expect(r.text).toContain("(use --force)")
+	end)
+
+	-- MUT-F13: cordoning the only schedulable node was the plain Confirm
+	-- tier, and the drain preview never said the evicted pods had nowhere
+	-- to go (single-node kind cluster).
+	local function ready(name: string, extra: { [string]: any }?): any
+		local n = node(name, false)
+		n.status = { conditions = { { type = "Ready", status = "True" } } }
+		local fields: { [string]: any } = extra or {}
+		for k, v in fields do
+			n.spec[k] = v
+		end
+		return n
+	end
+
+	it("cordon of the last schedulable node is typed and says so", function()
+		local a = Risk.assess(
+			plan("kubectl cordon n1"),
+			facts({
+				targets = { ref("Node", "n1") },
+				live = { ready("n1") },
+				cluster = { nodes = { ready("n1") } },
+			})
+		)
+		expect(a.tier).toBe("typed")
+		expect(a.token).toBe("n1")
+		local r = reason(a, "last-schedulable-node")
+		expect(r.severity).toBe("high")
+		expect(r.text).toContain("Cordoning n1 leaves no schedulable node")
+	end)
+
+	it("other nodes count only when Ready, uncordoned and without NoSchedule/NoExecute taints", function()
+		local function assess(other: any): T.Assessment
+			return Risk.assess(
+				plan("kubectl cordon n1"),
+				facts({
+					targets = { ref("Node", "n1") },
+					live = { ready("n1") },
+					cluster = { nodes = { ready("n1"), other } },
+				})
+			)
+		end
+		expect(assess(ready("n2")).tier).toBe("simple")
+		local notReady = ready("n2")
+		notReady.status.conditions[1].status = "False"
+		expect(ids(assess(notReady))).toContain("last-schedulable-node")
+		expect(ids(assess(ready("n2", { unschedulable = true })))).toContain("last-schedulable-node")
+		local tainted = ready("n2", { taints = { { key = "dedicated", effect = "NoSchedule" } } })
+		expect(ids(assess(tainted))).toContain("last-schedulable-node")
+		local soft = ready("n2", { taints = { { key = "x", effect = "PreferNoSchedule" } } })
+		expect(assess(soft).tier).toBe("simple")
+	end)
+
+	it("an already cordoned last node is not flagged again by cordon", function()
+		local a = Risk.assess(
+			plan("kubectl cordon n1"),
+			facts({
+				targets = { ref("Node", "n1") },
+				live = { ready("n1", { unschedulable = true }) },
+				cluster = { nodes = { ready("n1", { unschedulable = true }) } },
+			})
+		)
+		expect(ids(a)).toEqual({ "already-cordoned" })
+	end)
+
+	it("drain of the last schedulable node says the evicted pods have nowhere to reschedule", function()
+		local a = Risk.assess(
+			plan("kubectl drain n1 --ignore-daemonsets --timeout=1m"),
+			facts({
+				targets = { ref("Node", "n1") },
+				live = { ready("n1") },
+				drain = drainFacts(),
+				cluster = { nodes = { ready("n1") } },
+			})
+		)
+		expect(reason(a, "last-schedulable-node").text).toContain("Draining n1 leaves no schedulable node")
+		local r = reason(a, "nowhere-to-reschedule")
+		expect(r.tier).toBe("typed")
+		expect(r.text).toContain("have nowhere to reschedule")
+		local spare = Risk.assess(
+			plan("kubectl drain n1 --ignore-daemonsets --timeout=1m"),
+			facts({
+				targets = { ref("Node", "n1") },
+				drain = drainFacts(),
+				cluster = { nodes = { ready("n1"), ready("n2") } },
+			})
+		)
+		expect(table.find(ids(spare), "nowhere-to-reschedule")).toBeNil()
+	end)
+
+	-- A failed read must not lower the tier: the user is told what is unknown.
+	it("an unreadable node list is a typed unknown, not an all-clear", function()
+		local a = Risk.assess(
+			plan("kubectl cordon n1"),
+			facts({
+				targets = { ref("Node", "n1") },
+				live = { ready("n1") },
+				cluster = { nodesUnknown = "Read every node failed (exit 1): Forbidden" },
+			})
+		)
+		expect(a.tier).toBe("typed")
+		local r = reason(a, "nodes-unknown")
+		expect(r.text).toContain("Forbidden")
+		expect(r.text).toContain("unknown")
+	end)
+end)
+
+describe("risk: scale to 0 under a PodDisruptionBudget", function()
+	local function deployment(name: string, labels: { [string]: string }): any
+		return {
+			apiVersion = "apps/v1",
+			kind = "Deployment",
+			metadata = { name = name, namespace = "apps" },
+			spec = { template = { metadata = { labels = labels } } },
+		}
+	end
+	local function pdb(name: string, spec: { [string]: any }, namespace: string?): any
+		return {
+			apiVersion = "policy/v1",
+			kind = "PodDisruptionBudget",
+			metadata = { name = name, namespace = namespace or "apps" },
+			spec = spec,
+		}
+	end
+	local function assess(budgets: { any }, replicas: string?): T.Assessment
+		return Risk.assess(
+			plan("kubectl scale deploy/web --replicas=" .. (replicas or "0")),
+			facts({
+				targets = { ref("Deployment", "web", "apps") },
+				live = { deployment("web", { app = "web", tier = "fe" }) },
+				cluster = { pdbs = budgets },
+			})
+		)
+	end
+
+	-- MUT-F13: scale to 0 stayed Confirm/medium with `minAvailable: 2`.
+	it("is typed when a selecting budget requires available pods, naming it", function()
+		local a = assess({ pdb("web-pdb", { minAvailable = 2, selector = { matchLabels = { app = "web" } } }) })
+		expect(a.tier).toBe("typed")
+		local r = reason(a, "scale-zero-pdb")
+		expect(r.text).toContain("PodDisruptionBudget apps/web-pdb (minAvailable: 2) selects Deployment apps/web")
+		local pct = assess({ pdb("p", { minAvailable = "50%", selector = { matchLabels = { app = "web" } } }) })
+		expect(ids(pct)).toContain("scale-zero-pdb")
+		local none = assess({ pdb("p", { maxUnavailable = 0, selector = {} }) })
+		expect(reason(none, "scale-zero-pdb").text).toContain("(maxUnavailable: 0)")
+	end)
+
+	it("matches selectors by labels and expressions, in the workload's namespace only", function()
+		local function hit(spec: { [string]: any }, namespace: string?): boolean
+			return table.find(ids(assess({ pdb("p", spec, namespace) })), "scale-zero-pdb") ~= nil
+		end
+		local exprIn = { matchExpressions = { { key = "tier", operator = "In", values = { "fe", "be" } } } }
+		expect(hit({ minAvailable = 1, selector = exprIn })).toBe(true)
+		local exprNotIn = { matchExpressions = { { key = "tier", operator = "NotIn", values = { "fe" } } } }
+		expect(hit({ minAvailable = 1, selector = exprNotIn })).toBe(false)
+		local exists = { matchExpressions = { { key = "app", operator = "Exists" } } }
+		expect(hit({ minAvailable = 1, selector = exists })).toBe(true)
+		local absent = { matchExpressions = { { key = "app", operator = "DoesNotExist" } } }
+		expect(hit({ minAvailable = 1, selector = absent })).toBe(false)
+		expect(hit({ minAvailable = 1, selector = { matchLabels = { app = "db" } } })).toBe(false)
+		expect(hit({ minAvailable = 1, selector = { matchLabels = { app = "web" } } }, "other")).toBe(false)
+		-- No selector selects nothing (policy/v1).
+		expect(hit({ minAvailable = 1 })).toBe(false)
+		-- Budgets that allow every pod to go do not protect anything.
+		expect(hit({ minAvailable = 0, selector = { matchLabels = { app = "web" } } })).toBe(false)
+		expect(hit({ maxUnavailable = 1, selector = { matchLabels = { app = "web" } } })).toBe(false)
+		expect(hit({ maxUnavailable = "100%", selector = { matchLabels = { app = "web" } } })).toBe(false)
+	end)
+
+	it("other replica counts ignore budgets; an unreadable budget list is a typed unknown", function()
+		local budgets = { pdb("p", { minAvailable = 2, selector = { matchLabels = { app = "web" } } }) }
+		expect(assess(budgets, "1").tier).toBe("simple")
+		local a = Risk.assess(
+			plan("kubectl scale deploy/web --replicas=0"),
+			facts({
+				targets = { ref("Deployment", "web", "apps") },
+				live = { deployment("web", { app = "web" }) },
+				cluster = { pdbsUnknown = "Read the PodDisruptionBudgets failed (exit 1): Forbidden" },
+			})
+		)
+		expect(a.tier).toBe("typed")
+		expect(reason(a, "pdb-unknown").text).toContain("Forbidden")
+	end)
+end)
+
+describe("risk: debug node profile", function()
+	-- MUT-F17: quick-action debug runs with --profile=general, which mounts
+	-- the host filesystem in the host namespaces without privileged mode;
+	-- the finding must describe what the chosen profile really grants.
+	it("names what each profile grants and stays typed", function()
+		local function text(flags: string): string
+			local a = Risk.assess(plan("kubectl debug node/worker -it --image=busybox" .. flags), OK)
+			expect(a.tier).toBe("typed")
+			return reason(a, "debug-node").text
+		end
+		expect(text(" --profile=general")).toContain("host network, PID and IPC namespaces")
+		expect(text(" --profile=general")).toContain("not privileged")
+		expect(text("")).toContain("not privileged")
+		expect(text(" --profile=sysadmin")).toContain("privileged pod")
+		expect(text(" --profile=baseline")).toContain("no host namespaces")
+		expect(text(" --profile=netadmin")).toContain("NET_ADMIN")
 	end)
 end)
 

@@ -269,7 +269,8 @@ scenario_cronjob_quick() {
 	tk_expect phase ready
 	tk_expect_has steps "dry-run=ok"
 	tk_key enter
-	tk_expect phase closed
+	# The block stays open to show the Job it asked the window to create.
+	tk_expect phase done
 	tk_effects_lacks grant
 	tk_effects_has open
 	tk_check "the open link carries the window's token" grep -q "confirm=$grant" "$TK_W/effects.log"
@@ -925,13 +926,18 @@ scenario_cordon_uncordon() {
 	node_begin
 	tk_begin cordon "$(node_link cordon)"
 	tk_expect phase ready
-	tk_expect tier simple
+	# kind has one node: cordoning it leaves nothing schedulable, so the
+	# node name must be typed.
+	tk_expect tier typed
+	tk_expect token "$NODE"
+	tk_expect_has reasons "typed:last-schedulable-node"
 	tk_expect_has steps "targets=ok"
 	tk_expect_has steps "dry-run=ok"
 	tk_expect_has reasons "simple:control-plane"
 	tk_expect segments "modify:Node/$NODE"
 	tk_expect_line + "unschedulable: true"
 	expect_schedulable "the preview left the node schedulable"
+	tk_type "$NODE"
 	tk_key enter
 	tk_expect phase done
 	tk_expect exec_status 0

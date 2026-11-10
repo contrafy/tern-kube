@@ -76,18 +76,32 @@ local function spinner(label: string, key: string?): Node
 	}, { key = key })
 end
 
-local function button(text: string, action: string?, class: string, key: string, title: string?): Node
-	local p: { [string]: any } = { key = key, class = "tk-mbtn " .. class, text = text, title = title }
-	if action then
-		p.actions = { click = action }
-	else
-		p.class ..= " tk-mbtn-off"
-	end
-	return ui.el("button", p)
+-- An inert button (no action) is disabled, `why` as its tooltip.
+local function button(
+	text: string,
+	action: string?,
+	variant: string,
+	key: string,
+	shortcut: string?,
+	why: string?
+): Node
+	return ui.button(text, {
+		key = key,
+		variant = variant,
+		keys = if shortcut then { shortcut } else nil,
+		actions = if action then { click = action } else nil,
+		disabled = if action then nil else (why or true),
+	})
 end
 
-local function chip(text: string, action: string, key: string, tone: string?): Node
-	return ui.badge(text, tone or "neutral", { key = key, actions = { click = action }, role = "tern-kube.chip" })
+local function chip(text: string, action: string, key: string, props: { [string]: any }?): Node
+	local p: { [string]: any } = { key = key, size = "sm", actions = { click = action }, role = "tern-kube.chip" }
+	if props then
+		for k, v in props do
+			p[k] = v
+		end
+	end
+	return ui.button(text, p)
 end
 
 local function opLabel(s: State): string
@@ -151,7 +165,7 @@ local function helmOptionChips(s: State): Node?
 	end
 	local o = (plan.helm :: T.HelmRollback).options
 	local function opt(label: string, on: boolean, act: string): Node
-		return chip(label .. (if on then ": on" else ": off"), act, act, if on then "accent" else "neutral")
+		return chip(label, act, act, { on = on, title = label .. (if on then ": on" else ": off") })
 	end
 	return ui.row({
 		ui.text({ ui.span("Options (preview again): ", "muted") }, { key = "t" }),
@@ -360,18 +374,21 @@ local function countBadges(s: State): { Node }
 		end
 	end
 	local plan = s.plan
+	local objects = s.objects
+	local unchanged = if objects then #objects.unchanged else 0
 	if plan and s.targets and plan.family ~= "apply" then
 		local n = #(s.targets :: { any })
-		local word = TARGET_WORD[plan.family] or "target"
-		add(n, word, if plan.family == "delete" or plan.family == "drain" then "error" else "info")
+		if s.assessment and s.assessment.tier == "blocked" then
+			add(n, "matched", "neutral")
+		else
+			local word = TARGET_WORD[plan.family] or "target"
+			add(n - unchanged, word, if plan.family == "delete" or plan.family == "drain" then "error" else "info")
+		end
 		if n == 0 then
 			table.insert(out, ui.badge("nothing matched", "warning", { key = "c-none" }))
 		end
 	end
-	local objects = s.objects
-	if objects then
-		add(#objects.unchanged, "unchanged", "muted")
-	end
+	add(unchanged, "unchanged", "muted")
 	local d = s.drainFacts
 	if d then
 		add(#d.evictions, "to evict", "error")
@@ -572,6 +589,17 @@ local function objectsCard(s: State): Node?
 	local targets = s.targets
 	if plan == nil or targets == nil or plan.family == "apply" or #targets == 0 then
 		return nil
+	end
+	local job = plan.resources[1]
+	if plan.family == "cronjob-run" and job then
+		local from = plan.invocation.flags.from
+		local cron = if from then string.match(from[#from], "^[^/]+/(.+)$") else nil
+		local ns = if job.namespace then job.namespace .. "/" else ""
+		local rows: { { { SpanLike } } } = { { { "Job" :: SpanLike }, { ui.span(ns .. job.name, "mono") } } }
+		if cron then
+			table.insert(rows, { { "From" :: SpanLike }, { ui.span("CronJob " .. ns .. cron, "mono") } })
+		end
+		return ui.card({ "Job " .. ns .. job.name .. " will be created" }, { ui.kv(rows) }, { key = "objects" })
 	end
 	local undoByName: { [string]: { from: number, to: number } } = {}
 	local undoTargets: { Rollout.UndoTarget } = s.undo or {}
@@ -776,13 +804,12 @@ local function confirmNodes(s: State, out: { Node })
 		local link = s.link
 		if link then
 			local prompt = Link.prompt(link :: Link.Request, s.home)
-			table.insert(
-				out,
-				ui.text({
-					ui.span(prompt.text, "strong"),
-					ui.span("   " .. prompt.hint, "muted"),
-				}, { key = "prompt" })
-			)
+			local spans: { SpanLike } = { ui.span(prompt.text, "strong") }
+			if link.op == "scale" and s.replicasCurrent then
+				table.insert(spans, ui.span(string.format("   currently %d", s.replicasCurrent :: number), "accent"))
+			end
+			table.insert(spans, ui.span("   " .. prompt.hint, "muted"))
+			table.insert(out, ui.text(spans, { key = "prompt" }))
 		end
 		table.insert(out, {
 			k = "input",
@@ -839,7 +866,13 @@ local function confirmNodes(s: State, out: { Node })
 					}, { key = "t" }),
 					if s.targetConfirmed
 						then ui.badge("target confirmed", "success", { key = "tc" })
-						else button("Confirm target", "target", "tk-mbtn-plain", "tc", "t"),
+						else button(
+							"Confirm target",
+							"target",
+							"default",
+							"tc",
+							if Session.typing(s) then "ctrl+t" else "t"
+						),
 				}, { key = "target-confirm", wrap = true })
 			)
 		end
@@ -879,11 +912,11 @@ local function confirmNodes(s: State, out: { Node })
 	end
 	local buttons: { Node } = {}
 	if s.phase == "input" then
-		table.insert(buttons, button("Preview", "confirm", "tk-mbtn-primary", "go"))
+		table.insert(buttons, button("Preview", "confirm", "primary", "go", "enter"))
 	elseif s.phase == "ready" then
 		local canOverride = req and req.overrideAvailable and not s.override
 		if canOverride then
-			table.insert(buttons, button("Override failed preview", "override", "tk-mbtn-danger", "override"))
+			table.insert(buttons, button("Override failed preview", "override", "danger", "override"))
 		end
 		local ok = confirmable(s)
 		local danger = s.assessment and s.assessment.tier ~= "simple"
@@ -892,9 +925,10 @@ local function confirmNodes(s: State, out: { Node })
 			button(
 				confirmLabel(s),
 				if ok then "confirm" else nil,
-				if danger then "tk-mbtn-danger" else "tk-mbtn-primary",
+				if danger then "danger" else "primary",
 				"confirm",
-				if Session.typing(s) then "type the name, then enter" else "enter"
+				"enter",
+				if ok then nil elseif Session.typing(s) then "Type the name first" else "Not confirmable yet"
 			)
 		)
 	end
@@ -905,7 +939,7 @@ local function confirmNodes(s: State, out: { Node })
 		end
 		table.insert(
 			buttons,
-			button(cancelText, if s.phase == "executing" then nil else "cancel", "tk-mbtn-plain", "cancel", "esc")
+			button(cancelText, if s.phase == "executing" then nil else "cancel", "default", "cancel", "esc")
 		)
 	end
 	if s.argv then
@@ -914,7 +948,7 @@ local function confirmNodes(s: State, out: { Node })
 			button(
 				if s.showCommand then "Hide exact command" else "View exact command",
 				"command",
-				"tk-mbtn-plain",
+				"default",
 				"command",
 				"c"
 			)
@@ -922,13 +956,13 @@ local function confirmNodes(s: State, out: { Node })
 	end
 	if s.phase == "ready" or s.phase == "error" then
 		if Session.canRerun(s) then
-			table.insert(buttons, button("Preview again", "rerun", "tk-mbtn-plain", "rerun", "r"))
+			table.insert(buttons, button("Preview again", "rerun", "default", "rerun", "r"))
 		end
 		if Session.canReinput(s) then
-			table.insert(buttons, button("Change input", "input", "tk-mbtn-plain", "input", "i"))
+			table.insert(buttons, button("Change input", "input", "default", "input", "i"))
 		end
 	end
-	table.insert(buttons, button("?", "help", "tk-mbtn-plain", "help", "help"))
+	table.insert(buttons, button("Help", "help", "quiet", "help", "?"))
 	table.insert(out, ui.row(buttons, { key = "buttons", wrap = true, role = "tern-kube.approve-buttons" }))
 end
 
@@ -964,7 +998,7 @@ local function commandNode(s: State): Node?
 		note = "Runs once, without retries, with the context and kubeconfig pinned."
 	end
 	table.insert(children, ui.muted(note, { key = "note" }))
-	table.insert(children, ui.row({ chip("Copy", "copy", "copy") }, { key = "copy" }))
+	table.insert(children, ui.row({ chip("Copy", "copy", "copy", { keys = { "y" } }) }, { key = "copy" }))
 	return ui.card({ "Exact command" }, children, { key = "command" })
 end
 
@@ -1001,6 +1035,16 @@ local function objectSummary(s: State, stdout: string): string
 	return if #parts == 0 then "nothing found" else table.concat(parts, "; ")
 end
 
+-- Follow-ups first, then Close.
+local function closeRow(s: State): Node
+	local row: { Node } = {}
+	for _, f in Session.followUps(s) do
+		table.insert(row, button(f.label, f.act, "primary", f.act))
+	end
+	table.insert(row, button("Close", "close", "default", "close", "esc"))
+	return ui.row(row, { key = "buttons", wrap = true, role = "tern-kube.approve-buttons" })
+end
+
 local function resultNodes(s: State, out: { Node })
 	local ex = s.exec
 	local plan = s.plan
@@ -1024,7 +1068,7 @@ local function resultNodes(s: State, out: { Node })
 		local tone = if ex.status == 0 then "success" else "error"
 		table.insert(bar, ui.badge("exit " .. tostring(ex.status), tone, { key = "st" }))
 	end
-	table.insert(bar, chip("Requery", "requery", "rq", "accent"))
+	table.insert(bar, chip("Requery", "requery", "rq", { keys = { "r" } }))
 	local children: { Node } = { ui.row(bar, { key = "bar" }) }
 	if native then
 		table.insert(children, MutationView.render(capture, s.resultView, Viewstate))
@@ -1063,7 +1107,27 @@ local function resultNodes(s: State, out: { Node })
 			role = "tern-kube.approve-result",
 		})
 	)
-	table.insert(out, ui.row({ button("Close", "close", "tk-mbtn-plain", "close", "esc") }, { key = "buttons" }))
+	table.insert(out, closeRow(s))
+end
+
+-- Quick mode: the confirmed action went to a split (run-now stays here).
+local function launchedNodes(s: State, out: { Node })
+	local q = s.quick
+	if q == nil then
+		return
+	end
+	local job = if q.ref and q.opts.suffix then q.ref.name .. "-manual-" .. q.opts.suffix else nil
+	table.insert(
+		out,
+		ui.card({ "Started" }, {
+			ui.text({
+				ui.span("Job ", "muted"),
+				ui.span(job or "?", "mono strong"),
+				ui.span(" is created in a new split; its output and exit status are there.", "muted"),
+			}, { key = "job" }),
+		}, { key = "launched", status = "done", role = "tern-kube.approve-result" })
+	)
+	table.insert(out, closeRow(s))
 end
 
 -- Dock and help -------------------------------------------------------------------
@@ -1109,6 +1173,9 @@ local function hints(s: State): { SpanLike }
 			),
 		}
 	elseif s.phase == "done" then
+		if s.exec == nil then
+			return { ui.span("esc close", "muted") }
+		end
 		return { ui.span("r requery · esc close · y copy command", "muted") }
 	elseif s.phase == "executing" then
 		return { ui.span("running; cannot be cancelled", "warning") }
@@ -1195,7 +1262,9 @@ function M.view(s: State): View
 	add(drainCard(s))
 	add(editCard(s))
 	add(risksCard(s))
-	if s.phase == "done" then
+	if s.phase == "done" and s.launched then
+		launchedNodes(s, main)
+	elseif s.phase == "done" then
 		resultNodes(s, main)
 	else
 		confirmNodes(s, main)

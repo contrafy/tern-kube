@@ -45,7 +45,8 @@ describe("explore render: header", function()
 		local m = main(s)
 		local warning = nodes.find(m, nodes.role("tern-kube.inferred")) :: nodes.Node
 		expect((warning.p :: any).tone).toBe("warning")
-		expect(nodes.text(m)).toContain("inferred: current-context at 00:16:40 UTC")
+		-- Local time (the test env is at UTC+0), without a "UTC" suffix (EXP-U7).
+		expect(nodes.text(m)).toContain("inferred: current-context at 00:16:40)")
 		expect(nodes.actions(m)).toContain("confirm")
 		local confirmed = W.action(s, "confirm")
 		expect(table.find(nodes.actions(main(confirmed)), "confirm")).toBeNil()
@@ -166,19 +167,91 @@ describe("explore render: header", function()
 			keysUnique(s)
 		end
 	end)
+
+	-- Live: with live queries off the block showed an empty filter box and
+	-- "Nothing is queried until the target is resolved", as if waiting.
+	it("with live queries off shows the reason only: no filter, no waiting text", function()
+		local s = State.init(
+			{ W.link({ context = W.CTX }) },
+			nil,
+			W.config('{"explore":{"allow_live_queries":false}}'),
+			W.env()
+		)
+		local m = main(s)
+		expect(nodes.text(m)).toContain("allow_live_queries")
+		expect((string.find(nodes.text(m), "until the target is resolved", 1, true))).toBeNil()
+		expect(nodes.find(m, function(n: any): boolean
+			return n.k == "input"
+		end)).toBeNil()
+		expect(nodes.text(m)).toContain("Settings")
+	end)
+
+	-- A list opened with the lens command's `-l` must say it shows a subset,
+	-- and offer the way back to everything.
+	it("a list under a label selector shows it in the breadcrumb with a way to clear it", function()
+		local s = W.settle(
+			State.init(
+				{ W.link({ context = W.CTX, namespace = W.NS, kind = "Pod", selector = "app%3Dweb" }) },
+				nil,
+				W.config(nil),
+				W.env()
+			)
+		)
+		local m = main(s)
+		local crumbs = nodes.find(m, nodes.role("tern-kube.breadcrumb")) :: nodes.Node
+		expect(nodes.text(crumbs)).toContain("pods -l app=web")
+		expect(nodes.actions(crumbs)).toContain("selector-clear")
+		expect(Render.title(s)).toContain("-l app=web")
+	end)
 end)
 
 describe("explore render: list", function()
-	it("renders the pods grid with the keyboard selection marked", function()
+	it("renders the pods as a native table with the keyboard selection drawn", function()
 		local s = W.keys(W.open(), { "j" })
 		local m = main(s)
-		local selected = nodes.findAll(m, nodes.class("tk-sel"))
-		expect(#selected).toBe(1)
-		local key = (selected[1].p :: any).key
-		expect(nodes.action(selected[1])).toBe("open=" .. key)
-		expect((State.selectedItem(s) :: State.Item).key).toBe(key)
+		local tbl = nodes.find(m, nodes.kind("table")) :: nodes.Node
+		local p = tbl.p :: any
+		expect(#p.rows).toBe(7)
+		expect(p.selectable).toBe(true)
+		expect(p.selected).toBe((State.selectedItem(s) :: State.Item).key)
+		expect(p.rows[2].id).toBe(p.selected)
+		-- The table scrolls in its own box under the stats tiles.
+		local scroller = nodes.find(m, nodes.role("tern-kube.scroller")) :: nodes.Node
+		expect((scroller.c :: any)[1]).toBe(tbl)
 		expect(nodes.find(m, nodes.key("filter")) ~= nil).toBe(true)
 		expect(nodes.text(m)).toContain("7 pods")
+	end)
+
+	-- The list head says at a glance how healthy the scope is.
+	it("shows ready, not ready and restart tiles over a list with a health column", function()
+		local m = main((W.open()))
+		local stats = nodes.find(m, nodes.kind("stats")) :: nodes.Node
+		local text = {}
+		for _, item in (stats.p :: any).items do
+			table.insert(text, nodes.spansText(item.label) .. "=" .. nodes.spansText(item.value))
+		end
+		local joined = table.concat(text, " ")
+		expect(joined).toContain("pods=7")
+		expect(joined).toContain("Ready=")
+		expect(joined).toContain("Not ready=")
+		expect(joined).toContain("Restarts=")
+	end)
+
+	it("sorts by a header click and draws the arrow on that column", function()
+		local s = W.open()
+		local tbl = nodes.find(main(s), nodes.kind("table")) :: nodes.Node
+		local restarts: any = nil
+		for _, c in (tbl.p :: any).cols do
+			if c.head == "RESTARTS" then
+				restarts = c
+			end
+		end
+		expect(restarts.sortable).toBe(true)
+		s = W.action(s, "sort", restarts.id .. ":asc")
+		tbl = nodes.find(main(s), nodes.kind("table")) :: nodes.Node
+		expect((tbl.p :: any).sort.col).toBe(restarts.id)
+		expect((tbl.p :: any).sort.dir).toBe("desc")
+		expect((tbl.p :: any).rows[1].id).toBe((State.items(s)[1] :: State.Item).key)
 	end)
 
 	-- Tern draws the caret where the `cursor` prop says, in UTF-16 units.
@@ -195,13 +268,14 @@ describe("explore render: list", function()
 	it("caps rendered rows and offers clickable rows above and below", function()
 		local s = W.open(nil, W.config('{"general":{"max_rendered_rows":3}}'))
 		local m = main(s)
-		expect(#nodes.findAll(m, nodes.class("tk-r"))).toBe(3)
-		expect(nodes.text(m)).toContain("↓ 4 below")
+		expect(#(nodes.find(m, nodes.kind("table")) :: any).p.rows).toBe(3)
+		expect(nodes.text(m)).toContain("↓ 4 more rows")
 		expect(nodes.actions(m)).toContain("page=down")
 		s = W.keys(s, { "G" })
 		m = main(s)
-		expect(#nodes.findAll(m, nodes.class("tk-sel"))).toBe(1)
-		expect(nodes.text(m)).toContain("↑ 4 above")
+		local p = (nodes.find(m, nodes.kind("table")) :: any).p
+		expect(p.selected).toBe(p.rows[3].id)
+		expect(nodes.text(m)).toContain("↑ 4 earlier rows")
 		expect(nodes.actions(m)).toContain("page=up")
 	end)
 
@@ -214,10 +288,16 @@ describe("explore render: list", function()
 		)
 		local m = main(s)
 		expect(nodes.text(m)).toContain("NAME KIND RELATION VIA STATUS")
-		local badge = nodes.find(m, function(n)
-			return n.k == "badge" and (n.p :: any).text == "owner"
-		end) :: nodes.Node
-		expect((badge.p :: any).title).toContain("ownerReference")
+		local tbl = nodes.find(m, nodes.kind("table")) :: nodes.Node
+		local badge: any = nil
+		for _, row in (tbl.p :: any).rows do
+			for _, cell in row.cells do
+				if type(cell) == "table" and cell.badge and cell.badge.text == "owner" then
+					badge = cell.badge
+				end
+			end
+		end
+		expect(badge.title).toContain("ownerReference")
 		expect((string.find(nodes.text(m), "ownerReference", 1, true))).toBeNil()
 	end)
 
@@ -305,7 +385,12 @@ describe("explore render: other views", function()
 		local s = W.keys(W.open(), { "c" })
 		local text = nodes.text(main(s))
 		expect(text).toContain("current target")
-		expect(nodes.actions(main(s))).toContain("open=other")
+		local tbl = nodes.find(main(s), nodes.kind("table")) :: nodes.Node
+		local ids = {}
+		for _, row in (tbl.p :: any).rows do
+			table.insert(ids, row.id)
+		end
+		expect(ids).toContain("other")
 	end)
 
 	it("the help layer lists every key", function()
@@ -438,6 +523,8 @@ describe("explore render: performance", function()
 		end
 		local data = table.clone(load.data :: State.ListData)
 		data.rows = rows
+		data.memo = nil
+		data.view = nil
 		local big = table.clone(load)
 		big.data = data
 		local cache = table.clone(s.cache)
@@ -450,7 +537,7 @@ describe("explore render: performance", function()
 			best = math.min(best, (os.clock() - t0) * 1000)
 		end
 		expect(best < 60).toBe(true)
-		expect(nodes.text(main(s))).toContain("↓ 500 below")
+		expect(nodes.text(main(s))).toContain("↓ 500 more rows")
 	end)
 end)
 
@@ -500,7 +587,18 @@ describe("explore render: helm", function()
 		expect(text).toContain("5 releases")
 		-- broken-c failed and stuck-d is pending: both need attention.
 		expect(text).toContain("2 need attention")
-		expect(#nodes.findAll(m, nodes.class("tk-helm-error"))).toBe(1)
+		-- broken-c's status cell keeps the error tone in the native table.
+		local tbl = nodes.find(m, nodes.kind("table")) :: nodes.Node
+		local errors = 0
+		for _, row in (tbl.p :: any).rows do
+			for _, cell in row.cells do
+				local spans = if type(cell) == "table" and cell.text then cell.text else cell
+				if type(spans) == "table" and spans[1] and string.find(spans[1].s or "", "error", 1, true) then
+					errors += 1
+				end
+			end
+		end
+		expect(errors).toBe(1)
 		expect(nodes.text(view(s).dock :: any)).toContain("enter open")
 		expect(Render.title(s)).toContain("Helm releases")
 	end)
@@ -593,7 +691,12 @@ describe("explore render: helm", function()
 		local m = main(s)
 		expect(nodes.text(m)).toContain("KIND NAME NAMESPACE STATE SOURCE")
 		expect(nodes.text(m)).toContain("present")
-		expect(nodes.actions(m)).toContain("open=apps/Deployment/" .. W.HELM_NS .. "/shop-a-shop")
+		local tbl = nodes.find(m, nodes.kind("table")) :: nodes.Node
+		local ids = {}
+		for _, row in (tbl.p :: any).rows do
+			table.insert(ids, row.id)
+		end
+		expect(ids).toContain("apps/Deployment/" .. W.HELM_NS .. "/shop-a-shop")
 	end)
 
 	it("an object managed by Helm names its release in the object and relations views", function()
@@ -663,8 +766,8 @@ describe("explore render: helm masking sweep", function()
 			end
 		end
 		-- Masked, not merely absent: the views did render web-b's values.
-		expect(seen["web-b values user"]).toContain("<redacted:")
-		expect(seen["web-b M"]).toContain("<redacted:")
+		expect(seen["web-b values user"]).toContain("<redacted>")
+		expect(seen["web-b M"]).toContain("<redacted>")
 		expect(seen["web-b M"]).toContain("postgres://app:<redacted")
 		expect(views > 60).toBe(true)
 	end)

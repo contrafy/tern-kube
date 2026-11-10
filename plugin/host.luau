@@ -50,8 +50,11 @@ type CaptureState = {
 	liveRaw: boolean,
 	lines: { string },
 	bytes: number,
-	-- Output beyond the native limits: the lens stops recording and shows raw.
+	-- Output beyond the native limits: the lens stops parsing and shows why,
+	-- with the first OVERFLOW_PREVIEW lines (Raw has everything).
 	overflow: boolean,
+	-- Every line seen, overflow included.
+	seen: number,
 	status: number?,
 	view: ViewState,
 	capture: Capture?,
@@ -90,6 +93,9 @@ local NEEDS_FINISH: { [string]: boolean } = { json = true, yaml = true, describe
 -- the capture; above this many lines the live view stays raw until the
 -- command finishes.
 local MAX_RUNNING_LINES = 2000
+
+local OVERFLOW_PREVIEW = 200
+local OVERFLOW_PREVIEW_BYTES = 64 * 1024
 
 local function warnOnce(state: { warned: boolean, run: LensRun }, what: string, err: any)
 	if not state.warned then
@@ -158,6 +164,14 @@ local function cwdOf(run: LensRun): string?
 end
 
 local EXPLORE_ROUTES: { [string]: boolean } = { manifest = true, diff = true, events = true, compare = true }
+
+local function exploreFilterAction(state: CaptureState, cx: EffectCx)
+	local inv = Argv.parse(state.run.program, state.run.args)
+	local url = Command.exploreFilterUrl(inv, cwdOf(state.run))
+	if url then
+		cx:open(url)
+	end
+end
 
 local function exploreAction(state: CaptureState, key: string, cx: EffectCx, route: string?)
 	local capture = captureOf(state)
@@ -393,6 +407,8 @@ local function captureEvent(state: CaptureState, act: string, value: string, cx:
 		end
 	elseif act == "act" then
 		quickAction(value, cx)
+	elseif act == "explore-filter" then
+		exploreFilterAction(state, cx)
 	elseif act == "mutate" then
 		mutateAction(value, cx)
 	elseif act == HelmChip.ACT then
@@ -401,6 +417,15 @@ local function captureEvent(state: CaptureState, act: string, value: string, cx:
 end
 
 local function captureView(state: CaptureState): Node?
+	if state.overflow then
+		return View.renderOverflow(Argv.parse(state.run.program, state.run.args), {
+			lines = state.seen,
+			bytes = state.bytes,
+			maxLines = state.maxLines,
+			maxBytes = state.maxBytes,
+			preview = state.lines,
+		}) :: any
+	end
 	local capture = captureOf(state)
 	if capture == nil then
 		return nil
@@ -443,6 +468,7 @@ tern.lens.define("kubectl", {
 			lines = {},
 			bytes = 0,
 			overflow = false,
+			seen = 0,
 			status = nil,
 			view = Viewstate.default(),
 			capture = nil,
@@ -462,13 +488,24 @@ tern.lens.define("kubectl", {
 			LogsStore.push(state.store, l.text)
 			return
 		end
+		state.seen += 1
+		state.bytes += #l.text + 1
 		if state.overflow then
 			return
 		end
-		state.bytes += #l.text + 1
 		if #state.lines >= state.maxLines or state.bytes > state.maxBytes then
 			state.overflow = true
-			state.lines = {}
+			local kept: { string } = {}
+			local budget = OVERFLOW_PREVIEW_BYTES
+			for i = 1, math.min(OVERFLOW_PREVIEW, #state.lines) do
+				local text = state.lines[i]
+				budget -= #text + 1
+				if budget < 0 then
+					break
+				end
+				table.insert(kept, text)
+			end
+			state.lines = kept
 			return
 		end
 		table.insert(state.lines, l.text)

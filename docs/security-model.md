@@ -254,8 +254,10 @@ mutate the workload from inside; that is the user's action.
 
 Mutating quick actions (`kubectl debug` on a pod or node, CronJob
 run-now) need a confirmation grant from the approve block; `debug node` is
-in the typed tier because it creates a privileged pod in the node's host
-namespaces (`plugin/lib/mutation/risk.luau`). A link without `confirm`
+in the typed tier because it creates a pod in the node's host network, PID
+and IPC namespaces with the host filesystem at /host (`--profile=general`:
+not privileged; `debug` on a pod adds SYS_PTRACE for `--target`)
+(`plugin/lib/mutation/risk.luau`). A link without `confirm`
 opens the approve block; one whose grant is unknown, expired, used or
 minted for different fields runs nothing ("Tern Kube: not confirmed").
 

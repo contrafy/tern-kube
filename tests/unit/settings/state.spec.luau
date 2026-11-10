@@ -429,11 +429,25 @@ describe("settings state: editing and validation", function()
 		expect(s2.editing ~= nil).toBe(true)
 	end)
 
-	it("refuses auto_refresh true: the loader would keep it false", function()
+	-- A toggle that can only refuse looked like a broken setting (LENS-L13):
+	-- auto_refresh is fixed, so enter and the toggle action never write and
+	-- say why it cannot change.
+	it("keeps auto_refresh fixed: enter and toggle explain instead of writing", function()
 		local s = select(open('{"schema_version": 1}'), "explore.auto_refresh")
+		expect(State.selected(s).fixed).toContain("never polls")
 		local s2, effects = key(s, "enter")
 		expect(writeOf(effects)).toBeNil()
-		expect((s2.message :: any).text).toContain("never polls")
+		expect((s2.message :: any).text).toContain("fixed")
+		local s3, effects3 = State.update(s, { t = "action", act = "toggle", value = "explore.auto_refresh" })
+		expect(writeOf(effects3)).toBeNil()
+		expect((s3.message :: any).text).toContain("never polls")
+	end)
+
+	it("reports a fixed key set in the file as fixed, not invalid, and lets reset remove it", function()
+		local s = select(open('{"schema_version": 1, "explore": {"auto_refresh": true}}'), "explore.auto_refresh")
+		expect(State.origin(s, State.selected(s))).toBe("fixed")
+		local _, effects = key(s, "r")
+		expect((written(effects).explore or {}).auto_refresh).toBeNil()
 	end)
 
 	it("refuses a relative kubeconfig path", function()

@@ -20,6 +20,7 @@ local Detect = require("../helm/detect")
 local Diffseg = require("../mutation/diffseg")
 local Drift = require("../gitops/drift")
 local Export = require("../gitops/export")
+local HelmOwner = require("../helm/owner")
 local HelmParse = require("../helm/parse")
 local HelmQuery = require("../helm/query")
 local HelmTypes = require("../helm/types")
@@ -60,6 +61,12 @@ export type Ctx = {
 	-- The resolved helm executable; nil when helm is not found (no chart
 	-- auto-detect then).
 	helm: string?,
+	-- The live object of `ref` the block already read (nil: unknown); a
+	-- Helm-managed one is diffed against the detected chart's render.
+	findObject: ((ref: Ref) -> any)?,
+	-- Opaque tag of the Explore block; the approve block hands it back after
+	-- a successful apply so the block refreshes (Link origin).
+	origin: string?,
 }
 
 -- `helm list -A` of every status for chart auto-detect, read once per index (scanGen).
@@ -86,7 +93,8 @@ export type Ctl = {
 	error: string?,
 }
 
-export type DiffStatus = "index" | "nomatch" | "reading" | "writing" | "diffing" | "ok" | "error"
+-- "chart": rendering the detected chart of the object's Helm release first.
+export type DiffStatus = "index" | "chart" | "nomatch" | "reading" | "writing" | "diffing" | "ok" | "error"
 
 export type DiffLoad = {
 	status: DiffStatus,
@@ -102,6 +110,15 @@ export type DiffLoad = {
 	exit: number?,
 	error: string?,
 	at: number?,
+	-- The object's Helm release (namespace/name) when no manifest declares it.
+	helm: string?,
+	-- The drift source whose render the diff waits for (status "chart").
+	chart: string?,
+	-- An apply or export ran since: entering the route diffs again.
+	stale: boolean?,
+	-- No manifest matched before the block had read the object, so its Helm
+	-- release was unknown; reading it later checks again.
+	unread: boolean?,
 }
 
 export type SourceEntry = {
@@ -160,6 +177,8 @@ export type DriftLoad = {
 	error: string?,
 	filter: Filter,
 	at: number?,
+	-- An apply or export ran since: entering the report compares again.
+	stale: boolean?,
 }
 
 -- `kubectl config view -o json` of one kubeconfig: the matrix picker.
@@ -278,6 +297,11 @@ export type G = {
 	-- Releases handed in by releaseSource (ns/name), for sources the chooser
 	-- never listed.
 	known: { [string]: HelmTypes.ReleaseRow },
+	-- ctrl+g on a release before the index existed: open its drift report
+	-- once the scan is done (takeNav), if the chooser is still shown.
+	pendingRelease: HelmTypes.ReleaseRow?,
+	-- Export wrote files: the index is rescanned before the next comparison.
+	indexStale: boolean?,
 }
 
 export type Nav = { push: Route?, pop: boolean?, replace: Route? }
@@ -525,6 +549,7 @@ local function startScan(g: G, ctx: Ctx, effects: { Effect })
 	end
 	local gen = nextGen(g)
 	g.scan = { status = "scanning", gen = gen, progress = nil }
+	g.indexStale = nil
 	table.insert(effects, {
 		t = "scan",
 		tag = M.TAG .. "|scan",
@@ -561,6 +586,12 @@ local function openDoc(doc: Doc, effects: { Effect })
 	table.insert(effects, { t = "openfile", path = doc.file, line = doc.startLine })
 end
 
+-- The Helm release of the object behind `ref`, from the object the block read.
+local function helmOwnerOf(ctx: Ctx, ref: Ref): HelmTypes.Owner?
+	local find = ctx.findObject
+	return if find then HelmOwner.fromObject(find(ref)) else nil
+end
+
 -- `m`: opens the best manifest of `ref`; before the index exists it is
 -- built first and the manifest opens when it is ready.
 function M.openManifest(g: G, ctx: Ctx, ref: Ref, effects: { Effect })
@@ -574,7 +605,17 @@ function M.openManifest(g: G, ctx: Ctx, ref: Ref, effects: { Effect })
 	end
 	local docs = M.matches(g, ctx, ref)
 	if #docs == 0 then
-		toast(effects, "info", "No manifest declares " .. string.lower(ref.kind) .. "/" .. ref.name, "E exports it")
+		local owner = helmOwnerOf(ctx, ref)
+		if owner then
+			toast(
+				effects,
+				"info",
+				"Managed by Helm release " .. owner.namespace .. "/" .. owner.release,
+				"= diffs it against the chart in this repository; H opens the release"
+			)
+		else
+			toast(effects, "info", "No manifest declares " .. string.lower(ref.kind) .. "/" .. ref.name, "E exports it")
+		end
 		return
 	end
 	openDoc(docs[1], effects)
@@ -701,6 +742,7 @@ end
 local advanceDiff: (g: G, ctx: Ctx, id: string, effects: { Effect }) -> ()
 local startDrift: (g: G, ctx: Ctx, id: string, effects: { Effect }) -> ()
 local readExport: (g: G, ctx: Ctx, effects: { Effect }) -> ()
+local diffChart: (g: G, ctx: Ctx, id: string, load: DiffLoad, effects: { Effect }, obj: any?) -> ()
 
 local function requestStatus(g: G, effects: { Effect })
 	local index = g.index
@@ -845,8 +887,7 @@ function advanceDiff(g: G, ctx: Ctx, id: string, effects: { Effect })
 	local doc = load.docs[load.pick]
 	load.doc = doc
 	if doc == nil then
-		load.status = "nomatch"
-		setDiff(g, id, load)
+		diffChart(g, ctx, id, load, effects)
 		return
 	end
 	if doc.rendered and doc.text then
@@ -926,6 +967,14 @@ local function onDiff(g: G, ctx: Ctx, part: string, msg: Msg, effects: { Effect 
 			effects,
 			runEffect(M.TAG .. "|diff|run", load.gen, load.argv :: { string }, diffTimeout(ctx), { env = diffEnv() })
 		)
+	elseif part == "obj" and load.unread then
+		local okj, obj = pcall(ctx.decode, r.stdout)
+		load.unread = nil
+		if okRun and okj and type(obj) == "table" then
+			diffChart(g, ctx, id, load, effects, obj)
+		else
+			setDiff(g, id, load)
+		end
 	elseif part == "run" and load.status == "diffing" then
 		if load.tmp then
 			table.insert(effects, removeTmp(M.TAG .. "|diff|rm", load.gen, load.tmp :: string))
@@ -952,7 +1001,31 @@ local function linkOrigin(ctx: Ctx): { context: string?, source: Link.Source?, k
 	return { context = t.context, source = Link.sourceOf(t.contextSource, t.confirmed), kubeconfig = t.kubeconfig }
 end
 
+-- An apply was offered or an export written: every comparison may be out of
+-- date. Routes compare again when entered (M.enter); an export also changed
+-- the files, so the index is rescanned first.
+local function markStale(g: G, files: boolean)
+	local drifts: { [string]: DriftLoad } = {}
+	for id, load in g.drifts do
+		local c = table.clone(load)
+		c.stale = true
+		drifts[id] = c
+	end
+	g.drifts = drifts
+	local diffs: { [string]: DiffLoad } = {}
+	for id, load in g.diffs do
+		local c = table.clone(load)
+		c.stale = true
+		diffs[id] = c
+	end
+	g.diffs = diffs
+	if files then
+		g.indexStale = true
+	end
+end
+
 local function openApply(
+	g: G,
 	ctx: Ctx,
 	fields: { file: string?, kustomize: string?, namespace: string? },
 	effects: { Effect }
@@ -968,12 +1041,14 @@ local function openApply(
 		context = origin.context,
 		source = if origin.context then origin.source else nil,
 		kubeconfig = origin.kubeconfig,
+		origin = ctx.origin,
 	})
 	if url == nil then
 		toast(effects, "error", "Cannot apply", err)
 		return
 	end
 	table.insert(effects, { t = "open", url = url })
+	markStale(g, false)
 end
 
 local function mayMutate(ctx: Ctx, effects: { Effect }): boolean
@@ -1077,7 +1152,7 @@ function M.applyDocs(g: G, ctx: Ctx, input: { Doc }, label: string, effects: { E
 	end
 	local only = docs[1]
 	if #docs == 1 and not only.rendered and docsInFile(g, only.file) == 1 then
-		openApply(ctx, { file = only.file }, effects)
+		openApply(g, ctx, { file = only.file }, effects)
 		return
 	end
 	local b: Bundle =
@@ -1153,7 +1228,7 @@ local function onApply(g: G, ctx: Ctx, part: string, msg: Msg, effects: { Effect
 			toast(effects, "error", "Cannot write the apply bundle", failText("sh", r, msg.spawnError))
 			return
 		end
-		openApply(ctx, { file = b.tmp, namespace = b.namespace }, effects)
+		openApply(g, ctx, { file = b.tmp, namespace = b.namespace }, effects)
 	end
 end
 
@@ -1384,6 +1459,39 @@ function M.sources(g: G, ctx: Ctx): { SourceEntry }
 	return out
 end
 
+-- The chooser's rows: when releases of the namespace in scope have chart
+-- guesses, those of other namespaces are left out (a shared chart matches
+-- every release of it cluster-wide) unless a release view asked for one;
+-- returns how many were left out.
+function M.chooserSources(g: G, ctx: Ctx): ({ SourceEntry }, number)
+	local all = M.sources(g, ctx)
+	local ns = ctx.target.namespace
+	if ns == nil or ctx.target.allNamespaces then
+		return all, 0
+	end
+	local local_ = false
+	for _, s in all do
+		if s.auto and s.auto.release.namespace == ns then
+			local_ = true
+			break
+		end
+	end
+	if not local_ then
+		return all, 0
+	end
+	local out: { SourceEntry } = {}
+	local hidden = 0
+	for _, s in all do
+		local c = s.auto
+		if c and c.release.namespace ~= ns and g.known[c.release.namespace .. "/" .. c.release.name] == nil then
+			hidden += 1
+		else
+			table.insert(out, s)
+		end
+	end
+	return out, hidden
+end
+
 function M.findSource(g: G, ctx: Ctx, id: string): SourceEntry?
 	for _, s in M.sources(g, ctx) do
 		if s.id == id then
@@ -1448,13 +1556,33 @@ function M.chartDirs(g: G): { HelmTypes.ChartDir }
 	return if index then index.chartDirs else {}
 end
 
+-- The best auto candidate of `row`: the best-scoring chart directory with
+-- the deployed values (the only variant that reproduces --set), else its
+-- best values file.
+local function releaseCandidate(g: G, ctx: Ctx, row: HelmTypes.ReleaseRow): Detect.Candidate?
+	local list = candidates(g, ctx, { row })
+	local best = list[1]
+	if best == nil then
+		return nil
+	end
+	for _, c in list do
+		if c.chart.path == best.chart.path and c.useDeployedValues then
+			return c
+		end
+	end
+	return best
+end
+
 -- The best drift source for `row`: its configured gitops.helm render, else
 -- the best auto-detected candidate. Records the row so the source resolves
--- without the chooser's listing. nil before the index exists or without a
--- match.
+-- without the chooser's listing. nil without a match, and before the index
+-- exists: then the row waits for the scan (takeNav).
 function M.releaseSource(g: G, ctx: Ctx, row: HelmTypes.ReleaseRow): string?
 	local index = g.index
 	if index == nil or not ready(g) then
+		if g.scan.status ~= "error" then
+			g.pendingRelease = row
+		end
 		return nil
 	end
 	for _, src in index.sources do
@@ -1469,7 +1597,7 @@ function M.releaseSource(g: G, ctx: Ctx, row: HelmTypes.ReleaseRow): string?
 			return sourceId(src)
 		end
 	end
-	local found = candidates(g, ctx, { row })[1]
+	local found = releaseCandidate(g, ctx, row)
 	if found == nil then
 		return nil
 	end
@@ -1477,6 +1605,25 @@ function M.releaseSource(g: G, ctx: Ctx, row: HelmTypes.ReleaseRow): string?
 	known[row.namespace .. "/" .. row.name] = row
 	g.known = known
 	return sourceId(autoSource(index, found))
+end
+
+-- After a result: the drift report a pending ctrl+g asked for, once the
+-- index exists and only while the chooser it fell back to is still shown.
+function M.takeNav(g: G, ctx: Ctx, route: Route): Nav?
+	local row = g.pendingRelease
+	if row == nil then
+		return nil
+	end
+	if route.kind ~= "drift" or route.source ~= nil or g.scan.status == "error" then
+		g.pendingRelease = nil
+		return nil
+	end
+	if not ready(g) then
+		return nil
+	end
+	g.pendingRelease = nil
+	local id = M.releaseSource(g, ctx, row)
+	return if id then { replace = { kind = "drift", source = id } } else nil
 end
 
 -- The config entry for an auto source (repo-relative paths), as JSON.
@@ -1809,6 +1956,106 @@ function M.startDriftReport(g: G, ctx: Ctx, source: string, force: boolean, effe
 		startDrift(g, ctx, id, effects)
 	else
 		M.ensureIndex(g, ctx, effects)
+	end
+end
+
+local function releaseRowOf(g: G, owner: HelmTypes.Owner): HelmTypes.ReleaseRow?
+	for _, r in knownReleases(g) do
+		if r.name == owner.release and r.namespace == owner.namespace then
+			return r
+		end
+	end
+	return nil
+end
+
+-- No manifest declares the diffed object: when Helm manages it, render the
+-- detected chart of its release (as ctrl+g does) and diff against that.
+function diffChart(g: G, ctx: Ctx, id: string, load: DiffLoad, effects: { Effect }, obj: any?)
+	local owner = if obj then HelmOwner.fromObject(obj) else helmOwnerOf(ctx, load.ref)
+	load.status = "nomatch"
+	if owner == nil then
+		local find = ctx.findObject
+		if obj == nil and find and find(load.ref) == nil then
+			-- Opened before the block read the object (a lens chip): read it
+			-- to learn whether Helm manages it.
+			load.unread = true
+			table.insert(
+				effects,
+				runEffect(
+					M.TAG .. "|diff|obj",
+					load.gen,
+					Query.get(ctx.program, ctx.target, load.ref),
+					queryTimeout(ctx)
+				)
+			)
+		end
+		setDiff(g, id, load)
+		return
+	end
+	load.unread = nil
+	local release = owner.namespace .. "/" .. owner.release
+	load.helm = release
+	local chart = load.chart
+	if chart then
+		-- Rendered, and still nothing declares the object.
+		local d = g.drifts[M.driftId(ctx.target, chart)]
+		if d and d.status == "error" then
+			load.status = "error"
+			load.error = "Rendering the chart of release " .. release .. " failed: " .. (d.error or "?")
+		end
+		setDiff(g, id, load)
+		return
+	end
+	if not autoEnabled(ctx) then
+		setDiff(g, id, load)
+		return
+	end
+	local row = releaseRowOf(g, owner)
+	if row == nil then
+		local r = g.releases
+		if not (r.scanGen == g.scan.gen and (r.status == "ok" or r.status == "error")) then
+			load.status = "chart"
+			setDiff(g, id, load)
+			M.loadReleases(g, ctx, effects)
+		else
+			setDiff(g, id, load)
+		end
+		return
+	end
+	local source = M.releaseSource(g, ctx, row)
+	if source == nil then
+		setDiff(g, id, load)
+		return
+	end
+	load.status = "chart"
+	load.chart = source
+	setDiff(g, id, load)
+	M.startDriftReport(g, ctx, source, false, effects)
+	local d = g.drifts[M.driftId(ctx.target, source)]
+	if d == nil then
+		load.status = "nomatch"
+		load.chart = nil
+	elseif d.status == "ok" or d.status == "error" then
+		advanceDiff(g, ctx, id, effects)
+	end
+end
+
+-- Diffs waiting for a release listing or a chart render go on once it is in.
+local function resumeChartDiffs(g: G, ctx: Ctx, effects: { Effect })
+	for id, load in g.diffs do
+		if load.status ~= "chart" then
+			continue
+		end
+		local waiting = false
+		if load.chart then
+			local d = g.drifts[M.driftId(ctx.target, load.chart :: string)]
+			waiting = d ~= nil and d.status ~= "ok" and d.status ~= "error"
+		else
+			waiting = g.releases.status == "loading"
+		end
+		if not waiting then
+			advanceDiff(g, ctx, id, effects)
+		end
 	end
 end
 
@@ -2512,6 +2759,7 @@ local function onExport(g: G, ctx: Ctx, part: string, msg: Msg, effects: { Effec
 		end
 		ex.status = "written"
 		g.export = ex
+		markStale(g, true)
 		toast(effects, "success", "Wrote " .. M.count(#ex.written, "file"), dirname(ex.written[1] or ex.dir))
 		requestStatus(g, effects)
 	end
@@ -2958,28 +3206,43 @@ end
 
 -- Routes ---------------------------------------------------------------------
 
--- Starts what `route` shows (force: r).
+-- The index again when files changed (export) or the user asked (r).
+local function refreshIndex(g: G, ctx: Ctx, force: boolean, effects: { Effect })
+	if force or g.indexStale then
+		M.rescan(g, ctx, effects)
+	else
+		M.ensureIndex(g, ctx, effects)
+	end
+end
+
+-- Starts what `route` shows (force: r). A comparison an apply or export
+-- made stale runs again; `r` on a report also rescans the manifests.
 function M.enter(g: G, ctx: Ctx, route: Route, force: boolean, effects: { Effect })
 	local kind = route.kind
 	if kind == "manifest" then
-		if force then
-			M.rescan(g, ctx, effects)
-		else
-			M.ensureIndex(g, ctx, effects)
-		end
+		refreshIndex(g, ctx, force, effects)
 	elseif kind == "diff" then
-		M.startDiff(g, ctx, route, force, effects)
+		local existing = if route.ref then g.diffs[M.diffId(route)] else nil
+		local again = force or (existing ~= nil and existing.stale == true)
+		if again and g.indexStale then
+			refreshIndex(g, ctx, false, effects)
+		end
+		M.startDiff(g, ctx, route, again, effects)
 	elseif kind == "drift" then
 		if route.source == nil then
-			if force then
-				M.rescan(g, ctx, effects)
-			else
-				M.ensureIndex(g, ctx, effects)
-			end
+			refreshIndex(g, ctx, force, effects)
 			M.loadControllers(g, ctx, effects)
 			M.loadReleases(g, ctx, effects)
-		elseif route.item == nil then
-			M.startDriftReport(g, withTarget(ctx, routeTarget(ctx, route)), route.source :: string, force, effects)
+		else
+			local existing = M.driftLoad(g, ctx, route)
+			local stale = existing ~= nil and existing.stale == true
+			if route.item == nil or stale then
+				local again = force or stale
+				if again and (force or g.indexStale) and not M.foreign(ctx, route) then
+					refreshIndex(g, ctx, true, effects)
+				end
+				M.startDriftReport(g, withTarget(ctx, routeTarget(ctx, route)), route.source :: string, again, effects)
+			end
 		end
 	elseif kind == "matrix" then
 		if route.across == nil then
@@ -3003,7 +3266,7 @@ function M.items(g: G, ctx: Ctx, route: Route): { Item }
 			table.insert(out, { key = d.file .. ":" .. d.startLine, ref = route.ref })
 		end
 	elseif kind == "drift" and route.source == nil and ready(g) then
-		for _, s in M.sources(g, ctx) do
+		for _, s in (M.chooserSources(g, ctx)) do
 			table.insert(out, { key = s.id, value = s.id })
 		end
 	elseif kind == "drift" and route.item == nil then
@@ -3063,6 +3326,24 @@ function M.focusRef(g: G, ctx: Ctx, route: Route, selected: Item?): Ref?
 	return route.ref
 end
 
+-- ctrl+d in a drift view: only an unmanaged object is the cluster's to
+-- delete. A missing one does not exist, and deleting a declared one only
+-- lasts until the next apply. Returns the refusal (title, detail) or nil.
+function M.deleteRefusal(g: G, ctx: Ctx, route: Route, selected: Item?): (string?, string?)
+	if route.kind ~= "drift" then
+		return nil, nil
+	end
+	local load = M.driftLoad(g, ctx, route)
+	local key = route.item or (if selected then selected.key else nil)
+	local e = if load and key then M.entry(load, key :: string) else nil
+	if e == nil or e.bucket == "unmanaged" then
+		return nil, nil
+	elseif e.bucket == "missing" then
+		return "Not in the cluster", "The object is declared but missing; apply it (a) to create it"
+	end
+	return "Declared in the manifests", "Remove it from the source instead; ctrl+d deletes unmanaged objects only"
+end
+
 local function docByKey(docs: { Doc }, key: string?): Doc?
 	for _, d in docs do
 		if d.file .. ":" .. d.startLine == key then
@@ -3072,19 +3353,21 @@ local function docByKey(docs: { Doc }, key: string?): Doc?
 	return docs[1]
 end
 
+-- A Helm report exports only its unmanaged objects: the others are the
+-- chart's, and exporting them would fork the chart into plain manifests.
 local function exportFromDrift(g: G, ctx: Ctx, id: string, entries: { Entry }, effects: { Effect }): Nav?
 	local load = g.drifts[id]
 	if load == nil then
 		return nil
 	end
-	if load.source.type == "helm" then
-		toast(effects, "error", "Charts are not exported", "Export writes plain manifests; edit the chart instead")
-		return nil
-	end
+	local helm = load.source.type == "helm"
 	local objects: { any } = {}
-	local missing = 0
+	local missing, chart = 0, 0
 	for _, e in entries do
-		if e.bucket ~= "missing" then
+		local chartObject = helm and e.bucket ~= "unmanaged"
+		if chartObject then
+			chart += 1
+		elseif e.bucket ~= "missing" then
 			local obj = liveObject(load, e.ref)
 			if obj then
 				table.insert(objects, obj)
@@ -3094,17 +3377,26 @@ local function exportFromDrift(g: G, ctx: Ctx, id: string, entries: { Entry }, e
 		end
 	end
 	if #objects == 0 then
-		toast(
-			effects,
-			"error",
-			"Nothing to export",
-			if missing > 0 then "Open the object (y) and press E there" else "Select a changed or unmanaged object"
-		)
+		if chart > 0 then
+			toast(
+				effects,
+				"error",
+				"Chart objects are not exported",
+				"Edit the chart; E and X export unmanaged objects only"
+			)
+		else
+			toast(
+				effects,
+				"error",
+				"Nothing to export",
+				if missing > 0 then "Open the object (y) and press E there" else "Select a changed or unmanaged object"
+			)
+		end
 		return nil
 	end
-	local dir = if load.source.type == "file" then dirname(load.source.path) else load.source.path
+	local dir = if helm then nil elseif load.source.type == "file" then dirname(load.source.path) else load.source.path
 	M.startExport(g, ctx, objects, {
-		label = M.count(#objects, "object") .. " from " .. load.source.label,
+		label = M.count(#objects, if helm then "unmanaged object" else "object") .. " from " .. load.source.label,
 		dir = dir,
 		summary = M.driftSummary(load, ctx.target.context),
 	}, effects)
@@ -3123,9 +3415,9 @@ local function applySource(g: G, ctx: Ctx, entry: SourceEntry, effects: { Effect
 		-- `apply -k` cannot leave a document out.
 		toast(effects, "error", "Not applied: export placeholders", table.concat(held, ", ") .. " " .. PLACEHOLDER_HINT)
 	elseif entry.type == "kustomize" then
-		openApply(ctx, { kustomize = entry.path }, effects)
+		openApply(g, ctx, { kustomize = entry.path }, effects)
 	elseif entry.type == "file" and #held == 0 then
-		openApply(ctx, { file = entry.path }, effects)
+		openApply(g, ctx, { file = entry.path }, effects)
 	else
 		M.applyDocs(g, ctx, docs, entry.label, effects)
 	end
@@ -3429,14 +3721,26 @@ function M.onAction(g: G, ctx: Ctx, route: Route, act: string, value: string, ef
 	elseif act == "gitops-copyhelm" and route.kind == "drift" and route.source then
 		local entry = M.findSource(g, ctx, route.source :: string)
 		local text = if entry then M.helmEntry(g, entry) else nil
-		if text then
+		if text and entry then
 			table.insert(effects, { t = "copy", text = text })
-			toast(
-				effects,
-				"success",
-				"Copied a gitops.helm entry",
-				"Add it to the config to make this source permanent"
-			)
+			local auto = entry.auto :: Detect.Candidate
+			if auto.useDeployedValues then
+				-- The entry renders with the chart defaults: a different report.
+				toast(
+					effects,
+					"info",
+					"Copied a gitops.helm entry without values",
+					"Deployed values (and --set) cannot go in the config; list a values file in it, "
+						.. "or keep using this auto source"
+				)
+			else
+				toast(
+					effects,
+					"success",
+					"Copied a gitops.helm entry",
+					"Add it to the config to make this source permanent"
+				)
+			end
 		end
 		return true, nil
 	elseif act == "gitops-toggle" and route.kind == "export" and g.export then
@@ -3462,6 +3766,7 @@ function M.onResult(g: G, ctx: Ctx, msg: Msg, effects: { Effect }): boolean
 		onScanDone(g, ctx, msg, effects)
 	elseif what == "releases" then
 		onReleases(g, ctx, msg)
+		resumeChartDiffs(g, ctx, effects)
 	elseif what == "remotes" then
 		onRemotes(g, msg, effects)
 	elseif what == "status" then
@@ -3473,6 +3778,7 @@ function M.onResult(g: G, ctx: Ctx, msg: Msg, effects: { Effect }): boolean
 	elseif what == "drift" then
 		onDrift(g, ctx, part or "", msg, effects)
 		pumpAll(g, ctx, effects)
+		resumeChartDiffs(g, ctx, effects)
 	elseif what == "contexts" then
 		onContexts(g, ctx, part or "", msg, effects)
 	elseif what == "apply" then

@@ -79,12 +79,15 @@ local function namespaceOf(argv: { string }, ref: Ref): { string }
 	return argv
 end
 
-function M.list(program: string, target: Target, resource: string, scope: Scope): { string }
+function M.list(program: string, target: Target, resource: string, scope: Scope, selector: string?): { string }
 	local argv = append(M.base(program, target), "get", resource)
 	if scope.all then
 		table.insert(argv, "-A")
 	elseif scope.namespace and scope.namespace ~= "" then
 		append(argv, "-n", scope.namespace)
+	end
+	if selector and selector ~= "" then
+		append(argv, "-l", selector)
 	end
 	return append(argv, "-o", "json")
 end

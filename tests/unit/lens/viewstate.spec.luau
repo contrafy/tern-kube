@@ -23,6 +23,7 @@ describe("lens viewstate", function()
 			full = true,
 			page = 3,
 			help = true,
+			expanded = { "NAMESPACE", "STATUS;x" },
 		}
 		expect(roundTrip(vs)).toEqual(vs)
 	end)
@@ -67,6 +68,26 @@ describe("lens viewstate", function()
 		local c = vsm.sortedBy(b, "NAME")
 		expect(c.sort).toBe("NAME")
 		expect(c.desc).toBe(false)
+	end)
+
+	-- RESTARTS, CPU and MEMORY are read for their largest values; ascending
+	-- first put the interesting rows on the last page.
+	it("a new count column can start descending; the same column still flips", function()
+		local a = vsm.sortedBy(vsm.default(), "RESTARTS", true)
+		expect(a.desc).toBe(true)
+		expect(vsm.sortedBy(a, "RESTARTS", true).desc).toBe(false)
+		expect(vsm.sortedBy(a, "NAME").desc).toBe(false)
+	end)
+
+	-- The "+N" after a facet's chips was plain text, so hidden values could
+	-- not be reached; expanding a facet must survive a reload like any choice.
+	it("expanding a facet toggles it and keeps the rest of the state", function()
+		local vs = vsm.toggledFilter(vsm.default(), "STATUS", "Running")
+		local wide = vsm.toggledExpanded(vs, "NAMESPACE")
+		expect(wide.expanded).toEqual({ "NAMESPACE" })
+		expect(wide.filters).toEqual({ "STATUS=Running" })
+		expect(roundTrip(wide).expanded).toEqual({ "NAMESPACE" })
+		expect(vsm.toggledExpanded(wide, "NAMESPACE").expanded).toEqual({})
 	end)
 
 	it("sorting and filtering keep the open row (selection survives)", function()

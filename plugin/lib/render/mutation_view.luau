@@ -46,7 +46,26 @@ end
 local HEADERS = { "KIND", "NAME", "NAMESPACE", "ACTION" }
 local TYPES: { Types.ColumnType } = { "text", "text", "text", "text" }
 
-local CATEGORIES = { "created", "configured", "unchanged", "deleted", "restarted", "scaled", "pruned", "other" }
+local CATEGORIES = {
+	"created",
+	"configured",
+	"unchanged",
+	"deleted",
+	"restarted",
+	"scaled",
+	"pruned",
+	"rolled back",
+	"paused",
+	"resumed",
+	"patched",
+	"labeled",
+	"annotated",
+	"edited",
+	"cordoned",
+	"uncordoned",
+	"drained",
+	"other",
+}
 
 local TONES: { [string]: string } = {
 	created = "success",
@@ -56,6 +75,16 @@ local TONES: { [string]: string } = {
 	restarted = "info",
 	scaled = "info",
 	pruned = "warning",
+	["rolled back"] = "info",
+	paused = "info",
+	resumed = "info",
+	patched = "info",
+	labeled = "info",
+	annotated = "info",
+	edited = "info",
+	cordoned = "warning",
+	uncordoned = "info",
+	drained = "warning",
 	other = "neutral",
 }
 
@@ -225,7 +254,10 @@ local function diagnosticNodes(diagnostics: { Diagnostic }): { Node }
 		end
 	end
 	if #other > 0 then
-		local head = { ui.span("Other output", "strong"), ui.span(string.format("  %d lines", #other), "muted") }
+		local head = {
+			ui.span("Other output", "strong"),
+			ui.span(string.format("  %d line%s", #other, if #other == 1 then "" else "s"), "muted"),
+		}
 		table.insert(out, ui.section(head, other, { key = "other", collapsible = true, collapsed = #other > 5 }))
 	end
 	return out
