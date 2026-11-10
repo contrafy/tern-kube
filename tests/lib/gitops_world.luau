@@ -350,9 +350,21 @@ local function kubectl(w: World, argv: { string }): Result
 	return M.fail(1, "fake kubectl: unhandled " .. table.concat(argv, " "))
 end
 
+-- The subcommand of `git -C ROOT [--global-option...] VERB ...`.
+function M.gitVerb(argv: { string }): string?
+	for i = 4, #argv do
+		if string.sub(argv[i], 1, 1) ~= "-" then
+			return argv[i]
+		end
+	end
+	return nil
+end
+
 local function git(w: World, argv: { string }): Result
-	local verb = argv[4]
-	if verb == "remote" and argv[5] == "-v" then
+	local verb = M.gitVerb(argv)
+	local i = table.find(argv, verb or "") or #argv
+	local nextArg = argv[i + 1]
+	if verb == "remote" and nextArg == "-v" then
 		return ok(w.remotes)
 	elseif verb == "remote" then
 		return ok(if w.remotes ~= "" then "origin\n" else "")

@@ -141,7 +141,9 @@ function M.gitStatus(
 			cb(merged, nil)
 			return
 		end
-		local argv = { "git", "-C", root, "status", "--porcelain=v1", "-z", "--" }
+		-- Read-only: a plain status refreshes .git/index, which reloads a
+		-- linked plugin.
+		local argv = { "git", "-C", root, "--no-optional-locks", "status", "--porcelain=v1", "-z", "--" }
 		for i = from, math.min(#files, from + M.STATUS_BATCH - 1) do
 			table.insert(argv, Index.relative(root, files[i]))
 		end

@@ -28,6 +28,7 @@ local Jsonv = require("../parse/jsonv")
 local Link = require("../mutation/link")
 local Matrix = require("../gitops/matrix")
 local Model = require("../compare/model")
+local Placeholder = require("../gitops/placeholder")
 local Query = require("./query")
 local Resource = require("../model/resource")
 local T = require("./types")
@@ -127,6 +128,8 @@ export type Entry = {
 	segment: Segment?,
 	object: Drift.ObjectSummary?,
 	reason: ("create" | "absent")?,
+	-- Secret keys the manifest leaves at the export placeholder.
+	placeholders: { string }?,
 }
 
 export type DriftLoad = {
@@ -148,6 +151,8 @@ export type DriftLoad = {
 	diff: Diffseg.Summary?,
 	diffDone: boolean,
 	diffError: string?,
+	-- The namespace kubectl diff found missing (it then compares nothing).
+	missingNamespace: string?,
 	livePending: { [string]: boolean },
 	live: { any },
 	liveErrors: { string },
@@ -384,6 +389,28 @@ local function diffTimeout(ctx: Ctx): number
 	return ctx.config.mutations.preview_timeout_ms
 end
 
+local function klog(line: string): boolean
+	return string.find(line, "^[IWEF]%d%d%d%d %d%d:%d%d:%d%d%.%d+%s+%d+ [^ ]+:%d+%] ") ~= nil
+end
+
+-- Why a command failed: its last meaningful output line. kubectl prints
+-- klog lines (memcache.go "Unhandled Error" ...) before the real error, the
+-- same rule as bin/tern-kube-drift.
+function M.reason(text: string): string
+	local last, lastKlog = "", ""
+	for _, raw in string.split(text, "\n") do
+		local line = trim(raw)
+		if line ~= "" then
+			if klog(line) then
+				lastKlog = line
+			else
+				last = line
+			end
+		end
+	end
+	return if last ~= "" then last else lastKlog
+end
+
 local function failText(what: string, r: ProcessResult?, spawnError: string?): string
 	if spawnError then
 		return what .. " could not start: " .. spawnError
@@ -392,7 +419,7 @@ local function failText(what: string, r: ProcessResult?, spawnError: string?): s
 	if res.timed_out then
 		return what .. " timed out"
 	end
-	local detail = firstLine(res.stderr ~= "" and res.stderr or res.stdout)
+	local detail = M.reason(res.stderr ~= "" and res.stderr or res.stdout)
 	return string.format("%s exited %d%s", what, res.status, if detail ~= "" then ": " .. detail else "")
 end
 
@@ -680,7 +707,9 @@ local function requestStatus(g: G, effects: { Effect })
 	if index == nil or not g.repo.git then
 		return
 	end
-	local argv = { "git", "-C", index.root, "status", "--porcelain=v1", "-z", "--" }
+	-- Read-only: a plain status refreshes .git/index, which reloads a linked
+	-- plugin (and re-runs this read after the restore).
+	local argv = { "git", "-C", index.root, "--no-optional-locks", "status", "--porcelain=v1", "-z", "--" }
 	for _, p in M.STATUS_PATHSPECS do
 		table.insert(argv, p)
 	end
@@ -993,16 +1022,53 @@ local function releaseNamespace(docs: { Doc }): (string?, string?)
 	return ns, nil
 end
 
+local function docName(d: Doc): string
+	local r = d.ref
+	return if r then string.lower(r.kind) .. "/" .. r.name else d.file
+end
+
+-- Secrets still holding export placeholders never reach an apply: the live
+-- values would become REPLACE_ME.
+local function withoutPlaceholders(docs: { Doc }): ({ Doc }, { string })
+	local kept: { Doc } = {}
+	local held: { string } = {}
+	for _, d in docs do
+		if d.placeholders then
+			table.insert(held, string.format("%s (%s)", docName(d), table.concat(d.placeholders, ", ")))
+		else
+			table.insert(kept, d)
+		end
+	end
+	return kept, held
+end
+
+local PLACEHOLDER_HINT = "still holds the export placeholder "
+	.. Placeholder.TOKEN
+	.. ": put the real values in the manifest first"
+
 -- Applies `docs` through the approve block: a document alone in its file is
 -- applied from that file; anything else is bundled into a 0600 temporary
--- manifest (kept: the approve block re-reads it when it executes).
-function M.applyDocs(g: G, ctx: Ctx, docs: { Doc }, label: string, effects: { Effect })
+-- manifest (kept: the approve block re-reads it when it executes and deletes
+-- it when it closes). Secrets with export placeholders are left out.
+function M.applyDocs(g: G, ctx: Ctx, input: { Doc }, label: string, effects: { Effect })
 	if not mayMutate(ctx, effects) then
 		return
 	end
-	if #docs == 0 then
+	if #input == 0 then
 		toast(effects, "error", "Nothing to apply", "No manifest declares " .. label)
 		return
+	end
+	local docs, held = withoutPlaceholders(input)
+	if #docs == 0 then
+		toast(effects, "error", "Not applied: export placeholders", table.concat(held, ", ") .. " " .. PLACEHOLDER_HINT)
+		return
+	elseif #held > 0 then
+		toast(
+			effects,
+			"info",
+			string.format("Left out %s with export placeholders", M.count(#held, "Secret")),
+			table.concat(held, ", ")
+		)
 	end
 	local namespace, nsErr = releaseNamespace(docs)
 	if nsErr then
@@ -1544,8 +1610,17 @@ local function finishDrift(g: G, ctx: Ctx, id: string, load: DriftLoad)
 		return
 	end
 	if load.diffError then
-		load.status = "error"
-		load.error = load.diffError
+		local ns = load.missingNamespace
+		local report = if ns
+			then Drift.namespaceMissing(load.source.source :: any, g.index :: any, ns, driftOpts(g, ctx))
+			else nil
+		if report then
+			load.report = report
+			load.status = "ok"
+		else
+			load.status = "error"
+			load.error = load.diffError
+		end
 		setDrift(g, id, load)
 		return
 	end
@@ -1675,6 +1750,7 @@ function startDrift(g: G, blockCtx: Ctx, id: string, effects: { Effect })
 	load.diff = nil
 	load.diffDone = false
 	load.diffError = nil
+	load.missingNamespace = nil
 	load.report = nil
 	load.error = nil
 	load.live = {}
@@ -1882,6 +1958,7 @@ local function onDrift(g: G, blockCtx: Ctx, part: string, msg: Msg, effects: { E
 		local summary, err = diffOutcome(ctx, r, msg.spawnError)
 		load.diff = summary
 		load.diffError = err
+		load.missingNamespace = if err and r then Drift.missingNamespace(r.stderr or "") else nil
 		finishDrift(g, ctx, id, load)
 	end
 end
@@ -1902,6 +1979,7 @@ function M.entries(load: DriftLoad, filter: Filter?): { Entry }
 				ref = c.ref,
 				docs = c.docs :: any,
 				segment = c.segment,
+				placeholders = c.placeholders,
 			})
 		end
 	end
@@ -1914,6 +1992,7 @@ function M.entries(load: DriftLoad, filter: Filter?): { Entry }
 				docs = m.docs :: any,
 				segment = m.segment,
 				reason = m.reason,
+				placeholders = m.placeholders,
 			})
 		end
 	end
@@ -2635,7 +2714,13 @@ function M.startGit(g: G, ctx: Ctx, effects: { Effect }): boolean
 		error = nil,
 	}
 	local root = index.root
-	checkRun(git, "status", { "git", "-C", root, "status", "--porcelain=v1", "-z" }, nil, effects)
+	checkRun(
+		git,
+		"status",
+		{ "git", "-C", root, "--no-optional-locks", "status", "--porcelain=v1", "-z" },
+		nil,
+		effects
+	)
 	checkRun(git, "head", { "git", "-C", root, "rev-parse", "--abbrev-ref", "HEAD" }, nil, effects)
 	checkRun(git, "remote", { "git", "-C", root, "remote" }, nil, effects)
 	checkRun(git, "gh", { "/bin/sh", "-c", 'command -v -- "$1"', "sh", ctx.config.gitops.gh }, nil, effects)
@@ -3030,13 +3115,19 @@ local function applySource(g: G, ctx: Ctx, entry: SourceEntry, effects: { Effect
 	if not mayMutate(ctx, effects) then
 		return
 	end
-	if entry.type == "kustomize" then
+	local docs: { any } = if g.index
+		then Drift.scope(entry.source :: any, g.index :: any, driftOpts(g, ctx)).docs :: { any }
+		else {}
+	local _, held = withoutPlaceholders(docs)
+	if entry.type == "kustomize" and #held > 0 then
+		-- `apply -k` cannot leave a document out.
+		toast(effects, "error", "Not applied: export placeholders", table.concat(held, ", ") .. " " .. PLACEHOLDER_HINT)
+	elseif entry.type == "kustomize" then
 		openApply(ctx, { kustomize = entry.path }, effects)
-	elseif entry.type == "file" then
+	elseif entry.type == "file" and #held == 0 then
 		openApply(ctx, { file = entry.path }, effects)
 	else
-		local docs = Drift.scope(entry.source :: any, g.index :: any, driftOpts(g, ctx)).docs
-		M.applyDocs(g, ctx, docs :: any, entry.label, effects)
+		M.applyDocs(g, ctx, docs, entry.label, effects)
 	end
 end
 

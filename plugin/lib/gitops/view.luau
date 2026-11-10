@@ -11,6 +11,7 @@ local Diffseg = require("../mutation/diffseg")
 local Gitops = require("../explore/gitops")
 local Index = require("./index")
 local Matrix = require("./matrix")
+local Placeholder = require("./placeholder")
 local T = require("../explore/types")
 local SegCard = require("../render/segcard")
 local Textfield = require("../textfield")
@@ -562,9 +563,26 @@ local function chooserBody(v: Ctx): { Node }
 	return out
 end
 
+-- Several documents declare the object: kubectl diff compared only the one
+-- it read last, so the row cannot name "the" manifest.
 local function entryManifest(v: Ctx, e: Gitops.Entry): string
 	local d = e.docs[1]
-	return if d then docPlace(v, d) else ""
+	if d == nil then
+		return ""
+	end
+	if #e.docs > 1 then
+		return string.format("ambiguous: %d manifests", #e.docs)
+	end
+	return docPlace(v, d)
+end
+
+local function entryLines(e: Gitops.Entry): string
+	local seg = e.segment
+	local diff = if seg then string.format("+%d −%d", seg.added, seg.removed) else ""
+	if e.placeholders then
+		return if diff == "" then "placeholder" else "placeholder " .. diff
+	end
+	return diff
 end
 
 local function countsRow(v: Ctx, load: Gitops.DriftLoad): Node
@@ -670,7 +688,6 @@ local function reportBody(v: Ctx, load: Gitops.DriftLoad): { Node }
 		local rows: { GridRow } = {}
 		local keys: { string } = {}
 		for i, e in entries do
-			local seg = e.segment
 			rows[i] = {
 				key = e.key,
 				cells = {
@@ -679,7 +696,7 @@ local function reportBody(v: Ctx, load: Gitops.DriftLoad): { Node }
 					e.ref.namespace or "",
 					e.ref.name,
 					entryManifest(v, e),
-					if seg then string.format("+%d −%d", seg.added, seg.removed) else "",
+					entryLines(e),
 				},
 				action = "open=" .. e.key,
 			}
@@ -806,6 +823,42 @@ local function itemBody(v: Ctx, load: Gitops.DriftLoad, e: Gitops.Entry): { Node
 				table.insert(out, kv)
 			end
 		end
+	end
+	local held = e.placeholders
+	if held then
+		table.insert(
+			out,
+			ui.text({
+				ui.span("Placeholder: ", "warning strong"),
+				ui.span(
+					string.format(
+						"%s still %s %s from an export. Applying would overwrite the live %s, so apply leaves "
+							.. "this Secret out; put the real values in the manifest first.",
+						table.concat(held, ", "),
+						if #held == 1 then "holds" else "hold",
+						Placeholder.TOKEN,
+						if #held == 1 then "value" else "values"
+					),
+					"muted"
+				),
+			}, { key = "placeholder" })
+		)
+	end
+	if #e.docs > 1 then
+		table.insert(
+			out,
+			ui.text({
+				ui.span("Ambiguous: ", "warning strong"),
+				ui.span(
+					string.format(
+						"%d documents declare this object. kubectl diff compared the one it read last; "
+							.. "applying applies the first listed below.",
+						#e.docs
+					),
+					"muted"
+				),
+			}, { key = "ambiguous" })
+		)
 	end
 	if #e.docs > 0 then
 		local rows: { GridRow } = {}

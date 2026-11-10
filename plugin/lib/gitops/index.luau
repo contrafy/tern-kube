@@ -3,10 +3,12 @@
 -- YAML files (addFile) and from kustomize/helm renders (addRendered); the
 -- host (gitops_host.luau) lists and reads files and runs the renderers.
 -- Identity comes from parse/yaml.luau, so only kind, apiVersion and
--- metadata.name/namespace are ever interpreted.
+-- metadata.name/namespace are interpreted, plus the export placeholders of
+-- Secrets (gitops/placeholder.luau).
 local Detect = require("../helm/detect")
 local HelmTypes = require("../helm/types")
 local Kinds = require("../kubectl/kinds")
+local Placeholder = require("./placeholder")
 local Resource = require("../model/resource")
 local Types = require("../model/types")
 local Yaml = require("../parse/yaml")
@@ -55,6 +57,9 @@ export type ManifestDoc = {
 	patch: boolean,
 	-- metadata.namespace as written in the document.
 	declaredNamespace: string?,
+	-- Secret keys whose value is an export placeholder (REPLACE_ME); nil
+	-- when there are none.
+	placeholders: { string }?,
 }
 
 export type Kustomization = {
@@ -657,6 +662,14 @@ local function sliceText(source: { string }, first: number, last: number): strin
 	return table.concat(source, "\n", first, last) .. "\n"
 end
 
+local function placeholders(source: { string }, d: Yaml.Doc): { string }?
+	if d.kind ~= "Secret" or d.indent ~= 0 then
+		return nil
+	end
+	local keys = Placeholder.textKeys(sliceText(source, d.startLine, d.endLine))
+	return if #keys > 0 then keys else nil
+end
+
 local function hasKind(docs: { Yaml.Doc }): boolean
 	for _, d in docs do
 		if d.kind then
@@ -727,6 +740,7 @@ function M.addFile(index: Index, path: string, text: string): boolean
 			kustomization = nil,
 			patch = false,
 			declaredNamespace = d.namespace,
+			placeholders = placeholders(lines, d),
 		}
 		table.insert(index.docs, doc)
 		place(index, doc)
@@ -829,6 +843,7 @@ function M.addRendered(index: Index, source: Source, text: string)
 			kustomization = if source.type == "kustomize" then source.path else nil,
 			patch = false,
 			declaredNamespace = d.namespace,
+			placeholders = placeholders(lines, d),
 		}
 		resolve(doc, d.namespace, fallback)
 		table.insert(index.docs, doc)

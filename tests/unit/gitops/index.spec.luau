@@ -236,6 +236,31 @@ describe("gitops index addFile", function()
 		expect(#index.docs).toBe(1)
 	end)
 
+	-- Drift and apply must know an exported Secret still holds REPLACE_ME
+	-- without re-reading the file (kubectl diff masks the values).
+	it("records the export placeholders of Secret documents", function()
+		local index = Index.new("/r", nil)
+		Index.addFile(
+			index,
+			"/r/s.yaml",
+			"apiVersion: v1\nkind: Secret\nmetadata:\n  name: s\n  namespace: ns\nstringData:\n  pw: REPLACE_ME\n"
+				.. "---\napiVersion: v1\nkind: Secret\nmetadata:\n  name: real\n  namespace: ns\nstringData:\n  pw: x\n"
+		)
+		local byName: { [string]: any } = {}
+		for _, d in index.docs do
+			byName[(d.ref :: any).name] = d.placeholders or false
+		end
+		expect(byName).toEqual({ s = { "pw" }, real = false })
+		local source = Index.source(index, "kustomize", "/r/k", nil)
+		Index.addRendered(
+			index,
+			source,
+			"apiVersion: v1\nkind: Secret\nmetadata:\n  name: k\n  namespace: ns\ndata:\n  t: UkVQTEFDRV9NRQ==\n"
+		)
+		local rendered = index.byKey["/Secret/ns/k"][1]
+		expect(rendered.placeholders).toEqual({ "t" })
+	end)
+
 	it("groups plain files into one dir source per directory", function()
 		local index = repo.index()
 		local doc = docsIn(index, "plain/deployments/web.yaml")[1]

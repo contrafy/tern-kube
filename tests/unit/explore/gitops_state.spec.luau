@@ -169,18 +169,25 @@ describe("explore gitops keys", function()
 		expect(r.gitops.cwd).toBe(G.ROOT)
 	end)
 
-	it("saved state never restores a GitOps route", function()
+	-- A plugin reload re-inits the block from saved state (Tern 0.9.14):
+	-- manifest and diff are cheap reads and come back; drift, matrix, export
+	-- and git hold work in progress and are cut with everything above them.
+	it("saved state restores manifest routes and cuts drift and the rest", function()
 		local w = world()
 		local s = selectName(w, open(w), "web")
 		s = press(w, s, "enter")
 		s = press(w, s, "m")
 		local saved = State.save(s)
-		expect(#saved.stack).toBe(2)
+		expect(#saved.stack).toBe(3)
 		local w2 = world()
 		local s2, effects = State.init({ W.link({ context = W.CTX }) }, saved, W.config(nil), env())
 		s2 = drive(w2, s2, effects)
-		expect(top(s2).kind).toBe("detail")
-		expect(scans(w2)).toBe(0)
+		expect(top(s2).kind).toBe("manifest")
+		expect(scans(w2)).toBe(1)
+
+		local d = press(w, s, "g", { ctrl = true })
+		expect(top(d).kind).toBe("drift")
+		expect(#State.save(d).stack).toBe(3)
 	end)
 	-- Explore's mutate keys are global, but GitOps views bind some of the
 	-- same letters (export t, drift X, git p P e); inside those views the

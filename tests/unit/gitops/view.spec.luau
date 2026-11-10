@@ -80,7 +80,7 @@ describe("gitops view: manifest", function()
 		local w = X.world()
 		w.answer = (function(prev: any)
 			return function(argv: { string }, e: any)
-				if argv[1] == "git" and argv[4] == "status" and table.find(argv, "--") then
+				if argv[1] == "git" and G.gitVerb(argv) == "status" and table.find(argv, "--") then
 					return G.ok(" M apps/web.yaml\0")
 				end
 				return prev(argv, e)
@@ -188,6 +188,27 @@ describe("gitops view: drift", function()
 		expect(dockText(unmanaged)).toContain("ctrl+d delete")
 	end)
 
+	-- GIT-F1: kubectl masks Secret values, so the report itself must say a
+	-- manifest still holds the export placeholder. GIT-F6: with two
+	-- declarations the diff is of one of them only; the row must not pretend
+	-- it is the first file's.
+	it("marks export placeholders and ambiguous declarations", function()
+		local w = X.world()
+		w.files["/repo/drift/secret.yaml"] = "apiVersion: v1\nkind: Secret\nmetadata:\n  name: db\n"
+			.. "  namespace: tern-test-drift\nstringData:\n  password: REPLACE_ME\n"
+		w.files["/repo/drift/zz-dup.yaml"] = "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: app-config\n"
+			.. "  namespace: tern-test-drift\ndata:\n  LOG_LEVEL: debug\n"
+		local s = driftReport(w)
+		local text = nodes.text(body(s))
+		expect(text).toContain("ambiguous: 2 manifests")
+		expect(text).toContain("placeholder")
+		local secret = X.action(w, s, "open", "missing:/Secret/tern-test-drift/db")
+		local stext = nodes.text(body(secret))
+		expect(stext).toContain("Placeholder: password still holds REPLACE_ME from an export")
+		local dup = X.action(w, s, "open", "changed:/ConfigMap/tern-test-drift/app-config")
+		expect(nodes.text(body(dup))).toContain("Ambiguous: 2 documents declare this object")
+	end)
+
 	it("a drift error is shown as an error", function()
 		local w = X.world()
 		w.answer = (function(prev: any)
@@ -201,6 +222,48 @@ describe("gitops view: drift", function()
 		local s = driftReport(w)
 		local err = nodes.find(body(s), nodes.role("tern-kube.error")) :: nodes.Node
 		expect(nodes.text(err)).toBe("kubectl diff exited 2: error: connection refused")
+	end)
+
+	-- GIT-F8: kubectl prints klog noise first; the reason is the last real line.
+	it("a drift error names kubectl's last meaningful line, not klog noise", function()
+		local w = X.world()
+		w.answer = (function(prev: any)
+			return function(argv: { string }, e: any)
+				if table.find(argv, "diff") then
+					return G.fail(
+						2,
+						'E1110 10:11:04.215188   79940 memcache.go:265] "Unhandled Error" err="couldn\'t get"\n'
+							.. "The connection to the server 127.0.0.1:1 was refused - did you specify the right host or port?\n"
+					)
+				end
+				return prev(argv, e)
+			end
+		end)(w.answer)
+		local s = driftReport(w)
+		local err = nodes.find(body(s), nodes.role("tern-kube.error")) :: nodes.Node
+		expect(nodes.text(err)).toBe(
+			"kubectl diff exited 2: The connection to the server 127.0.0.1:1 was refused - did you specify the right host or port?"
+		)
+	end)
+
+	-- GIT-F7: a cluster without the source's namespace (not provisioned yet)
+	-- is the common first run on a new context: everything is missing.
+	it("a context without the source's namespace shows every object missing, not an error", function()
+		local w = X.world()
+		w.answer = (function(prev: any)
+			return function(argv: { string }, e: any)
+				if table.find(argv, "diff") then
+					return G.fail(2, 'Error from server (NotFound): namespaces "tern-test-drift" not found\n')
+				end
+				return prev(argv, e)
+			end
+		end)(w.answer)
+		local s = X.press(w, X.open(w, nil, nil), "g", { ctrl = true })
+		s = X.action(w, s, "open", "dir:/repo/drift/baseline")
+		local text = nodes.text(body(s))
+		expect(nodes.find(body(s), nodes.role("tern-kube.error"))).toBeNil()
+		expect(text).toContain("namespace tern-test-drift does not exist in this cluster: every object is missing")
+		expect(text).toContain("Missing in cluster 5")
 	end)
 
 	-- An auto source is a guess: the chooser says why it matched and which
@@ -242,7 +305,7 @@ describe("gitops view: drift", function()
 		expect(text).toContain("Drift of helm/chart as tern-test-helm/shop-a with deployed values")
 		expect(text).toContain("Rendered with the deployed values of tern-test-helm/shop-a")
 		expect(text).toContain(
-			"rendered by /opt/helm/bin/helm template shop-a /repo/helm/chart -n tern-test-helm -f /data/tmp/values-"
+			"rendered by /opt/helm/bin/helm template shop-a /repo/helm/chart --no-hooks -n tern-test-helm -f /data/tmp/values-"
 		)
 		expect(nodes.actions(b)).toContain("gitops-copyhelm=")
 		expect(table.find(nodes.actions(b), "gitops-key=E")).toBeNil()
