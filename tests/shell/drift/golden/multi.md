@@ -16,7 +16,7 @@ _create: declared in the manifests, missing from the cluster._
 | Context | Result |
 | --- | --- |
 | kind-tern-kube-dev | **1 resource drifted** (0 create, 1 modify, 0 delete; +1 -1), 1 unmanaged |
-| kind-tern-kube-dev2 | **3 resources drifted** (1 create, 2 modify, 0 delete; +14 -3), 0 unmanaged |
+| kind-tern-kube-dev2 | **3 resources drifted** (1 create, 2 modify, 0 delete; +12 -3), 0 unmanaged |
 
 <details>
 <summary>[kind-tern-kube-dev] modify ConfigMap tern-test-apps/app-config (+1 -1)</summary>
@@ -79,21 +79,19 @@ _create: declared in the manifests, missing from the cluster._
 </details>
 
 <details>
-<summary>[kind-tern-kube-dev2] create ConfigMap tern-test-apps/preview-extra (+11 -0)</summary>
+<summary>[kind-tern-kube-dev2] create ConfigMap tern-test-apps/preview-extra (+9 -0)</summary>
 
 ```diff
-@@ -0,0 +1,11 @@
+@@ -0,0 +1,9 @@
 +apiVersion: v1
 +data:
 +  MODE: preview
 +kind: ConfigMap
 +metadata:
-+  creationTimestamp: "2026-10-08T16:18:54Z"
 +  labels:
 +    app: web
 +  name: preview-extra
 +  namespace: tern-test-apps
-+  uid: d6cb540e-f719-4e97-b9aa-66bc6a927d25
 ```
 
 </details>

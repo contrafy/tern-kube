@@ -213,6 +213,8 @@ function M.cluster(world: World?): (Effect) -> Result?
 			return M.ok('{"kind":"List","items":[' .. node("n1") .. "," .. node("n2") .. "]}")
 		elseif tag == "step:pdbs" then
 			return M.ok('{"kind":"List","items":[]}')
+		elseif tag == "kc-check" then
+			return M.ok()
 		elseif tag == "exec" then
 			return M.ok('deployment.apps "web" deleted\n')
 		elseif tag == "respond" then

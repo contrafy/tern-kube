@@ -749,6 +749,28 @@ describe("approve session: quick-action mutations", function()
 		)
 		expect((string.find(pinned.errors[1], "shell snippet", 1, true))).toBeNil()
 	end)
+
+	-- kubectl reports a missing --kubeconfig file as "cannot locate context",
+	-- which sends the user hunting for a context that is fine. The Command
+	-- line must still show the pins, or the copied command targets a
+	-- different kubeconfig than the one that failed.
+	it("says the kubeconfig file is missing and keeps the pins in the command", function()
+		local url = SCALE .. "&kubeconfig=%2Fk%2Fgone"
+		local s, d = ready(url, {
+			target = A.failed(1, "error: cannot locate context kind-dev"),
+			["kc-check"] = A.failed(1, ""),
+		})
+		expect(s.phase).toBe("error")
+		local check = argvOf(A.find(d.runs, "run", "kc-check"))
+		expect(check[#check]).toBe("/k/gone")
+		expect(s.errors[1]).toContain("kubeconfig file /k/gone does not exist")
+		local text = Session.commandText(s)
+		expect(text).toContain("--kubeconfig /k/gone")
+		expect(text).toContain("--context kind-dev")
+		local found = ready(url, { target = A.failed(1, "error: cannot locate context kind-dev") })
+		expect(found.errors[1]).toContain("cannot locate context")
+		expect((string.find(found.errors[1], "does not exist", 1, true))).toBeNil()
+	end)
 end)
 
 local function linkFor(fields: { [string]: any }): string

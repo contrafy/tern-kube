@@ -232,6 +232,8 @@ export type State = {
 	argv: { string }?,
 	env: T.Env?,
 	conn: { program: string, kubeconfig: string? },
+	-- A failed context read, held while the kubeconfig file's existence is checked.
+	connError: string?,
 	errors: { string },
 	diagnostics: { Diagnostic },
 	plan: T.Plan?,
@@ -762,6 +764,21 @@ local function kubeconfigHint(s: State): string
 		.. used
 		.. ", not the KUBECONFIG of the pane the command ran in. Run the command with --kubeconfig, or source the "
 		.. "tern-kube shell snippet so panes record their KUBECONFIG (shell/README.md)."
+end
+
+-- kubectl reads a missing --kubeconfig file as an empty config and blames the
+-- context; check the file before reporting so the error names the real cause.
+local function failConn(s: State, effects: { Effect }, text: string)
+	local kc = s.conn.kubeconfig
+	if kc == nil or Steps.isPathList(kc) then
+		fail(s, text)
+		return
+	end
+	s.connError = text
+	local env = s.env
+	emitRun(s, effects, "kc-check", { "/bin/sh", "-c", 'test -e "$1"', "tern-kube-kc", kc }, {
+		cwd = if env then env.cwd else nil,
+	})
 end
 
 local function digestArgv(s: State, plan: T.Plan): { string }?
@@ -2019,10 +2036,24 @@ local function onResult(s: State, tag: string, r: ProcessResult, effects: { Effe
 		end
 	elseif tag == "replicas-now" then
 		s.replicasCurrent = if r.status == 0 then tonumber(firstLine(r.stdout)) else nil
+	elseif tag == "kc-check" then
+		local held = s.connError or "?"
+		s.connError = nil
+		if r.status == 1 then
+			fail(
+				s,
+				string.format(
+					"The kubeconfig file %s does not exist: restore it or pass another with --kubeconfig",
+					s.conn.kubeconfig or "?"
+				)
+			)
+		else
+			fail(s, held)
+		end
 	elseif tag == "current" then
 		local ctx = if r.status == 0 then nonEmpty(firstLine(r.stdout)) else nil
 		if ctx == nil then
-			fail(s, "No current-context in the kubeconfig: " .. firstLine(r.stderr))
+			failConn(s, effects, "No current-context in the kubeconfig: " .. firstLine(r.stderr))
 			return
 		end
 		local env = s.env :: T.Env
@@ -2033,7 +2064,11 @@ local function onResult(s: State, tag: string, r: ProcessResult, effects: { Effe
 		local env = s.env :: T.Env
 		local info, e = parseTarget(s, r, env.context :: string)
 		if info == nil then
-			fail(s, (e or "?") .. kubeconfigHint(s))
+			if r.timed_out or r.status == 0 then
+				fail(s, (e or "?") .. kubeconfigHint(s))
+			else
+				failConn(s, effects, (e or "?") .. kubeconfigHint(s))
+			end
 			return
 		end
 		s.target = info
@@ -2552,6 +2587,12 @@ function M.commandText(s: State): string
 		return Command.format((s.launch :: Quick.Launch).argv)
 	end
 	local plan = s.plan
+	-- Before the target resolves (or when resolving it failed) the command
+	-- still shows the context and kubeconfig it was going to be pinned to.
+	local senv = s.env
+	if plan == nil and s.argv and senv and senv.context then
+		plan = Plan.fromArgv(s.argv :: { string }, senv)
+	end
 	if plan then
 		local env = Plan.execEnv(plan)
 		local prefix = if env.KUBECONFIG then "KUBECONFIG=" .. Command.quote(env.KUBECONFIG) .. " " else ""
