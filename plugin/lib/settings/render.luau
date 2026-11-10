@@ -487,7 +487,7 @@ end
 
 M.KEYS = {
 	{ "j / k, down / up", "Move the selection", "Click a row" },
-	{ "g / G, pageup / pagedown", "First / last setting, by a window", "" },
+	{ "g / G, home / end, PageUp / PageDown", "First / last setting, by a window", "" },
 	{ "enter / space", "Toggle a boolean, cycle a choice, edit anything else", "on/off, Cycle, Edit" },
 	{ "e", "Edit the value (enter saves, esc cancels)", "Edit, or click the input" },
 	{ "r", "Reset to default (removes the key from the file)", "Reset" },

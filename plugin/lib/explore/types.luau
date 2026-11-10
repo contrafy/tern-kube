@@ -87,6 +87,12 @@ export type Route = {
 	-- compare/matrix: the selected other context ([ and ]); matrix drill-in
 	-- (drift): the context whose load the item is read from.
 	context: string?,
+	-- compare (list): the list filter it was opened under; `keys` are the
+	-- rows that filter showed (other sides also keep same-named objects).
+	match: string?,
+	keys: { string }?,
+	-- compare: restored after a plugin reload and not fetched again (r does).
+	reloaded: boolean?,
 }
 
 export type Item = { key: string, ref: Ref?, value: string? }
@@ -167,6 +173,9 @@ export type Msg = {
 	now: number?,
 	-- resize: the block's height in lines.
 	rows: number?,
+	-- key: the host's millisecond clock (tern.now); nil in tests that do not
+	-- care about timing.
+	clock: number?,
 	-- scan: progress, then the finished index (gitops/index.luau Index).
 	progress: Progress?,
 	index: any?,

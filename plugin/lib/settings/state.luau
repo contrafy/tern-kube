@@ -769,9 +769,10 @@ local function onKey(s: State, key: Key, effects: { Effect }): boolean
 		move(s, nil, 1)
 	elseif name == "end" or ch == "G" then
 		move(s, nil, #M.FIELDS)
-	elseif name == "pagedown" then
+	-- Tern 0.9.14 names the keys page_down/page_up; 0.9.8 pagedown/pageup.
+	elseif name == "page_down" or name == "pagedown" then
 		move(s, M.viewport(s.rows))
-	elseif name == "pageup" then
+	elseif name == "page_up" or name == "pageup" then
 		move(s, -M.viewport(s.rows))
 	elseif name == "enter" or name == "return" or name == "space" or ch == "e" then
 		return startEdit(s, effects)

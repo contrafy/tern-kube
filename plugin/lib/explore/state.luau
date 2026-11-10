@@ -182,6 +182,9 @@ export type State = {
 	helmProgram: string?,
 	-- Compare across contexts: contexts, sides and their results (compare.luau).
 	compare: Compare.C,
+	-- esc at the root armed a close at this clock (-1: the clock is unknown);
+	-- a second esc soon after closes. Any other key disarms.
+	escArmed: number?,
 }
 
 export type Effect = ExploreTypes.Effect
@@ -207,6 +210,8 @@ M.MAX_RELATION_QUERIES = 60
 M.CHROME_LINES = 24
 M.SCROLLOFF = 2
 M.SAVE_VERSION = 1
+-- A second esc within this many ms of the first closes the block.
+M.ESC_CLOSE_MS = 1500
 
 local SEP = "\n"
 
@@ -934,6 +939,87 @@ local function startEvents(s: State, route: Route, key: string, argv: { string }
 	end
 end
 
+M.POD_SUB = "pod"
+
+-- `kubectl logs --previous --all-containers` fails as a whole when one
+-- container has no previous instance, so with every container the
+-- previous logs are read per container that has one (B8).
+export type PreviousData = {
+	with: { string },
+	without: { string },
+	pending: { [string]: boolean },
+	results: { [string]: { result: ProcessResult, spawnError: string? } },
+}
+
+-- Containers of a pod object (init containers first, in status order)
+-- with a terminated previous instance, and those without one.
+function M.previousContainers(obj: any): ({ string }, { string })
+	local with: { string } = {}
+	local without: { string } = {}
+	local status = if type(obj) == "table" then obj.status else nil
+	if type(status) ~= "table" then
+		return with, without
+	end
+	for _, field in { "initContainerStatuses", "containerStatuses" } do
+		local list = status[field]
+		if type(list) ~= "table" then
+			continue
+		end
+		for _, st in list do
+			if type(st) ~= "table" or type(st.name) ~= "string" then
+				continue
+			end
+			local last = st.lastState
+			if type(last) == "table" and type(last.terminated) == "table" then
+				table.insert(with, st.name)
+			else
+				table.insert(without, st.name)
+			end
+		end
+	end
+	return with, without
+end
+
+-- One read for every container: when none or all of them have a previous
+-- instance (kubectl then says so itself, or answers for all).
+local function issuePrevious(
+	s: State,
+	route: Route,
+	key: string,
+	argv: { string },
+	gen: number,
+	obj: any,
+	effects: { Effect }
+)
+	local with, without = M.previousContainers(obj)
+	if #with == 0 or #without == 0 then
+		setLoad(s, key, { status = "loading", argv = argv, gen = gen })
+		table.insert(effects, runEffect(s, key, argv, gen))
+		return
+	end
+	local data: PreviousData = { with = with, without = without, pending = {}, results = {} }
+	for _, c in with do
+		data.pending[c] = true
+		local one = table.clone(route)
+		one.container = c
+		table.insert(effects, runEffect(s, key .. SEP .. "c:" .. c, argvFor(s, one) :: { string }, gen))
+	end
+	setLoad(s, key, { status = "loading", argv = argv, gen = gen, data = data })
+end
+
+-- The pod's container statuses come from what Explore already read, else
+-- from one `get pod` first.
+local function startPrevious(s: State, route: Route, key: string, argv: { string }, gen: number, effects: { Effect })
+	local ref = route.ref :: Ref
+	local obj = M.findObject(s, ref)
+	if obj then
+		issuePrevious(s, route, key, argv, gen, obj, effects)
+		return
+	end
+	setLoad(s, key, { status = "loading", argv = argv, gen = gen, data = { route = route } })
+	table.insert(effects, runEffect(s, key .. SEP .. M.POD_SUB, Query.get(s.program, s.target, ref), gen))
+end
+
 -- Starts loading `route` (or reloads it when `force`).
 local function startLoad(s: State, route: Route, force: boolean, effects: { Effect })
 	local key = M.routeKey(s, route)
@@ -957,6 +1043,9 @@ local function startLoad(s: State, route: Route, force: boolean, effects: { Effe
 		return
 	elseif route.kind == "events" then
 		startEvents(s, route, key, argv, s.gen, effects)
+		return
+	elseif route.kind == "logs" and route.previous and route.container == nil and route.ref and isPod(route.ref) then
+		startPrevious(s, route, key, argv, s.gen, effects)
 		return
 	end
 	setLoad(s, key, { status = "loading", argv = argv, gen = s.gen })
@@ -1027,7 +1116,9 @@ local function ensure(s: State, effects: { Effect })
 		return
 	end
 	if Compare.isRoute(route.kind) then
-		enterCompare(s, route, false, effects)
+		if not route.reloaded then
+			enterCompare(s, route, false, effects)
+		end
 		return
 	end
 	local q = route.q
@@ -1104,7 +1195,17 @@ local ROUTE_KINDS: { [string]: boolean } = {
 	["helm-hooks"] = true,
 	["helm-resources"] = true,
 	["helm-diff"] = true,
+	-- Read-only views that only re-read on restore (D1); compare comes back
+	-- marked `reloaded` and fetches nothing until r.
+	manifest = true,
+	diff = true,
+	compare = true,
 }
+
+-- A restored string field: plain text, bounded.
+local function plain(v: any): string?
+	return if type(v) == "string" and #v >= 1 and #v <= 512 and not string.find(v, "%c") then v else nil
+end
 
 function M.validRelease(v: any): string?
 	return if type(v) == "string" and HelmQuery.validRelease(v) then v else nil
@@ -1193,7 +1294,11 @@ local function restoreRoute(v: any): Route?
 			}
 		end
 	end
-	local needsRef = v.kind == "detail" or v.kind == "relations" or v.kind == "describe"
+	local needsRef = v.kind == "detail"
+		or v.kind == "relations"
+		or v.kind == "describe"
+		or v.kind == "manifest"
+		or v.kind == "diff"
 	if needsRef and ref == nil then
 		return nil
 	end
@@ -1218,6 +1323,30 @@ local function restoreRoute(v: any): Route?
 	elseif v.kind == "events" then
 		route.warnings = if v.warnings == true then true else nil
 		route.related = if type(v.related) == "boolean" then v.related else nil
+	elseif v.kind == "diff" then
+		local doc = tonumber(v.doc)
+		route.doc = if doc and doc >= 1 and doc <= 1000 and doc == math.floor(doc) then doc else 1
+	elseif v.kind == "compare" then
+		route.container = nil
+		route.previous = nil
+		local across = plain(v.across)
+		route.across = if across and (across == "*" or across == "@" or string.sub(across, 1, 1) == "=")
+			then across
+			else nil
+		route.item = plain(v.item)
+		route.context = plain(v.context)
+		route.match = plain(v.match)
+		if type(v.keys) == "table" then
+			local keys: { string } = {}
+			for _, k in v.keys do
+				local key = plain(k)
+				if key then
+					table.insert(keys, key)
+				end
+			end
+			route.keys = keys
+		end
+		route.reloaded = true
 	end
 	return route
 end
@@ -1389,6 +1518,7 @@ function M.init(args: { string }, saved: any, config: Config, env: Env): (State,
 		helm = Helm.new(),
 		helmProgram = env.helm,
 		compare = Compare.new(),
+		escArmed = nil,
 	}
 	local effects: { Effect } = {}
 	if s.envPending then
@@ -1425,13 +1555,14 @@ local function savedRef(ref: Ref?): any
 	return { kind = ref.kind, group = ref.group, namespace = ref.namespace, name = ref.name }
 end
 
--- Navigation and target only: cached cluster data is never persisted, and
--- GitOps and compare routes are not restored (they would query without
--- being asked).
+-- Navigation and target only: cached cluster data is never persisted. Of
+-- the GitOps routes only the read-only manifest and diff views come back
+-- (the others hold drafts or would scan without being asked); compare
+-- routes come back marked reloaded and fetch nothing until r.
 function M.save(s: State): any
 	local stack: { any } = {}
 	for i, r in s.stack do
-		if Gitops.isRoute(r.kind) or Compare.isRoute(r.kind) then
+		if Gitops.isRoute(r.kind) and r.kind ~= "manifest" and r.kind ~= "diff" then
 			break
 		end
 		stack[i] = {
@@ -1452,6 +1583,12 @@ function M.save(s: State): any
 			revision = r.revision,
 			against = r.against,
 			mode = r.mode,
+			doc = r.doc,
+			across = r.across,
+			item = r.item,
+			context = r.context,
+			match = r.match,
+			keys = r.keys,
 		}
 	end
 	local t = s.target
@@ -1522,7 +1659,28 @@ local function truncate(s: State, depth: number, effects: { Effect })
 	ensure(s, effects)
 end
 
+-- Picking the context already in use leaves the target, its namespace and
+-- the views as they were (an inferred context becomes a chosen one).
+local function keepContext(s: State, effects: { Effect })
+	if s.target.contextSource == "inferred" then
+		local t = table.clone(s.target)
+		t.contextSource = "chosen"
+		t.inferredAt = nil
+		s.target = t
+	end
+	local stack = table.clone(s.stack)
+	while #stack > 1 and stack[#stack].kind == "contexts" do
+		table.remove(stack)
+	end
+	s.stack = stack
+	ensure(s, effects)
+end
+
 local function chooseContext(s: State, name: string, effects: { Effect })
+	if name == s.target.context and M.resolved(s) and #s.stack > 1 then
+		keepContext(s, effects)
+		return
+	end
 	local t = table.clone(s.target)
 	t.context = name
 	t.contextSource = "chosen"
@@ -1639,7 +1797,15 @@ local function pushPicker(s: State, kind: RouteKind, effects: { Effect })
 		table.insert(effects, toast("error", "No cluster target yet", "Pick a context first (c)"))
 		return
 	end
-	pushRoute(s, { kind = kind }, effects)
+	-- A picker is a fresh choice: the filter of its last use is not kept.
+	local route: Route = { kind = kind }
+	local key = M.routeKey(s, route)
+	if s.filter[key] then
+		local filter = table.clone(s.filter)
+		filter[key] = nil
+		s.filter = filter
+	end
+	pushRoute(s, route, effects)
 end
 
 -- After kubectl could not run, a retry starts over (the host re-reads the
@@ -1659,6 +1825,11 @@ function M.refresh(s: State, effects: { Effect })
 		return
 	end
 	if Compare.isRoute(r.kind) then
+		if r.reloaded then
+			r = table.clone(r)
+			r.reloaded = nil
+			replaceTop(s, r)
+		end
 		enterCompare(s, r, true, effects)
 		return
 	end
@@ -2263,7 +2434,18 @@ local function compareKey(s: State, effects: { Effect })
 	end
 	local r = top(s)
 	if r.kind == "list" then
-		pushRoute(s, { kind = "compare", resource = r.resource or "pods", namespace = r.namespace }, effects)
+		-- "The list in view": a filtered list compares the rows it shows.
+		local route: Route = { kind = "compare", resource = r.resource or "pods", namespace = r.namespace }
+		local f = s.filter[M.currentKey(s)]
+		if f and f ~= "" then
+			local keys: { string } = {}
+			for _, item in M.items(s) do
+				table.insert(keys, item.key)
+			end
+			route.match = f
+			route.keys = keys
+		end
+		pushRoute(s, route, effects)
 		return
 	elseif r.kind == "contexts" or r.kind == "namespaces" or r.kind == "kinds" then
 		table.insert(effects, toast("info", "Nothing to compare here", "Open a list or an object first"))
@@ -2571,7 +2753,29 @@ local function inputEvent(
 	return applyInput(s, f)
 end
 
-local function onKey(s: State, key: Key, effects: { Effect }): boolean
+-- Tern 0.9.14 names PageDown/PageUp `page_down`/`page_up` (0.9.8:
+-- `pagedown`/`pageup`); both are accepted.
+local KEY_ALIASES: { [string]: string } = { pagedown = "page_down", pageup = "page_up" }
+
+local PICKERS: { [string]: boolean } = { contexts = true, namespaces = true, kinds = true }
+
+-- esc on the root view with no filter: the first arms a close, a second
+-- within ESC_CLOSE_MS closes (one esc too many sent the next keys to the
+-- shell). Without a clock any second esc closes.
+local function rootEscape(s: State, armed: number?, clock: number?, effects: { Effect })
+	if armed ~= nil and (clock == nil or armed < 0 or clock - armed <= M.ESC_CLOSE_MS) then
+		table.insert(effects, { t = "exit" })
+		return
+	end
+	s.escArmed = clock or -1
+	table.insert(effects, toast("info", "esc again to close"))
+end
+
+local function atRoot(s: State): boolean
+	return #s.stack == 1 and (s.filter[M.currentKey(s)] or "") == ""
+end
+
+local function onKey(s: State, key: Key, effects: { Effect }, clock: number?): boolean
 	local ch = Textfield.printable(key)
 	if s.editing then
 		if s.field then
@@ -2579,9 +2783,11 @@ local function onKey(s: State, key: Key, effects: { Effect }): boolean
 		end
 		return editKey(s, key)
 	end
-	local name = key.name
+	local name = KEY_ALIASES[key.name] or key.name
 	local wasG = s.pendingG
 	s.pendingG = false
+	local armed = s.escArmed
+	s.escArmed = nil
 	if s.help and (name == "escape" or ch == "?") then
 		s.help = false
 		return true
@@ -2617,9 +2823,9 @@ local function onKey(s: State, key: Key, effects: { Effect }): boolean
 		move(s, 1)
 	elseif ch == "k" or name == "up" then
 		move(s, -1)
-	elseif name == "pagedown" or (key.ctrl and name == "f") then
+	elseif name == "page_down" or (key.ctrl and name == "f") then
 		move(s, M.viewport(s.rows, s.config.general.max_rendered_rows))
-	elseif name == "pageup" or (key.ctrl and (name == "b" or name == "u")) then
+	elseif name == "page_up" or (key.ctrl and (name == "b" or name == "u")) then
 		move(s, -M.viewport(s.rows, s.config.general.max_rendered_rows))
 	elseif key.ctrl and name == "d" then
 		mutate(s, "delete", effects)
@@ -2653,9 +2859,21 @@ local function onKey(s: State, key: Key, effects: { Effect }): boolean
 		move(s, nil, #M.items(s))
 	elseif name == "enter" or name == "return" then
 		drill(s, effects)
-	elseif name == "escape" or name == "backspace" then
+	elseif name == "escape" then
+		if atRoot(s) then
+			rootEscape(s, armed, clock, effects)
+		else
+			back(s, effects)
+		end
+	elseif name == "backspace" then
+		if atRoot(s) then
+			return false
+		end
 		back(s, effects)
 	elseif ch == "/" then
+		if PICKERS[top(s).kind] then
+			setFilter(s, "")
+		end
 		return startEdit(s, effects)
 	elseif ch == "?" then
 		s.help = not s.help
@@ -3105,6 +3323,83 @@ function M.logsData(stdout: string, stderr: string, decode: Decode, limits: Logs
 	return { store = store, memo = nil }
 end
 
+local function logsLimits(s: State): LogsTypes.Limits
+	local general = s.config.general
+	return {
+		maxLines = math.max(general.max_rows, s.config.explore.logs_tail),
+		maxBytes = general.max_capture_bytes,
+	}
+end
+
+-- The `get pod` of a previous-logs read, then one result per container.
+local function onLogsSub(s: State, key: string, sub: string, load: Load, msg: Msg, effects: { Effect })
+	local result = msg.result :: ProcessResult
+	if sub == M.POD_SUB then
+		local route = (load.data :: any).route :: Route
+		local obj: any = nil
+		if msg.spawnError == nil and result.status == 0 then
+			local ok, doc = decodeJson(s, result.stdout)
+			obj = if ok and type(doc) == "table" then doc else nil
+		end
+		issuePrevious(s, route, key, load.argv, load.gen, obj, effects)
+		return
+	end
+	local c = string.match(sub, "^c:(.+)$")
+	local data = load.data :: PreviousData?
+	if c == nil or data == nil or data.pending == nil or not data.pending[c] then
+		return
+	end
+	local upd = table.clone(data)
+	upd.pending = table.clone(data.pending)
+	upd.pending[c] = nil
+	upd.results = table.clone(data.results)
+	upd.results[c] = { result = result, spawnError = msg.spawnError }
+	if next(upd.pending) ~= nil then
+		local l = table.clone(load)
+		l.data = upd
+		setLoad(s, key, l)
+		return
+	end
+	local outs: { string } = {}
+	local errs: { string } = {}
+	local notes: { string } = {}
+	for _, name in upd.with do
+		local r = upd.results[name]
+		if r.spawnError == nil and r.result.status == 0 then
+			local out = r.result.stdout
+			table.insert(outs, if out == "" or string.sub(out, -1) == "\n" then out else out .. "\n")
+			table.insert(errs, r.result.stderr or "")
+		else
+			local why = r.spawnError or trim(firstLines(r.result.stderr or "", 1))
+			table.insert(notes, name .. ": " .. (if why ~= "" then why else "kubectl failed"))
+		end
+	end
+	if #outs == 0 then
+		failLoad(s, key, load, msg)
+		return
+	end
+	local ok, logs = pcall(M.logsData, table.concat(outs), table.concat(errs, "\n"), s.decode, logsLimits(s))
+	local l = table.clone(load)
+	l.fetchedAt = msg.at
+	if not ok then
+		l.status = "error"
+		l.error = "Could not read kubectl output: " .. tostring(logs)
+		setLoad(s, key, l)
+		return
+	end
+	local store = (logs :: LogsData).store
+	table.insert(
+		store.notices,
+		{ kind = "warning", text = "no previous instance: " .. table.concat(upd.without, ", ") }
+	)
+	for _, note in notes do
+		table.insert(store.notices, { kind = "warning", text = note })
+	end
+	l.status = "ok"
+	l.data = logs
+	setLoad(s, key, l)
+end
+
 local function onResult(s: State, msg: Msg, effects: { Effect }): boolean
 	local tag = msg.tag or ""
 	if tag == M.RESOLVE_TAG then
@@ -3142,7 +3437,10 @@ local function onResult(s: State, msg: Msg, effects: { Effect }): boolean
 	if load == nil or load.gen ~= msg.gen or load.status ~= "loading" then
 		return false
 	end
-	if sub and string.sub(key :: string, 1, 7) == "events|" then
+	if sub and string.sub(key :: string, 1, 5) == "logs|" then
+		onLogsSub(s, key :: string, sub, load, msg, effects)
+		return true
+	elseif sub and string.sub(key :: string, 1, 7) == "events|" then
 		onEventsResult(s, key :: string, sub, load, msg)
 		return true
 	elseif sub then
@@ -3180,11 +3478,7 @@ local function onResult(s: State, msg: Msg, effects: { Effect }): boolean
 			policy = policy(s),
 		})
 	elseif kind == "logs" then
-		local general = s.config.general
-		ok, data = pcall(M.logsData, result.stdout, result.stderr or "", s.decode, {
-			maxLines = math.max(general.max_rows, s.config.explore.logs_tail),
-			maxBytes = general.max_capture_bytes,
-		})
+		ok, data = pcall(M.logsData, result.stdout, result.stderr or "", s.decode, logsLimits(s))
 	else
 		data = namesData(result.stdout)
 	end
@@ -3240,7 +3534,7 @@ function M.update(state: State, msg: Msg): (State, { Effect })
 	local effects: { Effect } = {}
 	local changed = false
 	if msg.t == "key" and msg.key then
-		changed = onKey(s, msg.key, effects)
+		changed = onKey(s, msg.key, effects, msg.clock)
 	elseif msg.t == "action" and msg.act then
 		changed = onAction(s, msg.act, msg.value or "", effects)
 	elseif msg.t == "result" and msg.result then

@@ -82,7 +82,10 @@ describe("explore helm: releases", function()
 		expect(top(s).kind).toBe("helm-releases")
 		local runs = helmRuns(trace.runs)
 		expect(#runs).toBe(1)
-		expect(line(runs[1])).toBe(HELM .. " list -a -o json --time-format 2006-01-02T15:04:05Z07:00 --max 1000 -A")
+		expect(line(runs[1])).toBe(
+			HELM
+				.. " list --deployed --failed --pending --superseded --uninstalled --uninstalling -o json --time-format 2006-01-02T15:04:05Z07:00 --max 1000 -A"
+		)
 		expect((runs[1].env :: { [string]: string }).HELM_DRIVER).toBe("secret")
 		expect(keys(s)).toEqual({
 			NS .. "/broken-c",
@@ -100,7 +103,9 @@ describe("explore helm: releases", function()
 		local trace
 		s, trace = W.helmKeys(s, { "H" })
 		expect(top(s).kind).toBe("helm-releases")
-		expect(line(helmRuns(trace.runs)[1])).toContain(" list -a ")
+		expect(line(helmRuns(trace.runs)[1])).toContain(
+			" list --deployed --failed --pending --superseded --uninstalled --uninstalling "
+		)
 		expect(line(helmRuns(trace.runs)[1])).toContain("-n " .. W.NS)
 		expect(#keys(s)).toBe(0)
 		s, trace = W.helmAction(s, "ns", NS)
@@ -386,7 +391,8 @@ describe("explore helm: owners", function()
 		table.sort(lines)
 		expect(#lines).toBe(5)
 		expect(lines[3]).toBe(
-			HELM .. " list -n tern-test-helm -a -o json --time-format 2006-01-02T15:04:05Z07:00 --filter ^stuck-d$"
+			HELM
+				.. " list -n tern-test-helm --deployed --failed --pending --superseded --uninstalled --uninstalling -o json --time-format 2006-01-02T15:04:05Z07:00 --filter ^stuck-d$"
 		)
 		local again: { Effect } = {}
 		Helm.noticeObject(h, c, objects[1], again)
@@ -482,7 +488,7 @@ describe("explore helm: values defaults fallbacks", function()
 				.. " tern-kube-tmp /data/helm/values-chart/templates/values.yaml",
 			"helm show values oci://reg.example/web --version 0.2.1",
 			"/bin/sh -c " .. require("../../../plugin/lib/explore/gitops").WRITE_SCRIPT .. " tern-kube-tmp " .. tmp,
-			"helm template tk-values /data/helm/values-chart -f " .. tmp,
+			"helm template tk-values /data/helm/values-chart --no-hooks -f " .. tmp,
 			"rm -f -- " .. tmp,
 		})
 	end)
@@ -522,7 +528,9 @@ describe("explore helm: values defaults fallbacks", function()
 		end
 		local load = Helm.defaultsLoad(h, top(s), 2) :: any
 		expect(load.data.source).toBe("chart-dir")
-		expect(seen[3]).toBe("helm template tk-values /data/helm/values-chart -f /repo/charts/web/values.yaml")
+		expect(seen[3]).toBe(
+			"helm template tk-values /data/helm/values-chart --no-hooks -f /repo/charts/web/values.yaml"
+		)
 		expect(#seen).toBe(3)
 	end)
 

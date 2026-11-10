@@ -94,10 +94,13 @@ match = [
 	# END tern-kube aliases
 ]
 
+# The commands "Tern Kube: Explore" / "Tern Kube: Settings" open these; the
+# automatic "New ... block" palette entries would only duplicate them.
 [[blocks]]
 id = "explore"
 title = "Tern Kube Explore"
 icon = "box"
+palette = false
 
 [[blocks]]
 id = "approve"
@@ -109,3 +112,4 @@ palette = false
 id = "settings"
 title = "Tern Kube Settings"
 icon = "sliders"
+palette = false
