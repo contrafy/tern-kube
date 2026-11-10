@@ -44,7 +44,8 @@ Pipelines and redirected output are never lensed.
 
 **Explore live** on a row, or **Tern Kube: Explore** in the palette, opens a
 live block beside the pane. It pins the context it queries, shows where that
-context came from, and only refreshes when you ask.
+context came from, and only refreshes when you ask (or when Tern reloads the
+plugin: the block then re-runs its queries).
 
 ![Relations of a Deployment](docs/screenshots/m2-relations-dark-wide.png)
 
@@ -147,11 +148,12 @@ Details: [docs/gitops.md](docs/gitops.md).
 tern plugin install github.com/contrafy/tern-kube
 ```
 
-Installing copies the whole repository (about 6 MB); Tern loads only
-`plugin.toml` and `plugin/`.
+Installing copies the whole repository (about 11 MB, mostly test fixtures);
+Tern loads only `plugin.toml` and `plugin/`.
 
-Requires Tern 0.9 or later (tested on 0.9.8) with shell integration and native command
-output on (`command_lenses`, the default), and `kubectl` installed. Started
+Requires Tern 0.9 or later (tested on 0.9.14) with shell integration and native command
+output on (`command_lenses`, the default), and `kubectl` installed. Helm
+views need Helm 3 or 4 ([GitOps](docs/gitops.md)). Started
 from the Dock or Finder, Tern has a minimal `PATH`; tern-kube reads yours
 from your login shell ([Programs and `PATH`](docs/configuration.md#programs-and-path)).
 Tested on macOS (window and panes) and on Debian 13 remote hosts with fish,
@@ -282,8 +284,15 @@ releases diff and drift but do not export. Node shell is a debug pod.
 make bootstrap   # pinned tools into .tools/
 make check       # format, lint, typecheck, unit tests, benchmark
 make e2e         # drives an isolated Tern window; needs Docker
-tern plugin link .   # load the checkout in place; reloads on save
+scripts/dev-tern.sh link   # load a snapshot into the sandbox Tern
 ```
+
+`dev-tern.sh link` copies the checkout without `.git`, `.sandbox` and
+`.tools` into the sandbox and links the copy: Tern reloads a linked plugin on
+any file change below it, `.git` included, and a reload re-creates every open
+block, so a linked checkout reloads on each commit, `git status` or edit. Run
+`link` again to load edits. `link --live` links the checkout itself (reload on
+every change). See [testing](docs/testing.md#manual-sandbox).
 
 `make e2e` runs against a disposable [kind](https://kind.sigs.k8s.io)
 cluster (`scripts/cluster.sh create`) and refuses any other context.

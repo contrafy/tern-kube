@@ -174,8 +174,8 @@ kubectl's exec credential plugins (`aws`, `gke-gcloud-auth-plugin`,
 `kubelogin`) are found too. When Tern's environment has no `KUBECONFIG`,
 commands get the shell's.
 
-The login shell is read once per Tern daemon, in the background from plugin
-load: `$SHELL -l -i` (zsh, bash, sh, fish with its own syntax; other shells
+The login shell is read in the background once per plugin load (Tern start,
+every plugin reload): `$SHELL -l -i` (zsh, bash, sh, fish with its own syntax; other shells
 are skipped) runs with a 5 second timeout, and all its output except one
 marker line is discarded. Explore waits for it before its first command.
 If it fails or times out, the directories above still apply and Tern's log
@@ -197,7 +197,7 @@ when known) on every command it runs.
 | `max_rows` | integer 1-100000 | `20000` | Output lines a lens records for its native view from one command; past this many lines the block falls back to Tern's raw output. |
 | `max_rendered_rows` | integer 1-10000 | `500` | Rows drawn at once. Lens tables page by this many rows (page chips switch pages); Explore lists draw the page that holds the selection and count the rest in an overflow note. |
 | `max_capture_bytes` | integer 65536-268435456 | `16777216` | Output bytes a lens captures from one command; beyond it the block falls back to Tern's raw output. |
-| `shell_env` | boolean | `true` | Read `PATH` and `KUBECONFIG` from your login shell once per Tern daemon, so `kubectl`, `helm`, `gh` and kubectl's exec credential plugins (`aws`, `gke-gcloud-auth-plugin`, `kubelogin`) are found when Tern starts from the Dock or Finder with the system's minimal `PATH`. See [Programs and `PATH`](#programs-and-path). `false` skips the shell; the well-known install directories are still searched. |
+| `shell_env` | boolean | `true` | Read `PATH` and `KUBECONFIG` from your login shell once per plugin load, so `kubectl`, `helm`, `gh` and kubectl's exec credential plugins (`aws`, `gke-gcloud-auth-plugin`, `kubelogin`) are found when Tern starts from the Dock or Finder with the system's minimal `PATH`. See [Programs and `PATH`](#programs-and-path). `false` skips the shell; the well-known install directories are still searched. |
 | `streaming_view` | `"raw"` or `"native"` | `"raw"` | What the lens shows while `logs -f`, `get events -w` or `events -w` still runs. `"native"` updates live but trails the stream by about six lines (Tern hands lines to plugins late); Raw is always live. The native view appears when the command ends either way. |
 
 ### `aliases`
@@ -223,7 +223,7 @@ palette, mutating quick actions, and shell-guard requests).
 
 | Key | Type | Default | Effect |
 | --- | --- | --- | --- |
-| `enabled` | boolean | `true` | `false` hides every mutating action (Explore `ctrl+d`/`ctrl+r`/`shift+s`, the lens Delete/Restart/Scale chips, debug containers, CronJob run-now) and makes the approve block refuse: native requests cannot be confirmed and shell-guard requests are denied with the reason, so the guarded command exits 1 without running. |
+| `enabled` | boolean | `true` | `false` makes the approve block refuse every mutation: apply (including GitOps apply and the palette's Apply file), delete, rollout restart/undo/pause/resume, scale, patch, label, annotate, cordon, uncordon, drain, edit (Explore `e` and guarded `kubectl edit`), Helm rollback, and the mutating quick actions (debug on a pod or node, CronJob run-now). The lens, Explore, GitOps and Helm views hide or refuse their mutation chips and keys. Shell-guard requests for these verbs are denied with the reason, so the guarded command exits 1 without running. Read-only quick actions (shell, logs, port-forward) and other `kubectl` verbs are unaffected. |
 | `interactive_guard` | boolean | `false` | Marks the opt-in shell guard as wanted; the guard functions themselves are installed separately. |
 | `require_target_confirmation` | boolean | `true` | Mutations need the target context confirmed (named by `--context` or chosen and confirmed in Explore), never inferred from the current context alone. |
 | `allow_failed_preview_override` | boolean | `false` | `true` allows confirming a mutation whose server dry-run or diff failed. |

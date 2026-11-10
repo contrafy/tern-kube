@@ -212,9 +212,20 @@ then sends TERM and finally KILL to whatever is left, and exits non-zero if a
 process survives. `start` writes `<sandbox>/cfg/omp/state.json` with Tern's
 omp management off, so a fresh sandbox never downloads or links omp.
 
-For manual work: `TK_TERN_SANDBOX=/tmp/tk-tern-<name> scripts/dev-tern.sh
-start` (in a long-lived terminal), then `link`, `reload`, `ctl ...`, `stop`.
-`start --fake` puts the fake kubectl first on `PATH`.
+### Manual sandbox
+
+`TK_TERN_SANDBOX=/tmp/tk-tern-<name> scripts/dev-tern.sh start` (in a
+long-lived terminal), then `link`, `reload`, `ctl ...`, `stop`. `start
+--fake` puts the fake kubectl first on `PATH`.
+
+`link [DIR]` copies the checkout (or DIR) without `.git`, `.sandbox` and
+`.tools` to `<sandbox>/pkg` and links that copy; run it again after edits.
+Tern 0.9.14 watches the whole linked directory, `.git` included, and reloads
+the plugin on any change: a linked checkout reloads on every `git` command
+(yours or another tool's), and each reload re-creates open blocks, which
+re-run their queries and drop routes that are not restored (compare).
+`link --live [DIR]` links DIR itself, for edit-and-see loops. `e2e.sh`
+builds its own snapshot and links it with `--live`.
 
 ### Remote hosts
 

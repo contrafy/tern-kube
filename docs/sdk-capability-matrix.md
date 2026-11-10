@@ -1,7 +1,8 @@
-# Tern SDK capability matrix (M0 + M2 quick actions, Tern 0.9.8 re-check)
+# Tern SDK capability matrix (M0 + M2 quick actions, Tern 0.9.8 and 0.9.14 re-checks)
 
-Verified against Tern 0.6.2 (4b3ed42) on macOS arm64, 2026-10-08, and
-re-checked on Tern 0.9.8 on 2026-11-02 (see "Tern 0.9.8" below). M0 rows ran in an
+Verified against Tern 0.6.2 (4b3ed42) on macOS arm64, 2026-10-08,
+re-checked on Tern 0.9.8 on 2026-11-02 (see "Tern 0.9.8" below) and on Tern
+0.9.14 on 2026-11-10 (see "Tern 0.9.14"). M0 rows ran in an
 isolated sandbox (`scripts/dev-tern.sh`, sandbox `/tmp/tk-tern`) with the
 plugin in `plugin/` linked and the fake kubectl in `tests/bin/`. Evidence
 quotes are from `tern ctl --control /tmp/tk-tern/ctl.sock ...` replies, the
@@ -25,6 +26,26 @@ capability is missing; the named substitute was observed working),
 **Unsupported** (observed absent or not working), **Proposed** (design built
 on verified pieces, the composition itself not exercised),
 **Unverified** (not exercised, with the reason).
+
+## Tern 0.9.14
+
+Types pinned to tern-sdk `a933069` (`plugins/tern.d.luau`, byte-identical to
+`tern plugin types` of 0.9.14; see `scripts/bootstrap.sh`). All type changes
+against `78ba204` are additive. No release notes exist; rows come from the
+type diff and live probes in sandboxes.
+
+| Change in 0.9.14 | Status | Evidence (Tern 0.9.14) | tern-kube |
+| --- | --- | --- | --- |
+| Key names | Verified | A probe logging block `key` events got `page_down`, `page_up`, `home`, `end`; the older `pagedown`/`pageup` no longer arrive. | Explore and Settings accept both spellings; `home`/`end` = `gg`/`G`. |
+| Palette "New <title> block" entries | Verified | The palette listed `Tern Kube: Explore` and `New Tern Kube Explore block` (same for Settings). | `palette = false` on the explore and settings blocks; the commands remain. |
+| Linked-directory watch | Verified | Touching `<link>/README.md`, `<link>/.sandbox/x` or `<link>/.git/index` reloaded the plugin within about 1 s; a `git status` in a linked checkout did too. A /tmp snapshot without `.git` saw no reload in 150 s. | `dev-tern.sh link` links a snapshot without `.git`, `.sandbox`, `.tools`; `link --live` links in place. Upstream item 18. |
+| Reload re-creates blocks | Verified | After a reload the daemon logged `settings loaded`, the shell env read and fresh `explore.run` / `approve.init` for open blocks. | Blocks restore their route from `save` and re-query; see [architecture](architecture.md#rehydration). |
+| Interrupted split command | Verified | Ctrl-C on a `logs -f` or port-forward split (kubectl exits 1) showed the "Shell exited with 1" sheet, a red tab and a notification. | Follow-logs and port-forward splits exit 0 on Ctrl-C. Upstream item 19. |
+| `tern.ui.table` rows: `TableRow {id, cells, menu, disabled}`, `TableOpts {selectable, selected, empty}`, `select`/`activate`/`action` events with `item` | Unverified | Types and docs only. | Not adopted in 1.0.1 (upstream item 8 resolved in the types); candidate to replace the `el` grid. |
+| `Cell` union: `TextCell`, `BadgeCell`, `ButtonCell`, `SparkCell`; `Col.mono` | Unverified | Types only. | Not used. |
+| `tern.ui.button`, `tern.ui.stats`, `tern.ui.card(head, children, props?)`, `TabsVariant`, `OverlayProps` | Unverified | Types only; `card`'s third argument is optional. | Source compatible; not used. |
+| `How = "glimpse"`; `BlockDef.font` (`"sans"`/`"mono"`, default mono) | Unverified | Types only. | Not used; blocks stay mono. |
+| Docs vs types on tables | Note | Docs describe `sort`, `sortable` columns and `multi` picking; `TableOpts` has none of them. | Not used. |
 
 ## Tern 0.9.8
 
@@ -110,8 +131,8 @@ behind another app's window; `dev-tern.sh ctl split right`, then
 | `tern ctl` selectors for clicks | Verified | CSS selectors work: `click ".tk-grid .tk-h:nth-child(3)"`, `click "[data-surface='plugin.tern-kube.approve'] .tk-btn:nth-child(1)"`; coordinates: `click 100 203`; modifiers after the selector. `tree SEL` returns `{"nodes":[{tag,class,text,rect}]}`; attributes such as `data-role` are not printed but match in selectors. | `hover X Y` is not accepted (`bad selector`). Hidden tabs' DOM also matches selectors; scope with `.tv-block:last-child`. |
 | Keys in a lens | Unsupported | `key j`, `type abc` after clicking the lens: reply `focused: textarea.tv-input` (the terminal); no lens event. | Keyboard navigation needs a block. |
 | Text input in a lens | Unsupported | An `input` node renders in a lens; clicking it sends `{"ev":"focus","id":"b.n13","sf":"lens12"}` to `event`, but typed text goes to the shell prompt. | Filter/search live in the Explore block. |
-| Rehydration after reload | Verified | After `dev-tern.sh reload`, a header click on an old lens block logged `lens.open kubectl get pods` -> `lens.view lines=7` (lines replayed) -> view shows `6 rows · sorted by NAME`; an earlier run logged `lens.open` -> `lens.finish` -> `lens.event` -> `lens.view` with the state from the action value. | `open/line/finish` must stay side-effect free. Running blocks (Explore) are not re-initialized by a reload; their timers and pending callbacks are dropped. |
-| Plugin auto-reload on save | Verified | Saving a broken `host.luau` logged `plugin failed to load ... host.luau:225: Expected identifier`; saving fixes reloaded without `tern plugin reload`. Manifest `styles` CSS changes applied on reload. | At window start the log says `cannot watch the tree root=<cfg>/plugins` when the folder does not exist yet; after `link` created it, auto-reload worked. |
+| Rehydration after reload | Verified | After `dev-tern.sh reload`, a header click on an old lens block logged `lens.open kubectl get pods` -> `lens.view lines=7` (lines replayed) -> view shows `6 rows · sorted by NAME`; an earlier run logged `lens.open` -> `lens.finish` -> `lens.event` -> `lens.view` with the state from the action value. | `open/line/finish` must stay side-effect free. Running blocks are re-created from saved state (re-checked on 0.9.14); timers and pending callbacks are dropped. |
+| Plugin auto-reload on save | Verified | Saving a broken `host.luau` logged `plugin failed to load ... host.luau:225: Expected identifier`; saving fixes reloaded without `tern plugin reload`. Manifest `styles` CSS changes applied on reload. | At window start the log says `cannot watch the tree root=<cfg>/plugins` when the folder does not exist yet; after `link` created it, auto-reload worked. On 0.9.14 any file below the link reloads, `.git` included. |
 | Lens -> block | Verified | Inspector `Explore` badge -> `cx:open("tern-kube://explore?kind=pods&name=db-0")` -> `tern.log`: `route.link tern-kube://explore?... pane=4294967297` -> `explore.init ["tern-kube://explore?kind=pods&name=db-0"] pane=4294967299`; block opened as a split beside the lens pane. Screenshot `screenshots/m0-explore-block.png`. | |
 | Lens action value with `=` and `&` (quick-action chips, M2) | Verified | Inspector chip `actions = { click = "act=tern-kube://act/shell?kind=Pod&name=tk-qa-shell-...&namespace=tern-test-mutate" }`: the lens `event` got `act="act"` and the whole URL as `value` (split at the first `=`); `cx:open(value)` -> `tern.log` `route.link tern-kube://act/shell?kind=Pod&name=tk-qa-shell-5f6b8bff9b-djlsb&namespace=tern-test-mutate` -> `quick action shell ... pane=7`; the split's interactive shell echoed typed input (e2e `16-quick-actions`). | The host decodes the value with `Quick.decode` before `cx:open` and drops anything else, so no unvalidated URL reaches the window. |
 | Unclaimed custom-scheme `cx:open` | Verified (hazard) | `route.link` returning nil for `tern-kube://...` -> `tern.log`: `the host failed a shell call call="open_url" error=no application could open tern-kube://explore?kind=pods&name=db-0`, and macOS showed a system dialog "There is no application set to open the URL ..." on the user's screen. | Any lens `cx:open` of `tern-kube://` must be claimed by the window half or the user sees an OS dialog. See design consequences. |

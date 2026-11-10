@@ -195,8 +195,12 @@ replays `open`, `line` and `finish`, then calls `view`. Therefore:
   restores sort, filters and the open inspector;
 - parsers use no clock: ages are shown as kubectl printed them.
 
-Running blocks (Explore, approve) are not re-initialized by a reload; their
-timers and pending callbacks are dropped.
+A reload also re-creates running blocks (Explore, approve): Tern calls `init`
+again with their saved state, timers and pending callbacks are dropped, and
+the new block re-runs its queries (Explore its route, approve its preview).
+Tern 0.9.14 reloads a linked plugin on any file change below the linked
+directory, `.git` included, so development links a snapshot
+([testing](testing.md#manual-sandbox)).
 
 ### Effects and cancellation
 
