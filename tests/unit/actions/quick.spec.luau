@@ -353,7 +353,7 @@ describe("quick actions", function()
 			assert(l, "builds")
 			local script = unquoteLine(l.line)
 			expect(script).toContain(
-				"; printf 'tern-kube: context %s\\n' \"$(kubectl --kubeconfig /k/c config current-context)\"; exec kubectl"
+				"; printf 'tern-kube: context %s\\n' \"$(kubectl --kubeconfig /k/c config current-context)\"; kubectl logs"
 			)
 			expect(l.title).toContain("@ current context")
 			local pinned = Quick.command("logs-follow", PINNED, ref("Pod", "p", "ns"), {})
@@ -417,6 +417,56 @@ describe("quick actions", function()
 			expect(pod.argv[#pod.argv]).toBe("18080:8080")
 		end)
 
+		-- MUT-F7: a second shift+f on the same workload ran 8080:8080 again and
+		-- failed with "address already in use".
+		it("forwards the suggested local port only when it is free, else lets kubectl pick one", function()
+			local svc = Quick.command("port-forward", UNPINNED, ref("Service", "web", "apps"), { port = 80 })
+			assert(svc, "builds")
+			local script = unquoteLine(svc.line)
+			expect(script).toContain("p=80; l=8080; ")
+			expect(script).toContain(
+				"if ! command -v lsof >/dev/null 2>&1; then a=:$p; why='lsof is not installed'; "
+					.. 'elif lsof -nP -iTCP:"$l" -sTCP:LISTEN >/dev/null 2>&1; then a=:$p; why="localhost:$l is in use"; '
+					.. "else a=$l:$p; fi"
+			)
+			expect(script).toContain(
+				"printf 'tern-kube: %s; kubectl picks a free local port (see Forwarding from below)\\n' \"$why\""
+			)
+			expect(script).toContain('kubectl port-forward -n apps service/web "$a"')
+			-- A local port the link names is used as given.
+			local fixed =
+				unquoteLine(
+					(Quick.command(
+						"port-forward",
+						UNPINNED,
+						ref("Pod", "p", "apps"),
+						{ port = 8080, localPort = 18080 }
+					) :: any).line
+				)
+			expect(fixed).toContain("p=8080; l=18080; a=$l:$p; ")
+			expect((string.find(fixed, "lsof", 1, true))).toBeNil()
+		end)
+
+		-- MUT-T: Tern 0.9.14 shows a "Shell exited with 1" modal and a red tab
+		-- for a pane whose command fails; Ctrl-C is how logs and port-forwards
+		-- are stopped, so it must not look like a failure.
+		it("follow-logs and port-forward splits exit 0 on Ctrl-C, other failures keep their status", function()
+			local cases: { { action: string, opts: Quick.Opts } } = {
+				{ action = "logs-follow", opts = {} },
+				{ action = "port-forward", opts = { port = 80 } },
+				{ action = "port-forward", opts = {} },
+			}
+			for _, case in cases do
+				local l = Quick.command(case.action, PINNED, ref("Deployment", "web", "apps", "apps"), case.opts)
+				assert(l, "builds")
+				local script = unquoteLine(l.line)
+				expect(script).toContain("; trap 'exit 0' INT; ")
+				expect((string.find(script, "exec ", 1, true))).toBeNil()
+			end
+			local sh = unquoteLine((Quick.command("shell", PINNED, ref("Pod", "p", "ns"), {}) :: any).line)
+			expect((string.find(sh, "trap", 1, true))).toBeNil()
+		end)
+
 		it("resolves the first declared port at run time when none is known", function()
 			local l = Quick.command("port-forward", PINNED, ref("Deployment", "web", "apps", "apps"), {})
 			assert(l, "builds")
@@ -429,7 +479,7 @@ describe("quick actions", function()
 				"p=${1:-}; case $p in ''|*[!0-9]*) printf 'tern-kube: %s declares no port\\n' deployment/web >&2; exit 1;; esac"
 			)
 			expect(script).toContain('if [ "$p" -gt 1024 ]; then l=$p; else l=$((8000 + p)); fi')
-			expect(script).toContain('deployment/web "$l:$p"')
+			expect(script).toContain('deployment/web "$a"')
 			local svc =
 				unquoteLine((Quick.command("port-forward", PINNED, ref("Service", "web", "apps"), {}) :: any).line)
 			expect(svc).toContain("jsonpath={.spec.ports[*].port}")
@@ -857,12 +907,14 @@ describe("quick actions", function()
 		it("prints where a known port-forward listens and the ssh tunnel to reach it", function()
 			local l = Quick.command("port-forward", PINNED, POD, { port = 80 }, REMOTE) :: Quick.Launch
 			local script = unquoteLine(l.line)
+			expect(script).toContain("p=80; l=8080; ")
 			expect(script).toContain(
-				"printf 'tern-kube: forwarding localhost:%s -> %s on %s\\n' 8080 80 tk@localhost:2222"
+				'printf \'tern-kube: forwarding localhost:%s -> %s on %s\\n\' "$l" "$p" tk@localhost:2222'
 			)
 			expect(script).toContain(
-				"printf 'tern-kube: from this machine: ssh -N -L %s:localhost:%s %s\\n' 8080 8080 '-p 2222 tk@localhost'"
+				"printf 'tern-kube: from this machine: ssh -N -L %s:localhost:%s %s\\n' \"$l\" \"$l\" '-p 2222 tk@localhost'"
 			)
+			expect(script).toContain("on %s; kubectl picks a free local port")
 		end)
 		it("prints the hint with the port resolved at run time", function()
 			local l = Quick.command("port-forward", PINNED, POD, {}, REMOTE) :: Quick.Launch
@@ -876,7 +928,7 @@ describe("quick actions", function()
 		it("omits the ssh line when the host name is not an ssh destination", function()
 			local s: Quick.Settings = { remote = { name = "tk@9831a117" } }
 			local l = Quick.command("port-forward", PINNED, POD, { port = 80 }, s) :: Quick.Launch
-			expect(unquoteLine(l.line)).toContain("on %s\\n' 8080 80 tk@9831a117")
+			expect(unquoteLine(l.line)).toContain('on %s\\n\' "$l" "$p" tk@9831a117')
 			expect((string.find(l.line, "ssh -N", 1, true))).toBeNil()
 		end)
 		it("quotes a hostile host name", function()
@@ -892,6 +944,41 @@ describe("quick actions", function()
 			expect((string.find(script, "/Users/me", 1, true))).toBeNil()
 			expect(script).toContain('exec "$TKUBE_GUARD_CORE" kubectl edit')
 			expect(script).toContain('[ -x "${TKUBE_GUARD_CORE:-}" ]')
+		end)
+	end)
+
+	-- EXP-B4: `m` opened the manifest in an editor split that took the focus,
+	-- so the next Explore keys edited the YAML. Explore asks the window to
+	-- open the file without focus through a tern-kube://file link, which any
+	-- program could also send: only manifest files, by absolute path.
+	describe("file links", function()
+		it("round-trips an absolute manifest path and line", function()
+			local url = Quick.fileUrl("/repo/my apps/web.yaml", 12) :: string
+			expect(string.sub(url, 1, #Quick.FILE_SCHEME)).toBe(Quick.FILE_SCHEME)
+			local f = Quick.decodeFile(url)
+			assert(f, "decodes")
+			expect(f.path).toBe("/repo/my apps/web.yaml")
+			expect(f.line).toBe(12)
+			local noLine = Quick.decodeFile(Quick.fileUrl("/repo/kustomization.yml", nil) :: string)
+			assert(noLine, "decodes")
+			expect(noLine.line).toBeNil()
+		end)
+
+		it("refuses relative paths, other file types, control characters and bad lines", function()
+			for _, path in { "repo/web.yaml", "/Applications/Evil.app", "/tmp/run.command", "/repo/web.yaml\n.sh" } do
+				expect(Quick.fileUrl(path, 1)).toBeNil()
+			end
+			for _, url in
+				{
+					Quick.FILE_SCHEME .. "?path=%2Ftmp%2Fx.sh",
+					Quick.FILE_SCHEME .. "?path=%2Frepo%2Fw.yaml&line=0",
+					Quick.FILE_SCHEME .. "?path=%2Frepo%2Fw.yaml&line=1e3",
+					Quick.FILE_SCHEME .. "?line=3",
+					"tern-kube://explore?path=%2Frepo%2Fw.yaml",
+				}
+			do
+				expect(Quick.decodeFile(url)).toBeNil()
+			end
 		end)
 	end)
 end)
