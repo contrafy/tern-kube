@@ -236,6 +236,17 @@ describe("drift.report per scenario", function()
 end)
 
 describe("drift.report edge cases", function()
+	local function helmCm(name: string, release: string?): any
+		local annotations = if release
+			then { ["meta.helm.sh/release-name"] = release, ["meta.helm.sh/release-namespace"] = "ns" }
+			else nil
+		return {
+			apiVersion = "v1",
+			kind = "ConfigMap",
+			metadata = { name = name, namespace = "ns", annotations = annotations },
+		}
+	end
+
 	it("flags a manifest absent from the live listing as missing even without a diff segment", function()
 		local everything = live()
 		local without = {}
@@ -300,30 +311,42 @@ describe("drift.report edge cases", function()
 	-- Several releases share a namespace. Against one release's chart,
 	-- another release's objects (and hook objects, which carry no release
 	-- annotation) are not unmanaged: reporting them would offer to delete
-	-- or export what helm owns.
-	it("a helm source ignores objects of other Helm releases in its namespace", function()
+	-- or export what helm owns. Objects of the release itself that this
+	-- render does not produce are helm's too (the next upgrade prunes them).
+	it("a helm source ignores objects of Helm releases and hooks in its namespace", function()
 		local source: Drift.Source =
 			{ type = "helm", root = "/repo", path = "/repo/chart", helm = { release = "shop-a", namespace = "ns" } }
-		local function cm(name: string, release: string?): any
-			local annotations = if release
-				then { ["meta.helm.sh/release-name"] = release, ["meta.helm.sh/release-namespace"] = "ns" }
-				else nil
-			return {
-				apiVersion = "v1",
-				kind = "ConfigMap",
-				metadata = { name = name, namespace = "ns", annotations = annotations },
-			}
-		end
 		local docs: { Drift.Doc } = {}
 		addDocs(docs, "cm.yaml", "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: shop\n  namespace: ns\n", source)
-		local hook = cm("web-pre-upgrade", nil)
+		local hook = helmCm("web-pre-upgrade", nil)
 		hook.metadata.annotations = { ["helm.sh/hook"] = "pre-upgrade,pre-rollback" }
-		local objects = { cm("shop", "shop-a"), cm("left", "shop-a"), cm("web", "web-b"), cm("stray", nil), hook }
+		local objects =
+			{ helmCm("shop", "shop-a"), helmCm("left", "shop-a"), helmCm("web", "web-b"), helmCm("stray", nil), hook }
 		local r = Drift.report(source, { docs = docs }, {}, objects, {})
-		expect(keys(r.unmanaged)).toEqual({ "/ConfigMap/ns/left", "/ConfigMap/ns/stray" })
+		expect(keys(r.unmanaged)).toEqual({ "/ConfigMap/ns/stray" })
 		expect(ignoredPairs(r)).toEqual({
+			"/ConfigMap/ns/left = Helm release ns/shop-a (not in this render)",
 			"/ConfigMap/ns/web = Helm release ns/web-b",
 			"/ConfigMap/ns/web-pre-upgrade = Helm hook (pre-upgrade, pre-rollback)",
+		})
+	end)
+
+	-- The unmanaged set of a plain source used to depend on whether a Helm
+	-- report had been opened before (its render indexed the release's
+	-- objects). Release annotations and hook annotations decide instead, so
+	-- the same report gives the same answer every time and never offers to
+	-- delete or export what helm owns.
+	it("a plain source never reports Helm release objects or hooks as unmanaged", function()
+		local docs: { Drift.Doc } = {}
+		addDocs(docs, "cm.yaml", "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: app\n  namespace: ns\n", SOURCE)
+		local hook = helmCm("web-post-install", nil)
+		hook.metadata.annotations = { ["helm.sh/hook"] = "post-install" }
+		local objects = { helmCm("app", nil), helmCm("web-config", "web"), helmCm("stray", nil), hook }
+		local r = Drift.report(SOURCE, { docs = docs }, {}, objects, {})
+		expect(keys(r.unmanaged)).toEqual({ "/ConfigMap/ns/stray" })
+		expect(ignoredPairs(r)).toEqual({
+			"/ConfigMap/ns/web-config = Helm release ns/web",
+			"/ConfigMap/ns/web-post-install = Helm hook (post-install)",
 		})
 	end)
 
@@ -377,6 +400,47 @@ describe("drift.report edge cases", function()
 		expect(r.counts.docs).toBe(0)
 	end)
 
+	-- kubectl diff masks Secret values as `*** (before)`/`*** (after)`, so a
+	-- re-applied export (REPLACE_ME) looked like a real change.
+	it("marks Secrets whose manifest still holds export placeholders", function()
+		local docs: { Drift.Doc } = {}
+		addDocs(
+			docs,
+			"s.yaml",
+			"apiVersion: v1\nkind: Secret\nmetadata:\n  name: app\n  namespace: ns\nstringData:\n  pw: REPLACE_ME\n",
+			SOURCE
+		)
+		addDocs(
+			docs,
+			"new.yaml",
+			"apiVersion: v1\nkind: Secret\nmetadata:\n  name: new\n  namespace: ns\nstringData:\n  t: REPLACE_ME\n",
+			SOURCE
+		)
+		docs[1].placeholders = { "pw" }
+		docs[2].placeholders = { "t" }
+		local diff = Diffseg.parse(table.concat({
+			"diff -u -N /tmp/LIVE-1/v1.Secret.ns.app /tmp/MERGED-2/v1.Secret.ns.app",
+			"--- /tmp/LIVE-1/v1.Secret.ns.app\t2026-11-10 10:00:00.000000000 +0000",
+			"+++ /tmp/MERGED-2/v1.Secret.ns.app\t2026-11-10 10:00:00.000000000 +0000",
+			"@@ -1,3 +1,3 @@",
+			" apiVersion: v1",
+			" data:",
+			"-  pw: '*** (before)'",
+			"+  pw: '*** (after)'",
+			"",
+		}, "\n")).segments
+		local r = Drift.report(SOURCE, { docs = docs }, diff, {
+			{ apiVersion = "v1", kind = "Secret", metadata = { name = "app", namespace = "ns" } },
+		}, {})
+		expect(r.changed[1].placeholders).toEqual({ "pw" })
+		expect(r.changed[1].segment.lines).toContain("+  pw: REPLACE_ME (placeholder)")
+		expect(r.missing[1].key).toBe("/Secret/ns/new")
+		expect(r.missing[1].placeholders).toEqual({ "t" })
+		expect(r.notes).toContain(
+			"/Secret/ns/app: pw still holds the export placeholder REPLACE_ME; applying would overwrite the live value"
+		)
+	end)
+
 	it("labels changed and unmanaged objects with their GitOps controller", function()
 		local set = Controllers.parse({
 			["applications.argoproj.io"] = {
@@ -404,6 +468,50 @@ describe("drift.report edge cases", function()
 	it("passes diff notes through", function()
 		local r = Drift.report(SOURCE, index(), {}, nil, { diffNotes = { "Warning: x" } })
 		expect(r.notes).toContain("Warning: x")
+	end)
+end)
+
+-- A context where the source's namespace does not exist yet (a new cluster)
+-- made kubectl diff fail on the first object, and the report was an error.
+describe("drift.namespaceMissing", function()
+	local function plain(text: string): Drift.Index
+		local docs: { Drift.Doc } = {}
+		addDocs(docs, "a.yaml", text, SOURCE)
+		return { docs = docs }
+	end
+	local CM = "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: %s\n  namespace: %s\n"
+
+	it("reads the namespace from kubectl's error", function()
+		expect(Drift.missingNamespace('Error from server (NotFound): namespaces "new-ns" not found\n')).toBe("new-ns")
+		expect(Drift.missingNamespace('Error from server (NotFound): configmaps "x" not found')).toBeNil()
+	end)
+
+	it("reports every object missing when all of them live in that namespace", function()
+		local idx = plain(string.format(CM, "a", "new-ns") .. "---\n" .. string.format(CM, "b", "new-ns"))
+		local r = Drift.namespaceMissing(SOURCE, idx, "new-ns", {}) :: Drift.Report
+		expect(keys(r.missing)).toEqual({ "/ConfigMap/new-ns/a", "/ConfigMap/new-ns/b" })
+		expect(r.counts.missing).toBe(2)
+		expect(r.notes[1]).toBe(
+			"namespace new-ns does not exist in this cluster: every object is missing; "
+				.. "create the namespace first (kubectl create namespace new-ns)"
+		)
+	end)
+
+	it("counts the source's own Namespace as missing and needs no create hint", function()
+		local idx = plain(
+			"apiVersion: v1\nkind: Namespace\nmetadata:\n  name: new-ns\n---\n" .. string.format(CM, "a", "new-ns")
+		)
+		local r = Drift.namespaceMissing(SOURCE, idx, "new-ns", {}) :: Drift.Report
+		expect(keys(r.missing)).toEqual({ "/ConfigMap/new-ns/a", "/Namespace//new-ns" })
+		expect(r.notes[1]).toBe("namespace new-ns does not exist in this cluster: every object is missing")
+	end)
+
+	-- Objects elsewhere were never compared: guessing "in sync" would lie.
+	it("stays an error when other namespaces or cluster objects were not compared", function()
+		local idx = plain(string.format(CM, "a", "new-ns") .. "---\n" .. string.format(CM, "b", "other"))
+		expect(Drift.namespaceMissing(SOURCE, idx, "new-ns", {})).toBeNil()
+		idx = plain(string.format(CM, "a", "new-ns") .. "---\napiVersion: v1\nkind: Namespace\nmetadata:\n  name: x\n")
+		expect(Drift.namespaceMissing(SOURCE, idx, "new-ns", {})).toBeNil()
 	end)
 end)
 

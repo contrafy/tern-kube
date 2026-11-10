@@ -14,6 +14,7 @@ local Diffseg = require("../mutation/diffseg")
 local HelmOwner = require("../helm/owner")
 local Kinds = require("../kubectl/kinds")
 local Command = require("../kubectl/command")
+local Placeholder = require("./placeholder")
 local Resource = require("../model/resource")
 local Types = require("../model/types")
 
@@ -45,6 +46,8 @@ export type Doc = {
 	-- Kustomization dir listing this file as a resource or patch.
 	kustomization: string?,
 	patch: boolean?,
+	-- Secret keys holding export placeholders (gitops/placeholder.luau).
+	placeholders: { string }?,
 }
 
 export type Index = { docs: { Doc } }
@@ -76,8 +79,24 @@ export type ObjectSummary = {
 	controller: Controllers.Owner?,
 }
 
-export type Changed = { key: string, ref: Ref, segment: Segment, docs: { Doc }, controller: Controllers.Owner? }
-export type Missing = { key: string, ref: Ref, docs: { Doc }, segment: Segment?, reason: "create" | "absent" }
+-- `placeholders`: Secret keys the manifest leaves at the export placeholder
+-- (applying it would overwrite the live values with REPLACE_ME).
+export type Changed = {
+	key: string,
+	ref: Ref,
+	segment: Segment,
+	docs: { Doc },
+	controller: Controllers.Owner?,
+	placeholders: { string }?,
+}
+export type Missing = {
+	key: string,
+	ref: Ref,
+	docs: { Doc },
+	segment: Segment?,
+	reason: "create" | "absent",
+	placeholders: { string }?,
+}
 export type Unmanaged = { key: string, ref: Ref, object: ObjectSummary, segment: Segment? }
 export type Ignored = { key: string, reason: string }
 
@@ -325,16 +344,25 @@ local function exclusion(source: Source, obj: { [string]: any }, ref: Ref): stri
 	if labels["argocd.argoproj.io/secret-type"] ~= nil then
 		return "argo cd bookkeeping"
 	end
-	local spec = source.helm
-	if spec then
-		local owner = HelmOwner.fromObject(obj)
-		if owner and (owner.release ~= spec.release or owner.namespace ~= (spec.namespace or owner.namespace)) then
-			return string.format("Helm release %s/%s", owner.namespace, owner.release)
-		end
-		local hook = HelmOwner.hook(obj)
-		if hook then
-			return "Helm hook (" .. table.concat(hook.events, ", ") .. ")"
-		end
+	-- Helm owns release objects and hooks in every source: deleting or
+	-- exporting them from a drift report would fight helm. Annotations
+	-- decide, not which renders happen to be indexed.
+	local owner = HelmOwner.fromObject(obj)
+	if owner then
+		local spec = source.helm
+		local own = spec ~= nil
+			and owner.release == spec.release
+			and owner.namespace == (spec.namespace or owner.namespace)
+		return string.format(
+			"Helm release %s/%s%s",
+			owner.namespace,
+			owner.release,
+			if own then " (not in this render)" else ""
+		)
+	end
+	local hook = HelmOwner.hook(obj)
+	if hook then
+		return "Helm hook (" .. table.concat(hook.events, ", ") .. ")"
 	end
 	return nil
 end
@@ -358,6 +386,31 @@ local function summary(obj: { [string]: any }, ref: Ref, opts: Options): ObjectS
 end
 
 type LiveEntry = { obj: { [string]: any }, ref: Ref }
+
+local function placeholdersOf(docs: { Doc }): { string }?
+	local set: { [string]: boolean } = {}
+	for _, d in docs do
+		local keys: { string } = d.placeholders or {}
+		for _, k in keys do
+			set[k] = true
+		end
+	end
+	local keys = sortedKeys(set)
+	return if #keys > 0 then keys else nil
+end
+
+function M.placeholderNote(key: string, keys: { string }): string
+	local one = #keys == 1
+	return string.format(
+		"%s: %s still %s the export placeholder %s; applying would overwrite the live %s",
+		key,
+		table.concat(keys, ", "),
+		if one then "holds" else "hold",
+		Placeholder.TOKEN,
+		if one then "value" else "values"
+	)
+end
+local placeholderNote = M.placeholderNote
 
 function M.report(source: Source, index: Index, segments: { Segment }, live: { any }?, opts: Options): Report
 	local parts = partition(source, index, opts)
@@ -397,7 +450,8 @@ function M.report(source: Source, index: Index, segments: { Segment }, live: { a
 	local unmanaged: { [string]: Unmanaged } = {}
 	local seen: { [Doc]: boolean } = {}
 
-	for _, seg in segments do
+	for _, diffSeg in segments do
+		local seg = diffSeg
 		local ref = segmentRef(seg)
 		if ref == nil then
 			table.insert(notes, seg.key .. ": unreadable object name in diff output")
@@ -409,10 +463,21 @@ function M.report(source: Source, index: Index, segments: { Segment }, live: { a
 			seen[d] = true
 		end
 		if #matched > 1 then
-			table.insert(notes, string.format("%s: declared %d times", key, #matched))
+			table.insert(
+				notes,
+				string.format("%s: declared %d times; the diff shows the document kubectl read last", key, #matched)
+			)
+		end
+		local keys = placeholdersOf(matched)
+		if keys then
+			seg = Placeholder.markSegment(seg, keys)
+			table.insert(notes, placeholderNote(key, keys))
 		end
 		if seg.action == "create" then
-			table.insert(missing, { key = key, ref = ref, docs = matched, segment = seg, reason = "create" })
+			table.insert(
+				missing,
+				{ key = key, ref = ref, docs = matched, segment = seg, reason = "create", placeholders = keys }
+			)
 		elseif seg.action == "delete" then
 			local entry = liveByKey[key]
 			unmanaged[key] = {
@@ -428,7 +493,14 @@ function M.report(source: Source, index: Index, segments: { Segment }, live: { a
 			if #matched == 0 then
 				table.insert(notes, key .. ": no manifest in this source")
 			end
-			table.insert(changed, { key = key, ref = ref, segment = seg, docs = matched, controller = ownerOf(key) })
+			table.insert(changed, {
+				key = key,
+				ref = ref,
+				segment = seg,
+				docs = matched,
+				controller = ownerOf(key),
+				placeholders = keys,
+			})
 		end
 	end
 
@@ -444,7 +516,10 @@ function M.report(source: Source, index: Index, segments: { Segment }, live: { a
 			local key = resolvedKey(doc, opts)
 			if not seen[doc] and key and ns and kinds[kindId(ref.group, ref.kind)] and liveByKey[key] == nil then
 				seen[doc] = true
-				table.insert(missing, { key = key, ref = ref, docs = { doc }, reason = "absent" })
+				table.insert(
+					missing,
+					{ key = key, ref = ref, docs = { doc }, reason = "absent", placeholders = placeholdersOf({ doc }) }
+				)
 			end
 		end
 		for key, entry in liveByKey do
@@ -510,6 +585,72 @@ function M.report(source: Source, index: Index, segments: { Segment }, live: { a
 			docs = #docs,
 		},
 		inSync = sortedKeys(inSyncKeys),
+		notes = notes,
+	}
+end
+
+-- The namespace kubectl diff refused with `namespaces "X" not found`.
+function M.missingNamespace(stderr: string): string?
+	return string.match(stderr, 'Error from server %(NotFound%): namespaces "([^"]+)" not found')
+end
+
+-- `kubectl diff` stops at the first object whose namespace does not exist,
+-- so nothing was compared. When every document of the source lives in that
+-- namespace (or is that Namespace), everything is missing: the usual "new
+-- cluster, not provisioned yet" case. Anything else stays an error (nil):
+-- the other objects were never compared.
+function M.namespaceMissing(source: Source, index: Index, namespace: string, opts: Options): Report?
+	local parts = partition(source, index, opts)
+	local missing: { Missing } = {}
+	local declaresNamespace = false
+	for _, doc in parts.docs do
+		local ref = doc.ref :: Ref
+		local key = resolvedKey(doc, opts)
+		local isNamespace = clusterScoped(doc) and (ref.group or "") == "" and ref.kind == "Namespace"
+		if key == nil then
+			return nil
+		elseif isNamespace and ref.name == namespace then
+			declaresNamespace = true
+		elseif docNamespace(doc, opts) ~= namespace then
+			return nil
+		end
+		table.insert(
+			missing,
+			{ key = key, ref = ref, docs = { doc }, reason = "absent", placeholders = placeholdersOf({ doc }) }
+		)
+	end
+	if #missing == 0 then
+		return nil
+	end
+	table.sort(missing, byKey)
+	local notes = {
+		string.format(
+			"namespace %s does not exist in this cluster: every object is missing%s",
+			namespace,
+			if declaresNamespace
+				then ""
+				else string.format("; create the namespace first (kubectl create namespace %s)", namespace)
+		),
+	}
+	local diffNotes: { string } = opts.diffNotes or {}
+	for _, note in diffNotes do
+		table.insert(notes, note)
+	end
+	return {
+		source = source,
+		changed = {},
+		missing = missing,
+		unmanaged = {},
+		ignored = parts.ignored,
+		counts = {
+			changed = 0,
+			missing = #missing,
+			unmanaged = 0,
+			ignored = #parts.ignored,
+			inSync = 0,
+			docs = #parts.docs,
+		},
+		inSync = {},
 		notes = notes,
 	}
 end
