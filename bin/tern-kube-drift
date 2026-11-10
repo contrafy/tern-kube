@@ -624,12 +624,16 @@ function start(key, first) {
 	setKey(cur, key)
 	S_act[cur] = "unknown"; S_add[cur] = 0; S_rem[cur] = 0; S_bin[cur] = 0; S_n[cur] = 0
 	push(cur, first)
-	oE = 0; nE = 0; oS = 0; nS = 0
+	oE = 0; nE = 0; oS = 0; nS = 0; oN = 0; nN = 0; oZ = 0; nZ = 0
 }
 function finish(   s, a) {
 	if (!cur) return
 	s = cur
 	if (hk && (oL > 0 || nL > 0)) note(S_key[s] ": hunk ended early")
+	# kubectl masks Secret data and prints a missing object as the document
+	# `null`: a side whose whole content is that one line is the empty side.
+	if (!S_bin[s] && oN == 1 && oZ && nS && nN > 1) { oE = 1; oS = 0; S_rem[s]-- }
+	else if (!S_bin[s] && nN == 1 && nZ && oS && oN > 1) { nE = 1; nS = 0; S_add[s]-- }
 	if (S_bin[s]) S_act[s] = "unknown"
 	else if (oE && !oS && nS) S_act[s] = "create"
 	else if (nE && !nS && oS) S_act[s] = "delete"
@@ -645,9 +649,9 @@ function parse(   i, line, c, key, merged) {
 		line = L[i]
 		if (hk && (oL > 0 || nL > 0)) {
 			c = substr(line, 1, 1)
-			if (c == " " || line == "") { oL--; nL-- }
-			else if (c == "-") { oL--; S_rem[cur]++ }
-			else if (c == "+") { nL--; S_add[cur]++ }
+			if (c == " " || line == "") { oL--; nL--; oN++; nN++ }
+			else if (c == "-") { oL--; S_rem[cur]++; oN++; oZ = (line == "-null") }
+			else if (c == "+") { nL--; S_add[cur]++; nN++; nZ = (line == "+null") }
 			else if (c != "\\") { note(S_key[cur] ": hunk ended early"); hk = 0; continue }
 			push(cur, line); i++; continue
 		}
