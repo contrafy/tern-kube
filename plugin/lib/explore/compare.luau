@@ -79,6 +79,12 @@ export type Load = {
 	secret: boolean,
 	-- Why the compare could not start (unknown context, over budget).
 	error: string?,
+	-- A list compare opened on a filtered list: the filter text and the row
+	-- keys it showed (lower-cased text matches names on every side).
+	match: string?,
+	keys: { [string]: boolean }?,
+	-- Objects each settled side had after the filter.
+	counts: { [number]: number },
 }
 
 export type C = {
@@ -131,7 +137,11 @@ local function subject(ctx: Ctx, route: Route): string
 		return "obj:" .. Resource.key(ref)
 	end
 	local sc = M.scope(ctx, route)
-	return "list:" .. (route.resource or "pods") .. "@" .. (if sc.all then "*" else (sc.namespace or ""))
+	return "list:"
+		.. (route.resource or "pods")
+		.. "@"
+		.. (if sc.all then "*" else (sc.namespace or ""))
+		.. (if route.match then "~" .. route.match else "")
 end
 
 -- The data of a compare route: one per target, subject and choice.
@@ -272,6 +282,9 @@ local function failed(c: C, id: string, message: string)
 		kept = {},
 		secret = false,
 		error = message,
+		match = nil,
+		keys = nil,
+		counts = {},
 	})
 end
 
@@ -319,6 +332,14 @@ local function startLoad(c: C, ctx: Ctx, route: Route, effects: { Effect })
 			argv = sideArgv(ctx, route, name),
 		}
 	end
+	local keys: { [string]: boolean }? = nil
+	if route.ref == nil and route.keys then
+		local set: { [string]: boolean } = {}
+		for _, k in route.keys do
+			set[k] = true
+		end
+		keys = set
+	end
 	local l: Load = {
 		ref = route.ref,
 		resource = if route.ref then nil else (route.resource or "pods"),
@@ -331,6 +352,9 @@ local function startLoad(c: C, ctx: Ctx, route: Route, effects: { Effect })
 		kept = {},
 		secret = false,
 		error = nil,
+		match = if route.ref then nil else route.match,
+		keys = keys,
+		counts = {},
 	}
 	setLoad(c, id, l)
 	pump(c, ctx, id, l, effects)
@@ -400,18 +424,45 @@ local function byKey(items: { any }): { [string]: any }
 	return out
 end
 
+-- A filtered list compare keeps the rows the list showed and, on every
+-- side, objects whose name contains the filter text (so objects only the
+-- other contexts have still show up as extra).
+local function inView(l: Load, items: { any }): { any }
+	if l.match == nil then
+		return items
+	end
+	local text = string.lower(l.match)
+	local out: { any } = {}
+	for _, obj in items do
+		local ref = if type(obj) == "table" then Resource.fromObject(obj, "live") else nil
+		if
+			ref
+			and (
+				(l.keys ~= nil and l.keys[Resource.key(ref)])
+				or string.find(string.lower(ref.name), text, 1, true) ~= nil
+			)
+		then
+			table.insert(out, obj)
+		end
+	end
+	return out
+end
+
 -- Every side answered: the matrix, the Secret pairs, and no raw Secret left.
 local function finish(ctx: Ctx, l: Load): Load
 	local upd = table.clone(l)
 	local sides: { { any }? } = {}
 	local maps: { [number]: { [string]: any } } = {}
+	local counts: { [number]: number } = {}
 	for i, col in l.columns do
-		local items = if col.status == "ok" then l.pending[i] else nil
+		local items = if col.status == "ok" and l.pending[i] then inView(l, l.pending[i]) else nil
 		sides[i] = items
 		if items then
 			maps[i] = byKey(items)
+			counts[i] = #items
 		end
 	end
+	upd.counts = counts
 	local pairs: { [string]: Pair } = {}
 	local secret = false
 	local ref = l.ref
@@ -796,7 +847,16 @@ function M.onKey(
 			return true, nil
 		end
 		return true,
-			{ replace = { kind = "compare", ref = route.ref, resource = route.resource, namespace = route.namespace } }
+			{
+				replace = {
+					kind = "compare",
+					ref = route.ref,
+					resource = route.resource,
+					namespace = route.namespace,
+					match = route.match,
+					keys = route.keys,
+				},
+			}
 	end
 	if route.across == nil then
 		if name == "enter" or name == "return" then

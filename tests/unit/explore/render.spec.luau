@@ -108,6 +108,64 @@ describe("explore render: header", function()
 		expect(text).toContain("Reading PATH and KUBECONFIG from your login shell")
 		expect((string.find(text, "no context", 1, true))).toBeNil()
 	end)
+
+	-- Tern refuses a view whose siblings share a key ("main.body: duplicate
+	-- child key \"error\""): the contexts view showed the target error and the
+	-- failed contexts read under the same key when both kubeconfig reads failed.
+	local function duplicateKeys(node: any, path: string, out: { string })
+		if type(node) ~= "table" then
+			return
+		end
+		local seen: { [string]: boolean } = {}
+		for _, child in (node.c or {}) :: { any } do
+			local key = type(child) == "table" and child.p and child.p.key
+			if type(key) == "string" then
+				if seen[key] then
+					table.insert(out, path .. "." .. key)
+				end
+				seen[key] = true
+			end
+			duplicateKeys(child, path .. "." .. tostring(key or "?"), out)
+		end
+	end
+
+	local function keysUnique(s: State)
+		local v = view(s)
+		local out: { string } = {}
+		for name, part in { main = v.main, dock = v.dock, layer = v.layer } :: { [string]: any } do
+			duplicateKeys(part, name, out)
+		end
+		expect(out).toEqual({})
+	end
+
+	it("a kubeconfig whose context reads both fail renders with distinct keys", function()
+		local s, effects = State.init({ W.link({}) }, nil, W.config(nil), W.env())
+		s = W.settle(s, effects, function()
+			return W.fail(1, "error: current-context is not set")
+		end)
+		expect(s.targetError ~= nil).toBe(true)
+		expect(s.stack[#s.stack].kind).toBe("contexts")
+		expect((State.currentLoad(s) :: State.Load).status).toBe("error")
+		keysUnique(s)
+		expect(#nodes.findAll(main(s), nodes.role("tern-kube.error"))).toBe(2)
+	end)
+
+	it("every route's error, loading and help states have distinct sibling keys", function()
+		local failing = function()
+			return W.fail(1, "error: You must be logged in to the server (Unauthorized)")
+		end
+		local states: { State } = { W.open(), W.keys(W.open(), { "?" }), (notFound()) }
+		for _, keys in { {}, { "enter" }, { "d" }, { "L" }, { "v" }, { "c" }, { "n" }, { ":" }, { "enter", "R" } } do
+			local s = W.keys(W.open(), keys)
+			table.insert(states, s)
+			local s2, effects = State.update(s, W.key("r"))
+			table.insert(states, s2)
+			table.insert(states, (W.settle(s2, effects, failing)))
+		end
+		for _, s in states do
+			keysUnique(s)
+		end
+	end)
 end)
 
 describe("explore render: list", function()
@@ -283,6 +341,34 @@ describe("explore render: other views", function()
 				seen[key] = desc
 			end
 		end
+	end)
+
+	-- MUT-F16: with mutations.enabled false the dock still offered
+	-- "e edit · ctrl+d delete · ctrl+r restart · S scale".
+	it("with mutations disabled, neither dock nor help advertises a mutation key", function()
+		local cfg = W.config('{"mutations":{"enabled":false}}')
+		local s = W.open({ context = W.CTX, namespace = W.NS, kind = "Deployment", group = "apps", name = "web" }, cfg)
+		expect(s.stack[#s.stack].kind).toBe("detail")
+		local dock = nodes.text(view(s).dock :: any)
+		for _, gone in { "ctrl+d", "ctrl+r", "S scale", "e edit" } do
+			expect((string.find(dock, gone, 1, true))).toBeNil()
+		end
+		expect(dock).toContain("d describe")
+		local help = nodes.text(view((W.keys(s, { "?" }))).layer :: any)
+		for _, gone in
+			{ "Delete: preview", "Scale: asks", "Drain the node", "Patch: asks", "roll back to the selected" }
+		do
+			expect((string.find(help, gone, 1, true))).toBeNil()
+		end
+		expect(help).toContain("Port-forward in a new split")
+		local on = W.open({ context = W.CTX, namespace = W.NS, kind = "Deployment", group = "apps", name = "web" })
+		expect(nodes.text(view(on).dock :: any)).toContain("ctrl+d delete")
+	end)
+
+	it("help names PageDown / PageUp and that only a second esc closes", function()
+		local text = nodes.text(view((W.keys(W.open(), { "?" }))).layer :: any)
+		expect(text).toContain("PageDown / PageUp")
+		expect(text).toContain("esc twice")
 	end)
 end)
 

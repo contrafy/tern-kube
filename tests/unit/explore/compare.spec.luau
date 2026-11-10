@@ -412,6 +412,59 @@ describe("compare: lists", function()
 		s = press(s, "enter")
 		expect(alltext(s)).toContain("compare.max_objects (2)")
 	end)
+
+	local function typed(s: State, text: string): State
+		s = press(s, "/")
+		for i = 1, #text do
+			s = press(s, string.sub(text, i, i))
+		end
+		return (press(s, "enter"))
+	end
+
+	local function names(s: State): { string }
+		local out: { string } = {}
+		for _, item in State.items(s) do
+			table.insert(out, (item.ref :: any).name)
+		end
+		table.sort(out)
+		return out
+	end
+
+	-- B6: README says "the list in view"; x on a list filtered to 5 of 1509
+	-- rows compared the whole namespace and was refused.
+	it("x on a filtered list compares the rows in view, plus same-named objects elsewhere", function()
+		local s = typed(open(nil), "web")
+		s = press(s, "x")
+		s = press(s, "enter")
+		expect(names(s)).toEqual({ "tkm-web" })
+		expect(alltext(s)).toContain("matching /web")
+		local only = typed(open(nil), "only")
+		only = press(only, "x")
+		only = press(only, "enter")
+		expect(names(only)).toEqual({ "tkm-only-a", "tkm-only-b" })
+	end)
+
+	it("the filter keeps a list under compare.max_objects", function()
+		local s = typed(open(nil, nil, cfg('{"compare":{"max_objects":2}}')), "web")
+		s = press(s, "x")
+		s = press(s, "enter")
+		expect(names(s)).toEqual({ "tkm-web" })
+		expect((string.find(alltext(s), "above compare.max_objects", 1, true))).toBeNil()
+	end)
+
+	-- B6: the other side said "nothing" and "no objects on any side" though
+	-- it was read; only the base side was refused.
+	it("a refused base side says the other sides were read but not compared", function()
+		local s = open(nil, nil, cfg('{"compare":{"max_objects":2}}'))
+		s = press(s, "x")
+		s = press(s, "enter")
+		local text = alltext(s)
+		expect(text).toContain(A .. ": 3 objects, above compare.max_objects (2)")
+		expect(text).toContain("dev2: 3 objects read, not compared")
+		expect((string.find(text, "no objects on any side", 1, true))).toBeNil()
+		expect((string.find(text, "dev2: nothing", 1, true))).toBeNil()
+		expect(text).toContain("Filter the list (/) before x")
+	end)
 end)
 
 describe("compare: guards and wiring", function()
@@ -465,12 +518,25 @@ describe("compare: guards and wiring", function()
 		expect(top(s).floor).toBe("warn")
 	end)
 
-	it("compare routes are not restored after a reload", function()
+	-- D1: a reload dropped the compare route and showed the object instead,
+	-- with no word of what happened. Compare stays transient (nothing is
+	-- refetched on its own) but the route says it was reloaded.
+	it("after a reload a compare route says so and fetches nothing until r", function()
 		local s = pairwise("tkm-web")
 		local saved = State.save(s)
-		for _, r in saved.stack do
-			expect(r.kind ~= "compare").toBe(true)
+		local restored, effects = State.init({ "palette" }, saved, cfg(), Explore.env())
+		local tr
+		restored, tr = Explore.settle(restored, effects, world(false))
+		expect(top(restored).kind).toBe("compare")
+		for _, line in argvs(tr) do
+			expect((string.find(line, "field-selector", 1, true))).toBeNil()
+			expect((string.find(line, "config view", 1, true))).toBeNil()
 		end
+		expect(alltext(restored)).toContain("reloaded")
+		local again, tr2 = press(restored, "r")
+		expect(#tr2.runs > 0).toBe(true)
+		expect(top(again).reloaded).toBeNil()
+		expect(alltext(again)).toContain("spec.replicas 2 -> 3")
 	end)
 
 	it("the lens chip's link opens the picker for the row", function()

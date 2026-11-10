@@ -297,13 +297,14 @@ end
 
 -- Bodies ---------------------------------------------------------------------
 
-local function errorNode(text: string): Node
-	return ui.text({ ui.span(text, "error") }, { key = "error", role = "tern-kube.error" })
+local function errorNode(text: string, key: string?): Node
+	return ui.text({ ui.span(text, "error") }, { key = key or "error", role = "tern-kube.error" })
 end
 
 -- The target error, shown once; kubectl that could not run gets the ways out.
+-- Its key differs from a load error's: the contexts view can show both.
 local function targetErrorNode(s: State): Node
-	local text = errorNode(s.targetError or "")
+	local text = errorNode(s.targetError or "", "target-error")
 	if s.targetErrorKind ~= "spawn" then
 		return text
 	end
@@ -338,7 +339,7 @@ local function pendingNode(s: State, load: Load?): Node?
 	if load.status == "loading" then
 		return loadingNode(load)
 	elseif load.status == "error" then
-		return errorNode(load.error or "kubectl failed")
+		return errorNode(load.error or "kubectl failed", "load-error")
 	end
 	return nil
 end
@@ -442,7 +443,7 @@ local function windowGrid(s: State, spec: WindowSpec): { Node }
 	if first > 1 then
 		table.insert(
 			out,
-			ui.muted(string.format("↑ %d above (k, pageup, gg)", first - 1), {
+			ui.muted(string.format("↑ %d above (k, PageUp, gg)", first - 1), {
 				key = "above",
 				role = "tern-kube.overflow",
 				actions = { click = "page=up" },
@@ -453,7 +454,7 @@ local function windowGrid(s: State, spec: WindowSpec): { Node }
 	if last < total then
 		table.insert(
 			out,
-			ui.muted(string.format("↓ %d below (j, pagedown, G; / filters)", total - last), {
+			ui.muted(string.format("↓ %d below (j, PageDown, G; / filters)", total - last), {
 				key = "overflow",
 				role = "tern-kube.overflow",
 				actions = { click = "page=down" },
@@ -1497,7 +1498,7 @@ local function compareSubject(s: State, route: Route): string
 		then "all namespaces"
 		elseif sc.namespace then sc.namespace
 		else "the context default namespace"
-	return (route.resource or "pods") .. " in " .. where
+	return (route.resource or "pods") .. " in " .. where .. (if route.match then " matching /" .. route.match else "")
 end
 
 -- The notice a compare carries: Secret values masked (or shown), strict mode.
@@ -1530,6 +1531,47 @@ local function compareChips(s: State, route: Route, l: Compare.Load): Node
 	return ui.row(out, { key = "c-chips", wrap = true, role = "tern-kube.chips" })
 end
 
+-- The base side of a list compare failed or was over compare.max_objects:
+-- nothing was compared, but the other sides were read; say so per side
+-- rather than "nothing" (B6).
+local function refusedBase(m: CompareModel.Matrix, l: Compare.Load): { Node }
+	local out: { Node } = {}
+	local legend: { string } = {}
+	for _, c in m.columns do
+		table.insert(legend, c.label .. " = " .. c.context)
+	end
+	table.insert(out, ui.muted(table.concat(legend, " · "), { key = "legend", role = "tern-kube.compare-legend" }))
+	for i, note in m.notes do
+		table.insert(out, ui.muted(note, { key = "note" .. i }))
+	end
+	local base = m.columns[1]
+	if #m.notes == 0 then
+		table.insert(out, ui.muted(base.label .. ": error: " .. (base.error or "kubectl failed"), { key = "base" }))
+	end
+	local lines: { Node } = {}
+	for i = 2, #m.columns do
+		local c = m.columns[i]
+		local text = if c.status == "ok"
+			then string.format("%s: %d objects read, not compared", c.label, l.counts[i] or 0)
+			else c.label .. ": error: " .. (c.error or "kubectl failed")
+		table.insert(lines, ui.muted(text, { key = "n" .. i }))
+	end
+	table.insert(out, ui.col(lines, { key = "counts", role = "tern-kube.compare-counts" }))
+	local over = string.find(base.error or "", "compare.max_objects", 1, true) ~= nil
+	table.insert(
+		out,
+		ui.text({
+			ui.span(
+				if over
+					then "Nothing compared: the base side is over compare.max_objects. Filter the list (/) before x, or raise compare.max_objects."
+					else "Nothing compared: the base context failed. r fetches every side again.",
+				"warning"
+			),
+		}, { key = "empty", role = "tern-kube.compare-refused" })
+	)
+	return out
+end
+
 local function compareBody(s: State, route: Route): { Node }
 	if not s.config.explore.allow_live_queries then
 		return { ui.muted("Live queries are disabled (explore.allow_live_queries = false).", { key = "off" }) }
@@ -1538,6 +1580,16 @@ local function compareBody(s: State, route: Route): { Node }
 	local out: { Node } = {
 		ui.text({ ui.span("Comparing " .. compareSubject(s, route), "strong") }, { key = "head" }),
 	}
+	if route.reloaded then
+		table.insert(
+			out,
+			ui.muted(
+				"Tern Kube was reloaded: this compare was not fetched again. r fetches every side, x picks again, esc goes back.",
+				{ key = "reloaded", role = "tern-kube.compare-reloaded" }
+			)
+		)
+		return out
+	end
 	local cl = Compare.contextsLoad(s.compare, cctx)
 	if cl == nil or cl.status == "loading" then
 		table.insert(
@@ -1626,6 +1678,13 @@ local function compareBody(s: State, route: Route): { Node }
 	if l.ref then
 		nodes = CompareView.fanout(m, sel, opts)
 	else
+		local base = m.columns[1]
+		if base and base.status == "error" then
+			for _, n in refusedBase(m, l) do
+				table.insert(out, n)
+			end
+			return out
+		end
 		opts.window = itemWindow(s)
 		nodes = CompareView.matrix(
 			Compare.visible(s.compare, cctx, route, s.filter[State.currentKey(s)]) :: CompareModel.Matrix,
@@ -1692,6 +1751,38 @@ local function compareHint(s: State, route: Route): string
 	return HINTS[if Compare.isPair(s.compare, State.compareCtx(s), route) then "compare-pair" else "compare"]
 end
 
+-- Words of a hint segment ("ctrl+d delete", "A apply source") that name a
+-- mutation; with mutations.enabled false those segments are not offered.
+local MUTATION_WORDS: { [string]: boolean } = {
+	delete = true,
+	restart = true,
+	scale = true,
+	edit = true,
+	rollback = true,
+	roll = true,
+	apply = true,
+	label = true,
+	annotate = true,
+	patch = true,
+	undo = true,
+	pause = true,
+	resume = true,
+	cordon = true,
+	uncordon = true,
+	drain = true,
+}
+
+function M.withoutMutations(hint: string): string
+	local kept: { string } = {}
+	for _, segment in string.split(hint, " · ") do
+		local verb = string.match(segment, "^%S+%s+(%a+)")
+		if not (verb and MUTATION_WORDS[verb]) then
+			table.insert(kept, segment)
+		end
+	end
+	return table.concat(kept, " · ")
+end
+
 local function dock(s: State): Node
 	local route = s.stack[#s.stack]
 	local load = State.currentLoad(s)
@@ -1720,6 +1811,9 @@ local function dock(s: State): Node
 			elseif Helm.isRoute(route.kind) then HelmView.hint(route)
 			elseif Compare.isRoute(route.kind) then compareHint(s, route)
 			else HINTS[route.kind]
+		if hint and not s.config.mutations.enabled then
+			hint = M.withoutMutations(hint)
+		end
 		spans = { ui.span(hint or "? help", "muted") }
 	end
 	return ui.col(
@@ -1728,12 +1822,14 @@ local function dock(s: State): Node
 	)
 end
 
+-- { key, what, pointer equivalent, "mutates" when mutations.enabled gates it }
 M.KEYS = {
 	{ "j / k, down / up", "Move the selection", "Click a row" },
-	{ "gg / G", "First / last row", "" },
-	{ "pagedown / pageup", "Move by a window (also ctrl+f / ctrl+b)", "" },
+	{ "gg / G, home / end", "First / last row", "" },
+	{ "PageDown / PageUp", "Move by a window (also ctrl+f / ctrl+b)", "" },
 	{ "enter", "Open the selected object (in an object: its relations)", "Click a row" },
-	{ "esc / backspace", "Back; at the root clear the filter, then close", "Breadcrumbs" },
+	{ "esc", "Back; at the root clear the filter, then esc twice closes the block", "Breadcrumbs" },
+	{ "backspace", "Back (never closes the block)", "" },
 	{ "/", "Filter rows (enter keeps, esc ends editing)", "Click the filter" },
 	{ "r", "Refresh this view (the only way data is re-read)", "Refresh" },
 	{ "c", "Choose the context", "context chip" },
@@ -1760,16 +1856,36 @@ M.KEYS = {
 	{ "s", "Shell in a new split (workloads: a ready pod)", "Shell" },
 	{ "l", "Follow logs in a new split", "Follow logs" },
 	{ "shift+f", "Port-forward in a new split", "Port-forward" },
-	{ "ctrl+d", "Delete: preview, then typed confirmation in the approve block", "Delete" },
-	{ "ctrl+r", "Rollout restart (deployments, statefulsets, daemonsets): preview, then confirm", "Restart" },
-	{ "shift+s", "Scale: asks for replicas, previews, then confirm", "Scale" },
-	{ "e", "Edit in a new split (kubectl edit); the approve block previews after you save", "Edit" },
-	{ "t / T", "Label / annotate: asks for KEY=VALUE or KEY-, previews, then confirm", "Label, Annotate" },
-	{ "X", "Patch: asks for [--type=strategic|merge|json] JSON, previews, then confirm", "Patch" },
-	{ "U", "Rollout undo (deployments, statefulsets, daemonsets): diff to the target revision", "Undo" },
-	{ "p / P", "Rollout pause / resume (deployments)", "Pause, Resume" },
-	{ "C / u", "Cordon / uncordon the node", "Cordon, Uncordon" },
-	{ "D", "Drain the node: asks for options, previews evictions and PodDisruptionBudgets", "Drain" },
+	{ "ctrl+d", "Delete: preview, then typed confirmation in the approve block", "Delete", "mutates" },
+	{
+		"ctrl+r",
+		"Rollout restart (deployments, statefulsets, daemonsets): preview, then confirm",
+		"Restart",
+		"mutates",
+	},
+	{ "shift+s", "Scale: asks for replicas, previews, then confirm", "Scale", "mutates" },
+	{ "e", "Edit in a new split (kubectl edit); the approve block previews after you save", "Edit", "mutates" },
+	{
+		"t / T",
+		"Label / annotate: asks for KEY=VALUE or KEY-, previews, then confirm",
+		"Label, Annotate",
+		"mutates",
+	},
+	{ "X", "Patch: asks for [--type=strategic|merge|json] JSON, previews, then confirm", "Patch", "mutates" },
+	{
+		"U",
+		"Rollout undo (deployments, statefulsets, daemonsets): diff to the target revision",
+		"Undo",
+		"mutates",
+	},
+	{ "p / P", "Rollout pause / resume (deployments)", "Pause, Resume", "mutates" },
+	{ "C / u", "Cordon / uncordon the node", "Cordon, Uncordon", "mutates" },
+	{
+		"D",
+		"Drain the node: asks for options, previews evictions and PodDisruptionBudgets",
+		"Drain",
+		"mutates",
+	},
 	{ "Y", "Copy the kubectl command of this view", "Copy command" },
 	{ "m", "Open the object's manifest at its line (indexes the repository first)", "Manifest" },
 	{ "=", "Diff the live object against its manifest (kubectl diff)", "Diff vs manifest" },
@@ -1791,15 +1907,20 @@ M.KEYS = {
 		"ctrl+r",
 		"Helm: roll back to the selected revision (release: the last good one); previews in the approve block",
 		"Rollback",
+		"mutates",
 	},
 	{ "ctrl+g", "Helm: drift of the auto-detected chart directory", "" },
 	{ "Y", "Helm: copy the pinned helm command of this view", "Copy command" },
 	{ "?", "This help", "?" },
 }
 
-local function help(): Node
+local function help(s: State): Node
 	local items: { KvItem } = {}
+	local mutations = s.config.mutations.enabled
 	for _, k in M.KEYS do
+		if k[4] == "mutates" and not mutations then
+			continue
+		end
 		local pointer = if k[3] ~= "" then "  ·  " .. k[3] else ""
 		table.insert(items, pair({ ui.span(k[1], "mono strong") }, { k[2], ui.span(pointer, "muted") }))
 	end
@@ -1810,7 +1931,11 @@ local function help(): Node
 			{ key = "title" }
 		),
 		kv,
-		ui.muted("Context changes only through the chooser; every query pins --context."),
+		ui.muted(
+			if mutations
+				then "Context changes only through the chooser; every query pins --context."
+				else "Context changes only through the chooser; every query pins --context. Mutation keys are hidden (mutations.enabled is false)."
+		),
 	}, { key = "help", role = "tern-kube.explore-help" })
 end
 
@@ -1845,7 +1970,7 @@ function M.view(s: State, cols: number, _rows: number): View
 	return {
 		main = ui.col(children, { role = "tern-kube.explore" }),
 		dock = dock(s),
-		layer = if s.help then ui.col({ help() }, { role = "tern-kube.explore-layer" }) else nil,
+		layer = if s.help then ui.col({ help(s) }, { role = "tern-kube.explore-layer" }) else nil,
 	}
 end
 

@@ -210,6 +210,88 @@ describe("explore logs: keys", function()
 		expect((State.currentLoad(s) :: State.Load).status).toBe("ok")
 	end)
 
+	-- B8: with every container, `kubectl logs --previous --all-containers`
+	-- fails as a whole when one container never restarted, hiding the
+	-- previous logs of the one that did.
+	local POD = "tk-logmix-6856789c59-kh4x5"
+	local function logmix(restarted: { string }): W.Responder
+		local statuses: { any } = {}
+		for _, name in { "app", "side", "crashy" } do
+			local last = if table.find(restarted, name) then { terminated = { exitCode = 1 } } else {}
+			table.insert(
+				statuses,
+				{ name = name, restartCount = if table.find(restarted, name) then 3 else 0, lastState = last }
+			)
+		end
+		local pod = {
+			apiVersion = "v1",
+			kind = "Pod",
+			metadata = { name = POD, namespace = "tern-test-logs" },
+			spec = { containers = { { name = "app" }, { name = "side" }, { name = "crashy" } } },
+			status = { phase = "Running", containerStatuses = statuses },
+		}
+		return function(argv: { string }): (W.Result?, string?)
+			if table.find(argv, "get") and table.find(argv, POD) then
+				return {
+					status = 0,
+					stdout = W.token("@pod:" .. table.concat(restarted, ","), pod),
+					stderr = "",
+					timed_out = false,
+				}
+			end
+			return W.responder(argv)
+		end
+	end
+
+	local function previousOf(restarted: { string }): (State, W.Trace)
+		local s, effects = State.init({
+			W.link({ context = W.CTX, namespace = "tern-test-logs", kind = "Pod", name = POD, route = "logs" }),
+		}, nil, W.config(nil), W.env())
+		s = W.settle(s, effects, logmix(restarted))
+		local s2, more = State.update(s, W.key("o"))
+		return W.settle(s2, more, logmix(restarted))
+	end
+
+	it("o with every container reads the previous instance of each container that has one", function()
+		local s, trace = previousOf({ "crashy" })
+		local logsRuns: { string } = {}
+		for _, run in trace.runs do
+			local argv = run.argv :: { string }
+			if table.find(argv, "logs") then
+				table.insert(logsRuns, table.concat(argv, " "))
+			end
+		end
+		expect(#logsRuns).toBe(1)
+		expect(logsRuns[1]).toContain("-c crashy --previous")
+		local d = data(s)
+		expect(LogsStore.size(d.store) > 0).toBe(true)
+		local notes: { string } = {}
+		for _, n in d.store.notices do
+			table.insert(notes, n.text)
+		end
+		expect(table.concat(notes, "\n")).toContain("no previous instance: app, side")
+	end)
+
+	it("a container whose previous read fails is noted; the others still show", function()
+		local s, trace = previousOf({ "side", "crashy" })
+		local containers: { string } = {}
+		for _, run in trace.runs do
+			local argv = run.argv :: { string }
+			local c = table.find(argv, "-c")
+			if table.find(argv, "--previous") and c then
+				table.insert(containers, argv[c + 1])
+			end
+		end
+		expect(containers).toEqual({ "side", "crashy" })
+		local d = data(s)
+		expect(LogsStore.size(d.store) > 0).toBe(true)
+		local notes: { string } = {}
+		for _, n in d.store.notices do
+			table.insert(notes, n.text)
+		end
+		expect(table.concat(notes, "\n")).toContain('previous terminated container "side"')
+	end)
+
 	it("enter opens the selected line's inspector; esc closes it before leaving", function()
 		local s = W.keys(W.open(), { "L", "enter" })
 		expect(top(s).inspect).toBe(true)
