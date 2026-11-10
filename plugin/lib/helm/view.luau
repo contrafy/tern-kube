@@ -57,7 +57,7 @@ export type Ctx = {
 local M = {}
 
 M.SENSITIVE = "Values that look secret are masked; set security.show_secret_values to show them"
-M.NO_HELM = "helm not found: install Helm 3 or set helm.program to its full path"
+M.NO_HELM = "helm not found: install Helm 3 or 4, or set helm.program to its full path"
 M.NOTES_EXCERPT = 3
 
 local TONE: { [string]: string } = { ok = "success", warn = "warning", error = "error", muted = "neutral" }
@@ -466,7 +466,7 @@ local function releasesBody(v: Ctx): { Node }
 	local rows = Helm.releases(v.h, v.hctx, v.route, v.filter)
 	if #all == 0 then
 		return {
-			ui.muted("No Helm releases (helm list -a) in this namespace scope; n changes it.", { key = "empty" }),
+			ui.muted("No Helm releases (any status) in this namespace scope; n changes it.", { key = "empty" }),
 		}
 	end
 	local problems = 0

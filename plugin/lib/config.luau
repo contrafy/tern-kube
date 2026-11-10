@@ -762,7 +762,7 @@ M.CATALOG = freezeDeep({
 		intSpec("max_capture_bytes", 65536, 268435456, "Output bytes captured per command; more falls back to raw"),
 		boolSpec(
 			"shell_env",
-			"Read PATH and KUBECONFIG from your login shell (once per Tern daemon) so kubectl, helm, gh and "
+			"Read PATH and KUBECONFIG from your login shell (once per plugin load) so kubectl, helm, gh and "
 				.. "credential plugins are found when Tern starts from the Dock or Finder"
 		),
 		spec(

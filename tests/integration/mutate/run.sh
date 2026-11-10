@@ -5,6 +5,9 @@
 # kind-tern-kube-dev through .sandbox kubeconfigs and only namespaces
 # tern-test-mutate and tern-test-helm-it. Evidence per scenario lands in
 # .sandbox/mutate-it/<scenario>/{evidence.log,view.txt,effects.log,audit.log}.
+# TK_IT_HELM overrides the helm program of the helm_* scenarios (also the
+# approve block's, through TK_HELM; CI runs them with Helm 3 and Helm 4) and
+# TK_IT_HELM_NS their namespace.
 #
 #   tests/integration/mutate/run.sh [SCENARIO...]   (default: all)
 set -u
@@ -363,6 +366,72 @@ scenario_guard_disabled() {
 	esac
 	tk_check "replicas unchanged ($before)" sh -c \
 		"[ \"\$(kubectl --kubeconfig '$KC' --context $CTX -n $NS get deploy tkm-web -o jsonpath='{.spec.replicas}')\" = '$before' ]"
+}
+
+# MUT-F1: a command without -n runs in the context's namespace, which kubens
+# rewrites in place (same context name, same request fingerprint). A switch
+# after the preview is refused by the block at approval; a switch after the
+# approval by the guard right before kubectl runs. An approval that holds
+# runs in the previewed namespace and its outcome reaches the audit log.
+scenario_guard_namespace_bound() {
+	fake=$TK_REPO/.sandbox/mutate-it/bin/tern
+	mkdir -p "$(dirname "$fake")" "$TK_REPO/.sandbox/mutate-it/files"
+	guard_fake_tern "$fake"
+	printf '\n== guard-namespace-bound\n'
+	TK_W=$TK_REPO/.sandbox/mutate-it/guard-namespace
+	mkdir -p "$TK_W"
+	: >"$TK_W/evidence.log"
+	kc=$TK_REPO/.sandbox/mutate-it/files/kubeconfig-ns
+	cp "$KC" "$kc"
+	cluster=$(kubectl --kubeconfig "$kc" config view -o "jsonpath={.contexts[?(@.name==\"$CTX\")].context.cluster}")
+	user=$(kubectl --kubeconfig "$kc" config view -o "jsonpath={.contexts[?(@.name==\"$CTX\")].context.user}")
+	ns_ctx() { kubectl --kubeconfig "$kc" config set-context tkm-ns --cluster="$cluster" --user="$user" --namespace="$1" >/dev/null; }
+	ns_ctx "$NS"
+	k -n "$NS" create configmap tkm-ns-a --from-literal=a=1 >/dev/null 2>&1
+	audit=${TK_SPOOL%/*}/audit.log
+	: >"$audit"
+	nsguard() {
+		env TERM_PROGRAM=tern TERN_PANE=7 TKUBE_SPOOL="$TK_SPOOL" TERN_BIN="$fake" TK_REPO="$TK_REPO" \
+			KUBECONFIG="$kc" TKUBE_GUARD_TIMEOUT=120 sh "$TK_REPO/shell/tern-kube-guard" kubectl "$@"
+	}
+
+	out=$(TK_GUARD_NAME=guard-ns-after TK_GUARD_DECISION=approve \
+		TK_GUARD_EDIT_AFTER="kubectl --kubeconfig '$kc' config set-context tkm-ns --namespace=default >/dev/null" \
+		nsguard --context tkm-ns delete configmap tkm-ns-a 2>&1)
+	st=$?
+	tk_log "kubens after approval: rc=$st $out"
+	printf '    kubens after approval: guard rc=%s: %s\n' "$st" "$(printf '%s' "$out" | tr '\n' ' ')"
+	if [ $st = 1 ]; then tk_ok "guard refused (rc=1)"; else tk_fail "guard rc=$st, want 1"; fi
+	case $out in
+	*"now defaults to namespace 'default', but the approval previewed '$NS'"*) tk_ok "the guard names both namespaces" ;;
+	*) tk_fail "no namespace refusal in the guard output" ;;
+	esac
+	case $out in *NotFound*) tk_fail "kubectl ran in another namespace" ;; *) tk_ok "kubectl never ran" ;; esac
+	tk_check "tkm-ns-a survives in $NS" k -n "$NS" get configmap tkm-ns-a
+
+	ns_ctx "$NS"
+	out=$(TK_GUARD_NAME=guard-ns-before TK_GUARD_DECISION=approve \
+		TK_GUARD_EDIT="kubectl --kubeconfig '$kc' config set-context tkm-ns --namespace=default >/dev/null" \
+		nsguard --context tkm-ns delete configmap tkm-ns-a 2>&1)
+	st=$?
+	tk_log "kubens before approval: rc=$st $out"
+	printf '    kubens before approval: guard rc=%s: %s\n' "$st" "$(printf '%s' "$out" | tr '\n' ' ')"
+	if [ $st = 1 ]; then tk_ok "nothing approved (rc=1)"; else tk_fail "guard rc=$st, want 1"; fi
+	grep -q "now defaults to namespace default (previewed: $NS)" "$TK_REPO/.sandbox/mutate-it/guard-ns-before/evidence.log" &&
+		tk_ok "the block refused at approval" || tk_fail "no block refusal recorded"
+	tk_check "tkm-ns-a survives in $NS" k -n "$NS" get configmap tkm-ns-a
+
+	ns_ctx "$NS"
+	out=$(TK_GUARD_NAME=guard-ns-ok TK_GUARD_DECISION=approve nsguard --context tkm-ns delete configmap tkm-ns-a 2>&1)
+	st=$?
+	tk_log "namespace unchanged: rc=$st $out"
+	printf '    namespace unchanged: guard rc=%s: %s\n' "$st" "$(printf '%s' "$out" | tr '\n' ' ')"
+	if [ $st = 0 ]; then tk_ok "approved delete ran"; else tk_fail "guard rc=$st, want 0"; fi
+	tk_check "tkm-ns-a deleted from $NS" sh -c "! kubectl --kubeconfig '$KC' --context $CTX -n $NS get configmap tkm-ns-a"
+	tk_log "audit: $(cat "$audit")"
+	grep -q "\"decision\":\"executed\",\"mode\":\"guard\",\"op\":\"delete\",\"family\":\"delete\",\"context\":\"tkm-ns\",\"context_source\":\"flag\",\"namespace\":\"$NS\",.*\"exit_code\":0," "$audit" &&
+		tk_ok "the outcome record names the executed namespace" || tk_fail "no executed record with namespace $NS"
+	rm -f "$kc"
 }
 
 guard_fake_tern() { # writes a fake `tern` whose `open --wait REQ` runs the headless block
@@ -739,7 +808,9 @@ scenario_patch_file_changed_refused() {
 	block_state patch-file-changed-block preview
 	tk_expect_line + "k: v2"
 	block_state patch-file-changed-block final
-	tk_expect_has confirm_error "fingerprint mismatch"
+	# The request pins the file: the block tells the user to run it again.
+	tk_expect_has errors "fingerprint mismatch"
+	tk_expect_has errors "Run the command again"
 	if [ "$st" != 0 ]; then tk_ok "guard refused (rc=$st)"; else tk_fail "the edited patch file was applied"; fi
 	expect_live "data.k unchanged" v1 configmap/tkm-patch-cm '{.data.k}'
 	gone patch/tkm-patch-cm.yaml
@@ -1057,8 +1128,10 @@ scenario_edit_invalid_approvable() {
 # namespace, helm pinned to .tools/bin/helm with throwaway HELM_*_HOME dirs
 # (never the user's repositories or registry logins). They build on each
 # other in this order; helm_cleanup removes the namespace.
-HNS=tern-test-helm-it
-HELM=$TK_REPO/.tools/bin/helm
+HNS=${TK_IT_HELM_NS:-tern-test-helm-it}
+HELM=${TK_IT_HELM:-$TK_REPO/.tools/bin/helm}
+TK_HELM=${TK_HELM:-$HELM}
+export TK_HELM
 SHOP=$TK_REPO/tests/fixtures/gitops/helm/chart
 STAGING=$TK_REPO/tests/fixtures/gitops/helm/values-staging.yaml
 WEB=$TK_REPO/tests/fixtures/helm/web
@@ -1315,7 +1388,7 @@ scenario_helm_cleanup() {
 
 ALL="apply_one apply_many diff_modify_cancel stale_file scale restart delete_typed delete_cancel nonexistent
 context_drift server_drift rbac_deny_dry_run tiny_timeout cronjob_quick cronjob_quick_no_token guard_roundtrip secret_redaction apply_prompt
-guard_disabled label_one label_selector_typed label_conflict_fails annotate_overwrite patch_merge patch_cr_merge
+guard_disabled guard_namespace_bound label_one label_selector_typed label_conflict_fails annotate_overwrite patch_merge patch_cr_merge
 patch_json_typed patch_file_changed_refused undo_previous undo_to_revision undo_single_revision_fails
 undo_verify_refuses pause_resume cordon_uncordon drain_preflight drain_pdb_blocked drain_ok edit_request
 edit_renamed_blocked edit_invalid_approvable helm_rollback helm_stale helm_pending helm_missing_rev helm_rbac

@@ -126,7 +126,7 @@ local function paged(grid: Node, first: number, last: number, total: number): { 
 		table.insert(
 			out,
 			ui.muted(
-				string.format("↑ %d above (k, pageup, gg)", first - 1),
+				string.format("↑ %d above (k, PageUp, gg)", first - 1),
 				{ key = "above", role = "tern-kube.overflow", actions = { click = "page=up" } }
 			)
 		)
@@ -136,7 +136,7 @@ local function paged(grid: Node, first: number, last: number, total: number): { 
 		table.insert(
 			out,
 			ui.muted(
-				string.format("↓ %d below (j, pagedown, G; / filters)", total - last),
+				string.format("↓ %d below (j, PageDown, G; / filters)", total - last),
 				{ key = "overflow", role = "tern-kube.overflow", actions = { click = "page=down" } }
 			)
 		)

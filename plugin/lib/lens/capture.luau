@@ -102,12 +102,20 @@ function M.modeOf(run: Run): Mode
 	return modeFor(inv, Argv.lensSupport(inv).supported)
 end
 
-local function withoutInterrupt(lines: { string }): { string }
+-- Ctrl-C leaves the terminal's "^C" echo as the last line. The shell guard
+-- prints its cancel line right after it, on that same line: keep that part
+-- (the mutation view reads it). The second value: whether ^C was seen.
+local function withoutInterrupt(lines: { string }): ({ string }, boolean)
 	local n = #lines
 	if n > 0 and string.find(lines[n], "^%^C") then
-		return table.move(lines, 1, n - 1, 1, table.create(n - 1))
+		local out = table.move(lines, 1, n - 1, 1, table.create(n))
+		local rest = string.sub(lines[n], 3)
+		if string.find(rest, "^tern%-kube guard: ") then
+			table.insert(out, rest)
+		end
+		return out, true
 	end
-	return lines
+	return lines, false
 end
 
 -- Columns kubectl prints for the common built-in kinds, used only to name
@@ -784,7 +792,7 @@ end
 function M.build(run: Run, rawLines: { string }, status: number?, deps: Deps): Capture
 	local inv = Argv.parse(run.program, run.args)
 	local support = Argv.lensSupport(inv)
-	local lines = withoutInterrupt(rawLines)
+	local lines, interrupted = withoutInterrupt(rawLines)
 	local mode: Mode = modeFor(inv, support.supported)
 	local capture: Capture = {
 		invocation = inv,
@@ -804,7 +812,7 @@ function M.build(run: Run, rawLines: { string }, status: number?, deps: Deps): C
 		sensitive = false,
 		policy = deps.policy or Redact.DEFAULT,
 		masked = false,
-		interrupted = #lines < #rawLines,
+		interrupted = interrupted,
 		events = nil,
 	}
 	if mode == "table" then

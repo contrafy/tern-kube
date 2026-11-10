@@ -108,12 +108,15 @@ describe("explore gitops: manifest index lifecycle", function()
 		expect(g.scan.error).toBe(Gitops.NO_CWD)
 	end)
 
+	-- --no-optional-locks: a plain `git status` rewrites .git/index, and Tern
+	-- reloads a linked plugin on any write under its directory, so every
+	-- reload-restored route would trigger the next reload.
 	it("a finished scan reads the remotes, then git status of the manifest files", function()
 		local w, g = setup()
 		expect(Gitops.ready(g)).toBe(true)
 		expect(G.lines(w)).toEqual({
 			"git -C /repo remote -v",
-			"git -C /repo status --porcelain=v1 -z -- *.yaml *.yml *Kustomization",
+			"git -C /repo --no-optional-locks status --porcelain=v1 -z -- *.yaml *.yml *Kustomization",
 		})
 		expect(g.repo.git).toBe(true)
 		expect(g.repo.remotes).toEqual({ G.REMOTE })
@@ -286,10 +289,14 @@ describe("explore gitops: diff vs manifest", function()
 		expect(#load.segments).toBe(0)
 	end)
 
+	-- The reason is kubectl's last line that is not klog noise (GIT-F8).
 	it("a failing kubectl diff is an error and the temporary file is still removed", function()
 		local w, g, ctx = setup()
+		local stderr = 'E1110 10:11:04.215188   79940 memcache.go:265] "Unhandled Error"\n'
+			.. "error: the server is unreachable\n"
+			.. 'E1110 10:11:04.315188   79940 memcache.go:265] "Unhandled Error"\n'
 		w.answer = function(argv)
-			return if table.find(argv, "diff") then G.fail(2, "error: the server is unreachable\nmore") else nil
+			return if table.find(argv, "diff") then G.fail(2, stderr) else nil
 		end
 		local route = diffRoute(DEPLOY)
 		step(w, g, ctx, function(effects)
@@ -495,6 +502,33 @@ describe("explore gitops: apply bundles", function()
 		expect(text).toContain("kind: Deployment")
 		expect(text).toContain("\n---\n")
 		expect(text).toContain("kind: Service\n")
+	end)
+
+	-- A re-applied export would set the live Secret to REPLACE_ME (GIT-F1).
+	it("Secrets with export placeholders are left out, and alone are refused", function()
+		local w, g, ctx = setup()
+		local held = table.clone(Gitops.matches(g, ctx, SERVICE)[1])
+		held.placeholders = { "pw" }
+		step(w, g, ctx, function(effects)
+			Gitops.applyDocs(g, ctx, { Gitops.matches(g, ctx, DEPLOY)[1], held }, "2 objects", effects)
+		end)
+		local text = w.tmp["/data/tmp/apply-1000-n1.yaml"]
+		expect(text).toContain("kind: Deployment")
+		expect((string.find(text, "kind: Service\n", 1, true))).toBeNil()
+		expect(G.toastTexts(w)[1]).toContain("Left out 1 Secret with export placeholders")
+		expect(G.toastTexts(w)[1]).toContain("service/web (pw)")
+
+		w, g, ctx = setup()
+		w.runs = {}
+		held = table.clone(Gitops.matches(g, ctx, SERVICE)[1])
+		held.placeholders = { "pw" }
+		step(w, g, ctx, function(effects)
+			Gitops.applyDocs(g, ctx, { held }, "service/web", effects)
+		end)
+		expect(#w.runs).toBe(0)
+		expect(#w.opened).toBe(0)
+		expect(w.toasts[1].level).toBe("error")
+		expect(G.toastTexts(w)[1]).toContain("still holds the export placeholder REPLACE_ME")
 	end)
 
 	it("mutations disabled or no target: nothing is read, written or opened", function()
@@ -839,7 +873,8 @@ describe("explore gitops: chart auto-detect", function()
 		expect(#runs).toBe(1)
 		expect(table.concat(runs[1].argv :: { string }, " ")).toBe(
 			G.HELM
-				.. " --kube-context kind-tern-kube-dev list -a -o json --time-format 2006-01-02T15:04:05Z07:00 --max 1000 -A"
+				.. " --kube-context kind-tern-kube-dev list --deployed --failed --pending --superseded --uninstalled"
+				.. " --uninstalling -o json --time-format 2006-01-02T15:04:05Z07:00 --max 1000 -A"
 		)
 		expect(runs[1].env).toEqual({ HELM_DRIVER = "secret" })
 		local deployed = source(g, ctx, DEPLOYED) :: Gitops.SourceEntry
@@ -914,7 +949,9 @@ describe("explore gitops: chart auto-detect", function()
 		expect(lines[1]).toBe(pins .. "get values shop-a -n tern-test-helm -o json")
 		expect(lines[2]).toBe("/bin/sh -c " .. Gitops.WRITE_SCRIPT .. " tern-kube-tmp " .. VALUES_TMP)
 		expect(Gitops.WRITE_SCRIPT).toContain("umask 077")
-		expect(lines[3]).toBe(G.HELM .. " template shop-a " .. CHART .. " -n tern-test-helm -f " .. VALUES_TMP)
+		expect(lines[3]).toBe(
+			G.HELM .. " template shop-a " .. CHART .. " --no-hooks -n tern-test-helm -f " .. VALUES_TMP
+		)
 		expect(lines[4]).toBe("rm -f -- " .. VALUES_TMP)
 		expect(w.helmInputs[VALUES_TMP]).toBe(fixtures.read("helm/captured/values-shop-a-r3.json"))
 		expect(find(lines, " diff ")).toBe(
@@ -936,7 +973,7 @@ describe("explore gitops: chart auto-detect", function()
 		end)
 		local lines = G.lines(w)
 		expect(lines[1]).toBe(
-			G.HELM .. " template shop-a " .. CHART .. " -n tern-test-helm -f /repo/helm/values-staging.yaml"
+			G.HELM .. " template shop-a " .. CHART .. " --no-hooks -n tern-test-helm -f /repo/helm/values-staging.yaml"
 		)
 		expect(find(lines, "get values")).toBeNil()
 		expect(driftOf(g, ctx, STAGING).status).toBe("ok")
@@ -1086,7 +1123,7 @@ describe("explore gitops: export", function()
 		end
 		expect(written).toEqual((g.export :: any).written)
 		expect((g.export :: any).status).toBe("written")
-		expect(G.lines(w)[1]).toContain("git -C /repo status --porcelain=v1 -z --")
+		expect(G.lines(w)[1]).toContain("git -C /repo --no-optional-locks status --porcelain=v1 -z --")
 		expect(G.toastTexts(w)[1]).toContain("Wrote ")
 	end)
 
@@ -1215,7 +1252,7 @@ describe("explore gitops: git flow", function()
 	it("checks status, HEAD, remotes and gh, then defaults to branch + add + commit only", function()
 		local w, g = written()
 		expect(G.lines(w)).toEqual({
-			"git -C /repo status --porcelain=v1 -z",
+			"git -C /repo --no-optional-locks status --porcelain=v1 -z",
 			"git -C /repo rev-parse --abbrev-ref HEAD",
 			"git -C /repo remote",
 			'/bin/sh -c command -v -- "$1" sh gh',

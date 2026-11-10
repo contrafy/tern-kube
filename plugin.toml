@@ -1,7 +1,7 @@
 schema = 1
 id = "tern-kube"
 name = "Tern Kube"
-version = "1.0.0"
+version = "1.0.1"
 description = "Native views for kubectl output, with an explicit Explore block and an opt-in mutation guard."
 icon = "box"
 host = "plugin/host.luau"
@@ -94,10 +94,13 @@ match = [
 	# END tern-kube aliases
 ]
 
+# The commands "Tern Kube: Explore" / "Tern Kube: Settings" open these; the
+# automatic "New ... block" palette entries would only duplicate them.
 [[blocks]]
 id = "explore"
 title = "Tern Kube Explore"
 icon = "box"
+palette = false
 
 [[blocks]]
 id = "approve"
@@ -109,3 +112,4 @@ palette = false
 id = "settings"
 title = "Tern Kube Settings"
 icon = "sliders"
+palette = false

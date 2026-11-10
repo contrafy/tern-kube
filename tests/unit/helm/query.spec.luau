@@ -79,32 +79,48 @@ describe("helm query pins", function()
 end)
 
 describe("helm query verbs", function()
+	-- Helm 4 removed `-a/--all` (and lists every status by default); Helm 3
+	-- without it lists only deployed and failed releases. The explicit
+	-- status flags mean "every status" in both majors.
 	it("lists every status in one namespace or all of them, with RFC 3339 times", function()
+		local statuses = Query.LIST_STATUSES
+		expect(statuses).toEqual({
+			"--deployed",
+			"--failed",
+			"--pending",
+			"--superseded",
+			"--uninstalled",
+			"--uninstalling",
+		})
+		local function listArgv(...: string): { string }
+			local argv = { "list" }
+			table.move(statuses, 1, #statuses, 2, argv)
+			for _, a in { ... } do
+				table.insert(argv, a)
+			end
+			return pinned(table.unpack(argv))
+		end
 		expect(Query.list("helm", TARGET, { namespace = "apps", all = false }, 1000)).toEqual(
-			pinned("list", "-a", "-o", "json", "--time-format", Query.TIME_FORMAT, "--max", "1000", "-n", "apps")
+			listArgv("-o", "json", "--time-format", Query.TIME_FORMAT, "--max", "1000", "-n", "apps")
 		)
 		expect(Query.list("helm", TARGET, { namespace = "apps", all = true }, 5)).toEqual(
-			pinned("list", "-a", "-o", "json", "--time-format", Query.TIME_FORMAT, "--max", "5", "-A")
+			listArgv("-o", "json", "--time-format", Query.TIME_FORMAT, "--max", "5", "-A")
 		)
+		for _, argv in { Query.list("helm", TARGET, { all = true }, 5), Query.owner("helm", TARGET, KEY) } do
+			expect(table.find(argv, "-a")).toBeNil()
+			expect(table.find(argv, "--all")).toBeNil()
+		end
 		expect(Query.TIME_FORMAT).toBe("2006-01-02T15:04:05Z07:00")
 	end)
 
 	-- --filter is a regexp: `web.b` would also match `web-b`.
 	it("looks up one release by an anchored, escaped filter", function()
-		expect(Query.owner("helm", TARGET, { name = "web.b", namespace = "apps" })).toEqual(
-			pinned(
-				"list",
-				"-n",
-				"apps",
-				"-a",
-				"-o",
-				"json",
-				"--time-format",
-				Query.TIME_FORMAT,
-				"--filter",
-				"^web\\.b$"
-			)
-		)
+		local want = { "list", "-n", "apps" }
+		table.move(Query.LIST_STATUSES, 1, #Query.LIST_STATUSES, #want + 1, want)
+		for _, a in { "-o", "json", "--time-format", Query.TIME_FORMAT, "--filter", "^web\\.b$" } do
+			table.insert(want, a)
+		end
+		expect(Query.owner("helm", TARGET, { name = "web.b", namespace = "apps" })).toEqual(pinned(table.unpack(want)))
 		expect(Query.regexpQuote("a.b-c")).toBe("a\\.b-c")
 		expect(Query.regexpQuote("x+(y)")).toBe("x\\+\\(y\\)")
 	end)
@@ -156,12 +172,16 @@ describe("helm query verbs", function()
 		end
 	end)
 
-	it("renders a chart offline, without cluster flags", function()
+	-- Hooks are not release objects: a pre-upgrade hook never exists after
+	-- an install, so a render with hooks reports it as missing forever and
+	-- an apply bundle would create it as a plain object.
+	it("renders a chart offline, without cluster flags or hooks", function()
 		expect(Query.template("helm", "shop", "/repo/chart", "apps", { "/repo/a.yaml", "/repo/b.yaml" })).toEqual({
 			"helm",
 			"template",
 			"shop",
 			"/repo/chart",
+			"--no-hooks",
 			"-n",
 			"apps",
 			"-f",
@@ -174,6 +194,7 @@ describe("helm query verbs", function()
 			"template",
 			"shop",
 			"/repo/chart",
+			"--no-hooks",
 		})
 	end)
 end)

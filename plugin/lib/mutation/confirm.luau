@@ -93,7 +93,7 @@ function M.canConfirm(plan: Plan, preview: Preview, input: Input, config: Config
 	if req.targetConfirmation and input.targetConfirmed ~= true then
 		return false,
 			string.format(
-				"Confirm the target first: context %s was inferred from the kubeconfig's current-context",
+				"Confirm the target first (t, or ctrl+t while typing): context %s was inferred from the kubeconfig's current-context",
 				plan.targetContext
 			)
 	end

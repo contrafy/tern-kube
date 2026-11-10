@@ -222,4 +222,54 @@ function M.line(record: Record): string
 	return "{" .. table.concat(parts, ",") .. "}\n"
 end
 
+-- What is known about a run before it starts (a guard approval).
+export type Outcome = {
+	mode: Mode,
+	tier: T.Tier?,
+	fingerprint: string?,
+	previewedAt: number?,
+	objects: { string }?,
+	files: { Fingerprint.FileDigest }?,
+	fromRevision: number?,
+}
+
+-- Fields of an outcome record that only the process running the command
+-- knows, as they appear in the template; the guard replaces each with the
+-- field and its value. A needle starts and ends with an unescaped `"`, which
+-- quote() never emits inside a value, so each occurs exactly once.
+M.OUTCOME_FIELDS = {
+	{ key = "decided_at", needle = '"decided_at":@' },
+	{ key = "decision", needle = '"decision":"@"' },
+	{ key = "exit_code", needle = '"exit_code":@' },
+	{ key = "started_at", needle = '"started_at":@' },
+	{ key = "finished_at", needle = '"finished_at":@' },
+}
+
+-- One line, no newline: the executed/failed record of a run that starts after
+-- the block closed, with the OUTCOME_FIELDS needles in place of their values.
+function M.outcomeTemplate(plan: Plan, o: Outcome): string
+	local line = M.line(M.record(plan, {
+		mode = o.mode,
+		decision = "executed",
+		tier = o.tier,
+		fingerprint = o.fingerprint,
+		exitCode = 0,
+		previewedAt = o.previewedAt,
+		decidedAt = 0,
+		startedAt = 0,
+		finishedAt = 0,
+		objects = o.objects,
+		files = o.files,
+		fromRevision = o.fromRevision,
+	}))
+	for _, f in M.OUTCOME_FIELDS do
+		local filled = if f.key == "decision" then '"' .. f.key .. '":"executed"' else '"' .. f.key .. '":0'
+		local i, j = string.find(line, filled, 1, true)
+		if i and j then
+			line = string.sub(line, 1, i - 1) .. f.needle .. string.sub(line, j + 1)
+		end
+	end
+	return (string.gsub(line, "\n$", ""))
+end
+
 return M

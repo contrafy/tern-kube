@@ -3,9 +3,14 @@
 # to $FAKE_DIR/argv and replays canned output from $FAKE_DIR:
 #   context            `config current-context` (absent: exit 1)
 #   contexts           `config get-contexts -o name` (absent: exit 1)
-#   diff, diff.exit, diff.err   `diff` stdout, exit status, stderr
-#   manifest.tsv       `apply --dry-run=client -o go-template=...` output
+#   diff, diff.exit, diff.err   `diff` stdout, exit status, stderr; the Nth
+#                      `diff` call replays diff.N, diff.N.exit, diff.N.err
+#                      instead when diff.N exists
+#   manifest.tsv       `create --dry-run=client -o go-template=...` output
+#   source.yaml        `create --dry-run=client -o yaml` output
 #   get/KIND.NS        `get KIND -n NS -o go-template=...` (NS `_` without -n)
+# `diff -f DIR/rendered.yaml` and `diff -f DIR/present.yaml` keep a copy of
+# the file in rendered.seen / present.seen.N (N: the diff call's number).
 # When $FAKE_DIR/ctx exists, `--context C` replays $FAKE_DIR/ctx/C/ instead
 # (same file names) and an unknown C fails like kubectl does.
 # Any verb that could mutate exits 99 and leaves a MUTATION line in argv.
@@ -52,24 +57,35 @@ config)
 	cat "$d/context"
 	;;
 diff)
+	n=$(($(cat "$d/diff.count" 2>/dev/null || echo 0) + 1))
+	echo "$n" >"$d/diff.count"
 	for a in "$@"; do
 		case $a in
 		*/rendered.yaml) cp "$a" "$d/rendered.seen" ;;
+		*/present.yaml) cp "$a" "$d/present.seen.$n" ;;
 		esac
 	done
-	[ -f "$d/diff.err" ] && cat "$d/diff.err" >&2
-	[ -f "$d/diff" ] && cat "$d/diff"
-	exit "$(cat "$d/diff.exit" 2>/dev/null || echo 0)"
+	f=$d/diff
+	[ -f "$d/diff.$n" ] && f=$d/diff.$n
+	[ -f "$f.err" ] && cat "$f.err" >&2
+	[ -f "$f" ] && cat "$f"
+	exit "$(cat "$f.exit" 2>/dev/null || echo 0)"
 	;;
-apply)
+create)
+	dry=0
+	out=$d/manifest.tsv
+	prev=
 	for a in "$@"; do
-		[ "$a" = --dry-run=client ] && {
-			cat "$d/manifest.tsv"
-			exit 0
-		}
+		[ "$a" = --dry-run=client ] && dry=1
+		[ "$prev" = -o ] && [ "$a" = yaml ] && out=$d/source.yaml
+		prev=$a
 	done
-	echo "MUTATION apply without --dry-run=client" >>"$d/argv"
-	exit 99
+	[ "$dry" = 1 ] || {
+		echo "MUTATION create without --dry-run=client" >>"$d/argv"
+		exit 99
+	}
+	[ -f "$out" ] && cat "$out"
+	exit 0
 	;;
 get)
 	kind=$2

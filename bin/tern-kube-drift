@@ -316,7 +316,9 @@ if [ "$src_type" = helm ]; then
 		set -- "$@" -f "$v"
 		shift
 	done
-	if ! "$helm_bin" template "$release" "$chart" ${namespace:+--namespace "$namespace"} "$@" \
+	# Hooks are not part of the release's state (a pre-upgrade hook never
+	# exists after an install), so they are never drift.
+	if ! "$helm_bin" template "$release" "$chart" --no-hooks ${namespace:+--namespace "$namespace"} "$@" \
 		>"$tmp/rendered.yaml" 2>"$tmp/helm.err"; then
 		cat "$tmp/helm.err" >&2
 		die "helm template failed"
@@ -324,7 +326,7 @@ if [ "$src_type" = helm ]; then
 	files=" $(q "$tmp/rendered.yaml")"
 fi
 
-# Source flags for kubectl diff / apply --dry-run=client.
+# Source flags for kubectl diff / create --dry-run=client.
 source_args() {
 	if [ "$src_type" = kustomize ]; then
 		set -- -k "$kdir"
@@ -355,27 +357,88 @@ show_err() {
 }
 
 # fail MSG [STDERR_FILE]: with one context, exit 2 as always. With several,
-# record MSG (plus kubectl's last stderr line) as this context's error and
-# let the caller move on to the next context.
+# record MSG (plus kubectl's last stderr line that is not a client-go klog
+# line, or else its last line) as this context's error and let the caller
+# move on to the next context.
 fail() {
 	[ "$multi" = 1 ] || die "$1"
 	printf '%s: [%s] %s\n' "$prog" "$context" "$1" >&2
 	msg=$1
 	if [ -n "${2-}" ] && [ -s "$2" ]; then
-		last=$(LC_ALL=C awk 'NF { l = $0 } END { gsub(/[\t\r]/, " ", l); print l }' "$2")
+		last=$(LC_ALL=C awk '
+			NF { l = $0; if ($0 !~ /^[IWEF][0-9][0-9][0-9][0-9] [0-9:.]+ +[0-9]+ [^ ]+:[0-9]+\] /) m = $0 }
+			END { if (m != "") l = m; gsub(/[\t\r]/, " ", l); print l }' "$2")
 		[ -z "$last" ] || msg="$msg: $last"
 	fi
 	printf '%s\n' "$msg" >"$cdir/error"
 }
 
+# missing_ns FILE: X from kubectl's `namespaces "X" not found` in FILE.
+missing_ns() {
+	LC_ALL=C awk '/^Error from server \(NotFound\): namespaces "[^"]+" not found/ {
+			n = $0; sub(/^[^"]*"/, "", n); sub(/".*/, "", n) }
+		END { if (n == "") exit 1; print n }' "$1"
+}
+
+# keep_present SRC MISSING OUT: the documents of SRC (`kubectl create
+# --dry-run=client -o yaml` output: normalized YAML, top-level keys at
+# column 0) whose metadata.namespace is not a line of MISSING. Exit 1 when
+# no document is left.
+keep_present() {
+	LC_ALL=C awk -v q="'" '
+		function flush() {
+			if (doc != "" && !(ns in miss)) { printf "%s%s", (kept ? "---\n" : ""), doc; kept++ }
+			doc = ""; ns = ""; top = ""
+		}
+		FILENAME == ARGV[1] { if ($0 != "") miss[$0] = 1; next }
+		$0 == "---" { flush(); next }
+		{
+			if ($0 ~ /^[^ #-]/) { top = $0; sub(/:.*/, "", top) }
+			if (top == "metadata" && $0 ~ /^  namespace: /) { ns = substr($0, 14); gsub(/"/, "", ns); gsub(q, "", ns) }
+			doc = doc $0 "\n"
+		}
+		END { flush(); exit kept ? 0 : 1 }' "$2" "$1" >"$3"
+}
+
 # collect DIR: runs the read-only kubectl calls for $context into DIR: diff,
-# the source's objects (manifest.tsv: with --unmanaged or several contexts)
-# and unmanaged.tsv. Returns 1 after fail.
+# the source's objects (manifest.tsv: name and export placeholder keys of
+# each object), missing-ns (target namespaces that do not exist) and, with
+# --unmanaged, unmanaged.tsv. Returns 1 after fail.
 collect() {
 	cdir=$1
 	eval "set -- $src"
 	kc diff ${namespace:+-n "$namespace"} "$@" >"$cdir/diff" 2>"$cdir/diff.err"
 	rc=$?
+	: >"$cdir/missing-ns"
+	# kubectl diff aborts, diffing nothing, at the first object whose
+	# namespace does not exist (and names only that namespace). Its objects
+	# would just be created: drop them from kubectl's own rendering of the
+	# source and diff the rest again, one more missing namespace per round.
+	# The report lists the dropped objects as create from manifest.tsv.
+	if [ "$rc" -gt 1 ] && miss=$(missing_ns "$cdir/diff.err"); then
+		if ! kc create --dry-run=client ${namespace:+-n "$namespace"} "$@" -o yaml \
+			>"$cdir/source.yaml" 2>"$cdir/create.err"; then
+			show_err "$cdir/diff.err"
+			show_err "$cdir/create.err"
+			fail "kubectl diff failed (exit $rc)" "$cdir/diff.err"
+			return 1
+		fi
+		while :; do
+			printf '%s\n' "$miss" >>"$cdir/missing-ns"
+			if ! keep_present "$cdir/source.yaml" "$cdir/missing-ns" "$cdir/present.yaml"; then
+				: >"$cdir/diff"
+				: >"$cdir/diff.err"
+				rc=0
+				break
+			fi
+			kc diff ${namespace:+-n "$namespace"} -f "$cdir/present.yaml" >"$cdir/diff" 2>"$cdir/diff.err"
+			rc=$?
+			if [ "$rc" -le 1 ] || ! miss=$(missing_ns "$cdir/diff.err") ||
+				grep -qxF -- "$miss" "$cdir/missing-ns"; then
+				break
+			fi
+		done
+	fi
 	show_err "$cdir/diff.err"
 	case $rc in
 	0 | 1) ;;
@@ -390,12 +453,15 @@ collect() {
 	fi
 
 	: >"$cdir/unmanaged.tsv"
-	[ -n "$unmanaged" ] || [ "$multi" = 1 ] || return 0
-	tpl='{{define "o"}}{{.apiVersion}}{{"\t"}}{{.kind}}{{"\t"}}{{.metadata.namespace}}{{"\t"}}{{.metadata.name}}{{"\n"}}{{end}}{{if eq .kind "List"}}{{range .items}}{{template "o" .}}{{end}}{{else}}{{template "o" .}}{{end}}'
-	if ! kc apply --dry-run=client ${namespace:+-n "$namespace"} "$@" -o go-template="$tpl" \
-		>"$cdir/manifest.tsv" 2>"$cdir/apply.err"; then
-		show_err "$cdir/apply.err"
-		fail "cannot list the source's objects (kubectl apply --dry-run=client)" "$cdir/apply.err"
+	# `create`, not `apply`: apply --dry-run=client prints the live object
+	# for one that exists, hiding the source's values. Column 5: the
+	# Secret's export placeholder keys ($k: go-template variables).
+	# shellcheck disable=SC2016
+	tpl='{{define "o"}}{{.apiVersion}}{{"\t"}}{{.kind}}{{"\t"}}{{.metadata.namespace}}{{"\t"}}{{.metadata.name}}{{"\t"}}{{if and (eq .kind "Secret") (eq .apiVersion "v1")}}{{range $k, $v := .stringData}}{{if eq (printf "%v" $v) "REPLACE_ME"}}{{$k}},{{end}}{{end}}{{range $k, $v := .data}}{{if eq (printf "%v" $v) "UkVQTEFDRV9NRQ=="}}{{$k}},{{end}}{{end}}{{end}}{{"\n"}}{{end}}{{if eq .kind "List"}}{{range .items}}{{template "o" .}}{{end}}{{else}}{{template "o" .}}{{end}}'
+	if ! kc create --dry-run=client ${namespace:+-n "$namespace"} "$@" -o go-template="$tpl" \
+		>"$cdir/manifest.tsv" 2>"$cdir/list.err"; then
+		show_err "$cdir/list.err"
+		fail "cannot list the source's objects (kubectl create --dry-run=client)" "$cdir/list.err"
 		return 1
 	fi
 	[ -n "$unmanaged" ] || return 0
@@ -412,7 +478,7 @@ collect() {
 	if [ -n "$namespace" ]; then
 		namespaces=$(printf '%s\n%s\n' "$namespaces" "$namespace" | LC_ALL=C sort -u)
 	fi
-	ltpl='{{range .items}}{{.apiVersion}}{{"\t"}}{{.kind}}{{"\t"}}{{.metadata.namespace}}{{"\t"}}{{.metadata.name}}{{"\t"}}{{if .metadata.ownerReferences}}owned{{else}}-{{end}}{{"\t"}}{{if .type}}{{.type}}{{else}}-{{end}}{{"\t"}}{{with .metadata.labels}}{{index . "kubernetes.io/bootstrapping"}}{{end}}{{"\n"}}{{end}}'
+	ltpl='{{range .items}}{{.apiVersion}}{{"\t"}}{{.kind}}{{"\t"}}{{.metadata.namespace}}{{"\t"}}{{.metadata.name}}{{"\t"}}{{if .metadata.ownerReferences}}owned{{else}}-{{end}}{{"\t"}}{{if .type}}{{.type}}{{else}}-{{end}}{{"\t"}}{{with .metadata.labels}}{{index . "kubernetes.io/bootstrapping"}}{{end}}{{"\t"}}{{with .metadata.annotations}}{{index . "helm.sh/hook"}}{{end}}{{"\t"}}{{with .metadata.annotations}}{{index . "meta.helm.sh/release-name"}}{{end}}{{"\n"}}{{end}}'
 	: >"$cdir/live.tsv"
 	old_ifs=$IFS
 	set -f
@@ -457,6 +523,9 @@ collect() {
 			if (kind == "Secret" && ($6 == "helm.sh/release.v1" || $6 == "kubernetes.io/service-account-token")) next
 			if (kind == "Namespace" && (name == "default" || name ~ /^kube-/)) next
 			if (nv($7) != "" || name ~ /^system:/) next
+			# Objects of a Helm release (and its hooks) are the release'\''s,
+			# whatever the source: never unmanaged.
+			if (nv($8) != "" || nv($9) != "") next
 			id = grp($1) SUBSEP kind SUBSEP ns SUBSEP name
 			if (id in declared || id in seen) next
 			seen[id] = 1
@@ -555,12 +624,16 @@ function start(key, first) {
 	setKey(cur, key)
 	S_act[cur] = "unknown"; S_add[cur] = 0; S_rem[cur] = 0; S_bin[cur] = 0; S_n[cur] = 0
 	push(cur, first)
-	oE = 0; nE = 0; oS = 0; nS = 0
+	oE = 0; nE = 0; oS = 0; nS = 0; oN = 0; nN = 0; oZ = 0; nZ = 0
 }
 function finish(   s, a) {
 	if (!cur) return
 	s = cur
 	if (hk && (oL > 0 || nL > 0)) note(S_key[s] ": hunk ended early")
+	# kubectl masks Secret data and prints a missing object as the document
+	# `null`: a side whose whole content is that one line is the empty side.
+	if (!S_bin[s] && oN == 1 && oZ && nS && nN > 1) { oE = 1; oS = 0; S_rem[s]-- }
+	else if (!S_bin[s] && nN == 1 && nZ && oS && oN > 1) { nE = 1; nS = 0; S_add[s]-- }
 	if (S_bin[s]) S_act[s] = "unknown"
 	else if (oE && !oS && nS) S_act[s] = "create"
 	else if (nE && !nS && oS) S_act[s] = "delete"
@@ -576,9 +649,9 @@ function parse(   i, line, c, key, merged) {
 		line = L[i]
 		if (hk && (oL > 0 || nL > 0)) {
 			c = substr(line, 1, 1)
-			if (c == " " || line == "") { oL--; nL-- }
-			else if (c == "-") { oL--; S_rem[cur]++ }
-			else if (c == "+") { nL--; S_add[cur]++ }
+			if (c == " " || line == "") { oL--; nL--; oN++; nN++ }
+			else if (c == "-") { oL--; S_rem[cur]++; oN++; oZ = (line == "-null") }
+			else if (c == "+") { nL--; S_add[cur]++; nN++; nZ = (line == "+null") }
 			else if (c != "\\") { note(S_key[cur] ": hunk ended early"); hk = 0; continue }
 			push(cur, line); i++; continue
 		}
@@ -619,7 +692,9 @@ function grp(av) { return index(av, "/") ? substr(av, 1, index(av, "/") - 1) : "
 function ver(av) { return index(av, "/") ? substr(av, index(av, "/") + 1) : av }
 # load(c): context c from TKD_DIR/c. Segments, notes, unmanaged and declared
 # objects are numbered across contexts; C_*0[c] is the offset of c.
-function load(c,   d, f, line, n, x) {
+# Declared objects in a namespace missing on c become create segments
+# without lines (S_miss); Secrets with export placeholders get S_ph.
+function load(c,   d, f, line, n, x, s, ns, miss, ph, where) {
 	d = DIR "/" c
 	f = d "/name"
 	C_name[c] = (getline line < f) > 0 ? line : CTX
@@ -645,17 +720,79 @@ function load(c,   d, f, line, n, x) {
 			}
 			close(f)
 		}
-		if (MULTI) {
-			f = d "/manifest.tsv"
-			while ((getline line < f) > 0) {
-				n = split(line, x, "\t")
-				if (n < 4 || x[2] == "" || x[4] == "") continue
-				ND++; D_g[ND] = grp(x[1]); D_v[ND] = ver(x[1]); D_k[ND] = x[2]; D_ns[ND] = nv(x[3]); D_nm[ND] = x[4]
-			}
-			close(f)
+		f = d "/missing-ns"
+		where = C_name[c] != "" ? "context " C_name[c] : "the current context"
+		while ((getline line < f) > 0) {
+			if (line == "" || line in miss) continue
+			miss[line] = 1
+			note("namespace " line " does not exist on " where ": create it first (kubectl create namespace " line ")")
 		}
+		close(f)
+		f = d "/manifest.tsv"
+		while ((getline line < f) > 0) {
+			n = split(line, x, "\t")
+			if (n < 4 || x[2] == "" || x[4] == "") continue
+			ns = nv(x[3])
+			if (MULTI) { ND++; D_g[ND] = grp(x[1]); D_v[ND] = ver(x[1]); D_k[ND] = x[2]; D_ns[ND] = ns; D_nm[ND] = x[4] }
+			if (ns in miss) missingSeg(c, x[1], x[2], ns, x[4])
+			if (n >= 5 && x[5] != "" && x[1] == "v1" && x[2] == "Secret") ph[ns SUBSEP x[4]] = keyList(x[5])
+		}
+		close(f)
+		for (s = C_s0[c] + 1; s <= NSEG; s++)
+			if (S_id[s] && !S_hg[s] && S_k[s] == "Secret" && ((S_ns[s] SUBSEP S_nm[s]) in ph)) S_ph[s] = ph[S_ns[s], S_nm[s]]
 	}
 	C_ns[c] = NSEG - C_s0[c]; C_nn[c] = NN - C_n0[c]; C_nu[c] = NU - C_u0[c]; C_nd[c] = ND - C_d0[c]
+}
+function missingSeg(c, av, kind, ns, name,   s) {
+	s = ++NSEG
+	S_key[s] = objKey(grp(av), ver(av), kind, ns, name); S_id[s] = 1
+	S_hg[s] = grp(av) != ""; S_g[s] = grp(av); S_v[s] = ver(av); S_k[s] = kind; S_ns[s] = ns; S_nm[s] = name
+	S_act[s] = "create"; S_add[s] = 0; S_rem[s] = 0; S_bin[s] = 0; S_n[s] = 0; S_miss[s] = 1
+	CC[c, "create"]++
+}
+# keyList("b,a,b,"): "a, b" (sorted, unique).
+function keyList(raw,   k, n, i, j, x, out, m) {
+	n = split(raw, k, ",")
+	m = 0
+	for (i = 1; i <= n; i++) {
+		if (k[i] == "") continue
+		for (j = 1; j <= m && x[j] != k[i]; j++);
+		if (j <= m) continue
+		x[++m] = k[i]
+		for (j = m; j > 1 && x[j - 1] > x[j]; j--) { out = x[j]; x[j] = x[j - 1]; x[j - 1] = out }
+	}
+	out = ""
+	for (i = 1; i <= m; i++) out = out (i > 1 ? ", " : "") x[i]
+	return out
+}
+# Placeholder keys: kubectl masks Secret values, so the new value of each
+# placeholder key is shown as what apply would really write.
+function markPlaceholders(   s, j, i, nk, k, line) {
+	for (s = 1; s <= NSEG; s++) {
+		if (S_ph[s] == "") continue
+		nk = split(S_ph[s], k, ", ")
+		for (j = 1; j <= S_n[s]; j++) {
+			line = SL[s, j]
+			for (i = 1; i <= nk; i++)
+				if (line == "+  " k[i] ": " Q "*** (after)" Q || line == "+  " k[i] ": " Q "***" Q)
+					SL[s, j] = "+  " k[i] ": " Q "REPLACE_ME (placeholder)" Q
+		}
+	}
+}
+function phNote(s) { return "placeholder values (" S_ph[s] "): REPLACE_ME from an export, applying would overwrite the live values" }
+function phCount(c,   s, n) {
+	n = 0
+	if (C_ok[c]) for (s = C_s0[c] + 1; s <= C_s0[c] + C_ns[c]; s++) if (S_ph[s] != "") n++
+	return n
+}
+function phWarn(n) {
+	return plural(n, "Secret") " " (n == 1 ? "has" : "have") " placeholder values (REPLACE_ME) from an export: applying would overwrite the live values."
+}
+function jarr(list,   k, n, i, o) {
+	n = split(list, k, ", ")
+	o = "["
+	for (i = 1; i <= n; i++) o = o (i > 1 ? "," : "") jstr(k[i])
+	return o "]"
 }
 
 function jstr(s,   o, i, c) {
@@ -739,11 +876,13 @@ function emit(t) { OUT = OUT t "\n" }
 function fits(t) { return MAXB == 0 || length(OUT) + length(t) + RESERVE <= MAXB }
 function uName(j) { return U_k[j] (U_g[j] != "" ? "." U_g[j] : "") "/" U_nm[j] }
 
-# Text section for one resource: "=== PREFIXaction Kind ns/name (+a -r)" and
-# its (possibly truncated) hunks.
+# Text section for one resource: "=== PREFIXaction Kind ns/name (+a -r)",
+# the placeholder warning, and its (possibly truncated) hunks.
 function textSection(s, prefix,   t, j) {
 	shown(s)
 	t = "\n=== " prefix S_act[s] " " resFull(s) " (+" S_add[s] " -" S_rem[s] ")"
+	if (S_ph[s] != "") t = t "\n" phNote(s)
+	if (S_miss[s]) t = t "\n" MISSLINE
 	for (j = BODY_FROM; j <= BODY_TO; j++) t = t "\n" SL[s, j]
 	if (BODY_TO - BODY_FROM + 1 < BODY_TOTAL)
 		t = t "\n... truncated: " (BODY_TO - BODY_FROM + 1) " of " BODY_TOTAL " lines shown (--max-diff-lines)"
@@ -751,8 +890,13 @@ function textSection(s, prefix,   t, j) {
 }
 function mdDetails(s, prefix,   t, f, j) {
 	shown(s)
+	t = "\n<details>\n<summary>" prefix S_act[s] " " md(resFull(s)) " (+" S_add[s] " -" S_rem[s] ")" \
+		(S_ph[s] != "" ? ", placeholder values" : "") "</summary>\n\n"
+	if (S_ph[s] != "")
+		t = t "**placeholder values (" md(S_ph[s]) "): REPLACE_ME from an export, applying would overwrite the live values**\n\n"
+	if (S_miss[s]) return t "_" MISSLINE "_\n\n</details>"
 	f = fence(s)
-	t = "\n<details>\n<summary>" prefix S_act[s] " " md(resFull(s)) " (+" S_add[s] " -" S_rem[s] ")</summary>\n\n" f "diff\n"
+	t = t f "diff\n"
 	for (j = BODY_FROM; j <= BODY_TO; j++) t = t SL[s, j] "\n"
 	t = t f "\n"
 	if (BODY_TO - BODY_FROM + 1 < BODY_TOTAL)
@@ -781,8 +925,9 @@ function jsonCtx(c,   s, s0, j, to, total) {
 		printf "%s{\"key\":%s,\"group\":%s,\"version\":%s,\"kind\":%s,\"namespace\":%s,\"name\":%s,", \
 			(s > s0 + 1 ? "," : ""), jstr(S_key[s]), jopt(S_id[s] && S_hg[s], S_g[s]), jopt(S_id[s], S_v[s]), \
 			jopt(S_id[s], S_k[s]), jopt(S_id[s] && S_ns[s] != "", S_ns[s]), jopt(S_id[s], S_nm[s])
-		printf "\"action\":%s,\"added\":%d,\"removed\":%d,\"binary\":%s,\"lineCount\":%d,\"truncated\":%s,\"lines\":[", \
-			jstr(S_act[s]), S_add[s], S_rem[s], (S_bin[s] ? "true" : "false"), total, (to < total ? "true" : "false")
+		printf "\"action\":%s,\"added\":%d,\"removed\":%d,\"binary\":%s,\"lineCount\":%d,\"truncated\":%s,%s\"lines\":[", \
+			jstr(S_act[s]), S_add[s], S_rem[s], (S_bin[s] ? "true" : "false"), total, (to < total ? "true" : "false"), \
+			(S_ph[s] != "" ? "\"placeholders\":" jarr(S_ph[s]) "," : "")
 		for (j = 1; j <= to; j++) printf "%s%s", (j > 1 ? "," : ""), jstr(SL[s, j])
 		printf "]}"
 	}
@@ -822,6 +967,7 @@ function renderMarkdown(   s, j, t, rows, omitted) {
 		t = "**" plural(C_ns[1], "resource") " drifted** (" countsLine(1) ")"
 		if (UON) t = t ", **" C_nu[1] " unmanaged** in the cluster"
 		emit(t ".")
+		if (phCount(1)) { emit(""); emit("**Warning:** " phWarn(phCount(1))) }
 	}
 	if (C_ns[1]) {
 		emit("")
@@ -829,7 +975,7 @@ function renderMarkdown(   s, j, t, rows, omitted) {
 		emit("| --- | --- | --- | ---: | ---: |")
 		rows = 0
 		for (s = 1; s <= C_ns[1]; s++) {
-			t = "| " S_act[s] " | " md(resName(s)) " | " md(S_ns[s]) " | " S_add[s] " | " S_rem[s] " |"
+			t = "| " S_act[s] " | " md(resName(s)) (S_ph[s] != "" ? " (placeholder values)" : "") " | " md(S_ns[s]) " | " S_add[s] " | " S_rem[s] " |"
 			if (!fits(t "\n")) break
 			emit(t); rows++
 		}
@@ -879,7 +1025,8 @@ function renderText(   s, j, t, w1, w2, w3, omitted) {
 		emit("")
 		emit(pad("CHANGE", w1) "  " pad("RESOURCE", w2) "  " pad("NAMESPACE", w3) "  +/-")
 		for (s = 1; s <= C_ns[1]; s++)
-			emit(pad(S_act[s], w1) "  " pad(resName(s), w2) "  " pad(S_ns[s] != "" ? S_ns[s] : "-", w3) "  +" S_add[s] " -" S_rem[s])
+			emit(pad(S_act[s], w1) "  " pad(resName(s), w2) "  " pad(S_ns[s] != "" ? S_ns[s] : "-", w3) "  +" S_add[s] " -" S_rem[s] \
+				(S_ph[s] != "" ? "  placeholders: " S_ph[s] : ""))
 	}
 	if (UON && C_nu[1]) {
 		emit("")
@@ -889,6 +1036,7 @@ function renderText(   s, j, t, w1, w2, w3, omitted) {
 	emit("")
 	if (!drifted(1)) emit("No drift.")
 	else emit(plural(C_ns[1], "resource") " drifted (" countsLine(1) ")" (UON ? ", " C_nu[1] " unmanaged" : "") ".")
+	if (phCount(1)) emit("Warning: " phWarn(phCount(1)))
 	if (C_nn[1]) {
 		emit("")
 		emit("Notes:")
@@ -1041,6 +1189,9 @@ function renderMultiMarkdown(   c, r, i, s, t, hdr, sep, omitted, stop) {
 	emit("| Context | Result |")
 	emit("| --- | --- |")
 	for (c = 1; c <= N; c++) emit("| " md(C_name[c]) " | " ctxResult(c, 1) " |")
+	t = 0
+	for (c = 1; c <= N; c++) t += phCount(c)
+	if (t) { emit(""); emit("**Warning:** " phWarn(t)) }
 	for (c = 1; c <= N; c++) {
 		if (!C_ok[c] || !C_nn[c]) continue
 		t = mdNotes(c, "[" md(C_name[c]) "] ")
@@ -1089,6 +1240,9 @@ function renderMultiText(   c, r, i, s, t, w1, w2, w, omitted, stop, anyNotes, j
 	}
 	emit("")
 	for (c = 1; c <= N; c++) emit(C_name[c] ": " ctxResult(c, 0))
+	t = 0
+	for (c = 1; c <= N; c++) t += phCount(c)
+	if (t) emit("Warning: " phWarn(t))
 	anyNotes = 0
 	for (c = 1; c <= N; c++) if (C_ok[c] && C_nn[c]) anyNotes = 1
 	if (anyNotes) {
@@ -1126,6 +1280,8 @@ BEGIN {
 	for (i = 32; i < 127; i++) ORD[sprintf("%c", i)] = i
 	MDSPECIAL = "&<>\"'\''`|\\*_[]~@#!()$:{}"
 	REDACTED = "*** (last-applied-configuration redacted by tern-kube-drift)"
+	MISSLINE = "(namespace missing: whole object would be created)"
+	Q = sprintf("%c", 39)
 	FMT = ENVIRON["TKD_FORMAT"]; MAXL = ENVIRON["TKD_MAX_LINES"] + 0; MAXB = ENVIRON["TKD_MAX_BYTES"] + 0
 	LABEL = ENVIRON["TKD_LABEL"]; CTX = ENVIRON["TKD_CONTEXT"]; NSP = ENVIRON["TKD_NAMESPACE"]
 	UON = ENVIRON["TKD_UNMANAGED_ON"] != ""
@@ -1135,6 +1291,7 @@ BEGIN {
 END {
 	for (c = 1; c <= N; c++) load(c)
 	redactSecrets()
+	markPlaceholders()
 	if (!MULTI) {
 		if (FMT == "json") renderJSON()
 		else if (FMT == "markdown") renderMarkdown()

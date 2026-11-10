@@ -195,8 +195,12 @@ replays `open`, `line` and `finish`, then calls `view`. Therefore:
   restores sort, filters and the open inspector;
 - parsers use no clock: ages are shown as kubectl printed them.
 
-Running blocks (Explore, approve) are not re-initialized by a reload; their
-timers and pending callbacks are dropped.
+A reload also re-creates running blocks (Explore, approve): Tern calls `init`
+again with their saved state, timers and pending callbacks are dropped, and
+the new block re-runs its queries (Explore its route, approve its preview).
+Tern 0.9.14 reloads a linked plugin on any file change below the linked
+directory, `.git` included, so development links a snapshot
+([testing](testing.md#manual-sandbox)).
 
 ### Effects and cancellation
 
@@ -240,7 +244,11 @@ palette), quick (mutating quick actions) and guard (spool request).
    `confirm=<window-minted token>` (see Quick-action grants); guard: write
    `resp-<nonce>.env`, exit 0;
 8. append one JSON line to `<plugin data>/audit.log` (`audit.luau`: argv,
-   previewed objects, input file digests).
+   previewed objects, input file digests), then the outcome (executed or
+   failed, exit code, start and finish times) for native runs and, appended
+   by the guard after kubectl exits, for guarded shell commands; mutating
+   quick actions record only the approval (see
+   [security model](security-model.md)).
 
 Families and their preview steps:
 
@@ -278,7 +286,7 @@ and refuses when the latest revision or its status moved since the preview.
 
 ```
  Explore H / kinds picker / palette / lens chip
-   -> helm-releases (helm list -a, -A or -n by the namespace scope)
+   -> helm-releases (helm list, every status, -A or -n by the namespace scope)
    -> helm-release: status, history, extras (get all --template), computed
       values (get values --all) -> header, values summary, notes, hooks
       -> h history -> = revision diff (two statuses + extras -> revdiff)

@@ -69,10 +69,19 @@ Every uncertain case refuses; nothing runs:
   some blocked reasons cannot be overridden at all
   (`plugin/lib/mutation/confirm.luau`);
 - an inferred target context must be confirmed while
-  `mutations.require_target_confirmation` is `true` (default);
+  `mutations.require_target_confirmation` is `true` (default; `t`, or
+  `ctrl+t` while the typed-confirmation field has the keyboard);
 - at confirm time the block re-reads file digests, fingerprint, the
-  context's API server and (when inferred) the current context; any change
-  refuses (`session.luau`);
+  context's API server and user, its default namespace (when the command
+  has no `-n`) and (when inferred) the current context; any change refuses
+  and clears a confirmed target (`session.luau`). A guard request pins its
+  argv, files and context, so when those changed the block says to run the
+  command again instead of offering a new preview;
+- the guard re-checks the context's namespace (without `-n`) and user
+  against the ones the block previewed right before kubectl starts:
+  `kubens` or `kubectl config set-context --current --namespace` keep the
+  context name and the request fingerprint, but move a command without
+  `-n` to another namespace (`shell/PROTOCOL.md`, "Response");
 - `tern-kube://` links never carry a command line: the window and the block
   rebuild argv from validated fields (`plugin/lib/actions/quick.luau`,
   `plugin/lib/mutation/link.luau`), so a crafted link can at most request a
@@ -93,7 +102,10 @@ the size and sha256 of every input file. Limits:
 - the server state is not fingerprinted: a dry run previews the cluster as
   it was; objects changed by others in between are applied over;
 - a spawned native mutation cannot be cancelled (`tern.process.run` has no
-  kill handle).
+  kill handle);
+- the guard's namespace and user re-check before kubectl starts has the
+  same window: a kubeconfig rewritten between that check and kubectl
+  loading it is not detected.
 
 ## Guarded verbs and `kubectl edit`
 
@@ -123,7 +135,10 @@ file like `-f`: hashed into the fingerprint, re-hashed before kubectl runs.
   kubectl's original serialization, both re-hashed just before the hook
   lets kubectl continue. An unapproved edit never reaches the cluster: an
   EXIT trap writes back the bytes kubectl produced, so kubectl sees no
-  change (deny) or an editor failure (any refusal).
+  change (deny) or an editor failure (any refusal). A denied edit exits 1,
+  like every other denial, although kubectl itself reports "Edit
+  cancelled" (exit 0). The approval also checks the context's namespace
+  and user against those kubectl loaded when it started.
 - Denied and refused edits are kept in `TMPDIR/kubectl-edit-denied-*`
   (mode 0600) so no work is lost. Such a copy can contain Secret data in
   clear (base64 `data` or `stringData`), as can kubectl's own copies of
@@ -281,3 +296,14 @@ inline `-p` patch text stays in argv, since it is the command.
 Command output, environment values and file contents are never logged. The
 log is local, unsigned and user-writable: a record of what Tern Kube did,
 not tamper evidence. Commands that bypass Tern Kube are not in it.
+
+Outcomes (`executed` with exit code 0, else `failed` with kubectl's exit
+code) are recorded for native mutations by the block, and for guarded
+commands by the guard: the block hands it the record with the outcome
+fields left open (`audit` in the response, `shell/PROTOCOL.md`), and the
+guard appends it to the same log once kubectl exits (for `kubectl edit`,
+after the last approved round). Its `namespace` is the previewed one, which
+the guard has just checked kubectl uses. Mutating quick actions (`kubectl
+debug`, CronJob run-now) record only `approved`: they run in a split the
+window opens after the block closed, possibly on another host, and their
+exit status is shown in that split, not logged.

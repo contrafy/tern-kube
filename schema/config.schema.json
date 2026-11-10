@@ -47,7 +47,7 @@
           "default": 16777216
         },
         "shell_env": {
-          "description": "Read PATH and KUBECONFIG from your login shell (once per Tern daemon) so kubectl, helm, gh and credential plugins are found when Tern starts from the Dock or Finder",
+          "description": "Read PATH and KUBECONFIG from your login shell (once per plugin load) so kubectl, helm, gh and credential plugins are found when Tern starts from the Dock or Finder",
           "type": "boolean",
           "default": true
         },

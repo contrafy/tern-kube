@@ -17,6 +17,11 @@ M.TIME_FORMAT = "2006-01-02T15:04:05Z07:00"
 M.RELEASE_MAX_LEN = 53
 M.MAX_REVISION = 999999
 M.EXTRAS_FORMAT = "tern-kube/helm-extras/v1"
+-- Every release status for `helm list`: Helm 4 removed `-a/--all` and Helm 3
+-- without a status flag lists only deployed and failed releases; both accept
+-- these.
+M.LIST_STATUSES =
+	table.freeze({ "--deployed", "--failed", "--pending", "--superseded", "--uninstalled", "--uninstalling" })
 
 -- `helm get all --template` input that prints the stored release's chart
 -- metadata, chart default values and hooks as JSON. Go templates in helm's
@@ -104,18 +109,13 @@ local function verb(program: string, target: Target, key: Key, ...: string): { s
 	return append(argv, key.name, "-n", key.namespace)
 end
 
+local function listArgv(program: string, target: Target, ...: string): { string }
+	local argv = append(M.base(program, target), "list", ...)
+	return append(argv, table.unpack(M.LIST_STATUSES))
+end
+
 function M.list(program: string, target: Target, scope: Scope, max: number): { string }
-	local argv = append(
-		M.base(program, target),
-		"list",
-		"-a",
-		"-o",
-		"json",
-		"--time-format",
-		M.TIME_FORMAT,
-		"--max",
-		tostring(max)
-	)
+	local argv = append(listArgv(program, target), "-o", "json", "--time-format", M.TIME_FORMAT, "--max", tostring(max))
 	if scope.all then
 		table.insert(argv, "-A")
 	elseif scope.namespace and scope.namespace ~= "" then
@@ -127,11 +127,7 @@ end
 -- The one release named `key.name` in its namespace, any status.
 function M.owner(program: string, target: Target, key: Key): { string }
 	return append(
-		M.base(program, target),
-		"list",
-		"-n",
-		key.namespace,
-		"-a",
+		listArgv(program, target, "-n", key.namespace),
 		"-o",
 		"json",
 		"--time-format",
@@ -212,7 +208,8 @@ function M.rollback(
 	return argv
 end
 
--- Offline render; no cluster flags.
+-- Offline render of the objects a release owns: no cluster flags, no hooks
+-- (helm runs them; they are not part of the release's manifest).
 function M.template(
 	program: string,
 	release: string,
@@ -220,7 +217,7 @@ function M.template(
 	namespace: string?,
 	valuesFiles: { string }
 ): { string }
-	local argv = { program, "template", release, chartDir }
+	local argv = { program, "template", release, chartDir, "--no-hooks" }
 	if namespace and namespace ~= "" then
 		append(argv, "-n", namespace)
 	end

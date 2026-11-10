@@ -114,8 +114,9 @@ export type Request = { action: ActionId, target: Target, ref: Ref?, opts: Opts 
 
 export type Launch = {
 	-- The kubectl invocation the line ends in (for display and copying).
-	-- Port-forward without a known port resolves it at run time: its last
-	-- word is then the shell expression `$l:$p`.
+	-- Port-forward's last word is the suggested mapping (`8080:80`, or the
+	-- shell expression `$l:$p` when the port is resolved at run time); the
+	-- line forwards `"$a"`, which falls back to `:PORT` when that is taken.
 	argv: { string },
 	-- What the split runs.
 	line: string,
@@ -814,6 +815,45 @@ local function remoteForward(remote: Remote, l: string, p: string): { string }
 	return out
 end
 
+-- Sets `a` to the forwarded mapping: the suggested local port `$l` when
+-- lsof shows nothing listening on it, else `:$p` (kubectl picks a free
+-- port and prints it). Without lsof nothing can be checked, so kubectl
+-- picks; `why` says which.
+local PICK_LOCAL = "if ! command -v lsof >/dev/null 2>&1; then a=:$p; why='lsof is not installed'; "
+	.. 'elif lsof -nP -iTCP:"$l" -sTCP:LISTEN >/dev/null 2>&1; then a=:$p; why="localhost:$l is in use"; '
+	.. "else a=$l:$p; fi"
+
+-- What the split prints before forwarding (`$l`, `$p`, `$a` are set).
+local function forwardNotes(remote: Remote?, fixed: boolean): { string }
+	local known: { string } = if remote
+		then remoteForward(remote, '"$l"', '"$p"')
+		else { 'printf \'tern-kube: forwarding localhost:%s -> %s\\n\' "$l" "$p"' }
+	if fixed then
+		return known
+	end
+	local picked: { string }
+	if remote then
+		picked = {
+			"printf 'tern-kube: %s on %s; kubectl picks a free local port (see Forwarding from below)\\n' \"$why\" "
+				.. Command.quote(remote.name),
+		}
+		if remote.ssh then
+			table.insert(
+				picked,
+				"printf 'tern-kube: from this machine: ssh -N -L PORT:localhost:PORT %s (PORT: the one kubectl prints)\\n' "
+					.. Command.quote(remote.ssh)
+			)
+		end
+	else
+		picked = {
+			"printf 'tern-kube: %s; kubectl picks a free local port (see Forwarding from below)\\n' \"$why\"",
+		}
+	end
+	return {
+		'if [ "$a" = ":$p" ]; then ' .. table.concat(picked, "; ") .. "; else " .. table.concat(known, "; ") .. "; fi",
+	}
+end
+
 -- Following by selector: every matching pod, attributed by --prefix.
 local function followSelector(o: Opts): { string }
 	local out = { "-l", o.selector :: string, "--prefix", "--max-log-requests=" .. M.MAX_LOG_REQUESTS }
@@ -854,6 +894,7 @@ function M.command(action: string, target: Target, ref: Ref?, opts: Opts?, setti
 	local argv: { string } = { program }
 	local pre: { string } = {}
 	local post: { string } = {}
+	local forwards = false
 	local title: string
 
 	if r == nil then
@@ -904,7 +945,9 @@ function M.command(action: string, target: Target, ref: Ref?, opts: Opts?, setti
 		append(argv, ns)
 		table.insert(argv, typed)
 		if o.port then
-			table.insert(argv, string.format("%d:%d", o.localPort or M.localPort(o.port), o.port))
+			local l = o.localPort or M.localPort(o.port)
+			table.insert(argv, string.format("%d:%d", l, o.port))
+			table.insert(pre, string.format("p=%d; l=%d", o.port, l))
 			title = string.format("port-forward %s %d", where, o.port)
 		else
 			local get = { program, "get" }
@@ -919,18 +962,14 @@ function M.command(action: string, target: Target, ref: Ref?, opts: Opts?, setti
 					.. " >&2; exit 1;; esac"
 			)
 			table.insert(pre, 'if [ "$p" -gt 1024 ]; then l=$p; else l=$((8000 + p)); fi')
-			if s.remote then
-				append(pre, remoteForward(s.remote, '"$l"', '"$p"'))
-			else
-				table.insert(pre, 'printf \'tern-kube: forwarding localhost:%s -> %s\\n\' "$l" "$p"')
-			end
 			table.insert(argv, "$l:$p")
 			title = "port-forward " .. where
 		end
-		if o.port and s.remote then
-			local l = string.format("%d", o.localPort or M.localPort(o.port))
-			append(pre, remoteForward(s.remote, l, string.format("%d", o.port)))
-		end
+		-- A local port the link names is used as given.
+		local fixed = o.port ~= nil and o.localPort ~= nil
+		table.insert(pre, if fixed then "a=$l:$p" else PICK_LOCAL)
+		append(pre, forwardNotes(s.remote, fixed))
+		forwards = true
 	elseif action == "debug-pod" then
 		append(argv, { "debug", "-it" })
 		append(argv, conn)
@@ -961,6 +1000,12 @@ function M.command(action: string, target: Target, ref: Ref?, opts: Opts?, setti
 	title = "tern-kube " .. title .. " @ " .. (ctx or "current context")
 
 	local script: { string } = { "printf '\\033]0;%s\\007' " .. Command.quote(title) }
+	-- Ctrl-C is how a follow or a forward is stopped: the split exits 0 so
+	-- Tern does not report it as a failure; other exits keep their status.
+	local interruptible = action == "logs-follow" or action == "port-forward"
+	if interruptible then
+		table.insert(script, "trap 'exit 0' INT")
+	end
 	if s.remote and req.target.kubeconfig == nil then
 		table.insert(
 			script,
@@ -974,17 +1019,76 @@ function M.command(action: string, target: Target, ref: Ref?, opts: Opts?, setti
 		table.insert(script, "printf 'tern-kube: context %s\\n' \"$(" .. Command.format(current) .. ')"')
 	end
 	append(script, pre)
-	local run = Command.format(argv)
-	if action == "port-forward" and o.port == nil then
-		run = string.gsub(run, "'%$l:%$p'$", '"$l:$p"')
+	local run: string
+	if forwards then
+		local words = table.clone(argv)
+		words[#words] = "$a"
+		run = (string.gsub(Command.format(words), "'%$a'$", '"$a"'))
+	else
+		run = Command.format(argv)
 	end
-	if #post > 0 then
+	if #post > 0 or interruptible then
 		table.insert(script, run)
 		append(script, post)
 	else
 		table.insert(script, "exec " .. run)
 	end
 	return { argv = argv, line = "sh -c " .. anyShellQuote(table.concat(script, "; ")), title = title }, nil
+end
+
+-- Explore opens manifest files through the window without giving them the
+-- focus (`tern-kube://file?path=…&line=…`). Any program can send such a
+-- link, so only absolute paths of manifest-like files are accepted: an
+-- editor opens them, nothing runs them.
+M.FILE_SCHEME = "tern-kube://file"
+
+local MANIFEST_EXT: { [string]: boolean } = { yaml = true, yml = true, json = true, tpl = true }
+
+local function manifestPath(path: string): boolean
+	if string.sub(path, 1, 1) ~= "/" or #path > 4096 or string.find(path, "%c") then
+		return false
+	end
+	local base = string.match(path, "([^/]+)$") or ""
+	local ext = string.match(base, "%.([%w]+)$")
+	return base == "Kustomization" or (ext ~= nil and MANIFEST_EXT[string.lower(ext)] == true)
+end
+
+local function lineNumber(v: string): number?
+	local n = if string.find(v, "^[1-9]%d?%d?%d?%d?%d?%d?$") then tonumber(v) else nil
+	return n
+end
+
+function M.fileUrl(path: string, line: number?): string?
+	if not manifestPath(path) then
+		return nil
+	end
+	local url = M.FILE_SCHEME .. "?path=" .. Command.urlencode(path)
+	if line and line >= 1 and line == math.floor(line) and line < 1e7 then
+		url ..= "&line=" .. string.format("%d", line)
+	end
+	return url
+end
+
+function M.decodeFile(url: string): { path: string, line: number? }?
+	if string.sub(url, 1, #M.FILE_SCHEME + 1) ~= M.FILE_SCHEME .. "?" then
+		return nil
+	end
+	local path: string? = nil
+	local line: number? = nil
+	for _, p in Command.parseQuery(url) do
+		if p.key == "path" then
+			path = p.value
+		elseif p.key == "line" then
+			line = lineNumber(p.value)
+			if line == nil then
+				return nil
+			end
+		end
+	end
+	if path == nil or not manifestPath(path) then
+		return nil
+	end
+	return { path = path, line = line }
 end
 
 -- Placement from config `quick_actions.placement`; anything else is the

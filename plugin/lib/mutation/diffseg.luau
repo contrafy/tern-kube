@@ -135,6 +135,9 @@ function M.parse(text: string): Summary
 	local hunk: Hunk? = nil
 	-- Per segment: did any hunk have an empty old / new side, or a non-empty one.
 	local oldEmpty, newEmpty, oldSeen, newSeen = false, false, false, false
+	-- kubectl masks Secret data and prints a missing object as the document
+	-- `null`: a side whose whole content is that one line is the empty side.
+	local oldLines, newLines, oldNull, newNull = 0, 0, false, false
 
 	local function finish()
 		local seg = current
@@ -143,6 +146,13 @@ function M.parse(text: string): Summary
 		end
 		if hunk and (hunk.oldLeft > 0 or hunk.newLeft > 0) then
 			table.insert(summary.notes, string.format("%s: hunk ended early", seg.key))
+		end
+		if not seg.binary and oldLines == 1 and oldNull and newSeen and newLines > 1 then
+			oldEmpty, oldSeen = true, false
+			seg.removed -= 1
+		elseif not seg.binary and newLines == 1 and newNull and oldSeen and oldLines > 1 then
+			newEmpty, newSeen = true, false
+			seg.added -= 1
 		end
 		if seg.binary then
 			seg.action = "unknown"
@@ -174,6 +184,7 @@ function M.parse(text: string): Summary
 		finish()
 		current = newSegment(key, first)
 		oldEmpty, newEmpty, oldSeen, newSeen = false, false, false, false
+		oldLines, newLines, oldNull, newNull = 0, 0, false, false
 	end
 
 	local lines = splitLines(text)
@@ -187,12 +198,18 @@ function M.parse(text: string): Summary
 			if c == " " or line == "" then
 				h.oldLeft -= 1
 				h.newLeft -= 1
+				oldLines += 1
+				newLines += 1
 			elseif c == "-" then
 				h.oldLeft -= 1
 				seg.removed += 1
+				oldLines += 1
+				oldNull = line == "-null"
 			elseif c == "+" then
 				h.newLeft -= 1
 				seg.added += 1
+				newLines += 1
+				newNull = line == "+null"
 			elseif c ~= "\\" then
 				-- Not hunk content: the hunk was cut short; reread as a header.
 				table.insert(summary.notes, string.format("%s: hunk ended early", seg.key))

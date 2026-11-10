@@ -7,6 +7,7 @@ local Drain = require("./drain")
 local HelmTypes = require("../helm/types")
 local Kinds = require("../kubectl/kinds")
 local Objdiff = require("./objdiff")
+local Placeholder = require("../gitops/placeholder")
 local RevDiff = require("../helm/revdiff")
 local Rollout = require("./rollout")
 local T = require("./types")
@@ -412,6 +413,41 @@ local function manifestHits(manifests: { T.Manifest }): (Hits, { string })
 	return hits, order
 end
 
+-- Export writes REPLACE_ME for every Secret value; kubectl diff masks both
+-- sides, so applying an export as is would silently replace live values.
+local function placeholderReasons(b: Builder, manifests: { T.Manifest })
+	local parts: { string } = {}
+	for _, m in manifests do
+		local source = Yaml.lines(m.text)
+		for _, doc in Yaml.splitLines(source).docs do
+			if doc.kind == "Secret" then
+				local keys = Placeholder.textKeys(table.concat(docLines(source, doc), "\n"))
+				if #keys > 0 then
+					table.insert(
+						parts,
+						label({ kind = "Secret", namespace = doc.namespace, name = doc.name })
+							.. " sets placeholder values ("
+							.. table.concat(keys, ", ")
+							.. ")"
+					)
+				end
+			end
+		end
+	end
+	if #parts > 0 then
+		add(
+			b,
+			"secret-placeholder",
+			"high",
+			"typed",
+			table.concat(parts, "; ")
+				.. ": "
+				.. Placeholder.TOKEN
+				.. " from a tern-kube export would replace the live values"
+		)
+	end
+end
+
 -- `baseline`: heuristics the original already matches are not reported (edit).
 local function manifestReasons(b: Builder, manifests: { T.Manifest }, baseline: { T.Manifest }?)
 	local hits, order = manifestHits(manifests)
@@ -583,6 +619,20 @@ local function pauseReasons(b: Builder, plan: Plan, facts: Facts)
 		end
 	end
 	selectorReason(b, plan, facts, if pause then "Pauses" else "Resumes")
+end
+
+local function restartReasons(b: Builder, facts: Facts)
+	for _, obj in liveObjects(facts) do
+		if field(obj, "kind") == "Deployment" and field(obj, "spec", "paused") == true then
+			add(
+				b,
+				"restart-paused",
+				"medium",
+				"simple",
+				objectLabel(obj) .. " is paused: kubectl refuses to restart it and exits 1 (run rollout resume first)"
+			)
+		end
+	end
 end
 
 local function patchReasons(b: Builder, plan: Plan, facts: Facts)
@@ -1039,6 +1089,8 @@ local function familyReasons(b: Builder, plan: Plan, facts: Facts)
 		undoReasons(b, plan, facts)
 	elseif f == "pause" or f == "resume" then
 		pauseReasons(b, plan, facts)
+	elseif f == "restart" then
+		restartReasons(b, facts)
 	elseif f == "patch" then
 		patchReasons(b, plan, facts)
 	elseif f == "label" or f == "annotate" then
@@ -1154,6 +1206,7 @@ function M.assess(plan: Plan, facts: Facts): T.Assessment
 	end
 	if facts.manifests and (plan.family == "apply") then
 		manifestReasons(b, facts.manifests :: { T.Manifest }, nil)
+		placeholderReasons(b, facts.manifests :: { T.Manifest })
 	end
 	if facts.previewOk ~= nil then
 		familyReasons(b, plan, facts)

@@ -15,7 +15,7 @@ tracked and untracked, `.gitignore` respected), or that directory when it
 is not a repository. It reads plain YAML (single and multi-document),
 renders Kustomize directories with `kubectl kustomize`, and renders the Helm
 releases listed in [`gitops.helm`](configuration.md#gitops) with
-`helm template`. Scanning is bounded (`gitops.max_files`, `max_bytes`,
+`helm template --no-hooks` (Helm 3 or Helm 4). Scanning is bounded (`gitops.max_files`, `max_bytes`,
 `max_file_bytes`), runs in small steps with progress, and only reruns when
 you press `r`.
 
@@ -52,11 +52,29 @@ checked out locally) and compares it with the cluster: **changed** objects
 with their diff, objects **missing in cluster**, and **unmanaged** objects
 (live in the source's namespaces, of kinds the source uses, declared
 nowhere). Owned objects, defaults and controller bookkeeping are not
-reported as unmanaged.
+reported as unmanaged, and neither are objects of a Helm release
+(`meta.helm.sh/release-name` annotation, ignored as `Helm release ns/X`)
+or Helm hook objects (`helm.sh/hook`, ignored as `Helm hook (...)`), in
+every source and whatever reports were opened before.
 
 `f` cycles the filter, `enter` opens an entry, `a` applies one manifest and
 `A` the whole source (both through the approve block), `E` exports the
-selected live object and `X` everything shown.
+selected live object and `X` everything shown. Applying several documents,
+or one that shares its file, writes them to a 0600 bundle under the plugin
+data directory (`tmp/apply-*.yaml`), deleted when the approve block closes
+(a sweep removes leftovers after 24 hours).
+
+A Secret whose manifest still holds the export placeholder `REPLACE_ME`
+(in `stringData`, or base64 in `data`) is marked `placeholder` on its row,
+its drill-in says which keys, and the diff shows `REPLACE_ME (placeholder)`
+instead of kubectl's masked `*** (after)`. `a` and `A` leave such Secrets
+out of the bundle (and refuse when nothing else is left, or for `apply -k`),
+and the approve block flags any apply input holding placeholders as a high
+risk with typed confirmation.
+
+When several documents declare the same object, the row says
+`ambiguous: N manifests`: `kubectl diff` compares only the one it read
+last, and `a` applies the first one listed in the drill-in.
 
 For a Helm source (configured or auto-detected) the render is diffed with
 `kubectl diff -f <render> -n <release namespace>` and applied with
@@ -64,18 +82,22 @@ For a Helm source (configured or auto-detected) the render is diffed with
 `metadata.namespace` out of most objects and helm installs them into the
 release namespace, so without `-n` they would be compared with, or applied
 to, kubectl's default namespace. Documents of different releases, or chart
-renders mixed with plain manifests, are never applied together. Objects
-in the namespace that belong to another Helm release (`Helm release
-ns/X`) and Helm hook objects (`Helm hook (pre-install, ...)`) are ignored
-rather than reported as unmanaged, so the report never offers to delete
-them; so are Helm's release records.
+renders mixed with plain manifests, are never applied together. Hooks are
+not rendered (`--no-hooks`): they are not release objects, so they are
+never reported as missing or applied. Objects in the namespace that belong
+to a Helm release (`Helm release ns/X`, the source's own release too when
+this render does not produce them) and Helm hook objects
+(`Helm hook (pre-install, ...)`) are ignored rather than reported as
+unmanaged, so the report never offers to delete them; so are Helm's release
+records.
 
 ### Helm chart auto-detect
 
 The index reads the `Chart.yaml` of every chart directory in the repository
 (subcharts under `charts/` excepted). When `helm.auto_detect` is on (the
-default) and helm is found, opening the drift chooser runs
-`helm list -a -A -o json` once per index (again after `r`) and offers each
+default) and helm (Helm 3 or Helm 4) is found, opening the drift chooser runs
+`helm list --deployed --failed --pending --superseded --uninstalled --uninstalling -A -o json`
+(every status; Helm 4 removed `-a`) once per index (again after `r`) and offers each
 chart directory for every release whose chart name equals the `Chart.yaml`
 name, for example `helm/chart as tern-test-helm/shop-a with deployed values`.
 Equal chart version, equal app version, the release namespace as a path
@@ -141,8 +163,16 @@ server, fetch time and a summary (`2 changed, 1 missing, 1 unmanaged`).
 | `missing` | declared, not in that cluster |
 | `unmanaged` | live, of a kind the source uses, declared nowhere |
 | `-` | neither declared for nor live in that context |
-| `error` | that context's report failed (its counts line gives the reason) |
+| `error` | that context's report failed (its counts line gives kubectl's last non-klog stderr line) |
 | `pending` | waiting for a `compare.max_parallel` slot or for kubectl |
+
+A context where the source's namespace does not exist yet (a cluster not
+provisioned) is not an error: when every object of the source is in that
+namespace (or is that Namespace), every object is `missing`, with the note
+`namespace X does not exist in this cluster: every object is missing;
+create the namespace first`. Objects in other namespaces were never
+compared (`kubectl diff` stops at the first missing namespace), so a mixed
+source stays an error there.
 
 `f` cycles all / drifted anywhere / differs between contexts, `[` `]` select
 a column, `enter` on a changed, missing or unmanaged cell opens that
@@ -157,14 +187,22 @@ context. Outside Tern, the CLI makes the same comparison:
 
 ### Export
 
-`E` turns live objects into manifests: status, server-set metadata and
-defaults are dropped (`uid`, `resourceVersion`, `managedFields`,
-`clusterIP`, …) and Secret values become `REPLACE_ME` placeholders. Files
-follow the target directory's existing layout when it has a clear one,
-else `<namespace>/<kind>/<name>.yaml` plus a `kustomization.yaml`. The
-preview lists every file as new, modified or unchanged with its diff;
-`t` changes the directory, `w` then `y` writes. Existing files are never
-overwritten without that preview.
+`E` turns live objects into manifests: status and server-set metadata are
+dropped (`uid`, `resourceVersion`, `generation`, `creationTimestamp`,
+`managedFields`, the last-applied annotation, a Service's `clusterIP(s)`,
+a Pod's `nodeName`, a bound PVC's `volumeName`, a Job's generated selector
+and labels). Server-side defaults are kept as the API returns them
+(`progressDeadlineSeconds`, `revisionHistoryLimit`, `strategy`,
+`imagePullPolicy`, `terminationMessagePath`, `dnsPolicy`, `restartPolicy`,
+`schedulerName`, `terminationGracePeriodSeconds`, empty `resources: {}` and
+`securityContext: {}`). Secret values become `REPLACE_ME` placeholders.
+Files follow the target directory's existing layout when it has a clear
+one. Otherwise they go to `<namespace>/<kind>/<name>.yaml`. New files are
+added to a `kustomization.yaml` (created or extended) only when the target
+directory is inside a Kustomization, or when it holds no manifests at all;
+a directory of plain manifests gets none. The preview lists every file as new, modified or unchanged with
+its diff; `t` changes the directory, `w` then `y` writes. Existing files
+are never overwritten without that preview.
 
 ### Git branches and pull requests
 
@@ -179,7 +217,7 @@ files.
 
 `bin/tern-kube-drift` is a single POSIX `sh` script with no Tern
 dependency. It needs `awk`, `sed`, `sort`, `mktemp`, `kubectl` and, for
-Helm charts, `helm`. Copy it anywhere on your `PATH`, or vendor it into a
+Helm charts, `helm` (Helm 3 or Helm 4). Copy it anywhere on your `PATH`, or vendor it into a
 repository for CI.
 
 ```sh
@@ -193,7 +231,7 @@ tern-kube-drift (-f PATH [-R] | -k DIR | --helm CHART --release R [-f VALUES]...
 | --- | --- |
 | `-f PATH` (repeatable), `-R` | `kubectl diff -f PATH... [-R]` |
 | `-k DIR` | `kubectl diff -k DIR` |
-| `--helm CHART --release R` | `helm template R CHART [--namespace NS] [-f VALUES]...`, then `kubectl diff -f` on the rendered output |
+| `--helm CHART --release R` | `helm template R CHART --no-hooks [--namespace NS] [-f VALUES]...`, then `kubectl diff -f` on the rendered output |
 
 With `--helm`, `-f` and `--values` name values files, as in Helm.
 `--context`, `--kubeconfig` and `-n` are passed to every kubectl call. The
@@ -231,11 +269,30 @@ both on the same golden `kubectl diff` captures.
   backtick run inside it, so the output is safe to post as a pull request
   comment.
 - `--format json`: for scripts. Top level `version`, `source`, `context`,
-  `namespace`, `drift`, `summary` (counts), `resources` (`key`, `group`,
-  `version`, `kind`, `namespace`, `name`, `action`, `added`, `removed`,
-  `binary`, `lineCount`, `truncated`, `lines`: the segment verbatim,
-  header lines included), `unmanaged` (`null` unless requested) and
-  `notes` (lines kubectl printed outside any resource).
+  `namespace`, `drift`, `summary` (counts), `resources` (`key`, `group`
+  (`null` for core kinds), `version`, `kind`, `namespace`, `name`,
+  `action`, `added`, `removed`, `binary`, `lineCount`, `truncated`,
+  `placeholders` (only on a Secret whose source values are export
+  placeholders), `lines`: the segment verbatim, header lines included),
+  `unmanaged` (`null` unless requested) and `notes` (lines kubectl printed
+  outside any resource).
+
+Secrets in the source that still hold the export placeholder `REPLACE_ME`
+(`stringData`, or base64 in `data`) are flagged in every format: the row
+says `placeholders: KEYS`, a warning line follows the summary, and their
+`*** (after)` diff lines read `REPLACE_ME (placeholder)`. The exit status is
+unchanged.
+
+kubectl masks Secret data before diffing and prints a Secret missing from
+the cluster as the one line `-null`; such a Secret counts as create (in
+the CLI and in Explore), and that line is not counted as removed.
+
+When a namespace of the source does not exist on the context, `kubectl
+diff` compares nothing. The CLI then diffs the objects in existing
+namespaces again without them, reports every object of a missing namespace
+as `create` (without a diff body) and adds the note `namespace X does not
+exist on context C: create it first (kubectl create namespace X)`; the exit
+status is 1 (drift), not 2.
 
 `--max-diff-lines N` keeps the first N lines of each resource's diff and
 says how many were cut. `--max-bytes N` (text and Markdown) drops whole
@@ -247,12 +304,14 @@ line is always kept. GitHub rejects comments over 65536 characters.
 `--unmanaged KINDS` lists live objects that no manifest declares, for the
 comma-separated kubectl resource names in KINDS (`auto`: the kinds that
 appear in the source), in the namespaces the source covers. The source's
-objects are resolved with `kubectl apply --dry-run=client`. Objects that
+objects are resolved with `kubectl create --dry-run=client` (client-side;
+`apply --dry-run=client` would print the live object). Objects that
 are expected to be absent from Git are skipped: anything with
 `ownerReferences`, the `default` ServiceAccount, `kube-root-ca.crt`,
-service-account token and Helm release Secrets, events, endpoints,
-endpoint slices, leases, `default` and `kube-*` namespaces and built-in
-`system:` / bootstrap RBAC objects.
+service-account token and Helm release Secrets, objects of a Helm release
+(`meta.helm.sh/release-name`) and Helm hooks (`helm.sh/hook`), events,
+endpoints, endpoint slices, leases, `default` and `kube-*` namespaces and
+built-in `system:` / bootstrap RBAC objects.
 
 ### Several contexts
 
@@ -266,12 +325,12 @@ single context under `--all-contexts`) gives the report above, byte for
 byte, JSON `version: 1`; two or more give a combined report.
 
 Per context the CLI runs the same `kubectl diff`, the declared-object
-listing `kubectl apply --dry-run=client` (always, so objects the diff does
+listing `kubectl create --dry-run=client` (always, so objects the diff does
 not mention can be shown as in sync) and, with `--unmanaged`, the
 unmanaged listing. Helm charts are rendered once. A context that fails
 (unreachable, unknown, Forbidden) becomes an error entry with kubectl's
-last stderr line; the other contexts still run. kubectl's stderr is
-printed with a `[context]` prefix. Secret last-applied lines are redacted
+last stderr line that is not klog noise; the other contexts still run.
+kubectl's stderr is printed with a `[context]` prefix. Secret last-applied lines are redacted
 in every context.
 
 The combined report has one row per object over all contexts and one

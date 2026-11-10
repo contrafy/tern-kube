@@ -490,11 +490,15 @@ for theme in light dark; do
 	ctl theme light "$theme" >/dev/null
 	for size in wide narrow; do
 		if [ $size = wide ]; then
-			ctl resize 1280 860 >/dev/null
+			w=1280
 		else
 			wants m1 || continue
-			ctl resize 600 860 >/dev/null
+			w=600
 		fi
+		window_size $w 860 || {
+			fail "the window stays $(viewport), not ${w}x860: screenshots need the window resizable (float it in a tiling window manager)"
+			break 2
+		}
 		sleep 0.8
 		wants m1 && shots_views
 		if [ $size = wide ]; then
@@ -512,6 +516,6 @@ for theme in light dark; do
 	done
 done
 ctl theme light light >/dev/null
-ctl resize 1280 800 >/dev/null
+window_size 1280 800 || true
 make -C "$E2E_REPO" shots-optimize || fail "shots-optimize"
 [ $E2E_FAILED = 0 ]

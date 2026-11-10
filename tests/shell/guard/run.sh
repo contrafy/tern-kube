@@ -97,7 +97,7 @@ skip() {
 # Fresh fake state, spool and work dir; the environment of a new Tern pane.
 fresh() {
 	case_name=$1
-	rm -rf "$FAKE_DIR" "$root/spool" "$root/work" "$root/tmp"
+	rm -rf "$FAKE_DIR" "$root/spool" "$root/work" "$root/tmp" "$root/audit.log"
 	mkdir -p "$FAKE_DIR" "$root/work/my dir/sub" "$root/work/kust" "$root/tmp"
 	echo kind-dev >"$FAKE_DIR/context"
 	mkdir -m 755 "$root/spool"
@@ -546,6 +546,103 @@ core_cases() {
 	expect_status 0 "-n delete get"
 	expect_no_tern "-n delete get is a get in namespace delete"
 
+	# MUT-F1: kubens between the preview and kubectl changes where a command
+	# without -n runs; the request and its fingerprint stay equal, so the
+	# namespace and user the block previewed are checked right before exec.
+	fresh "$sh namespace switched after approval"
+	echo team-a >"$FAKE_DIR/ctx-namespace"
+	mode nsdrift
+	run_k "$sh" delete cm x
+	expect_status 1 "namespace switched"
+	expect_out "now defaults to namespace 'team-b', but the approval previewed 'team-a'" "namespace switch message"
+	expect_out 'nothing was executed' "namespace switch says nothing ran"
+	expect_not_run "namespace switched"
+	expect_spool_clean "namespace switched"
+
+	fresh "$sh namespace switched before the preview"
+	echo team-a >"$FAKE_DIR/ctx-namespace"
+	mode nsearly
+	run_k "$sh" delete cm x
+	expect_status 0 "previewed namespace is the current one"
+	expect_ran "previewed namespace is the current one" delete cm x
+
+	fresh "$sh namespace switch with -n"
+	echo team-a >"$FAKE_DIR/ctx-namespace"
+	mode nsdrift
+	run_k "$sh" delete cm x -n team-a
+	expect_status 0 "explicit -n ignores the context namespace"
+	expect_ran "explicit -n ignores the context namespace" delete cm x -n team-a
+
+	fresh "$sh user switched after approval"
+	mode userdrift
+	run_k "$sh" delete cm x -n team-a
+	expect_status 1 "user switched"
+	expect_out "now uses user 'mallory', but the approval previewed 'kind-dev'" "user switch message"
+	expect_not_run "user switched"
+
+	fresh "$sh approval without namespace and user"
+	mode nokeys
+	run_k "$sh" delete cm x
+	expect_status 1 "older block"
+	expect_out 'does not name the namespace and user it previewed' "older block message"
+	expect_not_run "older block"
+
+	fresh "$sh context unreadable at approval"
+	: >"$FAKE_DIR/view-fail"
+	run_k "$sh" delete cm x
+	expect_status 1 "context unreadable"
+	expect_out "cannot read context 'kind-dev' from the kubeconfig" "context unreadable message"
+	expect_not_run "context unreadable"
+
+	fresh "$sh --kubeconfig reaches the namespace check"
+	run_k "$sh" --kubeconfig /k/alt delete cm x
+	expect_status 0 "--kubeconfig"
+	if grep -qF -- '--kubeconfig /k/alt config view --minify --context kind-dev' "$FAKE_DIR/view-calls" 2>/dev/null; then ok; else bad "namespace check ignored --kubeconfig: $(cat "$FAKE_DIR/view-calls" 2>/dev/null)"; fi
+
+	# MUT-F5: the block closed before kubectl ran; the guard appends the
+	# outcome record it was given, filling in only the needles (the fake's
+	# template repeats one, escaped, inside argv).
+	for m in 0:executed 4:failed; do
+		fresh "$sh outcome recorded: ${m#*:}"
+		echo "${m%%:*}" >"$FAKE_DIR/exit"
+		run_k "$sh" delete cm x
+		expect_status "${m%%:*}" "outcome ${m#*:}"
+		expect_ran "outcome ${m#*:}" delete cm x
+		if [ "$(wc -l <"$root/audit.log" 2>/dev/null | tr -d ' ')" = 1 ] &&
+			grep -Eq '^\{"v":1,"decided_at":[0-9]+,"decision":"'"${m#*:}"'","mode":"guard","op":"fake","argv":\["\\"exit_code\\":@"\],"exit_code":'"${m%%:*}"',"started_at":[0-9]+,"finished_at":[0-9]+\}$' "$root/audit.log"; then
+			ok
+		else
+			bad "outcome ${m#*:}: audit log $(cat "$root/audit.log" 2>/dev/null)"
+		fi
+	done
+
+	fresh "$sh no outcome template"
+	mode noaudit
+	run_k "$sh" delete cm x
+	expect_status 0 "no template"
+	expect_ran "no template" delete cm x
+	if [ -e "$root/audit.log" ]; then bad "no template: wrote $(cat "$root/audit.log")"; else ok; fi
+
+	fresh "$sh Ctrl-C while kubectl runs"
+	: >"$FAKE_DIR/run-sleep"
+	(launch_group "$sh" delete cm x >"$root/out" 2>&1 </dev/null) &
+	pid=$!
+	i=0
+	while [ $i -lt 100 ] && [ ! -e "$FAKE_DIR/call-1" ]; do
+		sleep 0.1
+		i=$((i + 1))
+	done
+	kill -s INT -- "-$pid" 2>/dev/null || bad "Ctrl-C while kubectl runs: no process group $pid to signal"
+	wait "$pid"
+	st=$?
+	expect_status 130 "Ctrl-C while kubectl runs"
+	if grep -q '"decision":"failed",.*"exit_code":130,' "$root/audit.log" 2>/dev/null; then ok; else bad "Ctrl-C while kubectl runs: audit log $(cat "$root/audit.log" 2>/dev/null)"; fi
+	expect_no_out 'nothing was executed' "Ctrl-C while kubectl runs is not a guard cancel"
+	if pgrep -f 'sleep 1798' >/dev/null 2>&1; then
+		bad "Ctrl-C left kubectl running"
+		pkill -f 'sleep 1798'
+	else ok; fi
+
 	fresh "$sh Ctrl-C"
 	mode hang
 	TKUBE_GUARD_TIMEOUT=30
@@ -938,7 +1035,9 @@ edit_cases() {
 	edit_fresh "$sh edit denied"
 	mode deny
 	run_k "$sh" edit cm/x
-	expect_status 0 "edit denied (kubectl cancels)"
+	# MUT-F6: kubectl itself exits 0 ("Edit cancelled"); `edit && next` must
+	# not continue after a denial, as with every other guarded verb.
+	expect_status 1 "edit denied exits 1 like every denial"
 	expect_out 'denied in Tern; the object was not changed' "deny message"
 	expect_out '^Edit cancelled, no changes made.$' "kubectl found its own bytes"
 	expect_out 'your edit is saved at' "copy message"
@@ -946,6 +1045,24 @@ edit_cases() {
 	expect_saved_copy "edit denied"
 	expect_spool_clean "edit denied"
 	expect_tmp_clean "edit denied"
+	if [ -e "$root/audit.log" ]; then bad "edit denied wrote an outcome: $(cat "$root/audit.log")"; else ok; fi
+
+	# MUT-F5: kubectl applies after the hook's approval; its exit status is
+	# the outcome.
+	edit_fresh "$sh edit outcome recorded"
+	run_k "$sh" edit cm/x
+	expect_status 0 "edit outcome"
+	if grep -Eq '"decision":"executed",.*"exit_code":0,"started_at":[0-9]+,"finished_at":[0-9]+\}$' "$root/audit.log" 2>/dev/null; then ok; else bad "edit outcome: audit log $(cat "$root/audit.log" 2>/dev/null)"; fi
+
+	# MUT-F1: kubectl edit loaded the kubeconfig when it started; an approval
+	# previewed against a namespace switched since then is refused.
+	edit_fresh "$sh edit: namespace switched while editing"
+	echo team-a >"$FAKE_DIR/ctx-namespace"
+	mode nsearly
+	run_k "$sh" edit cm/x
+	expect_status 1 "edit namespace switched"
+	expect_out "now defaults to namespace 'team-a', but the approval previewed 'team-b'" "edit namespace switched message"
+	expect_not_applied "edit namespace switched"
 
 	for m in "hang:no decision within 1s" "stale:fingerprint mismatch" "drift:context changed"; do
 		name=${m%%:*}

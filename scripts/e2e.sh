@@ -162,10 +162,13 @@ E2E_WAIT=30 wait_for "the sandbox window" ctl ready || {
 	cat "$E2E_SB/window.out" >&2
 	exit 1
 }
-dev link "$E2E_SB/pkg" >/dev/null 2>&1 || need "cannot link the plugin"
+# Already a snapshot of the plugin files: link it as it is.
+dev link --live "$E2E_SB/pkg" >/dev/null 2>&1 || need "cannot link the plugin"
 E2E_WAIT=30 wait_for "the first prompt" ctl ready || exit 1
-ctl resize 1280 800 >/dev/null
-sleep 1
+# Only 13's narrow layout needs a given window size (it checks the column
+# tier instead when the window keeps its size).
+window_size 1280 800 || echo "e2e: the window stays $(viewport), not 1280x800 (a tiling window manager?)"
+sleep 0.5
 
 # Same check inside the pane the scenarios type into.
 sh_line clear

@@ -27,7 +27,7 @@ jobs:
       fail-fast: false
       matrix:
         # macOS arm64 and Linux x86_64: the hosts scripts/bootstrap.sh supports.
-        os: [macos-14, ubuntu-24.04]
+        os: [macos-15, ubuntu-24.04]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     steps:
@@ -188,6 +188,17 @@ jobs:
           else
             echo "skipped: tests/integration/helm/template-compat.sh is not on this branch"
           fi
+
+      # Helm 4 removed `helm list -a` and changed rollback flags: the same
+      # compatibility check and helm_* approve-block scenarios run against
+      # the pinned .tools/bin/helm4 in their own namespaces.
+      - name: Helm 4 compatibility (template, list, rollback)
+        if: ${{ !cancelled() && steps.cluster.outcome == 'success' }}
+        run: |
+          TK_IT_HELM_NS=tern-test-helm4-compat HELM=.tools/bin/helm4 sh tests/integration/helm/template-compat.sh
+          TK_IT_HELM=$PWD/.tools/bin/helm4 TK_IT_HELM_NS=tern-test-helm4-it \
+            sh tests/integration/mutate/run.sh helm_rollback helm_stale helm_pending helm_missing_rev \
+            helm_rbac helm_secret_echo helm_cleanup
 
       - name: Logs parser against real kubectl logs
         if: ${{ !cancelled() && steps.cluster.outcome == 'success' }}

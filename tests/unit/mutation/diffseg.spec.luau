@@ -144,6 +144,45 @@ describe("diffseg robustness", function()
 		expect(brief(Diffseg.parse(text))).toEqual({ "modify||v1|Pod|ns|a|+1-1", "create||v1|Pod|ns|b|+1-0" })
 	end)
 
+	-- kubectl masks Secret data before diffing and marshals a missing object
+	-- as the YAML document `null` (kubectl 1.34 against a 1.37 server), so a
+	-- brand-new Secret's old side is one `-null` line, not an empty file.
+	-- Counted as a modify, the user would approve a create as an edit.
+	it("classifies a Secret whose missing side kubectl prints as null", function()
+		local text = table.concat({
+			"diff -u -N /tmp/LIVE-1/v1.Secret.ns.new /tmp/MERGED-2/v1.Secret.ns.new",
+			"--- /tmp/LIVE-1/v1.Secret.ns.new\t2026-01-01",
+			"+++ /tmp/MERGED-2/v1.Secret.ns.new\t2026-01-01",
+			"@@ -1 +1,3 @@",
+			"-null",
+			"+apiVersion: v1",
+			"+data:",
+			"+  a: '***'",
+			"diff -u -N /tmp/LIVE-1/v1.Secret.ns.gone /tmp/MERGED-2/v1.Secret.ns.gone",
+			"--- /tmp/LIVE-1/v1.Secret.ns.gone\t2026-01-01",
+			"+++ /tmp/MERGED-2/v1.Secret.ns.gone\t2026-01-01",
+			"@@ -1,2 +1 @@",
+			"-apiVersion: v1",
+			"-kind: Secret",
+			"+null",
+			"diff -u -N /tmp/LIVE-1/v1.ConfigMap.ns.c /tmp/MERGED-2/v1.ConfigMap.ns.c",
+			"--- /tmp/LIVE-1/v1.ConfigMap.ns.c\t2026-01-01",
+			"+++ /tmp/MERGED-2/v1.ConfigMap.ns.c\t2026-01-01",
+			"@@ -1,2 +1,2 @@",
+			" kind: ConfigMap",
+			"-null",
+			"+x: 1",
+		}, "\n")
+		local s = Diffseg.parse(text)
+		expect(brief(s)).toEqual({
+			"create||v1|Secret|ns|new|+3-0",
+			"delete||v1|Secret|ns|gone|+0-2",
+			"modify||v1|ConfigMap|ns|c|+1-1",
+		})
+		expect(counts(s)).toEqual({ 1, 1, 1, 0 })
+		expect({ s.added, s.removed }).toEqual({ 4, 3 })
+	end)
+
 	it("marks binary or unreadable objects unknown instead of guessing", function()
 		local text = table.concat({
 			"diff -u -N /tmp/LIVE-1/v1.Secret.ns.s /tmp/MERGED-2/v1.Secret.ns.s",

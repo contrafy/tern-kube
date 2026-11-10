@@ -26,6 +26,8 @@ local M = {}
 M.LIVENESS_MS = 1000
 M.SPOOL = tern.plugin.data .. "/spool"
 M.AUDIT_LOG = tern.plugin.data .. "/audit.log"
+-- Explore writes apply bundles here (explore_host.luau M.TMP).
+M.TMP = tern.plugin.data .. "/tmp"
 
 local function warnOnce(h: Host, what: string, err: any)
 	if not h.warned then
@@ -228,6 +230,10 @@ local function watch(h: Host)
 		if not alive then
 			h.stopped = true
 			log.debug("tern-kube approve pane gone", h.cx.pane)
+			local bundle = Session.bundlePath(h.s)
+			if bundle then
+				pcall(tern.fs.remove, bundle)
+			end
 			return
 		end
 		local w = Session.watch(h.s)
@@ -307,6 +313,7 @@ function M.register()
 				kubeconfig = cfg.kubeconfig or EnvHost.kubeconfig(),
 				home = tern.getenv("HOME"),
 				spool = M.SPOOL,
+				tmp = M.TMP,
 				request = requestFile(args[1]),
 				panes = paneIds(),
 				decode = tern.json.decode,

@@ -11,6 +11,7 @@ local Blocksize = require("./lib/blocksize")
 local ConfigHost = require("./config_host")
 local EnvHost = require("./env_host")
 local GitopsHost = require("./gitops_host")
+local Quick = require("./lib/actions/quick")
 local Render = require("./lib/explore/render")
 local Shellenv = require("./lib/env/shellenv")
 local State = require("./lib/explore/state")
@@ -264,8 +265,11 @@ function exec(h: Host, effects: { Effect })
 		elseif e.t == "write" then
 			writeFiles(h, e)
 		elseif e.t == "openfile" then
-			-- Tern opens `<path>:<line>` in a file block at that line.
-			h.cx:open((e.path or "") .. (if e.line then ":" .. e.line else ""))
+			-- window.luau opens a manifest without moving the focus out of
+			-- Explore (the next keys would edit the file); anything else
+			-- opens as Tern opens `<path>:<line>`.
+			local url = Quick.fileUrl(e.path or "", e.line)
+			h.cx:open(url or ((e.path or "") .. (if e.line then ":" .. e.line else "")))
 		elseif e.t == "restart" then
 			start(h, State.save(h.s))
 			return
@@ -405,7 +409,7 @@ function M.register()
 			if h.s.envPending then
 				return false
 			end
-			return dispatch(h, { t = "key", key = key :: any })
+			return dispatch(h, { t = "key", key = key :: any, clock = tern.now() })
 		end,
 		event = function(h: Host, ev: UiEvent, cx: BlockCx)
 			h.cx = cx

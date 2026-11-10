@@ -40,5 +40,6 @@ E2E_WAIT=20 xwait "in context $MCB" || return
 contains "peer drift diff" "$(xtext)" "nginx:1.28-alpine"
 xkey a
 contains "read-only across contexts" "$(toast_text)" "Switch to $MCB (c) to change it"
-explore_close
+# Six routes deep, and esc at the top asks for a second press.
+explore_close_all
 sh_line "cd '$E2E_REPO'"

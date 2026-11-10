@@ -5,7 +5,8 @@ each checked again against Tern 0.9.8 (pinned types `78ba204` and the 0.9
 docs, 2026-11-02): all ten are still open. Items 11-13 come from the logs
 lens and events timeline (0.3.0, Tern 0.9.8), item 14 from the Explore block
 (0.4.0, Tern 0.9.8), items 15-17 from remote hosts (0.5.0, Tern 0.9.8 window,
-0.9.10 host).
+0.9.10 host). Tern 0.9.14 (types `a933069`, 2026-11-10) resolves item 8 in
+the types; items 18-19 are new on 0.9.14.
 Evidence is in `docs/sdk-capability-matrix.md`; each item lists the impact,
 the current workaround and a minimal reproduction. Anything not directly
 observed is marked `[not observed]`.
@@ -43,6 +44,11 @@ observed is marked `[not observed]`.
 - Tern 0.9.8: still open, checked against 0.9.8. `@container` is still
   rejected, `@media` still compares to the window, and a lens `view` still
   gets no cols.
+- Tern 0.9.14: still open, checked live: `@container` is a parse error
+  ("unsupported at-rule"). A narrow split therefore cannot stand in for a
+  narrow window in e2e, and `ctl resize`/`ctl size` resize the real window,
+  which a tiling window manager (OmniWM) keeps in its tile; e2e 13 falls back
+  to checking the narrow column tier classes.
 - Reproduction: add `@container (max-width: 500px) { .x { display: none } }` to a
   manifest `styles` sheet (rejected); log the arguments of a lens `view`
   callback (no cols; only blocks get `cx.cols`).
@@ -103,6 +109,10 @@ observed is marked `[not observed]`.
 - Workaround: `el` div CSS grid with `display:contents` rows carrying `actions`.
 - Tern 0.9.8: still open, checked against 0.9.8: the data guide still says
   table rows have no events or per-row actions.
+- Tern 0.9.14: resolved in the types and docs: `TableRow {id, cells, menu,
+  disabled}`, `TableOpts.selectable`, `select`/`activate` events with `item`
+  and `ButtonCell` actions. Not verified live and not adopted yet; the `el`
+  grid stays.
 - Reproduction: render a `table` node whose rows have `actions`; clicking a
   cell fires `{"act":"table-click","ev":"action","id":"b.n12"}` with no row info.
 
@@ -227,3 +237,29 @@ observed is marked `[not observed]`.
 - Ask: allow capped reads of `/dev/urandom`, or a `tern.random.bytes(n)`.
 - Reproduction: a capped `tern.fs.read` of `/dev/urandom` in the window half
   is refused (device file).
+
+## 18. The plugin watcher reloads on any file below a linked directory
+
+- Impact: a linked checkout reloads the plugin on every `git` command
+  (`.git/index` changes), on edits to docs or tests, and on files tools write
+  under `.sandbox`. Each reload re-creates open blocks, which re-run their
+  queries and lose state that cannot be restored (an Explore compare route,
+  an approve preview re-runs).
+- Workaround: `scripts/dev-tern.sh link` links a snapshot copy without
+  `.git`, `.sandbox` and `.tools` ([testing](testing.md#manual-sandbox)).
+- Ask: ignore `.git/` (and ideally everything outside `plugin.toml` and the
+  entry, style and `require` paths) when watching a linked package.
+- Reproduction: link a git checkout, open a block, `touch <link>/.git/index`:
+  the daemon log shows `settings loaded` and the block's `init` again within
+  about 1 s.
+
+## 19. A user interrupt counts as a failed split command
+
+- Impact: Ctrl-C is how a user stops `kubectl logs -f` or a port-forward in
+  a split; kubectl exits 1, and Tern shows the "Shell exited with 1" sheet, a
+  red tab and a notification, so every normal stop looks like an error.
+- Workaround: follow-logs and port-forward splits exit 0 on Ctrl-C.
+- Ask: treat an exit after a user-sent SIGINT (or exit 130) as not a failure,
+  or let `Launch` opt out of the failure sheet.
+- Reproduction: `cx.layout:split(pane, "right", { command = "kubectl logs -f
+  POD" })`, then Ctrl-C in the split: the sheet and the notification appear.

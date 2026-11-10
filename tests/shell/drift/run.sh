@@ -98,6 +98,10 @@ expect_err() {
 	grep -qF -- "$1" "$root/err" && ok || bad "stderr lacks: $1"
 }
 
+expect_no_err() {
+	grep -qF -- "$1" "$root/err" && bad "stderr has: $1" || ok
+}
+
 expect_argv() { # LINE: exact recorded kubectl invocation
 	grep -qxF -- "$1" "$FAKE_DIR/argv" && ok || {
 		bad "kubectl not called as: $1"
@@ -270,12 +274,14 @@ for s in $shells; do
 	run "$s" -f a.yaml
 	expect_rc 2
 
-	fresh "$s: helm renders, then diffs the rendered file"
+	fresh "$s: helm renders without hooks, then diffs the rendered file"
 	diff_from "$mix"
 	printf 'apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: r\n' >"$FAKE_DIR/rendered.yaml"
 	run "$s" --helm ./chart --release rel -f values.yaml --values 'prod values.yaml' -n apps --format json
 	expect_rc 1
-	grep -qxF 'helm [template] [rel] [./chart] [--namespace] [apps] [-f] [values.yaml] [-f] [prod values.yaml]' "$FAKE_DIR/helm.argv" &&
+	# Hooks (e.g. pre-upgrade) never exist after an install: rendering them
+	# would report a create on every in-sync release.
+	grep -qxF 'helm [template] [rel] [./chart] [--no-hooks] [--namespace] [apps] [-f] [values.yaml] [-f] [prod values.yaml]' "$FAKE_DIR/helm.argv" &&
 		ok || bad "helm argv: $(cat "$FAKE_DIR/helm.argv")"
 	cmp -s "$FAKE_DIR/rendered.yaml" "$FAKE_DIR/rendered.seen" && ok || bad "kubectl diff did not get the rendered chart"
 	grep -q '^kubectl \[diff\] \[-n\] \[apps\] \[-f\] \[.*/rendered.yaml\]$' "$FAKE_DIR/argv" && ok || bad "diff argv: $(cat "$FAKE_DIR/argv")"
@@ -301,10 +307,10 @@ for s in $shells; do
 	# Per context: diff, the declared listing, then the unmanaged listing.
 	awk '{ sub(/ \[-o\].*/, ""); print }' "$FAKE_DIR/argv" >"$root/calls"
 	printf '%s\n' "kubectl [--context] [kind-tern-kube-dev] [diff] [-n] [tern-test-apps] [-f] [a.yaml]" \
-		"kubectl [--context] [kind-tern-kube-dev] [apply] [--dry-run=client] [-n] [tern-test-apps] [-f] [a.yaml]" \
+		"kubectl [--context] [kind-tern-kube-dev] [create] [--dry-run=client] [-n] [tern-test-apps] [-f] [a.yaml]" \
 		"kubectl [--context] [kind-tern-kube-dev] [get] [secrets] [-n] [tern-test-apps]" \
 		"kubectl [--context] [kind-tern-kube-dev2] [diff] [-n] [tern-test-apps] [-f] [a.yaml]" \
-		"kubectl [--context] [kind-tern-kube-dev2] [apply] [--dry-run=client] [-n] [tern-test-apps] [-f] [a.yaml]" \
+		"kubectl [--context] [kind-tern-kube-dev2] [create] [--dry-run=client] [-n] [tern-test-apps] [-f] [a.yaml]" \
 		"kubectl [--context] [kind-tern-kube-dev2] [get] [secrets] [-n] [tern-test-apps]" >"$root/want"
 	cmp -s "$root/want" "$root/calls" && ok || bad "kubectl calls: $(cat "$root/calls")"
 	expect_read_only
@@ -437,6 +443,13 @@ expect_out 'omitted to stay under --max-bytes._'
 
 # --- Unmanaged objects -----------------------------------------------------
 
+# The source's objects, listed with `create --dry-run=client` (apply would
+# print the live object of one that exists, hiding the source's Secret
+# values): name and the keys of export placeholder values per object.
+listing_argv="kubectl [create] [--dry-run=client] [-f] [a.yaml] [-o] [go-template={{define \"o\"}}{{.apiVersion}}{{\"\\t\"}}{{.kind}}{{\"\\t\"}}{{.metadata.namespace}}{{\"\\t\"}}{{.metadata.name}}{{\"\\t\"}}{{if and (eq .kind \"Secret\") (eq .apiVersion \"v1\")}}{{range \$k, \$v := .stringData}}{{if eq (printf \"%v\" \$v) \"REPLACE_ME\"}}{{\$k}},{{end}}{{end}}{{range \$k, \$v := .data}}{{if eq (printf \"%v\" \$v) \"UkVQTEFDRV9NRQ==\"}}{{\$k}},{{end}}{{end}}{{end}}{{\"\\n\"}}{{end}}{{if eq .kind \"List\"}}{{range .items}}{{template \"o\" .}}{{end}}{{else}}{{template \"o\" .}}{{end}}]"
+
+# Live rows: apiVersion, kind, namespace, name, owned, type, bootstrapping
+# label, helm.sh/hook annotation, meta.helm.sh/release-name annotation.
 unmanaged_setup() {
 	t=$(printf '\t')
 	cat >"$FAKE_DIR/manifest.tsv" <<EOF
@@ -476,7 +489,7 @@ unmanaged_setup
 diff_from "$FAKE_DIR/empty" 0
 run sh -f a.yaml --unmanaged auto --format json
 expect_rc 1
-expect_argv "kubectl [apply] [--dry-run=client] [-f] [a.yaml] [-o] [go-template={{define \"o\"}}{{.apiVersion}}{{\"\\t\"}}{{.kind}}{{\"\\t\"}}{{.metadata.namespace}}{{\"\\t\"}}{{.metadata.name}}{{\"\\n\"}}{{end}}{{if eq .kind \"List\"}}{{range .items}}{{template \"o\" .}}{{end}}{{else}}{{template \"o\" .}}{{end}}]"
+expect_argv "$listing_argv"
 grep -c '^kubectl \[get\] \[\(ConfigMap\|Deployment.apps\|Namespace\)\] \[-n\] \[apps\]' "$FAKE_DIR/argv" | grep -qx 3 && ok ||
 	bad "want one get per kind in namespace apps: $(cat "$FAKE_DIR/argv")"
 expect_out '"unmanaged":[{"group":null,"version":"v1","kind":"ConfigMap","namespace":"apps","name":"hand-made"},{"group":"apps","version":"v1","kind":"Deployment","namespace":"apps","name":"debug-copy"},{"group":null,"version":"v1","kind":"Namespace","namespace":null,"name":"scratch"}]'
@@ -500,6 +513,42 @@ diff_from "$mix"
 run sh -f a.yaml --unmanaged widgets
 expect_rc 2
 expect_err "cannot list widgets in namespace apps"
+
+# A Helm release owns its objects (and its hooks, which a render without
+# hooks never declares): they are never "unmanaged", whatever the source.
+fresh "--unmanaged never lists objects of a Helm release or Helm hooks"
+unmanaged_setup
+cat >>"$FAKE_DIR/get/ConfigMap.apps" <<EOF
+v1${t}ConfigMap${t}apps${t}web-pre-upgrade${t}-${t}-${t}${t}pre-upgrade,pre-rollback${t}<no value>
+v1${t}ConfigMap${t}apps${t}other-config${t}-${t}-${t}${t}<no value>${t}other
+EOF
+cat >>"$FAKE_DIR/get/secrets.apps" <<EOF
+v1${t}Secret${t}apps${t}other-tls${t}-${t}Opaque${t}${t}<no value>${t}other
+v1${t}Secret${t}apps${t}stray-annotated${t}-${t}Opaque${t}${t}<no value>${t}<no value>
+EOF
+: >"$FAKE_DIR/empty"
+diff_from "$FAKE_DIR/empty" 0
+run sh -f a.yaml --unmanaged ConfigMap,secrets --format text
+expect_rc 1
+expect_argv "kubectl [get] [secrets] [-n] [apps] [-o] [go-template={{range .items}}{{.apiVersion}}{{\"\\t\"}}{{.kind}}{{\"\\t\"}}{{.metadata.namespace}}{{\"\\t\"}}{{.metadata.name}}{{\"\\t\"}}{{if .metadata.ownerReferences}}owned{{else}}-{{end}}{{\"\\t\"}}{{if .type}}{{.type}}{{else}}-{{end}}{{\"\\t\"}}{{with .metadata.labels}}{{index . \"kubernetes.io/bootstrapping\"}}{{end}}{{\"\\t\"}}{{with .metadata.annotations}}{{index . \"helm.sh/hook\"}}{{end}}{{\"\\t\"}}{{with .metadata.annotations}}{{index . \"meta.helm.sh/release-name\"}}{{end}}{{\"\\n\"}}{{end}}]"
+expect_no_out 'web-pre-upgrade'
+expect_no_out 'other-config'
+expect_no_out 'other-tls'
+expect_out '  Secret/stray-annotated (namespace apps)'
+expect_out '  ConfigMap/hand-made (namespace apps)'
+
+fresh "--helm: live objects of the release itself are not unmanaged either"
+unmanaged_setup
+cat >>"$FAKE_DIR/get/ConfigMap.apps" <<EOF
+v1${t}ConfigMap${t}apps${t}rel-leftover${t}-${t}-${t}${t}<no value>${t}rel
+EOF
+printf 'apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: app-config\n' >"$FAKE_DIR/rendered.yaml"
+: >"$FAKE_DIR/empty"
+diff_from "$FAKE_DIR/empty" 0
+run sh --helm ./chart --release rel -n apps --unmanaged ConfigMap --format text
+expect_rc 1
+expect_no_out 'rel-leftover'
+expect_out '  ConfigMap/hand-made (namespace apps)'
 
 # --- One context: the 0.1.0 report, byte for byte --------------------------
 # golden/single-* were written by tern-kube-drift 0.1.0, before contexts
@@ -618,6 +667,240 @@ expect_no_out '<b>'
 expect_out '| Resource | Namespace | kind-tern-kube-dev | x&#60;b&#62;&#124;y |'
 expect_out '| x&#60;b&#62;&#124;y | **1 resource drifted** (0 create, 1 modify, 0 delete; +1 -1) |'
 expect_out '<summary>[x&#60;b&#62;&#124;y] modify ConfigMap tern-test-apps/app-config (+1 -1)</summary>'
+
+# --- Export placeholders ---------------------------------------------------
+# An export replaces Secret values with REPLACE_ME. kubectl diff masks every
+# Secret value, so without the source's own listing a reviewer cannot tell
+# "apply would write REPLACE_ME over the real password" from a real change.
+
+placeholder_setup() {
+	t=$(printf '\t')
+	diff_from "$here/cases/secret-last-applied.diff"
+	cat >"$FAKE_DIR/manifest.tsv" <<EOF
+v1${t}Secret${t}tern-test-apps${t}app-secret${t}token,password,
+v1${t}ConfigMap${t}tern-test-apps${t}app-config${t}
+EOF
+}
+
+fresh "placeholders text: marked row, section, unmasked diff line, warning"
+placeholder_setup
+run sh -f a.yaml --format text
+expect_rc 1
+expect_argv "$listing_argv"
+expect_out 'modify  Secret/app-secret  tern-test-apps  +1 -3  placeholders: password, token'
+expect_out 'Warning: 1 Secret has placeholder values (REPLACE_ME) from an export: applying would overwrite the live values.'
+expect_out 'placeholder values (password, token): REPLACE_ME from an export, applying would overwrite the live values'
+expect_out "+  password: 'REPLACE_ME (placeholder)'"
+expect_out "-  password: '*** (before)'"
+expect_no_out "'*** (after)'"
+expect_no_out 'tern-kube-test-not-a-secret'
+expect_read_only
+
+fresh "placeholders markdown"
+placeholder_setup
+run sh -f a.yaml --format markdown
+expect_rc 1
+expect_out '| modify | Secret/app-secret (placeholder values) | tern-test-apps | 1 | 3 |'
+expect_out '**Warning:** 1 Secret has placeholder values (REPLACE_ME) from an export: applying would overwrite the live values.'
+expect_out '<summary>modify Secret tern-test-apps/app-secret (+1 -3), placeholder values</summary>'
+expect_out '**placeholder values (password, token): REPLACE_ME from an export, applying would overwrite the live values**'
+expect_out "+  password: 'REPLACE_ME (placeholder)'"
+
+fresh "placeholders json: only the Secret carries the field"
+placeholder_setup
+run sh -f a.yaml --format json
+expect_rc 1
+expect_out '"action":"modify","added":1,"removed":3,"binary":false,"lineCount":20,"truncated":false,"placeholders":["password","token"],"lines":['
+expect_out "\"+  password: 'REPLACE_ME (placeholder)'\""
+[ "$(grep -o '"placeholders"' "$root/out" | wc -l | tr -d ' ')" = 1 ] && ok || bad "want one placeholders field"
+
+fresh "placeholders: a Secret the diff creates is flagged too"
+diff_from "$here/cases/secret-create.diff"
+printf 'v1\tSecret\tapps\tnew-creds\tpw,\n' >"$FAKE_DIR/manifest.tsv"
+run sh -f a.yaml --format text
+expect_rc 1
+expect_out 'create  Secret/new-creds  apps       +9 -0  placeholders: pw'
+expect_out "+  pw: 'REPLACE_ME (placeholder)'"
+expect_out "+  user: '***'"
+
+# Real kubectl output: kubectl masks Secret data and prints the missing live
+# object as the document `null`, so the old side is one `-null` line. It is
+# still a create, never a modify of a live Secret.
+fresh "a new Secret diffed against null is a create"
+diff_from "$here/cases/secret-create-null.diff"
+printf 'v1\tSecret\tapps\tnew-creds\tpw,\n' >"$FAKE_DIR/manifest.tsv"
+run sh -f a.yaml --format text
+expect_rc 1
+expect_out 'create  Secret/new-creds  apps       +10 -0  placeholders: pw'
+expect_out '1 create, 0 modify, 0 delete; +10 -0'
+run sh -f a.yaml --format json
+expect_rc 1
+expect_out '"action":"create","added":10,"removed":0'
+
+fresh "placeholders: without placeholder values nothing changes"
+diff_from "$here/cases/secret-last-applied.diff"
+printf 'v1\tSecret\ttern-test-apps\tapp-secret\t\n' >"$FAKE_DIR/manifest.tsv"
+run sh -f a.yaml --format json
+expect_rc 1
+expect_no_out 'placeholder'
+
+fresh "placeholders across two contexts"
+mc_setup
+cp "$here/cases/secret-last-applied.diff" "$FAKE_DIR/ctx/kind-tern-kube-dev2/diff"
+printf 'v1\tSecret\ttern-test-apps\tapp-secret\tpassword,\n' >>"$FAKE_DIR/ctx/kind-tern-kube-dev2/manifest.tsv"
+run sh -f a.yaml --context kind-tern-kube-dev --context kind-tern-kube-dev2 --format text
+expect_rc 1
+expect_out 'Warning: 1 Secret has placeholder values (REPLACE_ME) from an export: applying would overwrite the live values.'
+expect_out '=== [kind-tern-kube-dev2] modify Secret tern-test-apps/app-secret (+1 -3)'
+expect_out "+  password: 'REPLACE_ME (placeholder)'"
+
+# --- Target namespace missing on a context ---------------------------------
+# kubectl diff aborts the whole run on the first object whose namespace does
+# not exist (real kind: exit 2, no diff, `Error from server (NotFound):
+# namespaces "X" not found`). That is drift (the namespace and its objects
+# would be created), not an error: the CLI re-diffs the objects in existing
+# namespaces and reports the others as create.
+
+missing_setup() { # DIR
+	t=$(printf '\t')
+	cat >"$1/manifest.tsv" <<EOF
+v1${t}ConfigMap${t}tern-test-apps${t}app-config${t}
+rbac.authorization.k8s.io/v1${t}RoleBinding${t}gone${t}rb${t}
+v1${t}Secret${t}gone2${t}creds${t}pw,
+EOF
+	cat >"$1/source.yaml" <<'EOF'
+apiVersion: v1
+data:
+  LOG_LEVEL: debug
+kind: ConfigMap
+metadata:
+  name: app-config
+  namespace: tern-test-apps
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: rb
+  namespace: gone
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: r
+subjects:
+- kind: ServiceAccount
+  name: x
+  namespace: tern-test-apps
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: creds
+  namespace: gone2
+stringData:
+  pw: REPLACE_ME
+EOF
+	: >"$1/diff"
+	echo 2 >"$1/diff.exit"
+	echo 'Error from server (NotFound): namespaces "gone" not found' >"$1/diff.err"
+	: >"$1/diff.2"
+	echo 2 >"$1/diff.2.exit"
+	echo 'Error from server (NotFound): namespaces "gone2" not found' >"$1/diff.2.err"
+	cp "$here/cases/mc-dev.diff" "$1/diff.3"
+	echo 1 >"$1/diff.3.exit"
+}
+
+for s in $shells; do
+	fresh "$s: missing namespaces: creates plus a note, exit 1"
+	missing_setup "$FAKE_DIR"
+	run "$s" -f a.yaml --context kind-tern-kube-dev --format text
+	expect_rc 1
+	expect_out 'modify  ConfigMap/app-config                      tern-test-apps  +1 -1'
+	expect_out 'create  RoleBinding.rbac.authorization.k8s.io/rb  gone            +0 -0'
+	expect_out 'create  Secret/creds                              gone2           +0 -0  placeholders: pw'
+	expect_out '3 resources drifted (2 create, 1 modify, 0 delete; +1 -1).'
+	expect_out '  namespace gone does not exist on context kind-tern-kube-dev: create it first (kubectl create namespace gone)'
+	expect_out '  namespace gone2 does not exist on context kind-tern-kube-dev: create it first (kubectl create namespace gone2)'
+	expect_out '=== create RoleBinding.rbac.authorization.k8s.io gone/rb (+0 -0)'
+	expect_out '(namespace missing: whole object would be created)'
+	expect_no_err 'kubectl diff failed'
+	expect_argv "kubectl [--context] [kind-tern-kube-dev] [create] [--dry-run=client] [-f] [a.yaml] [-o] [yaml]"
+	# Each re-diff drops the namespaces found missing so far, by the
+	# object's own namespace (not the RoleBinding subject's).
+	grep -q 'name: creds' "$FAKE_DIR/present.seen.2" && grep -q 'name: app-config' "$FAKE_DIR/present.seen.2" &&
+		! grep -q 'name: rb' "$FAKE_DIR/present.seen.2" && ok || bad "second diff input: $(cat "$FAKE_DIR/present.seen.2")"
+	grep -q 'name: rb' "$FAKE_DIR/present.seen.3" && bad "third diff still has gone/rb" || ok
+	grep -q 'name: creds' "$FAKE_DIR/present.seen.3" && bad "third diff still has gone2/creds" || ok
+	grep -q 'name: app-config' "$FAKE_DIR/present.seen.3" && ok || bad "third diff lost app-config"
+	expect_read_only
+done
+
+fresh "missing namespaces json: create entries without diff lines"
+missing_setup "$FAKE_DIR"
+run sh -f a.yaml --format json
+expect_rc 1
+expect_out '{"key":"rbac.authorization.k8s.io.v1.RoleBinding.gone.rb","group":"rbac.authorization.k8s.io","version":"v1","kind":"RoleBinding","namespace":"gone","name":"rb","action":"create","added":0,"removed":0,"binary":false,"lineCount":0,"truncated":false,"lines":[]}'
+expect_out '"action":"create","added":0,"removed":0,"binary":false,"lineCount":0,"truncated":false,"placeholders":["pw"],"lines":[]}'
+expect_out '"notes":["namespace gone does not exist on context kind-tern-kube-dev: create it first (kubectl create namespace gone)","namespace gone2 does not exist on context kind-tern-kube-dev: create it first (kubectl create namespace gone2)"]'
+
+fresh "missing namespaces markdown: no empty diff fence"
+missing_setup "$FAKE_DIR"
+run sh -f a.yaml --format markdown
+expect_rc 1
+expect_out '<summary>create RoleBinding.rbac.authorization.k8s.io gone/rb (+0 -0)</summary>'
+expect_out '_(namespace missing: whole object would be created)_'
+[ "$(grep -c '^```diff$' "$root/out")" = 1 ] && ok || bad "want one diff fence (app-config only)"
+
+fresh "every object in a missing namespace: no re-diff, all create"
+printf 'v1\tConfigMap\tgone\ta\t\n' >"$FAKE_DIR/manifest.tsv"
+printf 'apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: a\n  namespace: gone\n' >"$FAKE_DIR/source.yaml"
+: >"$FAKE_DIR/diff"
+echo 2 >"$FAKE_DIR/diff.exit"
+echo 'Error from server (NotFound): namespaces "gone" not found' >"$FAKE_DIR/diff.err"
+run sh -f a.yaml -n gone --format text
+expect_rc 1
+expect_out 'create  ConfigMap/a  gone       +0 -0'
+[ "$(grep -c '\[diff\]' "$FAKE_DIR/argv")" = 1 ] && ok || bad "want a single diff: $(cat "$FAKE_DIR/argv")"
+
+fresh "missing namespace, then another error: still exit 2"
+missing_setup "$FAKE_DIR"
+echo 'Error from server (Forbidden): configmaps "app-config" is forbidden' >"$FAKE_DIR/diff.2.err"
+run sh -f a.yaml --format text
+expect_rc 2
+expect_err 'Error from server (Forbidden)'
+
+fresh "missing namespace on one of two contexts: create cells, exit 1"
+mc_setup
+missing_setup "$FAKE_DIR/ctx/kind-tern-kube-dev"
+run sh -f a.yaml --context kind-tern-kube-dev --context kind-tern-kube-dev2 --format text
+expect_rc 1
+expect_out 'RoleBinding.rbac.authorization.k8s.io/rb  gone            create              -'
+expect_out '  [kind-tern-kube-dev] namespace gone does not exist on context kind-tern-kube-dev: create it first (kubectl create namespace gone)'
+expect_out 'kind-tern-kube-dev: 3 resources drifted (2 create, 1 modify, 0 delete; +1 -1).'
+
+# --- Error reasons ---------------------------------------------------------
+# client-go logs (klog) after the real error, so the last stderr line is
+# often noise: the reason must be the last line that is not a klog line.
+
+fresh "a failed context's reason skips klog lines"
+mc_setup
+mc_down kind-tern-kube-down
+cat >>"$FAKE_DIR/ctx/kind-tern-kube-down/diff.err" <<'EOF'
+E1110 10:00:00.123456   12345 memcache.go:265] "Unhandled Error" err="couldn't get current server API group list"
+I1110 10:00:00.223456   12345 request.go:1000] retrying
+EOF
+run sh -f a.yaml --context kind-tern-kube-dev --context kind-tern-kube-down --format text
+expect_rc 2
+expect_out 'kind-tern-kube-down: error: kubectl diff exited 1 without a diff: Unable to connect to the server: dial tcp 127.0.0.1:1: connect: connection refused'
+
+fresh "only klog lines: the last one is the reason"
+mc_setup
+mkdir -p "$FAKE_DIR/ctx/kind-tern-kube-down"
+: >"$FAKE_DIR/ctx/kind-tern-kube-down/diff"
+echo 1 >"$FAKE_DIR/ctx/kind-tern-kube-down/diff.exit"
+printf '%s\n' 'E1110 10:00:00.123456   12345 a.go:1] first' 'E1110 10:00:00.223456   12345 b.go:2] second' >"$FAKE_DIR/ctx/kind-tern-kube-down/diff.err"
+run sh -f a.yaml --context kind-tern-kube-dev --context kind-tern-kube-down --format text
+expect_rc 2
+expect_out 'kind-tern-kube-down: error: kubectl diff exited 1 without a diff: E1110 10:00:00.223456   12345 b.go:2] second'
 
 printf '\n%d passed, %d failed\n' "$pass" "$failed"
 [ "$failed" = 0 ]

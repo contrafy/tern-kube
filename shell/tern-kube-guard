@@ -73,6 +73,9 @@ tkg_edit_sb='|R|'
 tkg_edit_sv='|f|k|o|'
 # END generated flags
 
+tkg_nl='
+'
+
 tkg_err() {
 	printf 'tern-kube guard: %s\n' "$*" >&2
 }
@@ -724,12 +727,15 @@ tkg_request_approval() {
 	tkg_r_ctx=
 	tkg_r_at=
 	tkg_r_reason=
+	tkg_r_ns=
+	tkg_r_user=
+	tkg_r_audit=
 	tkg_dup=
 	while IFS= read -r tkg_line || [ -n "$tkg_line" ]; do
 		tkg_k=${tkg_line%%=*}
 		tkg_v=${tkg_line#*=}
 		case $tkg_k in
-		nonce | decision | fingerprint | context | approved_at | reason)
+		nonce | decision | fingerprint | context | approved_at | reason | context_namespace | context_user | audit)
 			eval "[ -n \"\${tkg_seen_$tkg_k-}\" ] && tkg_dup=$tkg_k; tkg_seen_$tkg_k=1"
 			;;
 		esac
@@ -740,6 +746,9 @@ tkg_request_approval() {
 		context) tkg_r_ctx=$tkg_v ;;
 		approved_at) tkg_r_at=$tkg_v ;;
 		reason) tkg_r_reason=$(printf '%s' "$tkg_v" | LC_ALL=C tr -cd '[:print:]') ;;
+		context_namespace) tkg_r_ns=$tkg_v ;;
+		context_user) tkg_r_user=$tkg_v ;;
+		audit) tkg_r_audit=$tkg_v ;;
 		esac
 	done <"$tkg_resp"
 	[ -z "$tkg_dup" ] || tkg_refuse "the approval response repeats '$tkg_dup'; refusing it."
@@ -767,11 +776,95 @@ tkg_request_approval() {
 		tkg_refuse "the target context changed since the request (requested '$tkg_req_ctx', approved '$tkg_r_ctx', now '$tkg_ctx')."
 	[ "$tkg_fp" = "$tkg_req_fp" ] && [ "$tkg_fp" = "$tkg_r_fp" ] ||
 		tkg_refuse "the command or its input files changed since approval (fingerprint mismatch); run it again to preview the current state."
+	tkg_check_target
 
 	trap - INT TERM HUP
 	tkg_cleanup
 	umask "$tkg_umask"
 	tkg_decision=approve
+}
+
+# The namespace and user of context $tkg_ctx as kubectl resolves them now:
+# sets tkg_t_ns and tkg_t_user. The trailing "." keeps empty values.
+tkg_resolve_target() {
+	if [ -n "$tkg_flag_kc" ]; then
+		set -- --kubeconfig "$tkg_flag_kc"
+	else
+		set --
+	fi
+	tkg_t=$(command kubectl "$@" config view --minify --context "$tkg_ctx" \
+		-o 'jsonpath={.contexts[0].context.namespace}{"\n"}{.contexts[0].context.user}{"\n"}.' </dev/null) ||
+		tkg_refuse "cannot read context '$tkg_ctx' from the kubeconfig ('kubectl config view' failed)."
+	tkg_t=${tkg_t%.}
+	tkg_t_ns=${tkg_t%%"$tkg_nl"*}
+	tkg_t=${tkg_t#*"$tkg_nl"}
+	tkg_t_user=${tkg_t%"$tkg_nl"}
+}
+
+# kubens and `kubectl config set-context --current --namespace` rewrite the
+# context in place: the request, its fingerprint and the context name stay
+# equal, so the namespace and user the block previewed (response
+# context_namespace and context_user) must equal what kubectl will use. The
+# namespace counts only without -n. An edit compares against what kubectl
+# loaded when it started (tkg_want_ns, tkg_want_user).
+tkg_check_target() {
+	[ -n "${tkg_seen_context_namespace-}" ] && [ -n "${tkg_seen_context_user-}" ] ||
+		tkg_refuse "the approval response does not name the namespace and user it previewed (tern-kube plugin older than this guard?)."
+	if [ -n "${tkg_want_ctx-}" ]; then
+		tkg_t_ns=$tkg_want_ns
+		tkg_t_user=$tkg_want_user
+	else
+		tkg_resolve_target
+	fi
+	[ "$tkg_t_user" = "$tkg_r_user" ] ||
+		tkg_refuse "context '$tkg_ctx' now uses user '$tkg_t_user', but the approval previewed '$tkg_r_user'; run it again to preview the current state."
+	if [ -z "$tkg_ns_set" ] && [ "$tkg_t_ns" != "$tkg_r_ns" ]; then
+		tkg_refuse "context '$tkg_ctx' now defaults to namespace '${tkg_t_ns:-default}', but the approval previewed '${tkg_r_ns:-default}'; run it again to preview the current state."
+	fi
+	return 0
+}
+
+# Replaces the needle $1 in tkg_tpl by $2 (the needles: plugin/lib/mutation/
+# audit.luau OUTCOME_FIELDS).
+tkg_fill() {
+	case $tkg_tpl in
+	*"$1"*) tkg_tpl=${tkg_tpl%%"$1"*}$2${tkg_tpl#*"$1"} ;;
+	*) return 1 ;;
+	esac
+}
+
+# Appends the outcome record (template $1, started $2, kubectl's exit status
+# $3) to the plugin's audit log next to the spool ($4). Never fails the run.
+tkg_record() {
+	[ -n "$1" ] || return 0
+	tkg_tpl=$1
+	tkg_fin=$(date +%s)
+	if [ "$3" = 0 ]; then tkg_d=executed; else tkg_d=failed; fi
+	if tkg_fill '"decided_at":@' "\"decided_at\":$tkg_fin" &&
+		tkg_fill '"decision":"@"' "\"decision\":\"$tkg_d\"" &&
+		tkg_fill '"exit_code":@' "\"exit_code\":$3" &&
+		tkg_fill '"started_at":@' "\"started_at\":$2" &&
+		tkg_fill '"finished_at":@' "\"finished_at\":$tkg_fin" &&
+		[ ! -L "$4" ] &&
+		(umask 077 && printf '%s\n' "$tkg_tpl" >>"$4") 2>/dev/null; then
+		return 0
+	fi
+	tkg_err "kubectl exited $3, but its outcome could not be added to the audit log $4."
+	return 0
+}
+
+# Runs the approved argv as a child, so its outcome reaches the audit log;
+# exits with kubectl's status. Ctrl-C reaches kubectl (the foreground group)
+# and this shell only after kubectl has exited.
+tkg_run() {
+	tkg_audit_log=${tkg_spool%/*}/audit.log
+	tkg_started=$(date +%s)
+	trap : INT TERM HUP
+	kubectl "$@"
+	tkg_st=$?
+	trap - INT TERM HUP
+	tkg_record "$tkg_r_audit" "$tkg_started" "$tkg_st" "$tkg_audit_log"
+	exit "$tkg_st"
 }
 
 tkg_guard() {
@@ -797,7 +890,7 @@ tkg_guard() {
 		fi
 		exit 1
 	fi
-	exec kubectl "$@"
+	tkg_run "$@"
 }
 
 # Single-quoted sh literal of $1 (any bytes, newlines included).
@@ -857,6 +950,7 @@ tkg_edit() {
 	tkg_has_space "$tkg_tmp" &&
 		tkg_refuse "TMPDIR contains whitespace ($tkg_tmp), so kubectl could not run the guard's editor hook there; set TMPDIR to a path without spaces."
 	tkg_resolve_context
+	tkg_resolve_target
 	case $0 in
 	/*) tkg_core=$0 ;;
 	*/*) tkg_core=$(pwd -P)/$0 ;;
@@ -887,16 +981,32 @@ tkg_edit() {
 		tkg_shq "$tkg_program"
 		printf '\ntkg_e_ctx='
 		tkg_shq "$tkg_ctx"
+		printf '\ntkg_e_ns='
+		tkg_shq "$tkg_t_ns"
+		printf '\ntkg_e_user='
+		tkg_shq "$tkg_t_user"
 		printf '\n'
 	} >"$tkg_wrap_dir/request" || tkg_refuse "cannot write $tkg_wrap_dir/request."
 	umask "$tkg_umask"
 
 	tkg_real=${KUBE_EDITOR:-${EDITOR:-vi}}
-	# Ctrl-C reaches kubectl and the hook in the foreground group; this trap
+	# Ctrl-C reaches kubectl and the hook in the foreground group; the trap
 	# runs once kubectl has exited.
-	trap 'rm -rf "$tkg_wrap_dir"; exit 130' INT TERM HUP
+	tkg_sig=
+	trap 'tkg_sig=1' INT TERM HUP
 	KUBE_EDITOR=$tkg_wrap_dir/hook TKUBE_EDIT_DIR=$tkg_wrap_dir TKUBE_EDIT_REAL=$tkg_real kubectl "$@"
 	tkg_st=$?
+	trap - INT TERM HUP
+	[ -z "$tkg_sig" ] || tkg_st=130
+	# A denial makes kubectl see an unchanged file and exit 0 ("Edit
+	# cancelled"); the guard reports it like every other denial.
+	[ -e "$tkg_wrap_dir/denied" ] && [ "$tkg_st" = 0 ] && tkg_st=1
+	if [ -f "$tkg_wrap_dir/approved" ]; then
+		# Sets tkg_a_tpl, tkg_a_started and tkg_a_log (written by the hook).
+		# shellcheck source=/dev/null
+		. "$tkg_wrap_dir/approved" &&
+			tkg_record "$tkg_a_tpl" "$tkg_a_started" "$tkg_st" "$tkg_a_log"
+	fi
 	rm -rf "$tkg_wrap_dir"
 	exit "$tkg_st"
 }
@@ -1024,7 +1134,8 @@ tkg_edit_hook() {
 	fi
 	tkg_hook_state=pending
 
-	# Sets tkg_e_args, tkg_e_program and tkg_e_ctx (written by tkg_edit).
+	# Sets tkg_e_args, tkg_e_program, tkg_e_ctx, tkg_e_ns and tkg_e_user
+	# (written by tkg_edit).
 	# shellcheck source=/dev/null
 	. "$tkg_dir/request" || tkg_refuse "cannot read $tkg_dir/request."
 	# shellcheck disable=SC2154
@@ -1040,8 +1151,21 @@ p $tkg_orig
 	tkg_program=$tkg_e_program
 	# shellcheck disable=SC2154
 	tkg_want_ctx=$tkg_e_ctx
+	# shellcheck disable=SC2154
+	tkg_want_ns=$tkg_e_ns
+	# shellcheck disable=SC2154
+	tkg_want_user=$tkg_e_user
 	tkg_request_approval kubectl "$@"
 	if [ "$tkg_decision" = approve ]; then
+		# kubectl applies the file once this hook exits; tkg_edit records
+		# its outcome.
+		{
+			printf 'tkg_a_tpl='
+			tkg_shq "$tkg_r_audit"
+			printf '\ntkg_a_started=%s\ntkg_a_log=' "$(date +%s)"
+			tkg_shq "${tkg_spool%/*}/audit.log"
+			printf '\n'
+		} >"$tkg_dir/approved" || tkg_err "cannot note the approval for the audit log."
 		tkg_hook_state=settled
 		exit 0
 	fi
@@ -1050,6 +1174,7 @@ p $tkg_orig
 	else
 		tkg_err "denied in Tern; the object was not changed."
 	fi
+	: >"$tkg_dir/denied"
 	tkg_edit_save
 	tkg_edit_restore
 	tkg_hook_state=settled

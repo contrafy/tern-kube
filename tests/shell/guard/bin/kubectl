@@ -2,7 +2,13 @@
 # Fake kubectl for the guard tests. State lives in $FAKE_DIR:
 #   context        current context (`config current-context` prints it)
 #   ctx-fail       if present, `config current-context` fails
+#   ctx-namespace  namespace of the context (default none), ctx-user its
+#                  user (default kind-dev): `config view --minify` prints
+#                  "<namespace>\n<user>\n." as the guard's jsonpath asks;
+#                  view-fail makes it fail. Calls go to view-calls.
 #   exit           exit status of every other invocation (default 0)
+#   run-sleep      if present, every other invocation sleeps (until killed)
+#                  once recorded
 # Every other invocation n is recorded as call-n (argv, NUL-separated),
 # env-n (KUBECONFIG value) and stdin-n (stdin, when $FAKE_READ_STDIN is 1).
 #
@@ -35,6 +41,19 @@ if [ -n "$is_ctx" ]; then
 	exit 0
 fi
 
+is_view=
+[ "${1-}" = config ] && [ "${2-}" = view ] && is_view=1
+[ "${1-}" = --kubeconfig ] && [ "${3-}" = config ] && [ "${4-}" = view ] && is_view=1
+if [ -n "$is_view" ]; then
+	printf '%s\n' "$*" >>"$d/view-calls"
+	[ -e "$d/view-fail" ] && {
+		echo 'error: context "x" does not exist' >&2
+		exit 1
+	}
+	printf '%s\n%s\n.' "$(cat "$d/ctx-namespace" 2>/dev/null)" "$(cat "$d/ctx-user" 2>/dev/null || echo kind-dev)"
+	exit 0
+fi
+
 n=$(($(cat "$d/calls" 2>/dev/null || echo 0) + 1))
 echo "$n" >"$d/calls"
 printf '%s\0' "$@" >"$d/call-$n"
@@ -42,6 +61,7 @@ printf '%s' "${KUBECONFIG-<unset>}" >"$d/env-$n"
 if [ "${FAKE_READ_STDIN-}" = 1 ]; then
 	cat >"$d/stdin-$n"
 fi
+[ -e "$d/run-sleep" ] && exec sleep 1798
 
 verb=
 skip=

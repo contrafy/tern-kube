@@ -263,8 +263,10 @@ describe("explore state: keys", function()
 		local cleared, none = State.update(s, W.key("escape"))
 		expect(cleared.filter[State.currentKey(cleared)]).toBeNil()
 		expect(#none).toBe(0)
-		local _, exit = State.update(cleared, W.key("escape"))
-		expect(exit).toEqual({ { t = "exit" } })
+		local armed, first = State.update(cleared, W.key("escape"))
+		expect(#effectsOf(first, "exit")).toBe(0)
+		local _, exit = State.update(armed, W.key("escape"))
+		expect(effectsOf(exit, "exit")).toEqual({ { t = "exit" } })
 	end)
 
 	-- Explore opened from a lens row lands on the object; its list was never
@@ -661,13 +663,26 @@ describe("explore state: visible window", function()
 		expect((shown(s))).toBe(1)
 	end)
 
-	it("pagedown and pageup move by a window", function()
-		local s = W.keys(small(), { "pagedown" })
+	-- Tern 0.9.14 delivers PageDown/PageUp as `page_down`/`page_up` (logged
+	-- live); the 0.9.8 spelling stays accepted.
+	it("page_down and page_up move by a window, as do pagedown and pageup", function()
+		local s = W.keys(small(), { "page_down" })
+		expect(State.selectedIndex(s, State.items(s))).toBe(4)
+		s = W.keys(s, { "page_up" })
+		expect(State.selectedIndex(s, State.items(s))).toBe(1)
+		s = W.keys(s, { "pagedown" })
 		expect(State.selectedIndex(s, State.items(s))).toBe(4)
 		s = W.keys(s, { "pageup" })
 		expect(State.selectedIndex(s, State.items(s))).toBe(1)
 		local clicked = W.action(s, "page", "down")
 		expect(State.selectedIndex(clicked, State.items(clicked))).toBe(4)
+	end)
+
+	it("end and home jump like G and gg", function()
+		local s = W.keys(small(), { "end" })
+		expect(State.selectedIndex(s, State.items(s))).toBe(7)
+		s = W.keys(s, { "home" })
+		expect(State.selectedIndex(s, State.items(s))).toBe(1)
 	end)
 
 	it("shrinking the block keeps the selection visible", function()
@@ -762,6 +777,139 @@ describe("explore state: helm links and picker", function()
 		local s = initHelm(W.link({ context = W.CTX, namespace = "*", kind = "Pod" }))
 		s = W.helmKeys(s, { ":", "/", "h", "r", "escape" })
 		expect(State.items(s)[1].key).toBe(State.HELM_KIND_ROW)
+	end)
+end)
+
+-- v1.0.1 fixes from the exploratory reports (explore-xexplore B2, B3, B5,
+-- explore-xlens D1).
+describe("explore state: closing, pickers and context", function()
+	local function escAt(s: State, clock: number?): (State, { Effect })
+		return State.update(s, { t = "key", key = W.key("escape").key, clock = clock } :: any)
+	end
+
+	local function toastTexts(effects: { Effect }): { string }
+		local out: { string } = {}
+		for _, e in effectsOf(effects, "toast") do
+			table.insert(out, e.text :: string)
+		end
+		return out
+	end
+
+	-- One esc too many closed the block and the next keystrokes went to the
+	-- shell prompt (B3): closing needs a second esc soon after the first.
+	it("esc at the root arms a close; a second esc within 1.5 s closes", function()
+		local s = W.open()
+		local armed, first = escAt(s, 10000)
+		expect(#effectsOf(first, "exit")).toBe(0)
+		expect(toastTexts(first)).toEqual({ "esc again to close" })
+		local _, second = escAt(armed, 11400)
+		expect(effectsOf(second, "exit")).toEqual({ { t = "exit" } })
+	end)
+
+	it("a late second esc only arms again, and any other key disarms", function()
+		local s = W.open()
+		local armed = escAt(s, 10000)
+		local late, again = escAt(armed, 11600)
+		expect(#effectsOf(again, "exit")).toBe(0)
+		expect(toastTexts(again)).toEqual({ "esc again to close" })
+		local moved = State.update(late, W.key("j"))
+		local _, after = escAt(moved, 11700)
+		expect(#effectsOf(after, "exit")).toBe(0)
+	end)
+
+	it("backspace walks back but never closes the block", function()
+		local s = W.keys(W.open(), { "enter" })
+		expect(top(s).kind).toBe("detail")
+		s = W.keys(s, { "backspace" })
+		expect(top(s).kind).toBe("list")
+		for _ = 1, 3 do
+			local s2, effects = State.update(s, W.key("backspace"))
+			expect(#effectsOf(effects, "exit")).toBe(0)
+			expect(#effectsOf(effects, "toast")).toBe(0)
+			s = s2
+		end
+	end)
+
+	-- B2: `n` after `/edge` still read /edge, and `/xexplore` became
+	-- /edgexexplore with nothing to pick.
+	it("pickers open with an empty filter and / starts a fresh one", function()
+		local s = W.keys(W.open(), { "n", "/", "e", "m", "p", "enter", "enter" })
+		expect(s.target.namespace).toBe("tern-test-empty")
+		s = W.keys(s, { "n" })
+		expect(top(s).kind).toBe("namespaces")
+		expect(s.filter[State.currentKey(s)]).toBeNil()
+		expect(#State.items(s)).toBe(4)
+		s = W.keys(s, { "/", "a", "p", "enter" })
+		expect(s.filter[State.currentKey(s)]).toBe("ap")
+		s = W.keys(s, { "/", "d" })
+		expect(s.filter[State.currentKey(s)]).toBe("d")
+		s = W.keys(s, { "enter", "escape", ":" })
+		expect(s.filter[State.currentKey(s)]).toBeNil()
+	end)
+
+	-- B5: re-picking the current context reset the namespace to the
+	-- context default and showed an empty list.
+	it("picking the current context again keeps the namespace and the route", function()
+		local s = W.keys(W.open(), { "enter" })
+		expect(top(s).kind).toBe("detail")
+		local trace
+		s, trace = W.keys(s, { "c", "enter" })
+		expect(s.target.context).toBe(W.CTX)
+		expect(s.target.namespace).toBe(W.NS)
+		expect(s.target.confirmed).toBe(true)
+		expect(top(s).kind).toBe("detail")
+		expect(#effectsOf(trace.effects, "toast")).toBe(0)
+	end)
+end)
+
+describe("explore state: restore after a plugin reload", function()
+	local POD = { kind = "Pod", name = "web-1", namespace = W.NS }
+
+	local function saved(last: { [string]: any }): any
+		local stack: { any } = { { kind = "list", resource = "pods" }, { kind = "detail", ref = POD }, last }
+		return {
+			v = State.SAVE_VERSION,
+			target = { context = W.CTX, contextSource = "flag", namespace = W.NS, confirmed = true },
+			stack = stack,
+			sel = {},
+			filter = {},
+		}
+	end
+
+	local function restore(last: { [string]: any }): (State, W.Trace)
+		local s, effects = State.init({ "palette" }, saved(last), W.config(nil), W.env())
+		return W.settle(s, effects)
+	end
+
+	-- D1: Tern 0.9.14 reloads a linked plugin on file changes; the manifest
+	-- and diff views fell back to the object view.
+	it("the manifest route comes back, without opening the file again", function()
+		local s, trace = restore({ kind = "manifest", ref = POD })
+		expect(top(s).kind).toBe("manifest")
+		expect((top(s).ref :: any).name).toBe("web-1")
+		expect(#effectsOf(trace.effects, "openfile")).toBe(0)
+		expect(State.save(s).stack[3].kind).toBe("manifest")
+	end)
+
+	it("the diff route comes back with its manifest choice", function()
+		local s = restore({ kind = "diff", ref = POD, doc = 2 })
+		expect(top(s).kind).toBe("diff")
+		expect(top(s).doc).toBe(2)
+		local bad = restore({ kind = "diff", ref = POD, doc = "x; rm" })
+		expect(top(bad).doc).toBe(1)
+		local noRef = restore({ kind = "diff", doc = 1 })
+		expect(top(noRef).kind).toBe("detail")
+	end)
+
+	it("a compare route comes back marked reloaded and runs nothing until r", function()
+		local s, trace = restore({ kind = "compare", ref = POD, across = "*" })
+		expect(top(s).kind).toBe("compare")
+		expect(top(s).reloaded).toBe(true)
+		for _, run in trace.runs do
+			expect((string.find(table.concat(run.argv :: { string }, " "), "config view", 1, true))).toBeNil()
+		end
+		local _, effects = State.update(s, W.key("r"))
+		expect(#effectsOf(effects, "run") > 0).toBe(true)
 	end)
 end)
 

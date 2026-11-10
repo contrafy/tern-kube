@@ -237,6 +237,21 @@ local function quickAction(link: LinkRequest, cx: WindowCx): RouteDecision?
 	return nil
 end
 
+-- Explore's manifest opens (B4): the file opens where Tern opens files, and
+-- the focus stays in the pane that asked, so its next keys do not edit it.
+local function openFile(link: LinkRequest, cx: WindowCx)
+	local f = Quick.decodeFile(link.url)
+	if f == nil then
+		cx:toast("error", "Tern Kube: not opened", "only absolute paths of manifest files open from a tern-kube link")
+		return
+	end
+	cx:open(f.path .. (if f.line then ":" .. string.format("%d", f.line) else ""), nil, { focus = false })
+	local pane = link.pane
+	if pane and cx.session:focused() ~= pane then
+		cx.layout:focus(pane)
+	end
+end
+
 -- Every tern-kube:// URL must be claimed here: an unclaimed one, or a
 -- handler error, falls through to the OS, which shows a "no application"
 -- dialog on macOS.
@@ -257,6 +272,15 @@ tern.route.link(function(link: LinkRequest, cx: WindowCx): RouteDecision?
 			end
 		end
 		return { block = SETTINGS, args = args }
+	end
+	if string.sub(link.url, 1, #Quick.FILE_SCHEME) == Quick.FILE_SCHEME then
+		local ok, err = pcall(function()
+			openFile(link, cx)
+		end)
+		if not ok then
+			log.warn("tern-kube file open failed", link.url, tostring(err))
+		end
+		return { handled = true }
 	end
 	if string.sub(link.url, 1, #Quick.SCHEME) == Quick.SCHEME then
 		local decision: RouteDecision? = nil

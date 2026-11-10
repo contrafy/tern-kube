@@ -23,8 +23,14 @@
 #                     panes still get the sandbox rc. --print shows the
 #                     environment. TK_DEV_KUBE_EDITOR sets KUBE_EDITOR in
 #                     every pane and split (sandbox rc files)
-#   link [DIR]        point <sandbox>/cfg/plugins/tern-kube.path at the repo root
-#                     (or DIR, e.g. a snapshot copy) and reload the daemon
+#   link [--live] [DIR]
+#                     copy the repo root (or DIR) to <sandbox>/pkg without
+#                     .git, .sandbox and .tools, point <sandbox>/cfg/plugins/
+#                     tern-kube.path at the copy and reload the daemon. Tern
+#                     reloads a linked plugin on any file change below it
+#                     (.git included), so a live link reloads on every
+#                     edit, commit or checkout; run link again to pick up
+#                     edits. --live links DIR itself (reload on change)
 #   unlink            remove the link and reload
 #   reload            reload the sandbox daemon's plugins
 #   list              plugins of the sandbox daemon
@@ -434,8 +440,17 @@ start)
 	exec "$tern_bin" --control "$ctl_sock" "$repo"
 	;;
 link)
+	live=0
+	if [ "${1:-}" = --live ]; then
+		live=1
+		shift
+	fi
 	mkdir -p "$TERN_CONFIG_DIR/plugins"
 	dir=$(CDPATH= cd -- "${1:-$repo}" && pwd)
+	if [ $live = 0 ] && [ "$dir" != "$sb/pkg" ]; then
+		rsync -a --delete --exclude .git --exclude .sandbox --exclude .tools "$dir/" "$sb/pkg/"
+		dir=$sb/pkg
+	fi
 	printf '%s\n' "$dir" >"$TERN_CONFIG_DIR/plugins/tern-kube.path"
 	bounded 30 "$tern_bin" plugin reload
 	;;
