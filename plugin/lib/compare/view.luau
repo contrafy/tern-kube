@@ -387,7 +387,10 @@ function M.pair(cell: Cell, result: Objdiff.Result?, cols: { Column }, notice: s
 	if result then
 		local presence = cell.state == "missing" or cell.state == "extra"
 		for i, seg in result.summary.segments do
-			table.insert(out, SegCard.card(seg, "seg" .. i, presence))
+			table.insert(
+				out,
+				SegCard.card(seg, "seg" .. i, presence, if seg.action == "modify" then "differs" else nil)
+			)
 		end
 	end
 	return out

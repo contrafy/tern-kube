@@ -94,13 +94,13 @@ local RESOURCE_TONE: { [string]: string } = {
 	unknown = "warning",
 }
 
-local SOURCE_TONE: { [string]: string } = {
-	record = "muted",
-	["record-earliest"] = "accent",
-	["chart-dir"] = "accent",
-	["chart-source"] = "accent",
-	["record-suspect"] = "warning",
-	unavailable = "warning",
+-- Where the defaults column came from, in words (Values.note explains more).
+local SOURCE_TEXT: { [string]: { string } } = {
+	["record-earliest"] = { "chart defaults from an earlier revision", "accent" },
+	["chart-dir"] = { "chart defaults from the repository's chart", "accent" },
+	["chart-source"] = { "chart defaults from the configured chart source", "accent" },
+	["record-suspect"] = { "chart defaults may include reused values", "warning" },
+	unavailable = { "chart defaults unavailable", "warning" },
 }
 
 -- Helpers --------------------------------------------------------------------
@@ -406,7 +406,16 @@ local function maskText(v: Ctx, text: string, secrets: { string }): (string, num
 	return if v.policy.showSecrets then text else masked, n
 end
 
--- Manifest text with Secret data masked (Yaml.redact) and echoed secrets
+-- Secret documents masked by Yaml.redact, without the byte counts it prints.
+local function redactDocs(v: Ctx, lines: { string }, docs: { Yaml.Doc }): { string }
+	local out = Yaml.redact(lines, docs, v.policy)
+	for i, l in out do
+		out[i] = Redact.lengthless(l)
+	end
+	return out
+end
+
+-- Manifest text with Secret data masked (redactDocs) and echoed secrets
 -- replaced; returns the text, whether a Secret was in it, and how many
 -- echoes were found.
 local function maskManifest(v: Ctx, text: string, secrets: { string }): (string, boolean, number)
@@ -418,7 +427,7 @@ local function maskManifest(v: Ctx, text: string, secrets: { string }): (string,
 			secret = true
 		end
 	end
-	local masked = table.concat(Yaml.redact(lines, split.docs, v.policy), "\n")
+	local masked = table.concat(redactDocs(v, lines, split.docs), "\n")
 	local out, echoed = maskText(v, masked, secrets)
 	return out, secret, echoed
 end
@@ -563,7 +572,9 @@ local function revisionRow(history: { HelmTypes.Revision }?, n: number?): HelmTy
 	return nil
 end
 
-local function navChips(v: Ctx): Node
+-- Diff vs previous needs a revision below the shown one, rollback a deployed
+-- or superseded one below the latest (what = and ctrl+r would otherwise toast).
+local function navChips(v: Ctx, revision: number, history: { HelmTypes.Revision }?): Node
 	local list: { { string } } = {
 		{ "History (h)", "helm-nav=history", "Revisions with status and description" },
 		{ "Values (v)", "helm-nav=values", "User-supplied values against the chart defaults" },
@@ -571,13 +582,15 @@ local function navChips(v: Ctx): Node
 		{ "Notes (N)", "helm-nav=notes", "NOTES.txt as helm printed it" },
 		{ "Hooks (K)", "helm-nav=hooks", "Hooks and their last run" },
 		{ "Resources (R)", "helm-nav=resources", "Manifest objects and whether they exist" },
-		{ "Diff vs previous (=)", "helm-nav=diff", "What changed from the previous revision" },
 	}
+	if revision > 1 then
+		table.insert(list, { "Diff vs previous (=)", "helm-nav=diff", "What changed from the previous revision" })
+	end
 	local out: { Node } = {}
 	for i, c in list do
 		table.insert(out, v.chip(c[1], c[2], { key = "h" .. i, title = c[3] }))
 	end
-	if v.config.mutations.enabled then
+	if v.config.mutations.enabled and history and Helm.defaultTarget(history) then
 		table.insert(
 			out,
 			v.chip("Rollback (ctrl+r)", "helm-rollback", {
@@ -640,8 +653,9 @@ local function valuesSummary(v: Ctx): Node
 	if subcharts > 0 then
 		table.insert(spans, ui.span(string.format(" · %d for subcharts", subcharts), "muted"))
 	end
-	if cmp.source ~= "record" then
-		table.insert(spans, ui.span("  defaults: " .. cmp.source, SOURCE_TONE[cmp.source] or "muted"))
+	local source = SOURCE_TEXT[cmp.source]
+	if source then
+		table.insert(spans, ui.span("  " .. source[1], source[2]))
 	end
 	return ui.text(spans, { key = "values", role = "tern-kube.helm-values-summary" })
 end
@@ -720,7 +734,7 @@ local function releaseBody(v: Ctx): { Node }
 	end
 	local out: { Node } = {
 		ui.row(head, { key = "head", wrap = true, role = "tern-kube.helm-head" }),
-		navChips(v),
+		navChips(v, st.revision, rows),
 	}
 	if history and history.status == "error" then
 		table.insert(out, errorNode("history: " .. (history.error or "helm failed"), "error-history"))
@@ -881,8 +895,9 @@ local function banner(cmp: Values.Compare): Node?
 			return nil
 		end
 	end
+	local source = SOURCE_TEXT[cmp.source]
 	return ui.text(
-		{ ui.span(note :: string, SOURCE_TONE[cmp.source] or "muted") },
+		{ ui.span(note :: string, if source then source[2] else "muted") },
 		{ key = "source", role = "tern-kube.helm-defaults-source" }
 	)
 end
@@ -1052,13 +1067,13 @@ local function sourceOf(lines: { string }, first: number): string?
 	return nil
 end
 
--- One card per document: Secret data masked by Yaml.redact, echoed secrets
+-- One card per document: Secret data masked by redactDocs, echoed secrets
 -- per document (a multi-line secret must not shift the line mapping).
 -- Returns the cards, whether a Secret was among them and the echo count.
 local function docCards(v: Ctx, original: string, secrets: { string }, key: string): ({ Node }, boolean, number)
 	local split = Yaml.split(original)
 	local raw = Yaml.lines(original)
-	local masked = Yaml.redact(raw, split.docs, v.policy)
+	local masked = redactDocs(v, raw, split.docs)
 	local out: { Node } = {}
 	local secret, echoed = false, 0
 	for i, d in split.docs do
@@ -1197,7 +1212,9 @@ local function hooksBody(v: Ctx): { Node }
 		if #hk.deletePolicies > 0 then
 			table.insert(items, { { "Delete policy" }, { table.concat(hk.deletePolicies, ", ") } })
 		end
-		local run: { SpanLike } = { ui.span(if hk.phase ~= "" then hk.phase else "never ran", PHASE_TONE[hk.phase]) }
+		local run: { SpanLike } = {
+			ui.span(if hk.phase ~= "" then hk.phase else "never ran in this revision", PHASE_TONE[hk.phase]),
+		}
 		if hk.startedAt then
 			table.insert(run, ui.span("  started " .. (hk.startedAt :: string), "muted"))
 		end
@@ -1571,8 +1588,22 @@ M.HINTS = {
 	["helm-diff"] = "h history · ctrl+r roll back to the older revision · Y copy · r refresh · esc back",
 }
 
-function M.hint(route: Route): string?
-	return M.HINTS[route.kind]
+-- The release line leaves out = and ctrl+r when they could only toast that
+-- there is no earlier revision (as its chips do).
+function M.hint(route: Route, h: Helm.H?): string?
+	local hint = M.HINTS[route.kind]
+	if route.kind ~= "helm-release" or h == nil or hint == nil then
+		return hint
+	end
+	local rev = Helm.revisionOf(h, route)
+	if rev and rev <= 1 then
+		hint = string.gsub(hint, " = diff vs previous ·", "")
+	end
+	local history = Helm.historyLoad(h, route)
+	if history and history.data and Helm.defaultTarget(history.data) == nil then
+		hint = string.gsub(hint, " ctrl%+r rollback ·", "")
+	end
+	return hint
 end
 
 return M

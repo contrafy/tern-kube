@@ -285,8 +285,8 @@ describe("helm.values compare", function()
 		local password = byPath["auth.password"]
 		expect(password.state).toBe("same-as-default")
 		expect(password.masked).toBe(true)
-		expect(password.user).toBe("<redacted: 16 bytes>")
-		expect(password.default).toBe("<redacted: 16 bytes>")
+		expect(password.user).toBe("<redacted>")
+		expect(password.default).toBe("<redacted>")
 		expect(byPath["config.mode"].masked).toBe(false)
 		for _, r in rows do
 			for _, v in { r.default, r.user, r.computed } do

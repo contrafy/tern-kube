@@ -78,9 +78,12 @@ function M.sensitiveKey(name: string): boolean
 	return false
 end
 
+-- The mask of Helm values and their echoes: no byte count, which would tell
+-- part of the secret (the same mask as the compare views).
+M.MASK = "<redacted>"
+
 function M.isMask(value: any): boolean
-	return type(value) == "string"
-		and (value == "<redacted>" or string.match(value, "^<redacted: %d+ bytes[^>]*>$") ~= nil)
+	return type(value) == "string" and (value == M.MASK or string.match(value, "^<redacted: %d+ bytes[^>]*>$") ~= nil)
 end
 
 function M.maskValue(value: any, suffix: string?): string
@@ -90,7 +93,12 @@ function M.maskValue(value: any, suffix: string?): string
 	if type(value) == "string" then
 		return string.format("<redacted: %d bytes%s>", #value, suffix or "")
 	end
-	return "<redacted>"
+	return M.MASK
+end
+
+-- Text masked by the sized masks (Secret documents) with the sizes dropped.
+function M.lengthless(text: string): string
+	return (string.gsub(text, "<redacted: %d+ bytes[^>]*>", M.MASK))
 end
 
 -- Strict mode only: names that are often but not always secret (`tlsCert`,
@@ -170,7 +178,7 @@ local function maskShape(w: Walk, s: string): string
 	if privateKey(s) or jwt(s) or bearer(s) then
 		addSecret(w, s)
 		w.masked += 1
-		return M.maskValue(s)
+		return M.MASK
 	end
 	local parts: { string } = {}
 	local pos = 1
@@ -180,7 +188,7 @@ local function maskShape(w: Walk, s: string): string
 			break
 		end
 		addSecret(w, password)
-		table.insert(parts, string.sub(s, pos, first - 1) .. prefix .. M.maskValue(password) .. "@")
+		table.insert(parts, string.sub(s, pos, first - 1) .. prefix .. M.MASK .. "@")
 		pos = last + 1
 	end
 	if pos == 1 then
@@ -200,13 +208,13 @@ local function walk(w: Walk, v: any, hidden: boolean): any
 		if hidden then
 			addSecret(w, v)
 			w.masked += 1
-			return M.maskValue(v)
+			return M.MASK
 		end
 		return maskShape(w, v)
 	elseif kind == "number" then
 		if hidden then
 			w.masked += 1
-			return M.maskValue(v)
+			return M.MASK
 		end
 		return v
 	elseif kind == "table" then
@@ -300,7 +308,7 @@ function M.maskEchoes(text: string, secrets: { string }): (string, number)
 	local pos = 1
 	for _, h in hits do
 		table.insert(out, string.sub(text, pos, h.first - 1))
-		table.insert(out, M.maskValue(h.secret))
+		table.insert(out, M.MASK)
 		pos = h.last + 1
 	end
 	table.insert(out, string.sub(text, pos))

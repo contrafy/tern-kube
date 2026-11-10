@@ -142,7 +142,8 @@ describe("helm.revdiff diff", function()
 		local result = RevDiff.diff(old, new, opts({ showSecrets = false, strict = false }))
 		local segs = byKey(result)
 		local secret = segs["v1.Secret.tern-test-helm.web-b-web-auth"]
-		expect(Diffseg.text(secret)).toContain("+  apiToken: '<redacted: 15 bytes>'")
+		-- A longer token must not show through as a longer mask (EXP-U8).
+		expect((string.find(Diffseg.text(secret), "bytes", 1, true))).toBeNil()
 		expect(result.masked["v1.Secret.tern-test-helm.web-b-web-auth"]).toBe(true)
 		expect(result.masked["v1.ConfigMap.tern-test-helm.web-b-web-config"]).toBeNil()
 		expect((string.find(allText(result), "REDACTME", 1, true))).toBeNil()

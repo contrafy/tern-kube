@@ -232,6 +232,9 @@ describe("compare pair", function()
 		expect(text).toContain("differs (+1 -1)")
 		expect(text).toContain("spec.replicas 2 -> 3")
 		expect(text).toContain("+  replicas: 3")
+		-- EXP-U12: "MODIFY" read like a pending mutation; nothing changes here.
+		expect(text).toContain("DIFFERS  Deployment")
+		expect((string.find(text, "MODIFY", 1, true))).toBeNil()
 	end)
 
 	it("names the side an object is missing from and collapses the present side", function()

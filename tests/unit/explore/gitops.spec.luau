@@ -783,7 +783,7 @@ describe("explore gitops: drift", function()
 		expect(driftOf(g, ctx, id :: string).status).toBe("ok")
 		local _, nav = G.press(w, g, ctx, { kind = "drift", source = id }, nil, "X")
 		expect(nav).toBeNil()
-		expect(G.toastTexts(w)[1]).toContain("Charts are not exported")
+		expect(G.toastTexts(w)[1]).toContain("Chart objects are not exported")
 		-- Applying the render must land where helm installs it, not in
 		-- kubectl's default namespace (the documents carry no namespace).
 		G.press(w, g, ctx, { kind = "drift", source = id }, nil, "A")
@@ -1389,6 +1389,365 @@ describe("explore gitops: git flow", function()
 		expect(Gitops.slug("3 ConfigMaps from tern-test-a/")).toBe("3-configmaps-from-tern-test-a")
 		expect(Gitops.slug("!!!")).toBe("export")
 		expect(#Gitops.slug(string.rep("abc ", 30)) <= 40).toBe(true)
+	end)
+end)
+
+-- GIT-F10: a Helm report offered E/X and then refused every object, even
+-- live-only ones the chart does not render. Those are plain objects and can
+-- be exported (not into the chart directory); chart objects still cannot.
+describe("explore gitops: Helm report export", function()
+	local HELM_NS = "tern-test-helm"
+	local STRAY = '{"apiVersion":"v1","kind":"ConfigMap","metadata":{"name":"stray","namespace":"'
+		.. HELM_NS
+		.. '","uid":"u1","resourceVersion":"7","creationTimestamp":"2026-01-01T00:00:00Z"},"data":{"k":"v"}}'
+
+	local function helmReport(): (World, Gitops.G, Gitops.Ctx, string)
+		local w = G.new()
+		table.insert(w.rendered, {
+			kind = "helm",
+			path = "/repo/drift/chart",
+			helm = { release = "web", namespace = HELM_NS, values = {} },
+			text = fixtures.read("gitops/captured/helm-web.yaml"),
+		})
+		w.answer = function(argv)
+			if table.find(argv, "get") and table.find(argv, HELM_NS) then
+				return G.ok('{"apiVersion":"v1","kind":"List","items":[' .. STRAY .. "]}")
+			end
+			return nil
+		end
+		local ctx = G.ctx(nil)
+		local g = G.ready(w, ctx)
+		local id = "helm:/repo/drift/chart:web"
+		step(w, g, ctx, function(effects)
+			Gitops.startDriftReport(g, ctx, id, false, effects)
+		end)
+		expect(driftOf(g, ctx, id).status).toBe("ok")
+		return w, g, ctx, id
+	end
+
+	local function entryItem(g: Gitops.G, ctx: Gitops.Ctx, route: Gitops.Route, prefix: string): any
+		for _, item in Gitops.items(g, ctx, route) do
+			if string.sub(item.key, 1, #prefix) == prefix then
+				return item
+			end
+		end
+		return nil
+	end
+
+	it("X exports only the unmanaged objects, into the repository's export directory", function()
+		local w, g, ctx, id = helmReport()
+		local route = { kind = "drift", source = id } :: Gitops.Route
+		expect(entryItem(g, ctx, route, "unmanaged:/ConfigMap/" .. HELM_NS .. "/stray") ~= nil).toBe(true)
+		local _, nav = G.press(w, g, ctx, route, nil, "X")
+		expect((nav :: any).push).toEqual({ kind = "export" })
+		local ex = g.export :: Gitops.ExportState
+		expect(#ex.objects).toBe(1)
+		expect(ex.objects[1].metadata.name).toBe("stray")
+		expect(ex.dir ~= "/repo/drift/chart").toBe(true)
+		expect(ex.label).toBe("1 unmanaged object from " .. driftOf(g, ctx, id).source.label)
+	end)
+
+	it("E on an object the chart renders is refused and names the way out", function()
+		local w, g, ctx, id = helmReport()
+		local route = { kind = "drift", source = id } :: Gitops.Route
+		local chart = entryItem(g, ctx, route, "missing:") or entryItem(g, ctx, route, "changed:")
+		expect(chart ~= nil).toBe(true)
+		local _, nav = G.press(w, g, ctx, route, chart, "E")
+		expect(nav).toBeNil()
+		expect(G.toastTexts(w)).toEqual({
+			"Chart objects are not exported | Edit the chart; E and X export unmanaged objects only",
+		})
+		local stray = entryItem(g, ctx, route, "unmanaged:")
+		local _, ok = G.press(w, g, ctx, route, stray, "E")
+		expect((ok :: any).push).toEqual({ kind = "export" })
+	end)
+
+	-- GIT-F10/F15: the footer offered keys that only toast a refusal.
+	it("footers offer export as unmanaged-only on Helm reports and ctrl+d only on unmanaged items", function()
+		local GitopsView = require("../../../plugin/lib/gitops/view")
+		local _, g, ctx, id = helmReport()
+		local report = { kind = "drift", source = id } :: Gitops.Route
+		local hint = GitopsView.hint(report, g, ctx)
+		expect(hint).toContain("E export unmanaged")
+		expect((string.find(hint, "X export all ·", 1, true))).toBeNil()
+		local chart = entryItem(g, ctx, report, "missing:") or entryItem(g, ctx, report, "changed:")
+		local item = GitopsView.hint({ kind = "drift", source = id, item = chart.key } :: any, g, ctx)
+		expect((string.find(item, "ctrl+d", 1, true))).toBeNil()
+		expect((string.find(item, "E export", 1, true))).toBeNil()
+		local stray = entryItem(g, ctx, report, "unmanaged:")
+		local other = GitopsView.hint({ kind = "drift", source = id, item = stray.key } :: any, g, ctx)
+		expect(other).toContain("ctrl+d delete")
+		expect(other).toContain("E export")
+		expect((string.find(other, "a apply", 1, true))).toBeNil()
+	end)
+
+	it("plain reports keep E export and X export all; changed items have no ctrl+d", function()
+		local GitopsView = require("../../../plugin/lib/gitops/view")
+		local w, g, ctx = setup()
+		step(w, g, ctx, function(effects)
+			Gitops.startDriftReport(g, ctx, DRIFT, false, effects)
+		end)
+		local report = { kind = "drift", source = DRIFT } :: Gitops.Route
+		expect(GitopsView.hint(report, g, ctx)).toContain("E export · X export all")
+		local item = { kind = "drift", source = DRIFT, item = "changed:apps/Deployment/tern-test-drift/web" }
+		local hint = GitopsView.hint(item :: any, g, ctx)
+		expect(hint).toContain("a apply")
+		expect(hint).toContain("E export")
+		expect((string.find(hint, "ctrl+d", 1, true))).toBeNil()
+	end)
+end)
+
+-- GIT-F11/F13, EXP-B7: a Helm-managed object has no hand-written manifest;
+-- `=` said "E exports it" although the repository's chart renders it, and
+-- ctrl+g on a release picked a values file over the deployed values (which
+-- alone reproduce --set) or, before the index existed, the whole chooser.
+describe("explore gitops: Helm-managed objects", function()
+	local HELM_NS = "tern-test-helm"
+	local CHART = "/repo/helm/chart"
+	local DEPLOYED = "helm:" .. CHART .. ":" .. HELM_NS .. "/shop-a:deployed"
+	local SHOP_ROW = {
+		name = "shop-a",
+		namespace = HELM_NS,
+		revision = 3,
+		updated = "2026-01-01T00:03:00Z",
+		updatedAt = nil,
+		status = "deployed",
+		chart = "shop-0.1.0",
+		chartName = "shop",
+		chartVersion = "0.1.0",
+		appVersion = "1.27",
+	} :: any
+
+	local function managed(release: string, name: string): (any, Ref)
+		local obj = {
+			apiVersion = "v1",
+			kind = "ConfigMap",
+			metadata = {
+				name = name,
+				namespace = HELM_NS,
+				labels = { ["app.kubernetes.io/managed-by"] = "Helm" },
+				annotations = {
+					["meta.helm.sh/release-name"] = release,
+					["meta.helm.sh/release-namespace"] = HELM_NS,
+				},
+			},
+		}
+		return obj, { kind = "ConfigMap", namespace = HELM_NS, name = name, source = "live" }
+	end
+
+	local function world(files: { [string]: string }?): (World, Gitops.G, Gitops.Ctx)
+		local w = G.new(files or G.helmFiles())
+		local ctx = G.ctx(nil, HELM_NS)
+		ctx.helm = G.HELM
+		return w, G.ready(w, ctx), ctx
+	end
+
+	it("= on an object of a release diffs it against the detected chart's render", function()
+		local w, g, ctx = world()
+		local obj, ref = managed("shop-a", "web-shop-config")
+		ctx.findObject = function(r: Ref): any
+			return if r.name == ref.name then obj else nil
+		end
+		local route = { kind = "diff", ref = ref, doc = 1 } :: Gitops.Route
+		step(w, g, ctx, function(effects)
+			Gitops.enter(g, ctx, route, false, effects)
+		end)
+		local load = g.diffs[Gitops.diffId(route)]
+		expect(load.status).toBe("ok")
+		expect((load.doc :: any).rendered).toBe(true)
+		expect(driftOf(g, ctx, DEPLOYED) ~= nil).toBe(true)
+		expect(find(G.lines(w), " template shop-a ") ~= nil).toBe(true)
+	end)
+
+	it("an object of a release without a chart here says so instead of offering export", function()
+		local w, g, ctx = world()
+		local obj, ref = managed("web-b", "web-b-web-config")
+		ctx.findObject = function(): any
+			return obj
+		end
+		local route = { kind = "diff", ref = ref, doc = 1 } :: Gitops.Route
+		step(w, g, ctx, function(effects)
+			Gitops.enter(g, ctx, route, false, effects)
+		end)
+		local load = g.diffs[Gitops.diffId(route)]
+		expect(load.status).toBe("nomatch")
+		expect(load.helm).toBe(HELM_NS .. "/web-b")
+		local GitopsView = require("../../../plugin/lib/gitops/view")
+		local hint = GitopsView.hint(route, g, ctx)
+		expect((string.find(hint, "a apply", 1, true))).toBeNil()
+		expect((string.find(hint, "E export", 1, true))).toBeNil()
+		w.toasts = {}
+		step(w, g, ctx, function(effects)
+			Gitops.openManifest(g, ctx, ref, effects)
+		end)
+		expect(G.toastTexts(w)[1]).toContain("Managed by Helm release " .. HELM_NS .. "/web-b")
+	end)
+
+	it("ctrl+g on a release prefers the deployed values of its best chart", function()
+		local files = G.helmFiles()
+		files["/repo/helm/values-shop-a.yaml"] = files["/repo/helm/values-staging.yaml"]
+		local _, g, ctx = world(files)
+		-- The file names the release: it outscores the deployed values.
+		expect(table.find(Gitops.chartDirs(g)[1].valuesFiles, "/repo/helm/values-shop-a.yaml") ~= nil).toBe(true)
+		expect(Gitops.releaseSource(g, ctx, SHOP_ROW)).toBe(DEPLOYED)
+	end)
+
+	it("ctrl+g before the index exists goes to the release's drift once the scan is done", function()
+		local w = G.new(G.helmFiles())
+		local ctx = G.ctx(nil, HELM_NS)
+		ctx.helm = G.HELM
+		local g = Gitops.new(G.ROOT)
+		expect(Gitops.releaseSource(g, ctx, SHOP_ROW)).toBeNil()
+		local chooser = { kind = "drift" } :: Gitops.Route
+		expect(Gitops.takeNav(g, ctx, chooser)).toBeNil()
+		step(w, g, ctx, function(effects)
+			Gitops.enter(g, ctx, chooser, false, effects)
+		end)
+		expect(Gitops.takeNav(g, ctx, chooser)).toEqual({ replace = { kind = "drift", source = DEPLOYED } })
+		-- Taken once: the user may go back to the chooser.
+		expect(Gitops.takeNav(g, ctx, chooser)).toBeNil()
+	end)
+
+	it("a pending ctrl+g is dropped once the user left the chooser", function()
+		local w = G.new(G.helmFiles())
+		local ctx = G.ctx(nil, HELM_NS)
+		ctx.helm = G.HELM
+		local g = Gitops.new(G.ROOT)
+		Gitops.releaseSource(g, ctx, SHOP_ROW)
+		step(w, g, ctx, function(effects)
+			Gitops.ensureIndex(g, ctx, effects)
+		end)
+		expect(Gitops.takeNav(g, ctx, { kind = "list" } :: any)).toBeNil()
+		expect(Gitops.takeNav(g, ctx, { kind = "drift" } :: Gitops.Route)).toBeNil()
+	end)
+
+	-- GIT-F15: a chart shared by many releases matched every release of it
+	-- cluster-wide, each twice; the chooser keeps the namespace in scope.
+	it("the chooser hides chart guesses of other namespaces unless a release asked", function()
+		local w = G.new(G.helmFiles())
+		w.answer = function(argv)
+			if argv[1] == G.HELM and table.find(argv, "list") then
+				local list = fixtures.read("helm/captured/list.json")
+				local other = string.gsub(list, '"namespace":"tern%-test%-helm"', '"namespace":"other-team"')
+				return G.ok((string.gsub(list, "%]%s*$", "," .. string.sub(other, 2))))
+			end
+			return nil
+		end
+		local ctx = G.ctx(nil, HELM_NS)
+		ctx.helm = G.HELM
+		local g = G.ready(w, ctx)
+		step(w, g, ctx, function(effects)
+			Gitops.enter(g, ctx, { kind = "drift" } :: Gitops.Route, false, effects)
+		end)
+		local shown, hidden = Gitops.chooserSources(g, ctx)
+		expect(hidden > 0).toBe(true)
+		for _, s in shown do
+			expect((string.find(s.id, "other-team", 1, true))).toBeNil()
+		end
+		local other = table.clone(SHOP_ROW)
+		other.namespace = "other-team"
+		local id = Gitops.releaseSource(g, ctx, other) :: string
+		local again = Gitops.chooserSources(g, ctx)
+		local found = false
+		for _, s in again do
+			found = found or s.id == id
+		end
+		expect(found).toBe(true)
+		expect(Gitops.findSource(g, ctx, id) ~= nil).toBe(true)
+	end)
+end)
+
+-- GIT-F12: after an apply or an export the report kept showing the old
+-- diff, and `r` on it recompared against the old index (exported files
+-- stayed unmanaged until the chooser's own `r`).
+describe("explore gitops: freshness after apply and export", function()
+	local REPORT = { kind = "drift", source = DRIFT } :: Gitops.Route
+
+	local function report(): (World, Gitops.G, Gitops.Ctx)
+		local w, g, ctx = setup()
+		step(w, g, ctx, function(effects)
+			Gitops.enter(g, ctx, REPORT, false, effects)
+		end)
+		expect(driftOf(g, ctx, DRIFT).status).toBe("ok")
+		return w, g, ctx
+	end
+
+	local function diffRuns(w: World): number
+		local n = 0
+		for _, l in G.lines(w) do
+			if string.find(l, " diff ", 1, true) then
+				n += 1
+			end
+		end
+		return n
+	end
+
+	it("an apply opened from the report marks it stale; returning to it compares again", function()
+		local w, g, ctx = report()
+		local items = Gitops.items(g, ctx, REPORT)
+		G.press(w, g, ctx, REPORT, items[2], "a")
+		expect(driftOf(g, ctx, DRIFT).stale).toBe(true)
+		local GitopsView = require("../../../plugin/lib/gitops/view")
+		-- The report shows it while the approve block is open.
+		local body = GitopsView.body({
+			g = g,
+			gctx = ctx,
+			route = REPORT,
+			grid = function()
+				return {}
+			end,
+			chip = function(text: string): any
+				return { k = "text", p = { text = text } }
+			end,
+		} :: any)
+		local nodes = require("../../lib/nodes")
+		expect(nodes.text({ k = "col", p = {}, c = body } :: any)).toContain("Out of date")
+		w.runs = {}
+		step(w, g, ctx, function(effects)
+			Gitops.enter(g, ctx, REPORT, false, effects)
+		end)
+		expect(diffRuns(w)).toBe(1)
+		local load = driftOf(g, ctx, DRIFT)
+		expect(load.status).toBe("ok")
+		expect(load.stale).toBeNil()
+		-- Fresh again: a plain return does not compare once more.
+		w.runs = {}
+		step(w, g, ctx, function(effects)
+			Gitops.enter(g, ctx, REPORT, false, effects)
+		end)
+		expect(diffRuns(w)).toBe(0)
+	end)
+
+	it("r on a report rescans the manifests first, then compares", function()
+		local w, g, ctx = report()
+		w.effects = {}
+		w.runs = {}
+		step(w, g, ctx, function(effects)
+			Gitops.enter(g, ctx, REPORT, true, effects)
+		end)
+		expect(#ofType(w.effects, "scan")).toBe(1)
+		expect(diffRuns(w)).toBe(1)
+		expect(driftOf(g, ctx, DRIFT).status).toBe("ok")
+	end)
+
+	it("written export files are in the report when it is opened again", function()
+		local w, g, ctx = report()
+		local items = Gitops.items(g, ctx, REPORT)
+		local _, nav = G.press(w, g, ctx, REPORT, items[8], "E")
+		expect((nav :: any).push).toEqual({ kind = "export" })
+		local route = { kind = "export" } :: Gitops.Route
+		G.press(w, g, ctx, route, nil, "w")
+		G.press(w, g, ctx, route, nil, "y")
+		expect((g.export :: any).status).toBe("written")
+		expect(driftOf(g, ctx, DRIFT).stale).toBe(true)
+		w.effects = {}
+		step(w, g, ctx, function(effects)
+			Gitops.enter(g, ctx, REPORT, false, effects)
+		end)
+		expect(#ofType(w.effects, "scan")).toBe(1)
+		local load = driftOf(g, ctx, DRIFT)
+		expect(load.status).toBe("ok")
+		expect((load.report :: any).counts.unmanaged).toBe(0)
 	end)
 end)
 

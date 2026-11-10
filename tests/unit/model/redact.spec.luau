@@ -97,6 +97,16 @@ describe("redact.maskValue", function()
 	end)
 end)
 
+-- Helm views mask without a byte count (EXP-U8): Secret documents come
+-- masked with sizes from Yaml.redact, and a size tells part of the secret.
+describe("redact.lengthless", function()
+	it("drops the size of every sized mask and leaves other text alone", function()
+		expect(Redact.lengthless("  password: '<redacted: 16 bytes>'")).toBe("  password: '<redacted>'")
+		expect(Redact.lengthless("a <redacted: 4 bytes base64> b <redacted>")).toBe("a <redacted> b <redacted>")
+		expect(Redact.lengthless("16 bytes")).toBe("16 bytes")
+	end)
+end)
+
 describe("redact.notices", function()
 	local MASKED = "masked text"
 
@@ -173,7 +183,8 @@ end)
 
 describe("redact.maskTree", function()
 	-- Helm values are not Secrets, but charts copy them into ConfigMaps,
-	-- notes and env vars; the key name rule is on for them in every mode.
+	-- notes and env vars; the key name rule is on for them in every mode. The
+	-- mask carries no length: that would tell part of the secret (EXP-U8).
 	it("masks scalars under sensitive keys, whole subtrees under sensitive tables", function()
 		local values = {
 			auth = { password = "hunter2-REDACTME", apiToken = "tok-REDACTME", user = "app" },
@@ -183,8 +194,8 @@ describe("redact.maskTree", function()
 		}
 		local m = Redact.maskTree(values, Redact.DEFAULT, shape)
 		expect(m.value).toEqual({
-			auth = { password = "<redacted: 16 bytes>", apiToken = "<redacted: 12 bytes>", user = "app" },
-			credentials = { aws = { id = "<redacted: 11 bytes>", region = "<redacted: 2 bytes>" } },
+			auth = { password = "<redacted>", apiToken = "<redacted>", user = "app" },
+			credentials = { aws = { id = "<redacted>", region = "<redacted>" } },
 			image = { tag = "1.27" },
 			replicaCount = 2,
 		})
@@ -206,8 +217,8 @@ describe("redact.maskTree", function()
 		local pem = "-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASC\n-----END PRIVATE KEY-----\n"
 		local values = { config = { dsn = "postgres://app:hunter2-REDACTME@db:5432/app", tlsPem = pem } }
 		local m = Redact.maskTree(values, Redact.DEFAULT, shape)
-		expect(m.value.config.dsn).toBe("postgres://app:<redacted: 16 bytes>@db:5432/app")
-		expect(m.value.config.tlsPem).toBe("<redacted: " .. #pem .. " bytes>")
+		expect(m.value.config.dsn).toBe("postgres://app:<redacted>@db:5432/app")
+		expect(m.value.config.tlsPem).toBe("<redacted>")
 		expect(m.masked).toBe(2)
 		expect(table.find(m.secrets, "hunter2-REDACTME") ~= nil).toBe(true)
 		expect(table.find(m.secrets, pem) ~= nil).toBe(true)
@@ -220,7 +231,7 @@ describe("redact.maskTree", function()
 	-- masked, a list of plain strings is not.
 	it("walks lists and keeps the sensitive context of their parent key", function()
 		local m = Redact.maskTree({ tokens = { "aaaa-1", "bbbb-2" }, hosts = { "a.example" } }, Redact.DEFAULT, shape)
-		expect(m.value).toEqual({ tokens = { "<redacted: 6 bytes>", "<redacted: 6 bytes>" }, hosts = { "a.example" } })
+		expect(m.value).toEqual({ tokens = { "<redacted>", "<redacted>" }, hosts = { "a.example" } })
 	end)
 
 	it("adds auth, cert and key names in strict mode only", function()
@@ -228,9 +239,9 @@ describe("redact.maskTree", function()
 		expect(Redact.maskTree(values, Redact.DEFAULT, shape).masked).toBe(0)
 		local m = Redact.maskTree(values, STRICT, shape)
 		expect(m.value).toEqual({
-			authConfig = { realm = "<redacted: 4 bytes>" },
-			tlsCert = "<redacted: 9 bytes>",
-			keyFile = "<redacted: 5 bytes>",
+			authConfig = { realm = "<redacted>" },
+			tlsCert = "<redacted>",
+			keyFile = "<redacted>",
 			monkey = "x",
 		})
 	end)
@@ -280,21 +291,21 @@ describe("redact.maskEchoes", function()
 		local out, n = Redact.maskEchoes(text, { "tok-REDACTME", "hunter2-REDACTME" })
 		expect(n).toBe(2)
 		expect((string.find(out, "REDACTME", 1, true))).toBeNil()
-		expect(out).toContain('dsn: "postgres://app:<redacted: 16 bytes>@db:5432/app"')
-		expect(out).toContain("API token: <redacted: 12 bytes>")
+		expect(out).toContain('dsn: "postgres://app:<redacted>@db:5432/app"')
+		expect(out).toContain("API token: <redacted>")
 	end)
 
 	-- With `pass` and `password1` both secret, shortest-first would leave
 	-- `word1` of the longer one in clear.
 	it("replaces longer secrets first and never inside an earlier mask", function()
-		local out, n = Redact.maskEchoes("a=password1 b=pass c=pass", { "pass", "password1", "bytes" })
-		expect(out).toBe("a=<redacted: 9 bytes> b=<redacted: 4 bytes> c=<redacted: 4 bytes>")
+		local out, n = Redact.maskEchoes("a=password1 b=pass c=pass", { "pass", "password1", "redacted" })
+		expect(out).toBe("a=<redacted> b=<redacted> c=<redacted>")
 		expect(n).toBe(3)
 	end)
 
 	it("ignores short, duplicate and mask-shaped entries and handles pattern characters", function()
 		local out, n = Redact.maskEchoes("x=a.b% y=on z=a.b%", { "on", "a.b%", "a.b%", "<redacted>" })
-		expect(out).toBe("x=<redacted: 4 bytes> y=on z=<redacted: 4 bytes>")
+		expect(out).toBe("x=<redacted> y=on z=<redacted>")
 		expect(n).toBe(2)
 		local same, zero = Redact.maskEchoes("nothing here", {})
 		expect(same).toBe("nothing here")
