@@ -171,6 +171,8 @@ export type Msg = {
 	-- os.time() when the result arrived / of the tick.
 	at: number?,
 	now: number?,
+	-- tick: seconds east of UTC, once the host read the zone (`date +%z`).
+	utcOffset: number?,
 	-- resize: the block's height in lines.
 	rows: number?,
 	-- key: the host's millisecond clock (tern.now); nil in tests that do not

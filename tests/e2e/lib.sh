@@ -262,9 +262,14 @@ xtext() {
 	alltext "$EX ${1:-*}" | tr '\n' ' '
 }
 
+# Explore lists are native tables: rows `.sf-tbl-row` (head `.head`, the
+# selection `.sel`), cells `.sf-tbl-c`. Tern mounts only the rows near the
+# scroll position.
+XROW="$EX .sf-tbl-row:not(.head)"
+
 # The first cell of the selected Explore row.
 xsel() {
-	texts "$EX .tk-sel .tk-c" | jq -r '.[0] // empty'
+	texts "$EX .sf-tbl-row.sel > .sf-tbl-c" | jq -r '.[0] // empty'
 }
 
 # xkey KEY...: send keys to the focused pane (the Explore block once open).
@@ -600,12 +605,14 @@ helm_world_down() {
 
 # hsel_has TEXT: the selected Explore row contains TEXT.
 hsel_has() {
-	case $(texts "$EX .tk-sel .tk-c" | jq -r 'join(" ")') in *"$1"*) true ;; *) false ;; esac
+	case $(texts "$EX .sf-tbl-row.sel > .sf-tbl-c" | jq -r 'join(" ")') in *"$1"*) true ;; *) false ;; esac
 }
 
-# hcol N COLUMNS: cell N of every visible row of the Explore grid (JSON array).
+# hcol N [COLUMNS]: cell N of every mounted row of the Explore table (JSON
+# array). COLUMNS is ignored (kept for old callers); hidden columns are not
+# in the DOM, so N counts the shown ones.
 hcol() {
-	texts "$EX .tk-grid .tk-r .tk-c" | jq -c --argjson n "$1" --argjson w "$2" '[range($n - 1; length; $w) as $i | .[$i]]'
+	texts "$XROW > .sf-tbl-c:nth-child($1)"
 }
 
 # explore_close_all: esc through a deep Helm route stack until Explore closes.

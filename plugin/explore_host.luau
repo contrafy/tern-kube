@@ -303,6 +303,31 @@ function exec(h: Host, effects: { Effect })
 	end
 end
 
+-- Seconds east of UTC. Tern's Luau reads os.date("*t") as UTC (0.9.14), so
+-- `date +%z` is asked once per plugin VM; until it answers, os.date's view.
+local zone: number? = nil
+local zoneAsked = false
+
+local function utcOffset(): number
+	if zone then
+		return zone
+	end
+	local now = os.time()
+	return os.time(os.date("*t", now) :: any) - now
+end
+
+local function askZone()
+	if zoneAsked then
+		return
+	end
+	zoneAsked = true
+	EnvHost.run({ "date", "+%z" }, { timeout_ms = 5000 }, function(res: ProcessResult)
+		if res.status == 0 then
+			zone = State.zoneOffset(res.stdout)
+		end
+	end)
+end
+
 -- Blocks get no close callback: poll the pane list, and use the same timer
 -- to age the "fetched … ago" text. Cluster data is never re-read here.
 local function watch(h: Host)
@@ -312,7 +337,7 @@ local function watch(h: Host)
 		end
 		for _, p in tern.pane.list() do
 			if p.pane == h.cx.pane then
-				dispatch(h, { t = "tick", now = os.time() })
+				dispatch(h, { t = "tick", now = os.time(), utcOffset = zone })
 				tern.timer(M.LIVENESS_MS, tick)
 				return
 			end
@@ -340,12 +365,6 @@ local function errorView(err: any): BlockView
 			},
 		} :: any,
 	}
-end
-
--- Seconds east of UTC now (Luau's os.time reads a date table as UTC).
-local function utcOffset(): number
-	local now = os.time()
-	return os.time(os.date("*t", now) :: any) - now
 end
 
 M.SCOPE_FILE = tern.plugin.data .. "/explore-scope.json"
@@ -446,6 +465,7 @@ function M.register()
 	tern.block.define("explore", {
 		init = function(cx: BlockCx, args: { string }, saved: any): Host
 			pcall(sweepTmp)
+			askZone()
 			local h: Host = {
 				s = nil :: any,
 				cx = cx,

@@ -167,6 +167,42 @@ describe("explore render: header", function()
 			keysUnique(s)
 		end
 	end)
+
+	-- Live: with live queries off the block showed an empty filter box and
+	-- "Nothing is queried until the target is resolved", as if waiting.
+	it("with live queries off shows the reason only: no filter, no waiting text", function()
+		local s = State.init(
+			{ W.link({ context = W.CTX }) },
+			nil,
+			W.config('{"explore":{"allow_live_queries":false}}'),
+			W.env()
+		)
+		local m = main(s)
+		expect(nodes.text(m)).toContain("allow_live_queries")
+		expect((string.find(nodes.text(m), "until the target is resolved", 1, true))).toBeNil()
+		expect(nodes.find(m, function(n: any): boolean
+			return n.k == "input"
+		end)).toBeNil()
+		expect(nodes.text(m)).toContain("Settings")
+	end)
+
+	-- A list opened with the lens command's `-l` must say it shows a subset,
+	-- and offer the way back to everything.
+	it("a list under a label selector shows it in the breadcrumb with a way to clear it", function()
+		local s = W.settle(
+			State.init(
+				{ W.link({ context = W.CTX, namespace = W.NS, kind = "Pod", selector = "app%3Dweb" }) },
+				nil,
+				W.config(nil),
+				W.env()
+			)
+		)
+		local m = main(s)
+		local crumbs = nodes.find(m, nodes.role("tern-kube.breadcrumb")) :: nodes.Node
+		expect(nodes.text(crumbs)).toContain("pods -l app=web")
+		expect(nodes.actions(crumbs)).toContain("selector-clear")
+		expect(Render.title(s)).toContain("-l app=web")
+	end)
 end)
 
 describe("explore render: list", function()

@@ -298,9 +298,9 @@ end
 local GRID_ROUTES: { [string]: boolean } = { logs = true, events = true }
 
 -- Lines of a block above and below a native table's rows (header, crumbs,
--- filter, count, stats tiles, table head, dock); a table row is about 4/3
--- of a line.
-M.TABLE_CHROME_LINES = 14
+-- filter, count, stats tiles, table head, dock; measured 19 on a wide pane,
+-- more where the header wraps); a table row is about 4/3 of a line.
+M.TABLE_CHROME_LINES = 20
 
 function M.windowSize(s: State): number
 	local cap = s.config.general.max_rendered_rows
@@ -428,7 +428,8 @@ function M.routeKey(s: State, route: Route): string
 	elseif kind == "list" then
 		local sc = M.scope(s, route)
 		local ns = if sc.all then "*" else (sc.namespace or "")
-		return "list|" .. targetId(s.target) .. "|" .. (route.resource or "") .. "|" .. ns
+		local key = "list|" .. targetId(s.target) .. "|" .. (route.resource or "") .. "|" .. ns
+		return if route.selector then key .. "|-l " .. route.selector else key
 	elseif Gitops.isRoute(kind) then
 		-- Never a cache key: GitOps routes keep their data in s.gitops.
 		local parts = { "gitops-" .. kind, targetId(s.target) }
@@ -916,7 +917,7 @@ local function argvFor(s: State, route: Route): { string }?
 	elseif kind == "kinds" then
 		return Query.apiResources(p, t)
 	elseif kind == "list" then
-		return Query.list(p, t, route.resource or "pods", M.scope(s, route))
+		return Query.list(p, t, route.resource or "pods", M.scope(s, route), route.selector)
 	elseif kind == "events" then
 		return Query.events(p, t, M.eventsScope(s, route))
 	elseif kind == "logs" then
@@ -1341,8 +1342,16 @@ function M.validContainer(v: any): string?
 	return if type(v) == "string" and #v >= 1 and #v <= 63 and string.find(v, "^[a-z0-9][a-z0-9%-]*$") then v else nil
 end
 
+-- A label selector for `-l`: kubectl's selector characters only, never a
+-- leading `-` (it would read as the next flag).
 function M.validSelector(v: any): string?
-	return if type(v) == "string" and #v >= 1 and #v <= 1024 and string.find(v, "^[%w%-_%./=!, ()]+$") then v else nil
+	return if type(v) == "string"
+			and #v >= 1
+			and #v <= 1024
+			and string.find(v, "^[%w%-_%./=!, ()]+$")
+			and string.sub(v, 1, 1) ~= "-"
+		then v
+		else nil
 end
 
 function M.validSince(v: any): string?
@@ -1415,6 +1424,8 @@ local function restoreRoute(v: any): Route?
 		route.tail = M.validTail(v.tail)
 		route.floor = if v.floor == "warn" then "warn" elseif v.floor == "error" then "error" else nil
 		route.wrap = if v.wrap == true then true else nil
+	elseif v.kind == "list" then
+		route.selector = M.validSelector(v.selector)
 	elseif v.kind == "events" then
 		route.warnings = if v.warnings == true then true else nil
 		route.related = if type(v.related) == "boolean" then v.related else nil
@@ -1470,6 +1481,10 @@ local function linkRoutes(params: { { key: string, value: string } }): { Route }
 	end
 	local resource = if kind then M.resourceToken(kind, group) else "pods"
 	local stack: { Route } = { { kind = "list", resource = resource } }
+	if name == nil and param(params, "route") == nil then
+		-- The lens "Filter in Explore" chip: the command's `-l`.
+		stack[1].selector = M.validSelector(param(params, "selector"))
+	end
 	local route = param(params, "route")
 	if route == "helm-releases" or route == "helm-release" or route == "helm-history" then
 		local helm: { Route } = { { kind = "helm-releases" } }
@@ -1543,6 +1558,13 @@ function M.init(args: { string }, saved: any, config: Config, env: Env): (State,
 		inferredAt = nil,
 	}
 	local stack = linkRoutes(params)
+	local askedSelector = param(params, "selector")
+	-- A selector Explore cannot pass on must not quietly list everything.
+	local droppedSelector = askedSelector ~= nil
+		and stack[1].kind == "list"
+		and #stack == 1
+		and param(params, "route") == nil
+		and stack[1].selector == nil
 	local sel: { [string]: string } = {}
 	local filter: { [string]: string } = {}
 	local firstRun = param(params, "namespace") == nil
@@ -1624,6 +1646,12 @@ function M.init(args: { string }, saved: any, config: Config, env: Env): (State,
 		helpTop = 0,
 	}
 	local effects: { Effect } = {}
+	if droppedSelector and askedSelector then
+		table.insert(
+			effects,
+			toast("error", "Label selector not applied", "Listing without -l: not a valid selector: " .. askedSelector)
+		)
+	end
 	if s.envPending then
 		return s, effects
 	end
@@ -2230,6 +2258,14 @@ local function mutate(s: State, op: string, effects: { Effect })
 	if ref == nil then
 		table.insert(effects, toast("error", "Select an object first"))
 		return
+	end
+	local route = top(s)
+	if op == "delete" and Gitops.isRoute(route.kind) then
+		local title, detail = Gitops.deleteRefusal(s.gitops, M.gitopsCtx(s), route, M.selectedItem(s))
+		if title then
+			table.insert(effects, toast("info", title, detail))
+			return
+		end
 	end
 	local url, err = Link.forRef(op :: Link.Op, ref, {
 		context = s.target.context,
@@ -3128,6 +3164,17 @@ local function onAction(s: State, act: string, value: string, effects: { Effect 
 		M.refresh(s, effects)
 	elseif act == "applied" then
 		M.applied(s, effects)
+	elseif act == "selector-clear" then
+		local r = top(s)
+		if r.kind ~= "list" or r.selector == nil then
+			return false
+		end
+		local route = table.clone(r)
+		route.selector = nil
+		local stack = table.clone(s.stack)
+		stack[#stack] = route
+		s.stack = stack
+		ensure(s, effects)
 	elseif act == "settings" then
 		table.insert(effects, { t = "open", url = M.SETTINGS_URL })
 	elseif act == "help" then
@@ -3737,6 +3784,16 @@ function M.age(now: number?, at: number?): string?
 	return string.format("%dh ago", d // 3600)
 end
 
+-- Seconds east of UTC from `date +%z` output (`-0600`, `+0530`).
+function M.zoneOffset(text: string): number?
+	local sign, h, m = string.match(text, "^%s*([+-])(%d%d)(%d%d)%s*$")
+	if sign == nil then
+		return nil
+	end
+	local seconds = (tonumber(h) :: number) * 3600 + (tonumber(m) :: number) * 60
+	return if sign == "-" then -seconds else seconds
+end
+
 -- Update ---------------------------------------------------------------------
 
 -- Returns the same state table when the message changed nothing, so the
@@ -3756,7 +3813,11 @@ function M.update(state: State, msg: Msg): (State, { Effect })
 		local at = if load then load.fetchedAt else nil
 		s.now = msg.now
 		changed = true
-		if M.age(state.now, at) ~= M.age(msg.now, at) then
+		local zone = msg.utcOffset
+		if zone and zone ~= state.utcOffset then
+			s.utcOffset = zone
+			table.insert(effects, { t = "render" })
+		elseif M.age(state.now, at) ~= M.age(msg.now, at) then
 			table.insert(effects, { t = "render" })
 		end
 	elseif msg.t == "resize" and msg.rows then

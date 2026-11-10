@@ -236,7 +236,8 @@ end
 
 local function crumbLabel(s: State, route: Route): string
 	if route.kind == "list" then
-		return route.resource or "pods"
+		local resource = route.resource or "pods"
+		return if route.selector then resource .. " -l " .. route.selector else resource
 	end
 	if Gitops.isRoute(route.kind) then
 		return GitopsView.crumb(s.gitops, route)
@@ -302,6 +303,17 @@ local function header(s: State): Node
 			table.insert(crumbs, chip(label, "crumb=" .. i, { key = "c" .. i }))
 		end
 	end
+	local last = s.stack[#s.stack]
+	if last.kind == "list" and last.selector then
+		table.insert(
+			crumbs,
+			chip(
+				"Clear -l",
+				"selector-clear",
+				{ key = "selector-clear", title = "List every object, not only -l matches" }
+			)
+		)
+	end
 	return ui.col({
 		ui.row(live, { key = "bar", wrap = true, role = "tern-kube.bar" }),
 		ui.row(crumbs, { key = "crumbs", wrap = true, role = "tern-kube.breadcrumb" }),
@@ -344,7 +356,9 @@ local function pendingNode(s: State, load: Load?): Node?
 		if s.envPending then
 			return ui.muted("Reading PATH and KUBECONFIG from your login shell …")
 		end
-		if s.targetError then
+		if not s.config.explore.allow_live_queries then
+			return ui.muted("Turn on explore.allow_live_queries in Tern Kube Settings to browse the cluster here.")
+		elseif s.targetError then
 			return ui.muted("Nothing is queried until the target is resolved.")
 		end
 		return ui.muted(if State.resolved(s) then "Not loaded. Press r." else "Resolving the cluster context …")
@@ -2139,7 +2153,7 @@ function M.view(s: State, cols: number, _rows: number): View
 	if s.targetError and route.kind ~= "contexts" then
 		table.insert(children, targetErrorNode(s))
 	end
-	if State.FILTERABLE[route.kind] then
+	if State.FILTERABLE[route.kind] and s.config.explore.allow_live_queries then
 		local text = s.filter[State.currentKey(s)] or ""
 		table.insert(children, {
 			k = "input",

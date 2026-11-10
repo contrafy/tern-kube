@@ -26,7 +26,8 @@
 	overflow-wrap: anywhere;
 }
 
-[data-role="tern-kube.approve-layer"] {
+/* Tern keeps the emptied layer region (and its role) after the help closes. */
+[data-role="tern-kube.approve-layer"]:not(:empty) {
 	max-width: 760px;
 	padding: 12px 16px;
 	background: var(--card);

@@ -708,6 +708,15 @@ describe("explore state: native list window", function()
 		expect(State.selectedIndex(s, State.items(s))).toBe(1)
 	end)
 
+	-- Measured live (Tern 0.9.14, 1878x1008 window): a 58-line pane shows 28
+	-- table rows under the header, filter, tiles and table head and above the
+	-- dock. A bigger page would skip rows the user never saw.
+	it("a page is at most the rows a 58-line pane shows", function()
+		local s = (State.update(W.open(), { t = "resize", rows = 58 }))
+		expect(State.pageSize(s) <= 28).toBe(true)
+		expect(State.pageSize(s) >= 24).toBe(true)
+	end)
+
 	it("a click on the overflow note moves a whole capped window", function()
 		local clicked = W.action(capped(), "page", "down")
 		expect(State.selectedIndex(clicked, State.items(clicked))).toBe(4)
@@ -777,6 +786,91 @@ describe("explore state: header sort", function()
 		local s = W.open()
 		local same = State.update(s, { t = "action", act = "sort", value = "nope:asc" })
 		expect(same).toBe(s)
+	end)
+end)
+
+-- Tern's Luau reads os.date("*t") as UTC (live, 0.9.14: an America/Chicago
+-- machine showed 18:04 at 12:04), so the host asks `date +%z` once and the
+-- next tick carries the offset; every Explore time then reads local.
+describe("explore state: local time zone", function()
+	it("reads date +%z offsets east of UTC in seconds", function()
+		expect(State.zoneOffset("-0600\n")).toBe(-21600)
+		expect(State.zoneOffset("+0530")).toBe(19800)
+		expect(State.zoneOffset("+0000")).toBe(0)
+		expect(State.zoneOffset("CST")).toBe(nil)
+		expect(State.zoneOffset("")).toBe(nil)
+	end)
+
+	it("a tick with the host's offset switches the block to local time and redraws", function()
+		local s = W.open()
+		expect(s.utcOffset).toBe(0)
+		local s2, effects = State.update(s, { t = "tick", now = s.now, utcOffset = -21600 })
+		expect(s2.utcOffset).toBe(-21600)
+		local rendered = false
+		for _, e in effects do
+			rendered = rendered or e.t == "render"
+		end
+		expect(rendered).toBe(true)
+	end)
+end)
+
+-- The lens "Filter in Explore" chip links `kind`, `namespace` and the
+-- command's `-l` selector; the list route ignored the selector and showed
+-- the whole namespace (T11L, live).
+describe("explore state: list selector", function()
+	local function linked(selector: string): (State, { Effect })
+		return State.init(
+			{ W.link({ context = W.CTX, namespace = W.NS, kind = "Pod", selector = selector }) },
+			nil,
+			W.config(nil),
+			W.env()
+		)
+	end
+
+	local function listRuns(effects: { Effect }): { { string } }
+		local out: { { string } } = {}
+		for _, e in effectsOf(effects, "run") do
+			local argv = e.argv :: { string }
+			if table.find(argv, "get") and table.find(argv, "pods") then
+				table.insert(out, argv)
+			end
+		end
+		return out
+	end
+
+	it("a linked selector lists with -l and keeps its own cache key", function()
+		local s, trace = W.settle(linked("app%3Dweb"))
+		expect(top(s).selector).toBe("app=web")
+		local runs = listRuns(trace.runs)
+		expect(#runs).toBe(1)
+		local i = table.find(runs[1], "-l") :: number
+		expect(runs[1][i + 1]).toBe("app=web")
+		local plain = table.clone(top(s))
+		plain.selector = nil
+		expect(State.routeKey(s, plain) ~= State.currentKey(s)).toBe(true)
+	end)
+
+	it("an invalid selector is not applied and says so", function()
+		local s, effects = linked("-n%3Dkube-system")
+		expect(top(s).selector).toBeNil()
+		local toasts = effectsOf(effects, "toast")
+		expect(#toasts).toBe(1)
+		expect(toasts[1].text :: string).toContain("selector")
+	end)
+
+	it("clearing the selector lists everything again", function()
+		local s = W.settle(linked("app%3Dweb"))
+		local cleared, effects = State.update(s, { t = "action", act = "selector-clear", value = "" })
+		expect(top(cleared).selector).toBeNil()
+		local runs = listRuns(effects)
+		expect(#runs).toBe(1)
+		expect(table.find(runs[1], "-l")).toBeNil()
+	end)
+
+	it("survives a plugin reload", function()
+		local s = W.settle(linked("tier%20in%20(front)"))
+		local restored = State.init({ W.link({}) }, State.save(s), W.config(nil), W.env())
+		expect(restored.stack[1].selector).toBe("tier in (front)")
 	end)
 end)
 

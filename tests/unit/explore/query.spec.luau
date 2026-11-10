@@ -61,6 +61,25 @@ describe("explore query", function()
 		expect(argv).toEqual({ "kubectl", "--context", "kind-dev", "get", "nodes", "-o", "json" })
 	end)
 
+	-- The lens "Filter in Explore" chip carries `get … -l SEL`: Explore must
+	-- list the same objects, not the whole namespace.
+	it("list with a label selector passes -l", function()
+		local argv = Query.list("kubectl", bare(), "pods", { namespace = "apps", all = false }, "app=web,tier!=db")
+		expect(argv).toEqual({
+			"kubectl",
+			"--context",
+			"kind-dev",
+			"get",
+			"pods",
+			"-n",
+			"apps",
+			"-l",
+			"app=web,tier!=db",
+			"-o",
+			"json",
+		})
+	end)
+
 	it("get and describe address the object by group-qualified type", function()
 		expect(Query.get("k", bare(), DEPLOY)).toEqual({
 			"k",

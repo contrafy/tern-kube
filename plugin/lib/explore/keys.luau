@@ -110,8 +110,11 @@ local function groupsOf(kind: string): { [string]: boolean }
 		return { compare = true }
 	elseif string.sub(kind, 1, 5) == "helm-" then
 		return { helm = true }
-	elseif kind == "drift" or kind == "matrix" or kind == "item" or kind == "sources" then
+	elseif kind == "drift" then
 		return { drift = true }
+	elseif kind == "matrix" then
+		-- One drift source across contexts: [ ] and f as in compare.
+		return { drift = true, compare = true }
 	elseif kind == "export" or kind == "git" then
 		return { export = true, git = true }
 	end
