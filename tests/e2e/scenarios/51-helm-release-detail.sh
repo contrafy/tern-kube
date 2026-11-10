@@ -34,7 +34,7 @@ no_secrets "release"
 # v: values in changed mode; the typo is flagged, secrets masked.
 xkey v
 xwait 'Values web-b (changed)'
-E2E_WAIT=20 xwait 'unknown-key' '.tk-grid *' || return
+E2E_WAIT=20 xwait 'unknown-key' "$XT *" || return
 eq "changed rows" "$(hcol 1 5)" '["auth.apiToken","auth.password","config.mode","typo"]'
 eq "typo state" "$(hcol 2 5 | jq -r '.[3]')" "unknown-key"
 eq "password masked" "$(hcol 4 5 | jq -r '.[1]')" "<redacted>"

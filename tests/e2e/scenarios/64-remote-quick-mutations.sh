@@ -74,7 +74,7 @@ run_now() {
 	ctl key enter >/dev/null
 	E2E_WAIT=10 wait_for "the run split to close" panes_back
 	# Run-now's approve block stays with the created Job until closed.
-	click_text Close "$AP button" || return 1
+	click_text 'Close*' "$AP button" || return 1
 	approve_closed || return 1
 }
 

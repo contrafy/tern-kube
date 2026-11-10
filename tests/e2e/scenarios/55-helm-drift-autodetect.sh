@@ -41,7 +41,7 @@ E2E_WAIT=30 xwait 'Drift sources' || return
 # Every release running the chart is a candidate (two rows each, broken-c
 # first) and the chooser pages, so shop-a's rows may start below the fold:
 # walk the selection to them instead of reading the visible page.
-E2E_WAIT=30 xwait 'auto: name+version+app version match' '.tk-grid *' || return
+E2E_WAIT=30 xwait 'auto: name+version+app version match' "$XT *" || return
 xselect "charts/shop as $HNS/shop-a with charts/shop/values-staging.yaml" || return
 xselect "charts/shop as $HNS/shop-a with deployed values" || return
 xkey enter

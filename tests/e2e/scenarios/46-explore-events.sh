@@ -2,7 +2,7 @@
 # namespace timeline (time groups, Warning badges), x keeps Warnings, / filters,
 # enter opens the involved object, V on a Deployment includes its pods'
 # events, r is the only re-read; the palette command Tern Kube: Events opens
-# the same route.
+# the same route in the namespace the last Explore used.
 ns=tern-test-apps
 
 # Cells of one grid column (0-based) in the Explore block.
@@ -18,7 +18,7 @@ click_text 'Explore live'
 explore_open || return
 xwait 'Object pod/crashloop'
 xkey escape
-xwait 'crashloop' '.tk-grid *'
+xwait 'crashloop' "$XT"
 
 # v: the namespace timeline, newest first, grouped by recency.
 xkey v
@@ -69,9 +69,10 @@ contains "related scope named" "$(xtext '[data-role="tern-kube.events-summary"] 
 contains "the deployment's pods' events" "$(column 3)" "Pod/broken-image-"
 explore_close
 
-# Palette: Tern Kube: Events opens the timeline of the context's namespace.
+# Palette: Tern Kube: Events opens the timeline of the last Explore's
+# namespace (v1.1 first-run scope), here the deployments above.
 ctl plugins run plugin.tern-kube.events >/dev/null
 explore_open || return
-xwait 'events · ns (context default)'
+xwait "events · ns $ns"
 has "$EX [data-role='tern-kube.explore-events']" || fail "palette did not open the events route"
 explore_close

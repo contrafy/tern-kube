@@ -15,15 +15,13 @@ excludes "no inferred warning" "$hdr" "inferred"
 
 # esc walks back to the list, keeping the row the lens opened.
 xkey escape
-xwait 'crashloop' '.tk-grid *'
+xwait 'crashloop' "$XT"
 eq "esc keeps the row" "$(xsel)" db-0
-cols=$(count "$EX .tk-grid .tk-h")
-names=$(texts "$EX .tk-grid .tk-c" | jq -c --argjson n "$cols" '[to_entries[] | select(.key % $n == 0) | .value]')
+# All 7 pods fit in the list's scroller, so every row is mounted.
+names=$(xnames)
+eq "every pod listed" "$(printf '%s' "$names" | jq length)" 7
 xkey G
-# The list may be windowed to the block height, so the last of all 7 pods is
-# compared with the last name in the window after G.
-last=$(texts "$EX .tk-grid .tk-c" | jq -r --argjson n "$cols" '[to_entries[] | select(.key % $n == 0) | .value] | .[-1]')
-eq "G selects the last row" "$(xsel)" "$last"
+eq "G selects the last row" "$(xsel)" "$(printf '%s' "$names" | jq -r '.[-1]')"
 xkey g g
 eq "gg selects the first row" "$(xsel)" "$(printf '%s' "$names" | jq -r '.[0]')"
 xkey j
@@ -34,16 +32,24 @@ first=$(xsel)
 xkey enter
 xwait "Object pod/$first"
 xkey escape
-xwait "$first" '.tk-grid *'
+xwait "$first" "$XT"
 
 # / filters as you type; enter keeps the filter, esc at the root clears it.
 xkey /
 ctl type crash >/dev/null
 xkey enter
-eq "filter keeps matches" "$(texts "$EX .tk-grid .tk-c" | jq -c --argjson n "$cols" '[to_entries[] | select(.key % $n == 0) | .value]')" '["crashloop"]'
+eq "filter keeps matches" "$(xnames)" '["crashloop"]'
 eq "filter selects the match" "$(xsel)" crashloop
 xkey escape
-eq "esc clears the filter" "$(texts "$EX .tk-grid .tk-c" | jq -c --argjson n "$cols" '[to_entries[] | select(.key % $n == 0) | .value]')" "$names"
+eq "esc clears the filter" "$(xnames)" "$names"
+
+# A click selects a row, a double click opens it like enter.
+xclick_row crashloop || return
+eq "click selects the row" "$(xsel)" crashloop
+xopen_row key=db-0 || return
+xwait 'Object pod/db-0'
+xkey escape
+xwait 'crashloop' "$XT"
 
 # r is the only way data is re-read.
 runs=$(grep -c 'tern-kube explore.run' "$(daemon_log)")
@@ -59,11 +65,12 @@ xkey n
 xwait 'all namespaces' '[data-role="tern-kube.explore-namespaces"] *'
 xkey escape
 xkey :
-xwait 'below' '[data-role="tern-kube.explore-kinds"] *'
+xwait 'configmaps' "[data-role='tern-kube.explore-kinds'] $XT"
 xkey /
 ctl type deploy >/dev/null
 xkey enter
-xwait 'deployments' '[data-role="tern-kube.explore-kinds"] *'
+xwait 'deployments' "[data-role='tern-kube.explore-kinds'] $XT"
+excludes "kinds filter drops other kinds" "$(xnames)" '"configmaps"'
 xkey escape
 
 xkey g g

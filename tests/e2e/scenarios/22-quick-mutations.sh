@@ -46,7 +46,8 @@ ctl key enter >/dev/null
 E2E_WAIT=10 wait_for "the run split to close" panes_back
 contains "names the created job" "$(atext)" "$job"
 contains "offers follow logs" "$(texts "$AP button")" "Follow logs"
-click_text Close "$AP button" || return
+# Buttons carry their key hint in their text ("Closeesc").
+click_text 'Close*' "$AP button" || return
 approve_closed || return
 
 lens "kubectl --context kind-tern-kube-dev get pods -n $MNS -l app=tk-e2e-web"
