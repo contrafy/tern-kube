@@ -53,10 +53,14 @@ uvx check-jsonschema --schemafile \
 **Tern Kube: Settings** in the palette opens a block that edits this file:
 every key with its effective value, a description and a reset to the
 default (`r`). Booleans and enums toggle with `enter`; numbers, strings and
-lists open an input. Each change is validated before it is written, unknown
-keys and `$schema` are kept, and the file is replaced atomically. The Status
-page (`tab`) shows the file's diagnostics, the resolved `kubectl`, alias
-claims in the installed manifest and the shell guard's spool.
+lists open an input (`enter` saves, `esc` cancels). Every action is also a
+button that shows its key; the selected key's toggle or input sits above the
+list. `explore.auto_refresh` is shown as fixed (read-only). In a narrow pane
+the origin column is dropped and long keys and values end in an ellipsis
+(hover for the full text). Each change is validated before it is written,
+unknown keys and `$schema` are kept, and the file is replaced atomically. The
+Status page (`tab`) shows the file's diagnostics, the resolved `kubectl`,
+alias claims in the installed manifest and the shell guard's spool.
 
 To edit by hand, open the stub (or `o` in the Settings block) and let the
 editor complete keys, or start from the complete example:
