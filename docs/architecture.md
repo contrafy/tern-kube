@@ -244,7 +244,11 @@ palette), quick (mutating quick actions) and guard (spool request).
    `confirm=<window-minted token>` (see Quick-action grants); guard: write
    `resp-<nonce>.env`, exit 0;
 8. append one JSON line to `<plugin data>/audit.log` (`audit.luau`: argv,
-   previewed objects, input file digests).
+   previewed objects, input file digests), then the outcome (executed or
+   failed, exit code, start and finish times) for native runs and, appended
+   by the guard after kubectl exits, for guarded shell commands; mutating
+   quick actions record only the approval (see
+   [security model](security-model.md)).
 
 Families and their preview steps:
 
