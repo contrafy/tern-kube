@@ -16,12 +16,15 @@ STYLUA_VERSION=2.5.2
 SELENE_VERSION=0.32.0
 KIND_VERSION=0.33.0
 HELM_VERSION=3.22.0
+# Helm 4 is installed next to Helm 3 as helm4: the plugin supports both majors
+# and the Helm integration scenarios run against each.
+HELM4_VERSION=4.2.4
 OXIPNG_VERSION=10.2.1
 # pngquant.org publishes prebuilt binaries only under unversioned URLs; the
 # pinned checksum makes bootstrap fail closed if upstream replaces them.
 PNGQUANT_VERSION=3.0.3
-TERN_SDK_COMMIT=78ba204e19c6ee1eae5e102a83a551220180c69f
-TERN_TYPES_SHA256=f56084a35c5cdb24e33b7bacda8baa9a3d1504fd3e31a20d3a8c31f3e0c0a32b
+TERN_SDK_COMMIT=a933069de6f6e7707880383f56f7695cf8940ced
+TERN_TYPES_SHA256=50ac8b5dcc41f6e853730d05db5525566992d765e5d3a249ce5e0a5ec4f7749e
 
 die() {
 	printf 'bootstrap: %s\n' "$*" >&2
@@ -43,6 +46,7 @@ Darwin-arm64)
 	KIND_SHA256=0c8c7dbe5e23594a198b786c4bc13dacc101fa6196b0cb0b23a1ca44e61f4b4f
 	HELM_PLATFORM=darwin-arm64
 	HELM_SHA256=4c9982a6cdeb458b60258df66b55398ca5b19293f6877faffe2909ad6f23dfe0
+	HELM4_SHA256=d747eb4e28bd2727173d15b759fa0a17822291ec09db7ced3d55af290a3661a2
 	OXIPNG_TARGET=aarch64-apple-darwin
 	OXIPNG_SHA256=7039fcfc78e8aa1ed2b57d848057a0296f082e92b3e1807ac65402d10d926764
 	PNGQUANT_ASSET=pngquant.tar.bz2
@@ -61,6 +65,7 @@ Linux-x86_64)
 	KIND_SHA256=aee6151561422756b764a4ae28e7f44cda5af5a9eead3cc9985112b1de8d8e0d
 	HELM_PLATFORM=linux-amd64
 	HELM_SHA256=1e4ab49e429626cf6c6958d914248b78c9730803c2751b87627e171dc800e7bb
+	HELM4_SHA256=c306b46f719b0a4da32d0f78ee21bf90ce8d602f15b22ab753f0674d1670a7f3
 	OXIPNG_TARGET=x86_64-unknown-linux-musl
 	OXIPNG_SHA256=1813750ef592c5350ca79c88f98b2c0876d05c826dc7156245256d4255c1ad17
 	PNGQUANT_ASSET=pngquant-linux.tar.bz2
@@ -97,9 +102,19 @@ fetch() {
 	[ "$got" = "$want" ] || die "checksum mismatch for $url: expected $want, got $got"
 }
 
+# bin_name MEMBER[=NAME] prints the installed name: NAME, else the member's
+# basename.
+bin_name() {
+	case "$1" in
+	*=*) printf '%s\n' "${1#*=}" ;;
+	*) basename "$1" ;;
+	esac
+}
+
 # install_tool NAME VERSION URL SHA256 BINARY... ; archive assets (zip,
-# tar.gz, tar.bz2) install every listed archive member under its basename,
-# raw assets are installed as the first BINARY.
+# tar.gz, tar.bz2) install every listed archive member under its basename
+# (MEMBER=NAME installs it as NAME), raw assets are installed as the first
+# BINARY.
 install_tool() {
 	name=$1
 	version=$2
@@ -111,7 +126,7 @@ install_tool() {
 	if [ -f "$stamp" ] && [ "$(cat "$stamp")" = "$expected_stamp" ]; then
 		missing=0
 		for b in "$@"; do
-			[ -x "$BIN/$(basename "$b")" ] || missing=1
+			[ -x "$BIN/$(bin_name "$b")" ] || missing=1
 		done
 		if [ "$missing" = 0 ]; then
 			printf 'bootstrap: %s %s already installed\n' "$name" "$version"
@@ -132,9 +147,10 @@ install_tool() {
 		*) tar -xzf "$asset" -C "$dir/out" ;;
 		esac
 		for b in "$@"; do
-			[ -f "$dir/out/$b" ] || die "$b not found in $(basename "$url")"
-			chmod 755 "$dir/out/$b"
-			mv -f "$dir/out/$b" "$BIN/$(basename "$b")"
+			member=${b%%=*}
+			[ -f "$dir/out/$member" ] || die "$member not found in $(basename "$url")"
+			chmod 755 "$dir/out/$member"
+			mv -f "$dir/out/$member" "$BIN/$(bin_name "$b")"
 		done
 		;;
 	*)
@@ -163,6 +179,9 @@ install_tool kind "$KIND_VERSION" \
 install_tool helm "$HELM_VERSION" \
 	"https://get.helm.sh/helm-v$HELM_VERSION-$HELM_PLATFORM.tar.gz" \
 	"$HELM_SHA256" "$HELM_PLATFORM/helm"
+install_tool helm4 "$HELM4_VERSION" \
+	"https://get.helm.sh/helm-v$HELM4_VERSION-$HELM_PLATFORM.tar.gz" \
+	"$HELM4_SHA256" "$HELM_PLATFORM/helm=helm4"
 install_tool oxipng "$OXIPNG_VERSION" \
 	"https://github.com/oxipng/oxipng/releases/download/v$OXIPNG_VERSION/oxipng-$OXIPNG_VERSION-$OXIPNG_TARGET.tar.gz" \
 	"$OXIPNG_SHA256" "oxipng-$OXIPNG_VERSION-$OXIPNG_TARGET/oxipng"
@@ -190,6 +209,7 @@ printf 'luau-lsp %s\n' "$lsp_version"
 "$BIN/selene" --version || die "selene failed to execute"
 "$BIN/kind" version || die "kind failed to execute"
 "$BIN/helm" version --short || die "helm failed to execute"
+"$BIN/helm4" version --short || die "helm4 failed to execute"
 "$BIN/oxipng" --version || die "oxipng failed to execute"
 pngquant_version=$("$BIN/pngquant" --version) || die "pngquant failed to execute"
 printf 'pngquant %s\n' "$pngquant_version"

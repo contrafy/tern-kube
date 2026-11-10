@@ -1,13 +1,16 @@
 #!/bin/sh
-# Helm compatibility check for Query.EXTRAS_TEMPLATE against the kind test
-# cluster (context kind-tern-kube-dev, namespace tern-test-helm-compat; nothing
-# else is touched). Installs the fixture-capture releases with the pinned
-# helm, runs the extras template against every revision and decodes each
-# output with Parse.extras (tests/integration/helm/compat.luau), so a helm
-# bump that changes Go quoting, the release fields the template reads, or
-# what --reuse-values stores as chart defaults fails here instead of in
-# Explore. stuck-d (a SIGKILLed upgrade) is left out: a pending revision is
-# stored like any other and only makes the run slow and timing-dependent.
+# Helm compatibility check against the kind test cluster (context
+# kind-tern-kube-dev, namespace $TK_IT_HELM_NS, default tern-test-helm-compat;
+# nothing else is touched), for Helm 3 and Helm 4 (HELM=.tools/bin/helm4).
+# Installs the fixture-capture releases with that helm, checks that the
+# `helm list` argv of plugin/lib/helm/query.luau (explicit status flags:
+# Helm 4 removed -a) lists every release including the failed one, runs the
+# extras template against every revision and decodes each output with
+# Parse.extras (tests/integration/helm/compat.luau), so a helm bump that
+# changes Go quoting, the release fields the template reads, or what
+# --reuse-values stores as chart defaults fails here instead of in Explore.
+# stuck-d (a SIGKILLed upgrade) is left out: a pending revision is stored
+# like any other and only makes the run slow and timing-dependent.
 #
 # Evidence (raw outputs, the generated driver input) stays in
 # .sandbox/helm-compat/. The namespace is deleted on exit unless KEEP=1.
@@ -19,7 +22,7 @@ HELM=${HELM:-.tools/bin/helm}
 KUBECTL=${KUBECTL:-kubectl}
 LUAU=${LUAU:-.tools/bin/luau}
 CTX=kind-tern-kube-dev
-NS=tern-test-helm-compat
+NS=${TK_IT_HELM_NS:-tern-test-helm-compat}
 SHOP=tests/fixtures/gitops/helm/chart
 STAGING=tests/fixtures/gitops/helm/values-staging.yaml
 WEB=tests/fixtures/helm/web
@@ -79,6 +82,14 @@ h upgrade tricky-e "$SHOP" --reuse-values --set config.mode=reused >/dev/null
 
 rm -rf "$OUT"
 mkdir -p "$OUT"
+
+# Query.list / Query.owner argv: every status, in both Helm majors.
+h list --deployed --failed --pending --superseded --uninstalled --uninstalling -o json \
+	--time-format 2006-01-02T15:04:05Z07:00 >"$OUT/list.json" || die "helm list with status flags failed"
+for rel in shop-a web-b broken-c tricky-e; do
+	grep -q "\"name\":\"$rel\"" "$OUT/list.json" || die "helm list misses $rel: $(cat "$OUT/list.json")"
+done
+grep -q '"status":"failed"' "$OUT/list.json" || die "helm list misses the failed release"
 
 hex() { od -An -v -tx1 | tr -d ' \n'; }
 
