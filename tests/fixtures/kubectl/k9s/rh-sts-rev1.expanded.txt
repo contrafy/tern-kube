@@ -1,0 +1,14 @@
+statefulset.apps/sts with revision #1
+Pod Template:
+  Labels:       app=sts
+  Containers:
+   pause:
+    Image:      registry.k8s.io/pause:3.10
+    Port:       <none>
+    Host Port:  <none>
+    Environment:        <none>
+    Mounts:     <none>
+  Volumes:      <none>
+  Node-Selectors:       <none>
+  Tolerations:  <none>
+

@@ -1,0 +1,5 @@
+statefulset.apps/sts 
+REVISION  CHANGE-CAUSE
+1         <none>
+2         <none>
+

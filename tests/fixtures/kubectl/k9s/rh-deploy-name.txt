@@ -1,0 +1,3 @@
+replicaset.apps/hist-785b89f99b
+replicaset.apps/hist-78b5887f68
+replicaset.apps/hist-76cd7cdd49

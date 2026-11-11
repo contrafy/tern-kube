@@ -1,7 +1,7 @@
 schema = 1
 id = "tern-kube"
 name = "Tern Kube"
-version = "1.1.0"
+version = "1.2.0"
 description = "Native views for kubectl output, with an explicit Explore block and an opt-in mutation guard."
 icon = "box"
 host = "plugin/host.luau"
@@ -9,8 +9,9 @@ window = "plugin/window.luau"
 styles = ["plugin/tern-kube.css", "plugin/explore.css", "plugin/mutate.css", "plugin/settings.css", "plugin/logs.css"]
 
 # Globs over-claim (`kubectl -* get *` also matches `kubectl -n x logs pod get`);
-# the lens re-derives the verb from argv (logs, events or the table/describe/
-# mutation pipeline) and returns raw for anything it cannot show.
+# the lens re-derives the verb from argv (logs, events, the table/describe/
+# mutation pipeline, rollout history, get-contexts, api-resources, can-i)
+# and returns raw for anything it cannot show.
 [[lenses]]
 id = "kubectl"
 match = [
@@ -33,6 +34,12 @@ match = [
 	"kubectl logs *",
 	"kubectl events",
 	"kubectl events *",
+	"kubectl rollout history *",
+	"kubectl config get-contexts",
+	"kubectl config get-contexts *",
+	"kubectl api-resources",
+	"kubectl api-resources *",
+	"kubectl auth can-i *",
 	"kubectl -* get",
 	"kubectl -* get *",
 	"kubectl -* describe *",
@@ -52,6 +59,12 @@ match = [
 	"kubectl -* logs *",
 	"kubectl -* events",
 	"kubectl -* events *",
+	"kubectl -* rollout history *",
+	"kubectl -* config get-contexts",
+	"kubectl -* config get-contexts *",
+	"kubectl -* api-resources",
+	"kubectl -* api-resources *",
+	"kubectl -* auth can-i *",
 	"kubecolor get",
 	"kubecolor get *",
 	"kubecolor describe *",
@@ -71,6 +84,12 @@ match = [
 	"kubecolor logs *",
 	"kubecolor events",
 	"kubecolor events *",
+	"kubecolor rollout history *",
+	"kubecolor config get-contexts",
+	"kubecolor config get-contexts *",
+	"kubecolor api-resources",
+	"kubecolor api-resources *",
+	"kubecolor auth can-i *",
 	"kubecolor -* get",
 	"kubecolor -* get *",
 	"kubecolor -* describe *",
@@ -90,6 +109,12 @@ match = [
 	"kubecolor -* logs *",
 	"kubecolor -* events",
 	"kubecolor -* events *",
+	"kubecolor -* rollout history *",
+	"kubecolor -* config get-contexts",
+	"kubecolor -* config get-contexts *",
+	"kubecolor -* api-resources",
+	"kubecolor -* api-resources *",
+	"kubecolor -* auth can-i *",
 	# BEGIN tern-kube aliases
 	# END tern-kube aliases
 ]

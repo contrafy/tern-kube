@@ -1,0 +1,15 @@
+daemonset.apps/ds with revision #2
+Pod Template:
+  Labels:	app=ds
+  Containers:
+   pause:
+    Image:	registry.k8s.io/pause:3.9
+    Port:	<none>
+    Host Port:	<none>
+    Environment:
+      A:	1
+    Mounts:	<none>
+  Volumes:	<none>
+  Node-Selectors:	<none>
+  Tolerations:	<none>
+

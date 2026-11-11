@@ -1,0 +1,72 @@
+{
+    "kind": "StatefulSet",
+    "apiVersion": "apps/v1",
+    "metadata": {
+        "name": "sts",
+        "namespace": "tern-test-k9s",
+        "uid": "22a89357-83a6-491e-945f-f79923a5003f",
+        "resourceVersion": "1039303",
+        "generation": 2,
+        "creationTimestamp": "2026-11-11T16:24:16Z",
+        "annotations": {
+            "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"apps/v1\",\"kind\":\"StatefulSet\",\"metadata\":{\"annotations\":{},\"name\":\"sts\",\"namespace\":\"tern-test-k9s\"},\"spec\":{\"replicas\":1,\"selector\":{\"matchLabels\":{\"app\":\"sts\"}},\"serviceName\":\"sts\",\"template\":{\"metadata\":{\"labels\":{\"app\":\"sts\"}},\"spec\":{\"containers\":[{\"image\":\"registry.k8s.io/pause:3.10\",\"imagePullPolicy\":\"IfNotPresent\",\"name\":\"pause\"}],\"terminationGracePeriodSeconds\":1}}}}\n"
+        }
+    },
+    "spec": {
+        "replicas": 1,
+        "selector": {
+            "matchLabels": {
+                "app": "sts"
+            }
+        },
+        "template": {
+            "metadata": {
+                "labels": {
+                    "app": "sts"
+                }
+            },
+            "spec": {
+                "containers": [
+                    {
+                        "name": "pause",
+                        "image": "registry.k8s.io/pause:3.10",
+                        "resources": {},
+                        "terminationMessagePath": "/dev/termination-log",
+                        "terminationMessagePolicy": "File",
+                        "imagePullPolicy": "IfNotPresent"
+                    }
+                ],
+                "restartPolicy": "Always",
+                "terminationGracePeriodSeconds": 1,
+                "dnsPolicy": "ClusterFirst",
+                "securityContext": {},
+                "schedulerName": "default-scheduler"
+            }
+        },
+        "serviceName": "sts",
+        "podManagementPolicy": "OrderedReady",
+        "updateStrategy": {
+            "type": "RollingUpdate",
+            "rollingUpdate": {
+                "partition": 0,
+                "maxUnavailable": 1
+            }
+        },
+        "revisionHistoryLimit": 10,
+        "persistentVolumeClaimRetentionPolicy": {
+            "whenDeleted": "Retain",
+            "whenScaled": "Retain"
+        }
+    },
+    "status": {
+        "observedGeneration": 2,
+        "replicas": 1,
+        "readyReplicas": 1,
+        "currentReplicas": 1,
+        "updatedReplicas": 1,
+        "currentRevision": "sts-66f7c8977",
+        "updateRevision": "sts-66f7c8977",
+        "collisionCount": 0,
+        "availableReplicas": 1
+    }
+}

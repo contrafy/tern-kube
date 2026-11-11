@@ -1,0 +1,2 @@
+CURRENT   NAME      CLUSTER              AUTHINFO             NAMESPACE
+          tk-apps   kind-tern-kube-dev   kind-tern-kube-dev   tern-test-apps

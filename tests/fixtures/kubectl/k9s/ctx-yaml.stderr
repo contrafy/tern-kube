@@ -1,0 +1,1 @@
+error: --output yaml is not available in kubectl config get-contexts; resetting to default output format

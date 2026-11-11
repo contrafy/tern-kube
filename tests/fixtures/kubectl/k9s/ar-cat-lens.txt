@@ -1,0 +1,2 @@
+NAME      SHORTNAMES   APIVERSION                  NAMESPACED   KIND     VERBS                                                        CATEGORIES
+widgets   wd           lens.example.com/v1alpha1   true         Widget   delete,deletecollection,get,list,patch,create,update,watch   lens
