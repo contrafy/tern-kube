@@ -318,6 +318,13 @@ land in `<sandbox>/out/serve`. `start --window` opens a real Tern window
 use it only when you mean to watch (and never from an agent without the
 user's OK).
 
+To the window, `sandbox` is a remote host: its pane ids are not the shells'
+`TERN_PANE`, and quick actions launched from its panes take the login
+environment's kubeconfig instead of the pane env record (as on any remote
+host). Nothing listens at `<sandbox>/d.sock`, so the sandbox rc files point
+`TERN_DAEMON_SOCKET` at the in-process daemon (`TERN_PANE_SOCKET`) for
+`tern open --wait` (the shell guard, `kubectl edit`).
+
 `link [DIR]` copies the checkout (or DIR) without `.git`, `.sandbox` and
 `.tools` to `<sandbox>/pkg` and links that copy; run it again after edits.
 Tern 0.9.14 watches the whole linked directory, `.git` included, and reloads
