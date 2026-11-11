@@ -3,7 +3,7 @@
 # shells, Settings reads PATH from fish, the guard's fish snippet asks for
 # approval and records the pane's KUBECONFIG, and a quick action from that
 # pane's lens runs through `fish -l -c` with the exact kubectl argv, the
-# recorded kubeconfig pinned. The zsh window comes back at the end. Skipped
+# recorded kubeconfig pinned. The zsh session comes back at the end. Skipped
 # when fish is not installed.
 fish_bin=$(command -v fish) || {
 	note "skipped: fish is not installed"
@@ -22,9 +22,9 @@ stext() {
 s_has() {
 	case $(stext) in *"$1"*) true ;; *) false ;; esac
 }
-trap 'e2e_objects_delete; restart_window >/dev/null' EXIT
+trap 'e2e_objects_delete; restart_session >/dev/null' EXIT
 e2e_objects
-restart_window --shell fish || return
+restart_session --shell fish || return
 
 sh_line 'echo TK68 $SHELL (status is-login; and echo login-shell)'
 expect_grid "TK68 $fish_bin login-shell" || return

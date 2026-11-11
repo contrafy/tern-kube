@@ -7,8 +7,9 @@
 # and m6-compare-{object,list,drift}-dark-wide.png
 # (sourced by scripts/e2e.sh --shots). E2E_SHOTS limits the groups
 # (space-separated: m1 m2 m3 m3b m4 t1 t2 t3 m6; default all; m6 needs
-# E2E_MC=1). Every shot is of the live sandbox window with the plugin
-# loaded; check each PNG by eye before committing.
+# E2E_MC=1). Every shot is of the live headless sandbox session with the
+# plugin loaded, at 1280x800 (narrow: 600x800) CSS px and scale 2, so wide
+# PNGs are 2560x1600; check each PNG by eye before committing.
 
 shots_dir="$E2E_REPO/docs/screenshots"
 
@@ -383,10 +384,8 @@ shots_t3() {
 	xwait 'web-b-web' '.tk-grid *'
 	xkey :
 	xwait 'Kinds'
-	xkey /
 	ctl type helm >/dev/null
-	xkey enter
-	xwait 'helm releases' '.tk-grid *'
+	xwait 'Helm releases'
 	xkey enter
 	xwait '4 releases'
 	t3_shot releases
@@ -495,8 +494,8 @@ for theme in light dark; do
 			wants m1 || continue
 			w=600
 		fi
-		window_size $w 860 || {
-			fail "the window stays $(viewport), not ${w}x860: screenshots need the window resizable (float it in a tiling window manager)"
+		viewport_size $w 800 || {
+			fail "the viewport stays $(viewport), not ${w}x800"
 			break 2
 		}
 		sleep 0.8
@@ -516,6 +515,6 @@ for theme in light dark; do
 	done
 done
 ctl theme light light >/dev/null
-window_size 1280 800 || true
+viewport_size 1280 800 || fail "the viewport stays $(viewport), not 1280x800"
 make -C "$E2E_REPO" shots-optimize || fail "shots-optimize"
 [ $E2E_FAILED = 0 ]

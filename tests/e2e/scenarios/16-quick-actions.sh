@@ -54,8 +54,8 @@ focused_id() {
 	ctl state | jq -r '.focused.id'
 }
 
-# focus_pane ID left|right: click 30 px inside that edge of the window's
-# panes (the window may be any size, see window_size) and check that pane
+# focus_pane ID left|right: click 30 px inside that edge of the session's
+# panes (the viewport may be any size, see viewport_size) and check that pane
 # ID has focus. `ctl focus` answers only after a 20 s timeout while a split
 # runs port-forward, so clicks are used instead.
 focus_pane() {

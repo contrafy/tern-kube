@@ -129,40 +129,40 @@ reset_pane() {
 	sh_line clear
 }
 
-# restart_window [START ARGS...]: quit the sandbox window and start it again
-# (e.g. with --gui-path), relink the snapshot plugin, back at one clear shell
-# pane. The window keeps running after the calling scenario's subshell.
-# A window attaches to any daemon still holding the socket, environment and
-# all, so the restart fails unless the new window runs a new daemon.
-restart_window() {
+# restart_session [START ARGS...]: stop the headless sandbox session, start
+# it again (e.g. with --gui-path), relink the snapshot plugin, back at one
+# clear shell pane. The session keeps running after the calling scenario's
+# subshell. Its daemon (plugins, panes) runs inside serve, so a new serve
+# pid means a new daemon with the new environment.
+restart_session() {
 	reset_pane
-	old=$(daemon_pids)
+	old=$(dev pids window)
 	dev stop >/dev/null || {
-		fail "the old window or daemon ($old) did not stop"
+		fail "the old session ($old) did not stop"
 		return 1
 	}
-	dev start "$@" >"$E2E_SB/window.out" 2>&1 &
-	E2E_WAIT=30 wait_for "the sandbox window" ctl ready || {
-		cat "$E2E_SB/window.out" >&2
+	dev start "$@" >"$E2E_SB/session.out" 2>&1 &
+	dev wait-ready 30 || {
+		fail "the sandbox session did not start"
+		cat "$E2E_SB/session.out" >&2
 		return 1
 	}
-	new=$(daemon_pids)
+	new=$(dev pids window)
 	if [ -z "$new" ] || [ "$new" = "$old" ]; then
-		fail "the restarted window has no new daemon (before: $old, after: $new)"
+		fail "the session did not restart (before: $old, after: $new)"
 		return 1
 	fi
 	dev link "$E2E_SB/pkg" >/dev/null 2>&1 || {
 		fail "cannot link the plugin"
 		return 1
 	}
-	E2E_WAIT=30 wait_for "the first prompt" ctl ready || return 1
-	window_size 1280 800 || true
+	dev wait-ready 30 || {
+		fail "no first prompt after the restart"
+		return 1
+	}
+	viewport_size 1280 800 || fail "the viewport stays $(viewport), not 1280x800"
 	sleep 0.5
 	reset_pane
-}
-
-daemon_pids() {
-	dev pids daemon
 }
 
 # Text of the lens blocks, raw output included (raw text is not grid text).
@@ -203,16 +203,15 @@ click_text() {
 	top
 }
 
-# window_size W H: ask for a W x H viewport; fails when the window keeps
-# another size. Tern's `ctl resize` resizes the real window, and a tiling
-# window manager (OmniWM, yabai, AeroSpace) may keep it in its tile.
-window_size() {
+# viewport_size W H: resize the headless session's viewport to W x H (CSS
+# px, scale 2); fails when it reports another size.
+viewport_size() {
 	ctl resize "$1" "$2" >/dev/null
 	sleep 0.5
 	[ "$(viewport)" = "$1x$2" ]
 }
 
-# viewport: the window's viewport as WxH (CSS px).
+# viewport: the session's viewport as WxH (CSS px).
 viewport() {
 	ctl stats | jq -r '.viewport[:2] | map(floor) | join("x")'
 }
@@ -249,22 +248,47 @@ raw() {
 	claimed && { lacks '[data-role="tern-kube.header"]' || fail "native view shown, raw expected"; }
 }
 
-# --- Clipboard (the sandbox window copies to the real pasteboard) -----------
+# --- Clipboard ---------------------------------------------------------------
+# The headless session has a clipboard of its own (the user's pasteboard is
+# never read or written) and no control command that prints it.
 
-E2E_CLIP=""
-
-clip_save() {
-	command -v pbpaste >/dev/null 2>&1 || return 0
-	E2E_CLIP="$E2E_SB/clipboard.saved"
-	pbpaste >"$E2E_CLIP" 2>/dev/null || true
-}
-
-clip_restore() {
-	[ -n "$E2E_CLIP" ] && [ -f "$E2E_CLIP" ] && pbcopy <"$E2E_CLIP" 2>/dev/null || true
-}
-
+# clip: the session clipboard's text (newlines kept). It is pasted into
+# `cat` in a scratch tab, Tern's "Allow paste?" question for line breaks
+# (a pending dialog headless) answered with Paste Anyway; the tab is closed
+# again and the focus is back in the tab before. Local sessions only: the
+# file is written by the scratch tab's shell.
 clip() {
-	pbpaste 2>/dev/null || true
+	_cf="$E2E_SB/clip.out"
+	rm -f "$_cf"
+	_home=$(ctl state | jq -r '.focused.id')
+	ctl tab new >/dev/null
+	E2E_WAIT=10 wait_for "the clipboard tab" clip_tab "$_home" || return 1
+	type_line "cat >'$_cf'"
+	ctl key cmd+v >/dev/null
+	sleep 0.3
+	for _id in $(ctl system | jq -r '.dialogs[]?.id'); do
+		ctl dialog "$_id" button 1 >/dev/null
+	done
+	ctl key enter >/dev/null
+	ctl key ctrl+d >/dev/null
+	E2E_WAIT=5 wait_for "cat to read the clipboard" idle
+	ctl close >/dev/null
+	E2E_WAIT=5 wait_for "the tab before the clipboard tab" focused_on "$_home"
+	cat "$_cf" 2>/dev/null
+}
+
+# clip_tab HOME: a new pane other than HOME has focus, at its prompt.
+clip_tab() {
+	ctl state | jq -e --arg h "$1" '(.focused.id | tostring) != $h and .focused.prompt == true and .focused.running == null' >/dev/null
+}
+
+focused_on() {
+	[ "$(ctl state | jq -r '.focused.id')" = "$1" ]
+}
+
+# clip_set TEXT: put TEXT (no double quotes) on the session clipboard.
+clip_set() {
+	ctl clipboard text "\"$1\"" >/dev/null
 }
 
 # --- Explore block and quick actions ------------------------------------------
@@ -635,15 +659,12 @@ remote_switch() {
 	sh_line clear
 }
 
-# local_switch: show this machine's session again.
+# local_switch: show this machine's session again: the in-process daemon
+# `dev-tern.sh start` attaches as host "sandbox" (the session's own
+# daemonless host runs no plugins).
 local_switch() {
-	_ls=$(ctl state | jq -r '[.hosts.hosts[]? | select(.address == "")][0].name // empty')
-	[ -n "$_ls" ] || {
-		fail "no local host in the window's host list"
-		return 1
-	}
-	ctl remote switch "$_ls" >/dev/null
-	E2E_WAIT=15 wait_for "the local prompt" host_shown "$_ls"
+	ctl remote switch sandbox >/dev/null
+	E2E_WAIT=15 wait_for "the local prompt" host_shown sandbox
 }
 
 # rsh [SCRIPT]: run SCRIPT (the arguments, else stdin) with `sh -s` on the
