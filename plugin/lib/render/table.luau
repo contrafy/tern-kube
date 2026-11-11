@@ -75,6 +75,8 @@ local SECONDARY: { [string]: boolean } = {
 	PHASE = true,
 	REVISION = true,
 	CHART = true,
+	-- Explore relations: the provenance badge outlasts the RELATION verb.
+	VIA = true,
 }
 
 local EXTRA: { [string]: boolean } = {
