@@ -13,8 +13,40 @@
 
 shots_dir="$E2E_REPO/docs/screenshots"
 
+# snap NAME: shoot docs/screenshots/NAME.png. A headless session never fades
+# a toast, so a visible one fails the shot instead of landing in the docs.
+snap() {
+	lacks '.toast' || fail "toast \"$(alltext '.toast')\" in $1"
+	dev shot "$1" "$shots_dir/$1.png" >/dev/null || fail "shot $1"
+}
+
+# xclose: close the Explore pane outright, then give the left-most pane the
+# keyboard (as reset_pane). Esc at the Explore root leaves an "esc again to
+# close" toast that a headless session never fades, so later shots would
+# carry it. A kubectl edit split keeps the keyboard after its approval, so
+# look left, then right, for the Explore pane first.
+xclose() {
+	has "$EX" || return 0
+	for _dir in left right; do
+		x_focused && break
+		ctl focus "$_dir" >/dev/null
+	done
+	if x_focused; then
+		ctl close >/dev/null
+		sleep 0.4
+		ctl click 30 600 >/dev/null
+	else
+		explore_close_all
+	fi
+	E2E_WAIT=5 wait_for "Explore to close" lacks "$EX"
+}
+
+x_focused() {
+	case $(focused_title) in *"Tern Kube Explore"*) true ;; *) false ;; esac
+}
+
 shot() { # shot VIEW
-	dev shot "m1-$1-$theme-$size" "$shots_dir/m1-$1-$theme-$size.png" >/dev/null || fail "shot $1"
+	snap "m1-$1-$theme-$size"
 }
 
 shots_views() {
@@ -44,7 +76,7 @@ shots_views() {
 }
 
 m2_shot() { # m2_shot VIEW
-	dev shot "m2-$1-$theme-wide" "$shots_dir/m2-$1-$theme-wide.png" >/dev/null || fail "shot m2 $1"
+	snap "m2-$1-$theme-wide"
 }
 
 # Explore (live, real cluster) and a quick-action split; wide only, since the
@@ -70,7 +102,7 @@ shots_explore() {
 	xkey '?'
 	m2_shot help
 	xkey escape
-	explore_close
+	xclose
 	lens 'kubectl get pods -n tern-test-mutate -l app=tk-qa-shell'
 	click_text 'tk-qa-shell-*' '.tk-grid .tk-c'
 	click_text Logs '[data-role="tern-kube.inspector"] .sf-act'
@@ -81,7 +113,7 @@ shots_explore() {
 }
 
 m3_shot() { # m3_shot VIEW
-	dev shot "m3-$1-$theme-wide" "$shots_dir/m3-$1-$theme-wide.png" >/dev/null || fail "shot m3 $1"
+	snap "m3-$1-$theme-wide"
 }
 
 # The approve block after a confirmed scale (tk-e2e-web 1 -> 2), and a shell
@@ -142,7 +174,7 @@ shots_m3() {
 }
 
 m3b_shot() { # m3b_shot VIEW
-	dev shot "m3b-$1-$theme-wide" "$shots_dir/m3b-$1-$theme-wide.png" >/dev/null || fail "shot m3b $1"
+	snap "m3b-$1-$theme-wide"
 }
 
 # Diff vs manifest, drift report, export preview and the git step against a
@@ -171,7 +203,7 @@ shots_m3b() {
 	xkey enter
 	E2E_WAIT=30 xwait "Missing in cluster" || return
 	m3b_shot drift
-	explore_close
+	xclose
 	lens "kubectl --context kind-tern-kube-dev get configmap tk-e2e-stray -n $gns"
 	click_text tk-e2e-stray '.tk-grid .tk-c'
 	click_text 'Explore live' '[data-role="tern-kube.inspector"] .sf-act'
@@ -179,7 +211,7 @@ shots_m3b() {
 	xkey E
 	E2E_WAIT=20 xwait "Write 4 files" || return
 	m3b_shot export
-	explore_close
+	xclose
 	kc delete namespace "$gns" --ignore-not-found --wait=false >/dev/null 2>&1
 	rm -rf "$grepo"
 	sh_line "cd '$E2E_REPO'"
@@ -191,13 +223,13 @@ shots_m4() {
 	ctl plugins run plugin.tern-kube.settings >/dev/null
 	E2E_WAIT=15 wait_for "the settings block" has "[data-surface='plugin.tern-kube.settings']" || return
 	sleep 1
-	dev shot "m4-settings-$theme-wide" "$shots_dir/m4-settings-$theme-wide.png" >/dev/null || fail "shot m4 settings"
+	snap "m4-settings-$theme-wide"
 	ctl key escape >/dev/null
 	reset_pane
 }
 
 t1_shot() { # t1_shot VIEW
-	dev shot "t1-$1-$theme-wide" "$shots_dir/t1-$1-$theme-wide.png" >/dev/null || fail "shot t1 $1"
+	snap "t1-$1-$theme-wide"
 }
 
 # Previews of the 0.2.0 verbs, nothing confirmed: a label diff from the lens
@@ -238,7 +270,7 @@ shots_t1() {
 	t1_shot drain-preview
 	xkey escape
 	approve_closed
-	explore_close
+	xclose
 	kc -n "$MNS" delete pdb tk-e2e-pdb --ignore-not-found >/dev/null
 
 	lens "kubectl --context kind-tern-kube-dev get deploy tk-e2e-web -n $MNS"
@@ -252,7 +284,7 @@ shots_t1() {
 	t1_shot undo-diff
 	xkey escape
 	approve_closed
-	explore_close
+	xclose
 
 	printf '%s\n' "sed 's/^  LEVEL: .*/  LEVEL: debug/' \"\$1\" >\"\$1.new\" && cat \"\$1.new\" >\"\$1\" && rm -f \"\$1.new\"" \
 		>"$E2E_SB/edit-script"
@@ -268,14 +300,14 @@ shots_t1() {
 	xkey escape
 	approve_closed
 	sleep 2
-	explore_close
+	xclose
 	rm -f "$E2E_SB/edit-script"
 	e2e_objects_delete
 	reset_pane
 }
 
 t2_shot() { # t2_shot VIEW
-	dev shot "t2-$1-$theme-wide" "$shots_dir/t2-$1-$theme-wide.png" >/dev/null || fail "shot t2 $1"
+	snap "t2-$1-$theme-wide"
 }
 
 # The logs lens on tk-logmix (tern-test-logs), a 25 000-line fake log's
@@ -334,7 +366,7 @@ shots_t2() {
 	xkey v
 	xwait "events · ns tern-test-apps"
 	t2_shot explore-events
-	explore_close
+	xclose
 
 	lens "kubectl --context kind-tern-kube-dev get pods -n $LNS -l app=tk-logmix"
 	click_text "$pod" '.tk-grid .tk-c'
@@ -346,12 +378,12 @@ shots_t2() {
 	xwait '--tail=500' '[data-role="tern-kube.logs-summary"] *'
 	xkey ]
 	t2_shot explore-logs
-	explore_close
+	xclose
 	reset_pane
 }
 
 t3_shot() { # t3_shot VIEW
-	dev shot "t3-$1-$theme-wide" "$shots_dir/t3-$1-$theme-wide.png" >/dev/null || fail "shot t3 $1"
+	snap "t3-$1-$theme-wide"
 }
 
 # t3_release DEPLOYMENT: Explore of a Helm world Deployment, H opens its
@@ -389,7 +421,7 @@ shots_t3() {
 	xkey enter
 	xwait '4 releases'
 	t3_shot releases
-	explore_close_all
+	xclose
 
 	t3_release shop-a-shop || return
 	xkey v
@@ -397,7 +429,7 @@ shots_t3() {
 	# changed mode: each overridden key beside its chart default.
 	E2E_WAIT=20 xwait 'image.tag' "$XT *" || return
 	t3_shot values-defaults
-	explore_close_all
+	xclose
 
 	t3_release web-b-web || return
 	xkey h
@@ -406,7 +438,7 @@ shots_t3() {
 	xwait 'Diff web-b rev 1..3'
 	E2E_WAIT=20 xwait 'MODIFY Secret' || return
 	t3_shot revision-diff
-	explore_close_all
+	xclose
 
 	t3_release shop-a-shop || return
 	xkey h
@@ -419,7 +451,7 @@ shots_t3() {
 	t3_shot rollback
 	xkey escape
 	approve_closed
-	explore_close_all
+	xclose
 
 	lens "kubectl --context kind-tern-kube-dev describe deploy shop-a-shop -n $HNS"
 	native
@@ -428,7 +460,7 @@ shots_t3() {
 }
 
 m6_shot() { # m6_shot VIEW
-	dev shot "m6-compare-$1-$theme-wide" "$shots_dir/m6-compare-$1-$theme-wide.png" >/dev/null || fail "shot m6 $1"
+	snap "m6-compare-$1-$theme-wide"
 }
 
 # Compare across contexts on both kind clusters, as scenarios 70, 73 and 76:
@@ -446,7 +478,7 @@ shots_m6() {
 	mc_pick_first || return
 	E2E_WAIT=20 xwait differs '[data-role="tern-kube.compare-status"] *' || return
 	m6_shot object
-	explore_close_all
+	xclose
 
 	mc_object "$MCA" deploy tkm-web deployment || return
 	xkey escape
@@ -454,7 +486,7 @@ shots_m6() {
 	mc_pick_first || return
 	E2E_WAIT=20 xwait changed "[data-role='tern-kube.compare-matrix'] *" || return
 	m6_shot list
-	explore_close_all
+	xclose
 
 	m6repo=$E2E_SB/m6-repo
 	rm -rf "$m6repo"
@@ -474,7 +506,7 @@ shots_m6() {
 	xkey G enter
 	E2E_WAIT=40 xwait "changed +4 -3" || return
 	m6_shot drift
-	explore_close_all
+	xclose
 	sh_line "cd '$E2E_REPO'"
 	rm -rf "$m6repo"
 	reset_pane
