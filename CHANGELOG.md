@@ -34,6 +34,8 @@ release (0.x minor versions could break them).
 ### Fixed
 
 - Tern 0.9.16: output whose only content is a note, such as `No resources found`, showed raw instead of the native view (0.9.16 falls back to raw for any lens view with a `lines` node). Tested on Tern 0.9.16.
+- Explore logs and events: the selected row is a tint with an accent edge instead of the solid accent fill, so its time, level and reason stay readable.
+- README and docs screenshots are regenerated headlessly at 1280x800 (2x) from the current release.
 
 ## [1.1.0] - 2026-11-10
 
