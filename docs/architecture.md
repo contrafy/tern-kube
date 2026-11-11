@@ -41,7 +41,9 @@ plugin/
   settings_host.luau   block "settings": runs lib/settings/state effects
   lib/
     kubectl/           argv parser (cobra/pflag rules), generated flag and
-                       kind tables, copyable commands and Explore links
+                       kind tables, copyable commands and Explore links,
+                       discovery (`api-resources` rows, k9s alias index,
+                       ranked suggestions)
     parse/             table, describe, json, yaml, mutation-result output
     model/             shared types, typed cell values, resource keys,
                        redaction policy (+ maskTree/maskEchoes for Helm
@@ -53,6 +55,12 @@ plugin/
                        header, summary, helm_chip (lens "Helm release" chip),
                        segcard (diff segment card shared by GitOps, Helm
                        and compare views)
+    usage/             parse (constant jsonpath templates for pods, pod
+                       metrics, nodes, node metrics), model (running and
+                       scheduler requests, per-container limit shares, node
+                       commitments, tones, `kubectl top` formatting, error
+                       mapping), series (deduped sample rings), view (tiles,
+                       pod/container/node tables, sparks)
     logs/              parse (JSON, klog, logfmt, plain; prefix, kubelet
                        time, continuations), store (incremental ring of
                        records), query (filters, pages, context, next
@@ -64,7 +72,8 @@ plugin/
                        (Helm routes: loads, keys, rollback links), compare
                        (compare routes: per-side loads, queue, keys),
                        render, query (pinned argv), relations, label
-                       selectors
+                       selectors, command (`:` prompt grammar, picker rows,
+                       tab completion)
     compare/           contexts (kubeconfig contexts, picker choices,
                        short labels), normalize (strip what differs between
                        clusters), model (pairing, paths, object diff, list
@@ -121,8 +130,14 @@ bin/tern-kube-drift    POSIX sh drift report for CI (no Tern)
 
  Explore block (lib/explore/state)
    key/click -> update(state, msg) -> (state, effects)
-   effects: run pinned kubectl, copy, toast, open link, focus
+   effects: run pinned kubectl, copy, toast, open link, focus, remember
    results come back as messages; render is a pure function of state
+   `:` prompt: kubectl's static kinds answer at once; `api-resources
+   --verbs=list -o wide` (lib/kubectl/discovery) adds CRDs; a complete
+   answer is `remember`ed in explore_host memory per kubeconfig+context
+   (16 targets, never on disk, `r` refetches); lib/explore/command turns
+   the text into a canonical resource, a validated namespace or an exact
+   kubeconfig context
 
  Guarded typed mutation (opt-in)
    kubectl apply -f x.yaml   (shell function from shell/tern-kube.<sh>)
@@ -145,16 +160,20 @@ the desktop: `route.link` finds the clicked pane's host in
 ### Quick-action grants
 
 The window, not the approve block, mints the grant: on a mutating quick
-action without a valid `confirm`, it reads 16 bytes of `/dev/urandom`
+action without a valid `confirm`, it reads 32 bytes of `/dev/urandom`
 through a short process (`env/entropy.luau`; `tern.fs.read` refuses device
 files and `route.link` cannot await, so the block opens from the process
-callback), stores the token with the exact link in the window kv
-(`Link.mintGrant`, 600 s) and opens the approve block with `{url, token}`.
-On confirm the block, possibly on another host with its own kv, emits one
-`open` of the link with `confirm=<token>`; the window consumes the token once
-(`Link.consumeGrant`): every minted field must come back unchanged and only
-resolved fields (`context`, `kubeconfig`, `image`, `suffix`) may be added.
-No randomness, no grant, no block: fail closed.
+callback): 16 for the token, 16 for a run id that only correlates audit
+records. It stores the token with the exact link and the run id in the
+window kv (`Link.mintGrant`, 600 s) and opens the approve block with
+`{url, token, run}`. On confirm the block, possibly on another host with
+its own kv, logs `approved` with the run id and emits one `open` of the
+link with `confirm=<token>`; the window consumes the token once
+(`Link.consumeGrant`, which returns the grant): every minted field must come
+back unchanged and only resolved fields (`context`, `kubeconfig`, `image`,
+`suffix`) may be added. The split then gets the run id for its outcome
+record (`Quick.Settings.outcome`). No randomness, no grant, no block: fail
+closed.
 
 ### Approve placement
 
@@ -251,7 +270,9 @@ palette), quick (mutating quick actions) and guard (spool request).
 5. risk tier `simple` / `typed` / `blocked` (`risk.luau`; manifest scans
    are advisory);
 6. confirm (`confirm.luau`): re-read digests, fingerprint, server, inferred
-   context and, for `rollout undo`, the revision list; any change refuses;
+   context, for `rollout undo` the revision list and, for a selector,
+   `--all` or bare-type target set, the set itself with uids
+   (`selection.luau`); any change refuses;
 7. native: run the pinned argv; quick: open the action link with
    `confirm=<window-minted token>` (see Quick-action grants); guard: write
    `resp-<nonce>.env`, exit 0;
@@ -259,7 +280,8 @@ palette), quick (mutating quick actions) and guard (spool request).
    previewed objects, input file digests), then the outcome (executed or
    failed, exit code, start and finish times) for native runs and, appended
    by the guard after kubectl exits, for guarded shell commands; mutating
-   quick actions record only the approval (see
+   quick actions log `mode: quick` with the window's run id, and their split
+   appends the outcome with `tern-kube-guard record` (see
    [security model](security-model.md)).
 
 Families and their preview steps:
@@ -275,6 +297,11 @@ Families and their preview steps:
 | cordon, uncordon | targets (nodes), server dry run | | live vs `spec.unschedulable` set/removed |
 | drain | targets, client dry run, server eviction probe (bounded `--timeout`) | | node cordoned; evictions card (`drain.luau`) |
 | edit (guard edit hook) | `patch --local -o json` of both files, targets | merge patch dry run per changed object (`edit.luau`) | live vs dry run |
+| set-image, set-env, set-resources, set-selector, set-serviceaccount, set-subject (guard) | targets, `set ... --dry-run=server -o json` | | live vs after; an object kubectl omits is unchanged |
+| replace (guard) | targets, the file read offline, server dry run `-o json` | | live vs after |
+| replace --force (guard) | targets, the file read offline, `delete -f --dry-run=server`, soft `replace` dry run without `--force` (probe) | | live vs the file's objects (uid, creation time, status stripped) |
+| taint (guard) | targets (nodes), server dry run `-o json`, all nodes for `NoSchedule` | for a new/changed `NoExecute`: pods per tainted node (at most 20 nodes) | live vs after; evictions card (`taint.luau`) |
+| create, run, expose (guard) | server dry run `-o json` (`run` without attach flags; `expose` also reads the exposed object) | | creations |
 | helm-rollback | `helm status` of the latest and the target revision, `history --max 1`, the target's extras (soft), `helm rollback --dry-run` | `kubectl diff -f -` of the target manifest (stdin, soft) | the two revision manifests (`helm/revdiff.luau`) |
 
 Families without `kubectl diff` render before/after object diffs through
@@ -358,6 +385,66 @@ item view opened from a cell reads the same load. Compare and matrix routes
 are not saved across reloads, and both are read-only: the Explore core
 refuses quick actions, mutations and export there, and GitOps refuses apply,
 export and delete on any context but the block's own.
+
+### Resource usage
+
+```
+ % (pods list/row, pod, workload, node) / palette Tern Kube: Resource usage
+   -> pods usage:  get pods [-n NS | -A] [-l SEL] [--field-selector
+                   spec.nodeName=N | metadata.name=P] -o jsonpath=<POD_JP>
+                   get pods.metrics.k8s.io [-n NS | -A] [-l SEL]
+                   [--field-selector metadata.name=P] -o jsonpath=<PODM_JP>
+   -> nodes usage: get nodes -o jsonpath=<NODE_JP>
+                   get nodes.metrics.k8s.io -o jsonpath=<NODEM_JP>
+                   get pods -A -o jsonpath=<POD_JP>
+   -> Parse -> Model.podRows / nodeRows -> View.pods / containers / nodes
+```
+
+`plugin/lib/explore/usage.luau` is a sub-core in the compare pattern: one
+load per target, resource, scope, selector and node, one tagged run per
+sub-query (`usage|<load>|<sub>`, stale generations dropped), rows rebuilt
+whenever a sub-query lands. A failed metrics read keeps the rows (requests
+are known) and shows the mapped error; RBAC gaps show `<forbidden>`, never
+zero. The metrics API rejects `spec.nodeName`, so a node's pods are joined
+client-side from an all-namespaces metrics read.
+
+Reads use constant jsonpath templates (`usage/parse.luau`), not `-o json`:
+about 100 bytes per pod instead of about 13 KB, and the metrics API keeps the
+exact units (nanocores, Ki) and the window timestamp that `kubectl top`
+rounds away or drops. The delimiters (tab, `=`, `,`, `;`) cannot occur in
+DNS names or quantities, and no user text enters a template.
+
+Formulas (`usage/model.luau`):
+- A pod's `%CPU/R` and `%MEM/R` divide usage by its running request:
+  pod-level requests when set, else app containers plus restartable init
+  containers (sidecars).
+- `%CPU/L` and `%MEM/L` are the highest share any running container has of
+  its own limit, because limits are enforced per container (an app at 101%
+  of 20m next to a 50m sidecar is not 29% of 70m); with pod-level limits,
+  pod usage over the pod limit.
+- A node's requested and limit columns sum the scheduler's effective value
+  over its non-terminal pods: pod-level when set (KEP-2837), else
+  `max(max_i(init_i + sidecars started before i), apps + sidecars)`
+  (KEP-753), plus overhead. This equals `kubectl describe node` except for
+  pods with pod-level resources, which kubectl 1.34 counts as 0; the usage
+  view follows the scheduler (`tests/integration/usage/check.sh` asserts
+  the difference is exactly those pods).
+
+Series (`usage/series.luau`) keep per row key a ring of at most 30
+`{t, cpu, mem}` samples, appended only when the metrics timestamp is newer
+than the last one (reads inside one 15 s window add nothing). They live
+beside the load, survive `r`, are dropped on target or scope change, are
+never saved, and are off above 5000 rows.
+
+Sampling (`w`) is the only timed read in Explore and the user starts it: the
+view's metrics query alone, every 15 s for 2 minutes (at most 8 reads, one
+in flight), behind a `Sampling m:ss · w stops` header badge. It has no timer
+of its own: the existing Explore liveness tick (`explore_host.luau`,
+`{t="tick", now}` every 2 s) reaches `Usage.onTick`, which emits a run only
+when one is due and none is in flight; parsing happens in the run callback,
+not in the timer. Samples move only the trend cells; numbers, tiles, row set
+and order change only on `r`. Sampling stops when time is up, on `w`, on any
+route change, on a context or namespace change, on an error and on reload.
 
 ### GitOps
 

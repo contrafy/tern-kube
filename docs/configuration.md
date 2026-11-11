@@ -2,7 +2,8 @@
 
 tern-kube reads one JSON file. Every key is optional; a missing key has its
 default, and the defaults are the safe choice (secret values hidden, Explore
-never polls, mutations go through preview and confirmation).
+never polls on its own (a usage sample runs only after `w`, for two
+minutes), mutations go through preview and confirmation).
 
 ## Location
 
@@ -215,7 +216,7 @@ when known) on every command it runs.
 | Key | Type | Default | Effect |
 | --- | --- | --- | --- |
 | `allow_live_queries` | boolean | `true` | `false` disables the Explore block's cluster reads: it opens but runs no `kubectl` command. |
-| `auto_refresh` | boolean | `false` | Only `false` is supported. Explore never polls the cluster; refresh with `r` or the Refresh chip. `true` is kept `false` with a warning. |
+| `auto_refresh` | boolean | `false` | Only `false` is supported. Explore never polls the cluster on its own; refresh with `r` or the Refresh chip. The one timed read is a usage sample you start with `w` (metrics only, every 15 s for two minutes). `true` is kept `false` with a warning. |
 | `query_timeout_ms` | integer 500-600000 | `10000` | Each Explore `kubectl` call is killed after this many milliseconds and shown as an error. |
 | `relationship_max_nodes` | integer 1-5000 | `250` | Maximum objects in a relations graph; larger graphs are truncated with a note. |
 | `logs_tail` | integer 1-100000 | `500` | Lines the Explore logs view fetches (`kubectl logs --tail=<n>`). |
@@ -238,7 +239,7 @@ palette, mutating quick actions, and shell-guard requests).
 
 | Key | Type | Default | Effect |
 | --- | --- | --- | --- |
-| `show_secret_values` | boolean | `false` | `false` masks the values of Secret `data`/`stringData` and the Secret's `kubectl.kubernetes.io/last-applied-configuration` annotation (which embeds them) in the native views: lens JSON and YAML views, the lens object tree and the Explore object view. A banner notes that the raw output contains Secret data. `true` shows the values, with a warning banner that the output contains Secret values. Set `true` only on a machine and screen you trust. Tern's raw output is kubectl's own and is never masked. |
+| `show_secret_values` | boolean | `false` | `false` masks the values of Secret `data`/`stringData` and the Secret's `kubectl.kubernetes.io/last-applied-configuration` annotation (which embeds them) in the native views: lens JSON and YAML views, the lens object tree and the Explore object view. A banner notes that the raw output contains Secret data. `true` shows the values, with a warning banner that the output contains Secret values, and enables the Decode values toggle (`z` in Explore's object view of a Secret, a chip on lens `get secret -o yaml` / `-o json`): a separate, display-only card shows each value decoded (control, bidi and zero-width characters escaped, binary values as a hex dump) while the YAML and tree keep kubectl's base64. Values are never decoded by default and the toggle is never saved. Set `true` only on a machine and screen you trust. Tern's raw output is kubectl's own and is never masked. |
 | `sensitive_output_strict_mode` | boolean | `false` | `true` additionally masks values that look sensitive outside Secret data. Heuristic, advisory only: a value is masked when its key or env var name contains, case-insensitively, one of `password`, `passwd`, `secret`, `token`, `apikey`, `api_key`, `private_key` or `credentials` (plurals included) as a whole name segment; names are split at `_`, `-`, `.` and camelCase, so `DB_PASSWORD`, `apiKey` and `GITHUB_TOKEN` match while `tokenizer_mode` does not. Names ending in `name` or `ref` (`secretName`, `tokenSecretRef`) are references and stay visible. Applies to the native views of the lens and Explore: describe (fields such as pod `Environment` entries and ConfigMap `Data` keys), YAML (`key: value` lines and env `name`/`value` pairs) and JSON/object trees (mapping keys and `{name, value}` env entries); when anything in an object is masked, its last-applied annotation is masked too. It cannot recognise every secret: values under innocuous names or embedded in larger strings stay visible, and raw output is never masked. |
 
 ### `quick_actions`
