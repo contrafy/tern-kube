@@ -63,7 +63,10 @@ contains "command names the CLI" "$cmd" "tern-kube-drift"
 contains "recursive directory source" "$cmd" "-R -f"
 contains "namespace-less documents pinned" "$cmd" "-n $GNS"
 contains "context pinned" "$cmd" "kind-tern-kube-dev"
-contains "toast notes the kubeconfig" "$(cli_toast)" "KUBECONFIG"
+# The lens pane's kubeconfig is known (pane record), so the command pins it
+# and the toast has no "uses your shell's KUBECONFIG" note (design rule 5).
+contains "kubeconfig pinned" "$cmd" "--kubeconfig $E2E_KUBECONFIG"
+excludes "no shell KUBECONFIG note" "$(cli_toast)" "your shell's KUBECONFIG"
 
 explore_close_all
 sh_line "cd '$E2E_REPO'"

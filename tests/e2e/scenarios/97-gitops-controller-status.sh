@@ -79,7 +79,12 @@ xwait "tk-e2e-ctl-web" || return
 xkey ctrl+g
 E2E_WAIT=30 xwait "Drift sources" || return
 E2E_WAIT=30 xwait "Argo CD / Flux controller" || return
-contains "chooser counts the controller" "$(xtext)" "1 Argo CD / Flux controller"
+# The chooser counts every Argo CD / Flux object of the cluster: this app
+# plus whatever the gitops world (scripts/fixtures/capture-drift.sh) left.
+ctls=$(kc get applications.argoproj.io,kustomizations.kustomize.toolkit.fluxcd.io,helmreleases.helm.toolkit.fluxcd.io \
+	-A -o name | wc -l | tr -d ' ')
+if [ "$ctls" = 1 ]; then ctl_count="1 Argo CD / Flux controller "; else ctl_count="$ctls Argo CD / Flux controllers"; fi
+contains "chooser counts the controllers" "$(xtext)" "$ctl_count"
 xkey enter
 E2E_WAIT=30 xwait "Drift of" || return
 E2E_WAIT=30 wait_for "the controller card" has "$EX [data-role='tern-kube.gitops-controller-status']" || return
@@ -89,7 +94,10 @@ contains "card shows sync status" "$card" "OutOfSync"
 contains "self-heal revert risk" "$(xtext "[data-role='tern-kube.gitops-controller-risk'] *")" \
 	"Argo CD self-heal is on: changes applied outside Git are reverted"
 
-# esc leaves the report for the object view it was opened from.
+# esc leaves the report for the source chooser it was opened from, a
+# second esc for the object view.
+xkey escape
+E2E_WAIT=20 xwait "Drift sources" || return
 xkey escape
 E2E_WAIT=20 wait_for "the object's controller line" has "$EX [data-role='tern-kube.gitops-controller']" || return
 contains "object line names the owner" "$(xtext "[data-role='tern-kube.gitops-controller'] *")" "Argo CD app tk-e2e-app"
