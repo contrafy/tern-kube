@@ -230,6 +230,12 @@ describe("lens view", function()
 		expect(nodes.find(node, nodes.role("tern-kube.diagnostics"))).toBeNil()
 	end)
 
+	it("info notes avoid the lines node, which makes Tern 0.9.16 show the raw output instead", function()
+		local node = View.render(build("ns-empty/get_pods"), vsm.default()) :: any
+		expect(nodes.find(node, nodes.kind("lines"))).toBeNil()
+		expect(nodes.text(node)).toContain("No resources found")
+	end)
+
 	it("partial captures say how many lines were not understood", function()
 		local c = fromLines("kubectl get pods", { "NAME   READY", "a      1/1", "   stray  text  here" }, 0)
 		local node = View.render(c, vsm.default()) :: any

@@ -203,7 +203,8 @@ local function diagnosticsNode(diagnostics: { Types.Diagnostic }): Node?
 		)
 	end
 	if #infos > 0 then
-		table.insert(out, ui.lines(infos, { key = "info" }))
+		-- Not ui.lines: Tern 0.9.16 shows the raw output for a lens view holding one.
+		table.insert(out, ui.col(infos, { key = "info", gap = "none" }))
 	end
 	if #out == 0 then
 		return nil
