@@ -1,5 +1,5 @@
 # Live: the Helm releases route (tests/e2e/helm.sh world, read-only). The
-# kinds picker's synthetic first row opens it in the Explore namespace scope;
+# `:` prompt's helm command opens it in the Explore namespace scope;
 # status badges by tone (failed error, pending-upgrade warning), chart,
 # version and app version columns; n switches to every namespace and back
 # to one; / filters by status.
@@ -15,14 +15,12 @@ xwait 'Object deployment/web-b-web'
 xkey escape
 xwait 'web-b-web' "$XT *"
 
-# : kinds picker: "helm releases" is the first row and the only match of "helm".
+# : command prompt: typing "helm" puts the helm command first; enter runs it.
 xkey :
 xwait 'Kinds'
-eq "first kinds row" "$(hcol 1 2 | jq -r '.[0]')" "helm releases"
-xkey /
 ctl type helm >/dev/null
-xkey enter
-eq "kinds filter helm" "$(hcol 1 2)" '["helm releases"]'
+xwait 'Helm releases'
+eq "first prompt row" "$(hcol 1 | jq -r '.[0]')" "helm"
 xkey enter
 xwait '4 releases'
 eq "releases in the namespace scope" "$(hcol 1 8)" '["broken-c","shop-a","stuck-d","web-b"]'

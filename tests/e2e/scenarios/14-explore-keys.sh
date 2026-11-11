@@ -64,14 +64,6 @@ xkey escape
 xkey n
 xwait 'all namespaces' '[data-role="tern-kube.explore-namespaces"] *'
 xkey escape
-xkey :
-xwait 'configmaps' "[data-role='tern-kube.explore-kinds'] $XT"
-xkey /
-ctl type deploy >/dev/null
-xkey enter
-xwait 'deployments' "[data-role='tern-kube.explore-kinds'] $XT"
-excludes "kinds filter drops other kinds" "$(xnames)" '"configmaps"'
-xkey escape
 
 xkey g g
 xkey d
