@@ -4,7 +4,8 @@
 -- toast, open a link, focus the filter, exit). Nothing here touches `tern`.
 --
 -- Live data is read only on user action (navigation to a view not loaded yet,
--- or refresh); there is no polling. Processes cannot be killed, so "cancel"
+-- refresh, or a usage sampling run started with `w`); nothing polls on its
+-- own. Processes cannot be killed, so "cancel"
 -- means ignoring late results: every load carries a generation and a result
 -- whose generation is not the load's current one is dropped.
 --
@@ -16,7 +17,9 @@ local Capture = require("../lens/capture")
 local Command = require("../kubectl/command")
 local Compare = require("./compare")
 local Config = require("../config")
+local Discovery = require("../kubectl/discovery")
 local EventsModel = require("../events/model")
+local ExploreCommand = require("./command")
 local ExploreTypes = require("./types")
 local Gitops = require("./gitops")
 local Helm = require("./helm")
@@ -35,11 +38,13 @@ local Quick = require("../actions/quick")
 local Redact = require("../model/redact")
 local Relations = require("./relations")
 local Resource = require("../model/resource")
+local SecretData = require("../model/secretdata")
 local Shellenv = require("../env/shellenv")
 local Table = require("../render/table")
 local Textfield = require("../textfield")
 local Timeline = require("../events/timeline")
 local Types = require("../model/types")
+local Usage = require("./usage")
 local Values = require("../model/values")
 
 type Config = Config.Config
@@ -85,6 +90,14 @@ export type ListData = {
 	view: any?,
 }
 export type NamesData = { names: { string } }
+-- The kinds picker: discovery rows, their alias index and the kubectl
+-- message of a partial discovery; memo: the last prompt text's rows.
+export type KindsData = {
+	rows: { Discovery.KindRow },
+	index: Discovery.Index,
+	partial: string?,
+	memo: { key: string, rows: { ExploreCommand.Row } }?,
+}
 -- masked: the object view hides at least one value of the fetched object.
 export type DetailData = { object: any, masked: boolean }
 -- memo: the last filtered view, so moving the selection does not re-filter.
@@ -147,6 +160,8 @@ export type Env = {
 	-- Tag of this block on the mutations it starts ("explore:<pane>"); the
 	-- approve block reports success with it and the host refreshes.
 	origin: string?,
+	-- The host's in-memory discovery output for a target (M.discoveryId).
+	discovery: ((id: string) -> { text: string, at: number }?)?,
 }
 
 -- A namespace scope remembered with the context it was used with.
@@ -207,6 +222,8 @@ export type State = {
 	helmProgram: string?,
 	-- Compare across contexts: contexts, sides and their results (compare.luau).
 	compare: Compare.C,
+	-- Usage trends and the sampling run (usage.luau); loads live in `cache`.
+	usage: Usage.U,
 	-- esc at the root armed a close at this clock (-1: the clock is unknown);
 	-- a second esc soon after closes. Any other key disarms.
 	escArmed: number?,
@@ -220,6 +237,13 @@ export type State = {
 	origin: string?,
 	-- First help row shown (the help layer scrolls with j/k and page keys).
 	helpTop: number,
+	discovery: ((id: string) -> { text: string, at: number }?)?,
+	-- A `:` command typed while discovery was loading: run when it lands
+	-- (gen of that load); any edit drops it.
+	pendingCommand: { text: string, gen: number }?,
+	-- os.time() at init: a cached discovery older than the block may miss
+	-- new CRDs (the unknown-kind toast says r refreshes).
+	openedAt: number?,
 }
 
 export type Effect = ExploreTypes.Effect
@@ -446,6 +470,8 @@ function M.routeKey(s: State, route: Route): string
 	elseif Compare.isRoute(kind) then
 		-- Not a cache key: compare keeps its sides in s.compare.
 		return Compare.routeKey(M.compareCtx(s), route)
+	elseif Usage.isRoute(kind) then
+		return Usage.routeKey(targetId(s.target), route, M.scope(s, route))
 	end
 	if kind == "events" then
 		local subject = if route.ref then Resource.key(route.ref) else "ns:" .. scopeId(M.eventsScope(s, route))
@@ -738,8 +764,41 @@ function M.compareCtx(s: State): Compare.Ctx
 	}
 end
 
--- The kinds picker's synthetic first row (shown when helm was found).
-M.HELM_KIND_ROW = "helm releases"
+-- The discovery cache key of a target (the host keeps one entry per key).
+function M.discoveryId(t: Target): string
+	return (t.kubeconfig or "") .. "\0" .. (t.context or "")
+end
+
+-- The alias index the prompt resolves against: discovery once loaded, else
+-- kubectl's static table; the second result says which.
+function M.kindIndex(s: State, route: Route?): (Discovery.Index, boolean)
+	local load = s.cache[M.routeKey(s, route or { kind = "kinds" })]
+	if load and load.status == "ok" and load.data then
+		return (load.data :: KindsData).index, true
+	end
+	return Discovery.staticIndex(), false
+end
+
+-- The kinds picker's rows for its prompt text: matching commands, then
+-- ranked kinds (static ones until discovery answers).
+function M.kindRows(s: State, route: Route?): { ExploreCommand.Row }
+	local r = route or top(s)
+	local text = s.filter[M.routeKey(s, r)] or ""
+	local index, discovered = M.kindIndex(s, r)
+	local helm = s.helmProgram ~= nil
+	if not discovered then
+		return ExploreCommand.rows(index, text, helm)
+	end
+	local data = (s.cache[M.routeKey(s, r)] :: Load).data :: KindsData
+	local memoKey = (if helm then "h" else "-") .. text
+	local memo = data.memo
+	if memo and memo.key == memoKey then
+		return memo.rows
+	end
+	local rows = ExploreCommand.rows(index, text, helm)
+	data.memo = { key = memoKey, rows = rows }
+	return rows
+end
 
 -- Record indices of a logs load that pass the route's filter and level
 -- floor, in display order (merged by kubelet time).
@@ -813,19 +872,20 @@ function M.items(s: State, route: Route?): { Item }
 			table.insert(out, { key = "*", value = "*" })
 		end
 	end
-	if r.kind == "kinds" and s.helmProgram then
-		if f == "" or string.find(M.HELM_KIND_ROW, f, 1, true) or f == "hr" then
-			table.insert(out, { key = M.HELM_KIND_ROW, value = M.HELM_KIND_ROW })
+	if r.kind == "kinds" then
+		for _, row in M.kindRows(s, r) do
+			table.insert(out, { key = row.key, value = row.key })
 		end
+		return out
 	end
 	if load == nil or load.status ~= "ok" or load.data == nil then
 		return out
 	end
-	if r.kind == "list" then
+	if r.kind == "list" or Usage.isRoute(r.kind) then
 		for _, row in M.listRows(s, r, load.data :: ListData) do
 			table.insert(out, { key = row.key, ref = row.ref })
 		end
-	elseif r.kind == "contexts" or r.kind == "namespaces" or r.kind == "kinds" then
+	elseif r.kind == "contexts" or r.kind == "namespaces" then
 		for _, name in (load.data :: NamesData).names do
 			if f == "" or string.find(string.lower(name), f, 1, true) then
 				table.insert(out, { key = name, value = name })
@@ -878,7 +938,7 @@ end
 -- The object the keys act on: the selected row, or the route's own object.
 function M.focusRef(s: State): Ref?
 	local r = top(s)
-	if r.kind == "list" or r.kind == "relations" or r.kind == "events" then
+	if r.kind == "list" or r.kind == "relations" or r.kind == "events" or Usage.isRoute(r.kind) then
 		local item = M.selectedItem(s)
 		if item and item.ref then
 			return item.ref
@@ -918,6 +978,8 @@ local function argvFor(s: State, route: Route): { string }?
 		return Query.apiResources(p, t)
 	elseif kind == "list" then
 		return Query.list(p, t, route.resource or "pods", M.scope(s, route), route.selector)
+	elseif Usage.isRoute(kind) then
+		return Usage.subs(p, t, route, M.scope(s, route))[1].argv
 	elseif kind == "events" then
 		return Query.events(p, t, M.eventsScope(s, route))
 	elseif kind == "logs" then
@@ -1116,6 +1178,37 @@ local function startPrevious(s: State, route: Route, key: string, argv: { string
 	table.insert(effects, runEffect(s, key .. SEP .. M.POD_SUB, Query.get(s.program, s.target, ref), gen))
 end
 
+function M.usageSubs(s: State, route: Route): { Usage.Sub }
+	return Usage.subs(s.program, s.target, route, M.scope(s, route))
+end
+
+-- Every read of a usage load at once; a pod's containers come from a pods
+-- load of the same target already read, without a query (r reads them).
+local function startUsage(s: State, route: Route, key: string, gen: number, force: boolean, effects: { Effect })
+	local ref = route.ref
+	if ref and not force then
+		local prefix = "usage|" .. targetId(s.target) .. "|pods|"
+		for k, load in s.cache do
+			if string.sub(k, 1, #prefix) == prefix and load.status == "ok" and load.data then
+				local data = Usage.fromCached(load.data :: Usage.Data, ref, s.target.context)
+				if data then
+					setLoad(
+						s,
+						key,
+						{ status = "ok", data = data, argv = load.argv, gen = gen, fetchedAt = load.fetchedAt }
+					)
+					return
+				end
+			end
+		end
+	end
+	local subs = M.usageSubs(s, route)
+	setLoad(s, key, { status = "loading", data = Usage.newData(subs, route), argv = subs[1].argv, gen = gen })
+	for _, sub in subs do
+		table.insert(effects, runEffect(s, key .. SEP .. sub.name, sub.argv, gen))
+	end
+end
+
 -- Starts loading `route` (or reloads it when `force`).
 local function startLoad(s: State, route: Route, force: boolean, effects: { Effect })
 	local key = M.routeKey(s, route)
@@ -1134,11 +1227,28 @@ local function startLoad(s: State, route: Route, force: boolean, effects: { Effe
 		return
 	end
 	s.gen += 1
+	if route.kind == "kinds" then
+		local id = M.discoveryId(s.target)
+		local hit = if not force and s.discovery then s.discovery(id) else nil
+		if hit then
+			local rows = Discovery.parse(hit.text).rows
+			local data: KindsData = { rows = rows, index = Discovery.index(rows), partial = nil, memo = nil }
+			setLoad(s, key, { status = "ok", data = data, argv = argv, gen = s.gen, fetchedAt = hit.at })
+			return
+		end
+		-- The target the answer is remembered under (it may change meanwhile).
+		setLoad(s, key, { status = "loading", argv = argv, gen = s.gen, data = { id = id } })
+		table.insert(effects, runEffect(s, key, argv, s.gen))
+		return
+	end
 	if route.kind == "relations" then
 		startRelations(s, route, key, s.gen, effects)
 		return
 	elseif route.kind == "events" then
 		startEvents(s, route, key, argv, s.gen, effects)
+		return
+	elseif Usage.isRoute(route.kind) then
+		startUsage(s, route, key, s.gen, force, effects)
 		return
 	elseif route.kind == "logs" and route.previous and route.container == nil and route.ref and isPod(route.ref) then
 		startPrevious(s, route, key, argv, s.gen, effects)
@@ -1235,6 +1345,13 @@ end
 
 local function pushRoute(s: State, route: Route, effects: { Effect })
 	local stack = table.clone(s.stack)
+	local under = stack[#stack]
+	-- Decoded Secret values never wait behind another view.
+	if under and under.decoded then
+		local hidden = table.clone(under)
+		hidden.decoded = nil
+		stack[#stack] = hidden
+	end
 	table.insert(stack, route)
 	s.stack = stack
 	s.editing = false
@@ -1296,6 +1413,8 @@ local ROUTE_KINDS: { [string]: boolean } = {
 	manifest = true,
 	diff = true,
 	compare = true,
+	-- Usage comes back as a route only: no trends, no sampling run.
+	usage = true,
 }
 
 -- A restored string field: plain text, bounded.
@@ -1426,6 +1545,13 @@ local function restoreRoute(v: any): Route?
 		route.wrap = if v.wrap == true then true else nil
 	elseif v.kind == "list" then
 		route.selector = M.validSelector(v.selector)
+	elseif v.kind == "usage" then
+		route.container = nil
+		route.previous = nil
+		route.resource = if v.resource == "nodes" then "nodes" else "pods"
+		route.ref = if ref and ref.kind == "Pod" and route.resource == "pods" then ref else nil
+		route.selector = if route.ref then nil else M.validSelector(v.selector)
+		route.node = if route.ref then nil else Usage.validNode(v.node)
 	elseif v.kind == "events" then
 		route.warnings = if v.warnings == true then true else nil
 		route.related = if type(v.related) == "boolean" then v.related else nil
@@ -1498,6 +1624,28 @@ local function linkRoutes(params: { { key: string, value: string } }): { Route }
 		end
 		return helm
 	end
+	if route == "usage" then
+		-- Lens chips and the palette: no kind (palette) or a Node is nodes
+		-- usage, a name drills in (a node's pods, a pod's containers).
+		local target = if name then Usage.validNode(name) else nil
+		if kind == nil or resource == "nodes" then
+			local usage: { Route } = { { kind = "usage", resource = "nodes" } }
+			if target then
+				table.insert(usage, { kind = "usage", resource = "pods", node = target })
+			end
+			return usage
+		end
+		local usage: { Route } =
+			{ { kind = "usage", resource = "pods", selector = M.validSelector(param(params, "selector")) } }
+		if target then
+			table.insert(usage, {
+				kind = "usage",
+				resource = "pods",
+				ref = { kind = "Pod", name = target, namespace = namespace, source = "live" },
+			})
+		end
+		return usage
+	end
 	local ref: Ref? = nil
 	if kind and name then
 		local info = Kinds.normalize(resource)
@@ -1548,13 +1696,16 @@ function M.init(args: { string }, saved: any, config: Config, env: Env): (State,
 	local url = args[1]
 	local params = if url and string.sub(url, 1, 12) == "tern-kube://" then Command.parseQuery(url) else {}
 	local linkContext = param(params, "context")
+	-- pick=1: the context was clicked in a lens row (get-contexts), a choice
+	-- like the chooser's, not a typed --context.
+	local picked = linkContext ~= nil and param(params, "pick") == "1"
 	local target: Target = {
 		kubeconfig = kubeconfigPath(param(params, "kubeconfig"), config, env),
 		context = linkContext,
-		contextSource = if linkContext then "flag" else "unresolved",
+		contextSource = if picked then "chosen" elseif linkContext then "flag" else "unresolved",
 		namespace = if param(params, "namespace") == "*" then nil else param(params, "namespace"),
 		allNamespaces = param(params, "namespace") == "*",
-		confirmed = linkContext ~= nil,
+		confirmed = linkContext ~= nil and not picked,
 		inferredAt = nil,
 	}
 	local stack = linkRoutes(params)
@@ -1637,6 +1788,7 @@ function M.init(args: { string }, saved: any, config: Config, env: Env): (State,
 		helm = Helm.new(),
 		helmProgram = env.helm,
 		compare = Compare.new(),
+		usage = Usage.new(),
 		escArmed = nil,
 		sort = {},
 		utcOffset = env.utcOffset or 0,
@@ -1644,6 +1796,9 @@ function M.init(args: { string }, saved: any, config: Config, env: Env): (State,
 		firstRun = firstRun,
 		origin = env.origin,
 		helpTop = 0,
+		discovery = env.discovery,
+		pendingCommand = nil,
+		openedAt = env.now,
 	}
 	local effects: { Effect } = {}
 	if droppedSelector and askedSelector then
@@ -1704,6 +1859,7 @@ function M.save(s: State): any
 			container = r.container,
 			previous = r.previous,
 			selector = r.selector,
+			node = r.node,
 			since = r.since,
 			tail = r.tail,
 			floor = r.floor,
@@ -1768,6 +1924,11 @@ local function back(s: State, effects: { Effect })
 		s.stack = stack
 		if left.ref and stack[#stack].kind == "list" and s.sel[M.currentKey(s)] == nil then
 			selectKey(s, Resource.key(left.ref))
+		elseif Usage.isRoute(left.kind) and Usage.isRoute(stack[#stack].kind) and s.sel[M.currentKey(s)] == nil then
+			local parent = Usage.parentKey(left)
+			if parent then
+				selectKey(s, parent)
+			end
 		end
 		ensure(s, effects)
 		return
@@ -1828,6 +1989,7 @@ local function chooseContext(s: State, name: string, effects: { Effect })
 	-- the previous one may show under the new target.
 	s.helm = Helm.new()
 	s.compare = Compare.new()
+	s.usage = Usage.new()
 	local root = s.stack[1]
 	if root.kind == "helm-releases" then
 		root = { kind = "helm-releases" }
@@ -1849,6 +2011,8 @@ local function chooseNamespace(s: State, name: string, effects: { Effect })
 		t.allNamespaces = false
 	end
 	s.target = t
+	-- Trends and a sampling run belong to the scope they were read in.
+	s.usage = Usage.new()
 	local stack = table.clone(s.stack)
 	while #stack > 1 and stack[#stack].kind == "namespaces" do
 		table.remove(stack)
@@ -1891,9 +2055,18 @@ local function openEvents(s: State, ref: Ref?, effects: { Effect })
 	pushRoute(s, route, effects)
 end
 
+local runRow: (s: State, row: ExploreCommand.Row, text: string, effects: { Effect }) -> ()
+
 local function drill(s: State, effects: { Effect })
 	local r = top(s)
 	if Gitops.isRoute(r.kind) or Helm.isRoute(r.kind) or Compare.isRoute(r.kind) then
+		return
+	end
+	if Usage.isRoute(r.kind) then
+		local nextRoute = Usage.drill(r, M.selectedItem(s))
+		if nextRoute then
+			pushRoute(s, nextRoute, effects)
+		end
 		return
 	end
 	if r.kind == "detail" then
@@ -1909,11 +2082,12 @@ local function drill(s: State, effects: { Effect })
 	elseif r.kind == "namespaces" then
 		chooseNamespace(s, item.key, effects)
 	elseif r.kind == "kinds" then
-		if item.key == M.HELM_KIND_ROW then
-			s.stack = { { kind = "helm-releases" } }
-			ensure(s, effects)
-		else
-			chooseKind(s, item.key, effects)
+		local text = s.filter[M.currentKey(s)] or ""
+		for _, row in M.kindRows(s) do
+			if row.key == item.key then
+				runRow(s, row, text, effects)
+				break
+			end
 		end
 	elseif item.ref then
 		openRef(s, "detail", item.ref, effects)
@@ -1937,6 +2111,174 @@ local function pushPicker(s: State, kind: RouteKind, effects: { Effect })
 		s.filter = filter
 	end
 	pushRoute(s, route, effects)
+end
+
+-- The `:` prompt ---------------------------------------------------------------
+
+local function openPrompt(s: State, effects: { Effect })
+	if not allowLive(s) then
+		table.insert(effects, toast("error", "Live queries are disabled", "explore.allow_live_queries is false"))
+		return
+	end
+	pushPicker(s, "kinds", effects)
+	if top(s).kind ~= "kinds" then
+		return
+	end
+	-- The highlight follows the text until up/down picks a row.
+	local key = M.currentKey(s)
+	if s.sel[key] then
+		local sel = table.clone(s.sel)
+		sel[key] = nil
+		s.sel = sel
+	end
+	startEdit(s, effects)
+end
+
+-- The kinds picker goes; the command's view takes its place.
+local function leavePrompt(s: State)
+	s.editing = false
+	s.pendingCommand = nil
+	local stack = table.clone(s.stack)
+	while #stack > 1 and stack[#stack].kind == "kinds" do
+		table.remove(stack)
+	end
+	s.stack = stack
+end
+
+-- `NS`, `-A` or `*` after a command scopes the target first.
+local function commandScope(s: State, cmd: ExploreCommand.Cmd)
+	if not cmd.all and cmd.arg == nil then
+		return
+	end
+	local t = table.clone(s.target)
+	t.namespace = if cmd.all then nil else cmd.arg
+	t.allNamespaces = cmd.all == true
+	s.target = t
+end
+
+local function contextNames(s: State): { string }
+	local load = s.cache[M.routeKey(s, { kind = "contexts" })]
+	return if load and load.status == "ok" and load.data then (load.data :: NamesData).names else {}
+end
+
+local function rootRoute(s: State, route: Route, effects: { Effect })
+	s.stack = { route }
+	ensure(s, effects)
+end
+
+-- Runs prompt `text` (state.luau's only path from typed text to a query:
+-- a canonical resource, a validated namespace or an exact context name).
+local function runCommand(s: State, text: string, effects: { Effect })
+	local cmd = ExploreCommand.parse(text)
+	if cmd.t == "empty" then
+		s.editing = false
+		return
+	elseif cmd.t == "invalid" then
+		table.insert(effects, toast("error", cmd.why or "Invalid command"))
+		return
+	elseif cmd.t == "ctx" then
+		local arg = cmd.arg
+		leavePrompt(s)
+		if arg and table.find(contextNames(s), arg) then
+			chooseContext(s, arg, effects)
+			return
+		end
+		pushPicker(s, "contexts", effects)
+		if arg and top(s).kind == "contexts" then
+			local filter = table.clone(s.filter)
+			filter[M.currentKey(s)] = arg
+			s.filter = filter
+		end
+		return
+	elseif cmd.t == "ns" then
+		leavePrompt(s)
+		if cmd.all or cmd.arg then
+			chooseNamespace(s, if cmd.all then "*" else cmd.arg :: string, effects)
+		else
+			pushPicker(s, "namespaces", effects)
+		end
+		return
+	elseif cmd.t == "helm" then
+		if s.helmProgram == nil then
+			table.insert(effects, toast("error", "helm not found", Helm.notFound(M.helmCtx(s))))
+			return
+		end
+		leavePrompt(s)
+		commandScope(s, cmd)
+		rootRoute(s, { kind = "helm-releases" }, effects)
+		return
+	elseif cmd.t == "events" then
+		leavePrompt(s)
+		commandScope(s, cmd)
+		rootRoute(s, { kind = "events" }, effects)
+		return
+	elseif cmd.t == "usage" then
+		leavePrompt(s)
+		commandScope(s, cmd)
+		rootRoute(s, { kind = "usage", resource = if cmd.nodes then "nodes" else "pods" }, effects)
+		return
+	end
+	local index = M.kindIndex(s)
+	local row = Discovery.resolve(index, cmd.head)
+	local load = M.currentLoad(s)
+	if row == nil and load and load.status == "loading" then
+		s.pendingCommand = { text = text, gen = load.gen }
+		return
+	end
+	if row == nil then
+		row = ExploreCommand.kindFor(index, cmd.head)
+	end
+	if row == nil then
+		local stale = load ~= nil and load.fetchedAt ~= nil and s.openedAt ~= nil and load.fetchedAt < s.openedAt
+		table.insert(
+			effects,
+			toast(
+				"error",
+				string.format('No kind or command matches "%s"', cmd.head),
+				if stale then "r refreshes the kinds" else nil
+			)
+		)
+		return
+	end
+	local found = row :: Discovery.KindRow
+	if (cmd.all or cmd.arg) and found.namespaced == false then
+		table.insert(effects, toast("info", found.name .. " is cluster-scoped", "The namespace was ignored"))
+	else
+		commandScope(s, cmd)
+	end
+	leavePrompt(s)
+	chooseKind(s, found.name, effects)
+end
+
+-- A picked row runs as if its canonical word had been typed.
+function runRow(s: State, row: ExploreCommand.Row, text: string, effects: { Effect })
+	runCommand(s, ExploreCommand.complete(text, row), effects)
+end
+
+-- enter in the prompt: an up/down pick runs that row, else the text.
+local function promptEnter(s: State, effects: { Effect })
+	local key = M.currentKey(s)
+	local text = s.filter[key] or ""
+	local picked = s.sel[key]
+	if picked then
+		for _, row in M.kindRows(s) do
+			if row.key == picked then
+				runRow(s, row, text, effects)
+				return
+			end
+		end
+	end
+	runCommand(s, text, effects)
+end
+
+-- The command discovery was loading for, once it answered.
+local function resumeCommand(s: State, key: string, gen: number, effects: { Effect })
+	local pending = s.pendingCommand
+	if pending == nil or pending.gen ~= gen or top(s).kind ~= "kinds" or M.currentKey(s) ~= key then
+		return
+	end
+	s.pendingCommand = nil
+	runCommand(s, pending.text, effects)
 end
 
 -- After kubectl could not run, a retry starts over (the host re-reads the
@@ -1965,12 +2307,19 @@ function M.refresh(s: State, effects: { Effect })
 		return
 	end
 	if r.kind == "contexts" or M.resolved(s) then
+		if r.kind == "detail" then
+			-- The object's next read re-reads its Argo CD / Flux controller.
+			withGitops(s, function(g, ctx)
+				Gitops.forgetControllers(g, ctx)
+				return nil
+			end)
+		end
 		startLoad(s, r, true, effects)
 	end
 end
 
 local STALE_AFTER_MUTATION: { [string]: boolean } =
-	{ list = true, detail = true, relations = true, describe = true, events = true }
+	{ list = true, detail = true, relations = true, describe = true, events = true, usage = true }
 
 -- A mutation this block started succeeded (MUT-F9): the user asked for the
 -- change, so the view refreshes, and the other cluster views drop their
@@ -2014,6 +2363,16 @@ local function copyCommand(s: State, effects: { Effect })
 			Compare.copy(c, ctx, r, effects)
 			return nil
 		end)
+		return
+	end
+	if Usage.isRoute(r.kind) then
+		local lines: { string } = {}
+		for _, sub in M.usageSubs(s, r) do
+			table.insert(lines, typed(sub.argv))
+		end
+		local text = table.concat(lines, "\n")
+		table.insert(effects, { t = "copy", text = text })
+		table.insert(effects, toast("success", string.format("Copied %d commands", #lines), lines[1]))
 		return
 	end
 	local argv = argvFor(s, r)
@@ -2475,6 +2834,7 @@ local function applyInput(s: State, f: Textfield.Field?): boolean
 		return false
 	end
 	if f.text ~= fieldText(s) then
+		s.pendingCommand = nil
 		local field = s.field
 		if field then
 			withGitops(s, function(g)
@@ -2644,6 +3004,111 @@ local function compareRouteKey(s: State, key: Key, ch: string?, effects: { Effec
 	return handled
 end
 
+-- Usage ------------------------------------------------------------------------
+
+-- The usage view of what is in view, and the row to select in it: a pods
+-- list (or its row) its scope, a pod its containers, a workload its pods
+-- (`-l` its selector), nodes the nodes view, anything else the pods of the
+-- namespace scope.
+local function usageFor(s: State): (Route, string?)
+	local r = top(s)
+	local ref = M.focusRef(s)
+	if r.kind == "list" and (r.resource or "pods") == "nodes" then
+		return { kind = "usage", resource = "nodes" }, if ref then ref.name else nil
+	elseif r.kind == "list" and (r.resource or "pods") == "pods" then
+		local route: Route = { kind = "usage", resource = "pods", namespace = r.namespace, selector = r.selector }
+		return route, if ref then Usage.rowKey(ref) else nil
+	end
+	if ref and isPod(ref) then
+		return {
+			kind = "usage",
+			resource = "pods",
+			ref = { kind = "Pod", name = ref.name, namespace = ref.namespace, source = "live" },
+		},
+			nil
+	elseif ref and ref.kind == "Node" then
+		return { kind = "usage", resource = "nodes" }, ref.name
+	elseif ref and WORKLOADS[ref.kind] then
+		local selector = M.validSelector(selectorOf(M.findObject(s, ref)))
+		if selector then
+			return { kind = "usage", resource = "pods", namespace = ref.namespace, selector = selector }, nil
+		end
+	end
+	return { kind = "usage", resource = "pods", namespace = if r.kind == "list" then r.namespace else nil }, nil
+end
+
+-- %: usage of what is in view; inside a usage view pods <-> nodes.
+local function usageKey(s: State, effects: { Effect })
+	if not allowLive(s) then
+		table.insert(effects, toast("error", "Live queries are disabled", "explore.allow_live_queries is false"))
+		return
+	end
+	if not needTarget(s, effects) then
+		return
+	end
+	local r = top(s)
+	if Usage.isRoute(r.kind) then
+		replaceTop(s, Usage.toggle(r))
+		ensure(s, effects)
+		return
+	end
+	local route, selected = usageFor(s)
+	pushRoute(s, route, effects)
+	if selected and s.sel[M.currentKey(s)] == nil then
+		selectKey(s, selected)
+	end
+end
+
+-- The target scope a sampling run belongs to.
+local function usageScope(s: State): string
+	local t = s.target
+	return targetId(t) .. "|" .. (if t.allNamespaces then "*" else (t.namespace or ""))
+end
+
+-- w: start or stop a sampling run of the view's metrics read.
+local function sampleKey(s: State, effects: { Effect })
+	local u = Usage.clone(s.usage)
+	if u.sampling then
+		Usage.stop(u)
+		s.usage = u
+		table.insert(effects, toast("info", "Sampling stopped"))
+		return
+	end
+	if not allowLive(s) then
+		table.insert(effects, toast("error", "Live queries are disabled", "explore.allow_live_queries is false"))
+		return
+	end
+	local load = M.currentLoad(s)
+	local sub = Usage.sampleSub(M.usageSubs(s, top(s)))
+	if load == nil or load.status ~= "ok" or sub == nil then
+		table.insert(effects, toast("error", "Nothing to sample yet", "Wait until the view has loaded (r reads it)"))
+		return
+	end
+	local now = s.now or 0
+	Usage.start(u, M.currentKey(s), usageScope(s), sub, now)
+	local argv = Usage.tick(u, now)
+	s.usage = u
+	local smp = u.sampling
+	if argv and smp then
+		table.insert(effects, runEffect(s, Usage.SAMPLE_TAG .. smp.gen, argv, smp.gen))
+	end
+end
+
+-- Keys of the usage views; false lets the global keys run.
+local function usageRouteKey(s: State, key: Key, ch: string?, effects: { Effect }): boolean
+	if not Usage.isRoute(top(s).kind) then
+		return false
+	end
+	if ch == "w" then
+		sampleKey(s, effects)
+		return true
+	elseif ch == "x" and not key.shift then
+		table.insert(effects, toast("info", Usage.NOT_HERE, "Compare works on lists and objects"))
+		return true
+	end
+	return false
+end
+
 -- Logs and events routes ------------------------------------------------------
 
 local ERROR_RANK = LogsParse.rank("error")
@@ -2672,6 +3137,28 @@ local function loaded(s: State, kind: RouteKind): any?
 		return load.data
 	end
 	return nil
+end
+
+-- z on a Secret's object view: shows or hides the Decoded values card. The
+-- flag lives on the route only; the decoded bytes exist only while rendering.
+local function decodeKey(s: State, effects: { Effect }): boolean
+	local r = top(s)
+	if r.kind ~= "detail" or r.ref == nil or r.ref.kind ~= "Secret" then
+		return false
+	end
+	if not policy(s).showSecrets then
+		table.insert(effects, toast("info", SecretData.MASKED))
+		return true
+	end
+	local data = loaded(s, "detail") :: DetailData?
+	if data == nil or not SecretData.decodable(data.object) then
+		table.insert(effects, toast("info", "No Secret values to decode"))
+		return true
+	end
+	local upd = table.clone(r)
+	upd.decoded = if r.decoded then nil else true
+	replaceTop(s, upd)
+	return true
 end
 
 -- The kubectl line without its `--prefix` and `--timestamps` parts.
@@ -2854,10 +3341,39 @@ local FILTERABLE: { [string]: boolean } = {
 	["helm-history"] = true,
 	["helm-resources"] = true,
 	compare = true,
+	usage = true,
 }
 M.FILTERABLE = FILTERABLE
 
-local function editKey(s: State, key: Key): boolean
+-- In the `:` prompt enter runs, tab completes and esc also goes back.
+local function promptKey(s: State, key: Key, effects: { Effect }): boolean?
+	local name = key.name
+	if name == "enter" or name == "return" then
+		promptEnter(s, effects)
+		return true
+	elseif name == "escape" then
+		s.editing = false
+		s.pendingCommand = nil
+		back(s, effects)
+		return true
+	elseif name == "tab" then
+		local rows = M.kindRows(s)
+		local row = rows[M.selectedIndex(s, M.items(s))]
+		if row then
+			applyInput(s, Textfield.new(ExploreCommand.complete(s.filter[M.currentKey(s)] or "", row)))
+		end
+		return true
+	end
+	return nil
+end
+
+local function editKey(s: State, key: Key, effects: { Effect }): boolean
+	if top(s).kind == "kinds" then
+		local handled = promptKey(s, key, effects)
+		if handled ~= nil then
+			return handled
+		end
+	end
 	local name = key.name
 	if name == "escape" or name == "enter" or name == "return" then
 		s.editing = false
@@ -2943,7 +3459,7 @@ local function onKey(s: State, key: Key, effects: { Effect }, clock: number?): b
 		if s.field then
 			return fieldKey(s, key, effects)
 		end
-		return editKey(s, key)
+		return editKey(s, key, effects)
 	end
 	local name = KEY_ALIASES[key.name] or key.name
 	local wasG = s.pendingG
@@ -2976,6 +3492,9 @@ local function onKey(s: State, key: Key, effects: { Effect }, clock: number?): b
 		return true
 	end
 	if not s.help and compareRouteKey(s, key, ch, effects) then
+		return true
+	end
+	if not s.help and usageRouteKey(s, key, ch, effects) then
 		return true
 	end
 	if not s.help and dataRouteKey(s, key, ch, effects) then
@@ -3062,7 +3581,7 @@ local function onKey(s: State, key: Key, effects: { Effect }, clock: number?): b
 	elseif ch == "n" then
 		pushPicker(s, "namespaces", effects)
 	elseif ch == ":" then
-		pushPicker(s, "kinds", effects)
+		openPrompt(s, effects)
 	elseif ch == "d" then
 		openRef(s, "describe", M.focusRef(s), effects)
 	elseif ch == "y" then
@@ -3096,8 +3615,12 @@ local function onKey(s: State, key: Key, effects: { Effect }, clock: number?): b
 		diffKey(s, effects)
 	elseif ch == "E" or (name == "e" and key.shift) then
 		exportKey(s, effects)
+	elseif ch == "%" then
+		usageKey(s, effects)
 	elseif ch == "x" and not key.shift then
 		compareKey(s, effects)
+	elseif ch == "z" and not key.shift then
+		return decodeKey(s, effects)
 	else
 		return false
 	end
@@ -3113,12 +3636,18 @@ local function sortBy(s: State, value: string): boolean
 	local id, dir = string.match(value, "^(.+):(%a+)$")
 	local r = top(s)
 	local load = M.currentLoad(s)
-	if id == nil or r.kind ~= "list" or load == nil or load.status ~= "ok" or load.data == nil then
+	if
+		id == nil
+		or not (r.kind == "list" or Usage.isRoute(r.kind))
+		or load == nil
+		or load.status ~= "ok"
+		or load.data == nil
+	then
 		return false
 	end
 	local data = load.data :: ListData
 	local index = table.find(Table.ids(data.headers), id)
-	if index == nil then
+	if index == nil or (Usage.isRoute(r.kind) and Usage.unsortable(data.headers[index])) then
 		return false
 	end
 	local key = M.currentKey(s)
@@ -3181,13 +3710,20 @@ local function onAction(s: State, act: string, value: string, effects: { Effect 
 		s.help = not s.help
 	elseif act == "palette-route" then
 		-- A palette command reuses this block in its context and scope (EXP-B9).
-		if value == "events" then
+		if value == "usage" then
+			local r = top(s)
+			if not (Usage.isRoute(r.kind) and Usage.isNodes(r)) then
+				pushRoute(s, { kind = "usage", resource = "nodes" }, effects)
+			end
+		elseif value == "events" then
 			openEvents(s, nil, effects)
 		elseif value == "helm-releases" then
 			helmKey(s, effects)
 		end
 	elseif act == "nav" then
-		if value == "contexts" or value == "namespaces" or value == "kinds" then
+		if value == "kinds" then
+			openPrompt(s, effects)
+		elseif value == "contexts" or value == "namespaces" then
 			pushPicker(s, value :: RouteKind, effects)
 		elseif value == "detail" or value == "describe" or value == "logs" or value == "relations" then
 			openRef(s, value :: RouteKind, M.focusRef(s), effects)
@@ -3226,6 +3762,8 @@ local function onAction(s: State, act: string, value: string, effects: { Effect 
 		t.confirmed = true
 		s.target = t
 		table.insert(effects, { t = "save" })
+	elseif act == "decode" then
+		return decodeKey(s, effects)
 	elseif act == "copy" then
 		copyWhat(s, value, effects)
 	elseif act == "quick" then
@@ -3307,6 +3845,12 @@ local function onAction(s: State, act: string, value: string, effects: { Effect 
 		end
 	elseif act == "field-focus" then
 		return startField(s, value, effects)
+	elseif act == "usage-key" then
+		if value == "%" then
+			usageKey(s, effects)
+			return true
+		end
+		return usageRouteKey(s, { name = value, text = value }, value, effects)
 	elseif act == "compare-key" then
 		local ch = if value == "enter" then nil else value
 		return compareRouteKey(s, { name = value, text = ch }, ch, effects)
@@ -3657,6 +4201,88 @@ local function onLogsSub(s: State, key: string, sub: string, load: Load, msg: Ms
 	setLoad(s, key, l)
 end
 
+-- api-resources for the `:` prompt: a partial discovery (rc 1, "unable to
+-- retrieve the complete list of server APIs") still lists what it read;
+-- only a complete one is remembered by the host.
+local function onKindsResult(s: State, key: string, load: Load, msg: Msg, effects: { Effect })
+	local result = msg.result :: ProcessResult
+	local parsed = Discovery.parse(result.stdout, result.stderr, result.status)
+	if result.status ~= 0 and (parsed.partial == nil or #parsed.rows == 0) then
+		failLoad(s, key, load, msg)
+		return
+	end
+	local upd = table.clone(load)
+	upd.fetchedAt = msg.at
+	upd.status = "ok"
+	upd.data = {
+		rows = parsed.rows,
+		index = Discovery.index(parsed.rows),
+		partial = if result.status ~= 0 then parsed.partial else nil,
+		memo = nil,
+	} :: KindsData
+	setLoad(s, key, upd)
+	local id = if type(load.data) == "table" then load.data.id else nil
+	if result.status == 0 and type(id) == "string" then
+		table.insert(effects, { t = "remember", id = id, text = result.stdout, at = msg.at })
+	end
+	resumeCommand(s, key, load.gen, effects)
+end
+
+-- One read of a usage load; the table is built once all answered.
+local function onUsageResult(s: State, key: string, sub: string, load: Load, msg: Msg)
+	local result = msg.result :: ProcessResult
+	local ok = msg.spawnError == nil and result.status == 0
+	local err, kind = nil, nil
+	if not ok then
+		err, kind = M.failure(s, result, msg.spawnError)
+	end
+	local data =
+		Usage.answer(load.data :: Usage.Data, sub, ok, if ok then result.stdout else nil, result.stderr, err, kind)
+	if data == nil then
+		return
+	end
+	local upd = table.clone(load)
+	upd.data = data
+	if Usage.complete(data) then
+		upd.fetchedAt = msg.at
+		local built, e, k = Usage.build(data, s.target.context)
+		if e then
+			upd.status = "error"
+			upd.error = e
+			upd.errorKind = k
+		else
+			upd.status = "ok"
+			upd.data = built
+			local u = Usage.clone(s.usage)
+			Usage.record(u, built)
+			s.usage = u
+		end
+	end
+	setLoad(s, key, upd)
+end
+
+-- A sampling read (`w`): only the trends move; a failure ends the run.
+local function onUsageSample(s: State, msg: Msg, effects: { Effect }): boolean
+	local result = msg.result :: ProcessResult
+	local ok = msg.spawnError == nil and result.status == 0
+	local err: string? = nil
+	if not ok then
+		err = Usage.sampleError(result.stderr or "")
+		if err == nil then
+			err = (M.failure(s, result, msg.spawnError))
+		end
+	end
+	local load = M.currentLoad(s)
+	local rows = if load and load.status == "ok" and load.data then (load.data :: Usage.Data).rows else {}
+	local u = Usage.clone(s.usage)
+	local handled, stopped = Usage.onSample(u, msg.gen or -1, ok, result.stdout or "", rows, top(s), err)
+	s.usage = u
+	if stopped then
+		table.insert(effects, toast("error", "Sampling stopped", stopped))
+	end
+	return handled
+end
+
 local function onResult(s: State, msg: Msg, effects: { Effect }): boolean
 	local tag = msg.tag or ""
 	if tag == M.RESOLVE_TAG then
@@ -3689,6 +4315,8 @@ local function onResult(s: State, msg: Msg, effects: { Effect }): boolean
 		s.gitops = g
 		applyNav(s, nav, effects)
 		return true
+	elseif string.sub(tag, 1, #Usage.SAMPLE_TAG) == Usage.SAMPLE_TAG then
+		return onUsageSample(s, msg, effects)
 	end
 	local key, sub = string.match(tag, "^(.-)\n(.*)$")
 	key = key or tag
@@ -3699,11 +4327,18 @@ local function onResult(s: State, msg: Msg, effects: { Effect }): boolean
 	if sub and string.sub(key :: string, 1, 5) == "logs|" then
 		onLogsSub(s, key :: string, sub, load, msg, effects)
 		return true
+	elseif sub and string.sub(key :: string, 1, 6) == "usage|" then
+		onUsageResult(s, key :: string, sub, load, msg)
+		return true
 	elseif sub and string.sub(key :: string, 1, 7) == "events|" then
 		onEventsResult(s, key :: string, sub, load, msg)
 		return true
 	elseif sub then
 		onRelationResult(s, key :: string, sub, load, msg, effects)
+		return true
+	end
+	if string.sub(key :: string, 1, 6) == "kinds|" and msg.spawnError == nil then
+		onKindsResult(s, key :: string, load, msg, effects)
 		return true
 	end
 	local result = msg.result :: ProcessResult
@@ -3820,6 +4455,18 @@ function M.update(state: State, msg: Msg): (State, { Effect })
 		elseif M.age(state.now, at) ~= M.age(msg.now, at) then
 			table.insert(effects, { t = "render" })
 		end
+		if s.usage.sampling then
+			local u = Usage.clone(s.usage)
+			local argv, moved = Usage.tick(u, msg.now)
+			s.usage = u
+			local smp = u.sampling
+			if argv and smp then
+				table.insert(effects, runEffect(s, Usage.SAMPLE_TAG .. smp.gen, argv, smp.gen))
+			end
+			if moved then
+				table.insert(effects, { t = "render" })
+			end
+		end
 	elseif msg.t == "resize" and msg.rows then
 		s.rows = msg.rows
 		changed = msg.rows ~= state.rows
@@ -3842,6 +4489,13 @@ function M.update(state: State, msg: Msg): (State, { Effect })
 	-- Home/End, ⌘A) away from the list.
 	if state.editing and not s.editing then
 		table.insert(effects, { t = "blur" })
+	end
+	-- A sampling run belongs to one view in one scope: anything else ends it.
+	local smp = s.usage.sampling
+	if smp and (smp.key ~= M.currentKey(s) or smp.scope ~= usageScope(s)) then
+		local u = Usage.clone(s.usage)
+		Usage.stop(u)
+		s.usage = u
 	end
 	-- Keep the selection inside the visible window; a new filter starts the
 	-- window over.

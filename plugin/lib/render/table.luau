@@ -26,6 +26,9 @@ export type Row = {
 	nodes: { [number]: Node }?,
 	-- Muted suffix appended to a cell, by column index.
 	notes: { [number]: string }?,
+	-- Prebuilt Tern table cells by column index (sparks, toned text with a
+	-- title), used as they are.
+	raw: { [number]: any }?,
 }
 
 export type Sort = { col: string, dir: string }
@@ -46,6 +49,8 @@ export type Spec = {
 	-- os.time() the rows were fetched at: CREATED timestamps show as AGE.
 	now: number?,
 	empty: string?,
+	-- Headers that take no sort click even when `sortable` (trend columns).
+	unsortable: { [string]: boolean }?,
 }
 
 local M = {}
@@ -236,7 +241,7 @@ function M.table(spec: Spec): Node
 		if MIDDLE[h] then
 			c.truncate = "middle"
 		end
-		if spec.sortable then
+		if spec.sortable and not (spec.unsortable and spec.unsortable[h]) then
 			c.sortable = true
 		end
 		if spec.sort and spec.sort.col == h then
@@ -251,6 +256,7 @@ function M.table(spec: Spec): Node
 	for r, row in spec.rows do
 		local values = row.cells
 		local prebuilt = row.nodes
+		local raw = row.raw
 		local notes = row.notes
 		local finished = Cells.rowFinished(types, values)
 		local cells: { [string]: any } = {}
@@ -258,7 +264,9 @@ function M.table(spec: Spec): Node
 			local v = values[i] or ""
 			local columnType: ColumnType = types[i] or "text"
 			local cell: any
-			if prebuilt and prebuilt[i] then
+			if raw and raw[i] ~= nil then
+				cell = raw[i]
+			elseif prebuilt and prebuilt[i] then
 				cell = M.cellOf(prebuilt[i])
 			elseif columnType == "timestamp" and now then
 				local at = Values.timestamp(v)

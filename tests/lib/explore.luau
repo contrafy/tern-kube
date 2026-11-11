@@ -158,7 +158,8 @@ function M.responder(argv: { string }): (Result?, string?)
 	elseif verb == "config" and cmd[2] == "current-context" then
 		return ok(M.CTX .. "\n")
 	elseif verb == "api-resources" then
-		return ok("pods\ndeployments.apps\nservices\n")
+		-- Explore's discovery argv as captured (`--verbs=list -o wide`).
+		return ok(fixtures.read("kubectl/discovery/verbs-list-wide.out"))
 	elseif verb == "get" and cmd[2] == "namespaces" then
 		return ok("namespace/default\nnamespace/tern-test-apps\nnamespace/tern-test-empty\n")
 	elseif verb == "describe" then

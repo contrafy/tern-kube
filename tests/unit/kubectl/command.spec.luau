@@ -158,6 +158,16 @@ describe("kubectl command", function()
 		})
 	end)
 
+	-- get-contexts rows: the context was picked from a list, so Explore opens
+	-- it chosen and unconfirmed (pick=1), never as a typed --context.
+	it("explore URL marks a picked context with pick=1", function()
+		expect(params(Command.exploreUrl(inv("--context tk-apps config get-contexts"), nil, { pick = true }))).toEqual({
+			context = "tk-apps",
+			pick = "1",
+		})
+		expect(params(Command.exploreUrl(inv("get pods"), nil, {})).pick).toBeNil()
+	end)
+
 	-- The lens "Filter in Explore" chip: the same list (type, namespace or -A,
 	-- -l, pinned target) with Explore's text filter open.
 	it("filter URL reopens the listed type in Explore with its filter focused", function()
@@ -179,6 +189,63 @@ describe("kubectl command", function()
 		expect(Command.exploreFilterUrl(inv("get all"))).toBeNil()
 		expect(Command.exploreFilterUrl(inv("get pod db-0"))).toBeNil()
 		expect(Command.exploreFilterUrl(inv("describe pods"))).toBeNil()
+	end)
+
+	-- `kubectl top` shows usage only; the lens chip reopens the same scope in
+	-- Explore's usage view, which adds requests, limits and allocatable.
+	it("usage URL reopens top pods/nodes in Explore's usage view with the pinned target and scope", function()
+		expect(
+			params(
+				Command.exploreUsageUrl(inv("--context kind --kubeconfig /k/c top pods -n web -l app=x"), "/repo") :: string
+			)
+		).toEqual({
+			kind = "Pod",
+			namespace = "web",
+			context = "kind",
+			kubeconfig = "/k/c",
+			route = "usage",
+			selector = "app=x",
+			cwd = "/repo",
+		})
+		expect(params(Command.exploreUsageUrl(inv("top pod -A --sum")) :: string)).toEqual({
+			kind = "Pod",
+			namespace = "*",
+			route = "usage",
+		})
+		-- One named pod: the usage of its namespace (no object, so not the
+		-- container drill-down).
+		expect(params(Command.exploreUsageUrl(inv("top pod web-1 -n apps")) :: string)).toEqual({
+			kind = "Pod",
+			namespace = "apps",
+			route = "usage",
+		})
+		-- Nodes are cluster-scoped: -n means nothing for them.
+		expect(params(Command.exploreUsageUrl(inv("--context kind top nodes -n apps")) :: string)).toEqual({
+			kind = "Node",
+			context = "kind",
+			route = "usage",
+		})
+		expect(Command.exploreUsageUrl(inv("get pods"))).toBeNil()
+		expect(Command.exploreUsageUrl(inv("top"))).toBeNil()
+		expect(Command.exploreUsageUrl(inv("describe nodes"))).toBeNil()
+	end)
+
+	it("usage URL of a row opens that pod or node in the usage view", function()
+		local i = inv("--context kind top pods -A --containers -l app=x")
+		expect(params(Command.exploreUsageUrl(i, nil, ref("Pod", "web-1", "apps")) :: string)).toEqual({
+			kind = "Pod",
+			name = "web-1",
+			namespace = "apps",
+			context = "kind",
+			route = "usage",
+			selector = "app=x",
+		})
+		expect(params(Command.exploreUsageUrl(inv("top nodes"), nil, ref("Node", "n1")) :: string)).toEqual({
+			kind = "Node",
+			name = "n1",
+			route = "usage",
+		})
+		expect(Command.exploreUsageUrl(inv("get pods"), nil, ref("Pod", "web-1", "apps"))).toBeNil()
 	end)
 
 	-- Lens chips on Helm-managed objects open the release in Explore: the

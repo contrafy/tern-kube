@@ -156,7 +156,9 @@ describe("explore render: header", function()
 			return W.fail(1, "error: You must be logged in to the server (Unauthorized)")
 		end
 		local states: { State } = { W.open(), W.keys(W.open(), { "?" }), (notFound()) }
-		for _, keys in { {}, { "enter" }, { "d" }, { "L" }, { "v" }, { "c" }, { "n" }, { ":" }, { "enter", "R" } } do
+		for _, keys in
+			{ {}, { "enter" }, { "d" }, { "L" }, { "v" }, { "c" }, { "n" }, { ":", "enter" }, { "enter", "R" } }
+		do
 			local s = W.keys(W.open(), keys)
 			table.insert(states, s)
 			local s2, effects = State.update(s, W.key("r"))
@@ -202,6 +204,56 @@ describe("explore render: header", function()
 		expect(nodes.text(crumbs)).toContain("pods -l app=web")
 		expect(nodes.actions(crumbs)).toContain("selector-clear")
 		expect(Render.title(s)).toContain("-l app=web")
+	end)
+end)
+
+describe("explore render: `:` command prompt", function()
+	local function input(m: nodes.Node): any
+		return (nodes.find(m, function(n: any): boolean
+			return n.k == "input"
+		end) :: any).p
+	end
+
+	it("shows a `:` prompt with the command placeholder and command rows above kinds", function()
+		local s = W.keys(W.open(), { ":" })
+		local v = view(s)
+		local m = v.main :: any
+		expect(input(m).prompt).toBe(":")
+		expect(input(m).placeholder).toContain("ctx NAME")
+		local text = nodes.text(m)
+		expect(text).toContain("ALIASES")
+		expect(text).toContain("SCOPE")
+		expect(text).toContain("context picker / switch")
+		expect(text).toContain("widgets.lens.example.com")
+		expect(nodes.text(v.dock :: any)).toContain("tab completes")
+		local list = W.keys(W.open(), {})
+		expect(input(main(list)).prompt).toBe("/")
+		expect(nodes.text(view(list).dock :: any)).toContain(": command")
+	end)
+
+	it("ranks the typed alias first with its aliases and scope", function()
+		local s = W.keys(W.open(), { ":", "d", "e", "p", "l", "o", "y" })
+		local text = nodes.text(main(s))
+		expect(text).toContain("deployments.apps")
+		expect(text).toContain("deploy, deployment")
+		expect(text).toContain("namespaced")
+	end)
+
+	it("says when discovery was partial", function()
+		local function responder(argv: { string }): (W.Result?, string?)
+			if table.find(argv, "api-resources") then
+				return {
+					status = 1,
+					stdout = "NAME   SHORTNAMES   APIVERSION   NAMESPACED   KIND\npods   po           v1           true         Pod\n",
+					stderr = "error: unable to retrieve the complete list of server APIs: metrics.k8s.io/v1beta1: down\n",
+					timed_out = false,
+				}
+			end
+			return W.responder(argv)
+		end
+		local s, effects = State.update(W.open(), W.key(":"))
+		s = W.settle(s, effects, responder)
+		expect(nodes.text(main(s))).toContain("kubectl could not read metrics.k8s.io/v1beta1")
 	end)
 end)
 
@@ -410,7 +462,7 @@ describe("explore render: other views", function()
 		for _, k in Render.KEYS do
 			local desc = k[2]
 			-- Route-local rows (GitOps views, logs and events, Helm views,
-			-- compare views) may reuse keys: inside their view they win.
+			-- compare and usage views) may reuse keys: inside their view they win.
 			if
 				string.find(desc, "^Drift:")
 				or string.find(desc, "^Export:")
@@ -418,6 +470,7 @@ describe("explore render: other views", function()
 				or string.find(desc, "^Logs:")
 				or string.find(desc, "^Helm:")
 				or string.find(desc, "^Compare:")
+				or string.find(desc, "^Usage:")
 			then
 				continue
 			end
@@ -506,6 +559,101 @@ describe("explore render: object view redaction", function()
 		local plain = open("Pod", "envy")
 		expect(nodes.text(plain)).toContain("hunter2")
 		expect(notice(plain)).toBeNil()
+	end)
+end)
+
+-- `z` / Decode values: a second, per-view gate on top of show_secret_values.
+-- Off by default, never saved, gone once the view is left; the tree keeps
+-- kubectl's base64 and only the separate card shows decoded values.
+describe("explore render: Secret decode", function()
+	-- hunter2-fake, and a value carrying a terminal title escape.
+	local SECRET = [[{"apiVersion":"v1","kind":"Secret","metadata":{"name":"tk-decode","namespace":"tern-test-apps"},]]
+		.. [["data":{"password":"aHVudGVyMi1mYWtl","ansi":"dXNlcj1hZG1pbiAbXTA7cHduZWQHG1szMW1yZWQgdGV4dCBoZXJlIGFuZCBtb3Jl"}}]]
+	local SHOW = [[{"security": {"show_secret_values": true}}]]
+	local PLAIN = "hunter2-fake"
+
+	local function respond(argv: { string }): (W.Result?, string?)
+		if table.find(argv, "json") and table.find(argv, "tk-decode") then
+			return { status = 0, stdout = SECRET, stderr = "", timed_out = false }
+		end
+		return W.responder(argv)
+	end
+
+	local function open(cfg: string?): State
+		local link = W.link({ context = W.CTX, namespace = W.NS, kind = "Secret", name = "tk-decode" })
+		local s, effects = State.init({ link }, nil, W.config(cfg), W.env())
+		s = W.settle(s, effects, respond)
+		expect(s.stack[#s.stack].kind).toBe("detail")
+		return s
+	end
+
+	-- The state after `name` settles, and the effects of the key itself.
+	local function press(s: State, name: string): (State, { any })
+		local s2, effects = State.update(s, W.key(name))
+		local settled = W.settle(s2, effects, respond)
+		return settled, effects
+	end
+
+	local function chip(s: State): nodes.Node?
+		return nodes.find(main(s), nodes.key("a-decode"))
+	end
+
+	local function card(s: State): nodes.Node?
+		return nodes.find(main(s), nodes.role("tern-kube.secret-decoded"))
+	end
+
+	it("with values masked there is no chip, and z says how to show them", function()
+		local s = open()
+		expect(chip(s)).toBeNil()
+		local after, effects = press(s, "z")
+		local toast = effects[1]
+		expect(toast.t).toBe("toast")
+		expect(toast.text).toBe(Render.SENSITIVE)
+		expect(card(after)).toBeNil()
+		expect(after.stack[#after.stack].decoded).toBeNil()
+	end)
+
+	it("values shown stay base64 until z; z shows the card, z again hides it", function()
+		local s = open(SHOW)
+		local c = chip(s) :: nodes.Node
+		expect(nodes.text(c)).toBe("Decode values (z)")
+		expect(nodes.action(c)).toBe("decode=1")
+		expect(card(s)).toBeNil()
+		expect((string.find(nodes.text(main(s)), PLAIN, 1, true))).toBeNil()
+		local on = press(s, "z")
+		local shown = nodes.text(card(on) :: nodes.Node)
+		expect(shown).toContain(PLAIN)
+		expect(shown).toContain("\\x1b]0;pwned")
+		expect((string.find(nodes.text(main(on)), "\27", 1, true))).toBeNil()
+		expect(nodes.text(chip(on) :: nodes.Node)).toBe("Hide decoded (z)")
+		local tree = nodes.find(main(on), nodes.key("tree")) :: nodes.Node
+		expect(nodes.text(tree)).toContain("aHVudGVyMi1mYWtl")
+		expect((string.find(nodes.text(tree), PLAIN, 1, true))).toBeNil()
+		for _, a in nodes.actions(main(on)) do
+			expect((string.find(a, PLAIN, 1, true))).toBeNil()
+		end
+		expect(card((press(on, "z")))).toBeNil()
+		expect(card((W.action(on, "decode", "1")))).toBeNil()
+		expect(card((W.action(s, "decode", "1"))) ~= nil).toBe(true)
+	end)
+
+	it("is never saved and does not survive leaving the view", function()
+		local on = press(open(SHOW), "z")
+		expect(on.stack[#on.stack].decoded).toBe(true)
+		local saved = State.save(on)
+		expect(saved.stack[#saved.stack].decoded).toBeNil()
+		local away = press(on, "d")
+		expect(away.stack[#away.stack].kind).toBe("describe")
+		local back = press(away, "escape")
+		expect(back.stack[#back.stack].kind).toBe("detail")
+		expect(card(back)).toBeNil()
+	end)
+
+	it("z does nothing outside a Secret's object view", function()
+		local s = W.open()
+		local after, effects = press(s, "z")
+		expect(#effects).toBe(0)
+		expect(after.stack[#after.stack].decoded).toBeNil()
 	end)
 end)
 

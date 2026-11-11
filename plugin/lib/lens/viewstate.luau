@@ -16,6 +16,8 @@ export type ViewState = {
 	help: boolean,
 	-- Facet columns whose chips are all shown (no "+N" overflow), sorted.
 	expanded: { string },
+	-- The open object's Secret values are shown decoded (display only).
+	decoded: boolean,
 }
 
 local M = {}
@@ -31,6 +33,7 @@ function M.default(): ViewState
 		page = 0,
 		help = false,
 		expanded = {},
+		decoded = false,
 	}
 end
 
@@ -45,6 +48,7 @@ local function copy(vs: ViewState): ViewState
 		page = vs.page,
 		help = vs.help,
 		expanded = vs.expanded,
+		decoded = vs.decoded,
 	}
 end
 
@@ -128,6 +132,9 @@ function M.encode(vs: ViewState): string
 		end
 		table.insert(parts, "x:" .. table.concat(xs, ","))
 	end
+	if vs.decoded then
+		table.insert(parts, "dec:1")
+	end
 	return table.concat(parts, ";")
 end
 
@@ -174,6 +181,8 @@ function M.decode(s: string): ViewState
 				table.insert(xs, unescape(item))
 			end
 			vs.expanded = normalized(xs)
+		elseif k == "dec" then
+			vs.decoded = on
 		end
 	end
 	if vs.open == nil then
@@ -246,6 +255,7 @@ function M.opened(vs: ViewState, key: string): ViewState
 	local out = copy(vs)
 	out.open = if vs.open == key then nil else key
 	out.full = false
+	out.decoded = false
 	return out
 end
 
@@ -253,6 +263,7 @@ function M.inspect(vs: ViewState, key: string): ViewState
 	local out = copy(vs)
 	out.open = key
 	out.full = true
+	out.decoded = vs.decoded and vs.open == key
 	return out
 end
 
@@ -261,6 +272,7 @@ end
 function M.back(vs: ViewState): ViewState
 	local out = copy(vs)
 	out.full = false
+	out.decoded = false
 	return out
 end
 
@@ -273,6 +285,12 @@ end
 function M.toggledHelp(vs: ViewState): ViewState
 	local out = copy(vs)
 	out.help = not vs.help
+	return out
+end
+
+function M.toggledDecoded(vs: ViewState): ViewState
+	local out = copy(vs)
+	out.decoded = not vs.decoded
 	return out
 end
 

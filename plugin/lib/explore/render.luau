@@ -12,6 +12,7 @@ local CompareView = require("../compare/view")
 local Contexts = require("../compare/contexts")
 local DescribeView = require("../render/describe_view")
 local EventsModel = require("../events/model")
+local ExploreCommand = require("./command")
 local Gitops = require("./gitops")
 local GitopsView = require("../gitops/view")
 local Grid = require("../render/grid")
@@ -25,6 +26,8 @@ local LogsTypes = require("../logs/types")
 local Query = require("./query")
 local Quick = require("../actions/quick")
 local Redact = require("../model/redact")
+local SecretData = require("../model/secretdata")
+local SecretDataView = require("../render/secret_data")
 local State = require("./state")
 local Table = require("../render/table")
 local Textfield = require("../textfield")
@@ -32,6 +35,9 @@ local Types = require("../model/types")
 local Values = require("../model/values")
 local Viewstate = require("../lens/viewstate")
 local Timeline = require("../events/timeline")
+local Usage = require("./usage")
+local UsageView = require("../usage/view")
+local UsageSeries = require("../usage/series")
 local ui = require("../ui")
 
 type Node = ui.Node
@@ -85,7 +91,7 @@ local function provenanceCell(col: string, columnType: Types.ColumnType, value: 
 	return ui.badge(value, if p then p.tone else "neutral", { title = if p then p.title else value })
 end
 
-M.SENSITIVE = "Secret values are masked; set security.show_secret_values to show them"
+M.SENSITIVE = SecretData.MASKED
 
 local SOURCE_TEXT: { [string]: string } = {
 	flag = "command flag",
@@ -248,6 +254,13 @@ local function crumbLabel(s: State, route: Route): string
 	if Compare.isRoute(route.kind) then
 		return compareCrumb(route)
 	end
+	if Usage.isRoute(route.kind) then
+		local sc = Usage.podScope(route, State.scope(s, route))
+		return Usage.crumb(
+			route,
+			if sc.all then "all namespaces" elseif sc.namespace then "ns " .. sc.namespace else "ns (context default)"
+		)
+	end
 	local title = ROUTE_TITLE[route.kind] or route.kind
 	local ref = route.ref
 	if ref then
@@ -270,7 +283,7 @@ local function header(s: State): Node
 			ui.badge("Live", "accent", {
 				key = "live",
 				role = "tern-kube.live",
-				title = "Fetched from the cluster on request; never refreshed automatically",
+				title = "Fetched from the cluster on request; never refreshed on its own",
 			})
 		)
 		if load and load.status == "loading" then
@@ -286,6 +299,17 @@ local function header(s: State): Node
 			)
 		end
 		table.insert(live, chip("Refresh", "refresh", { key = "refresh", title = "Run the query again (r)" }))
+		local top = s.stack[#s.stack]
+		if Usage.isRoute(top.kind) then
+			local data = if load and load.status == "ok" then load.data else nil
+			for _, n in
+				Usage.headerNodes(s.usage, data, s.now, function(at: number): string
+					return M.localTime(s, at)
+				end)
+			do
+				table.insert(live, n)
+			end
+		end
 	end
 	table.insert(live, chip("?", "help", { key = "help", title = "Keys and actions (?)" }))
 	for _, n in targetNodes(s) do
@@ -507,6 +531,12 @@ export type TableSpec = {
 	-- not rebuild hundreds of rows.
 	cache: { view: any? }?,
 	source: any?,
+	-- Changes when cells outside `source` changed (usage trends): the
+	-- cached table is rebuilt.
+	rev: number?,
+	unsortable: { [string]: boolean }?,
+	-- Finishes a visible row before it is built (usage trend cells).
+	decorate: ((row: GridRow) -> GridRow)?,
 }
 
 -- A native table in its own scroller (explore.css makes it fill the pane
@@ -533,11 +563,20 @@ local function tableNodes(s: State, spec: TableSpec): { Node }
 		and view.last == last
 		and view.now == spec.now
 		and view.hide == (if spec.hide then "ns" else "")
+		and view.rev == spec.rev
 	then
 		local p = table.clone(view.node.p)
 		p.selected = selectedKey
 		node = { k = "table", p = p }
 	else
+		local decorate = spec.decorate
+		if decorate then
+			local finished: { GridRow } = table.create(#shown)
+			for i, r in shown do
+				finished[i] = decorate(r)
+			end
+			shown = finished
+		end
 		node = Table.table({
 			key = spec.key,
 			headers = spec.headers,
@@ -550,6 +589,7 @@ local function tableNodes(s: State, spec: TableSpec): { Node }
 			hide = spec.hide,
 			now = spec.now,
 			empty = nil,
+			unsortable = spec.unsortable,
 		})
 		if cache and spec.source ~= nil then
 			cache.view = {
@@ -558,6 +598,7 @@ local function tableNodes(s: State, spec: TableSpec): { Node }
 				last = last,
 				now = spec.now,
 				hide = if spec.hide then "ns" else "",
+				rev = spec.rev,
 				node = node,
 			}
 		end
@@ -736,6 +777,80 @@ function M.listStats(data: State.ListData, rows: { State.Row }, resource: string
 	return { k = "stats", p = { key = "stats", items = items } }
 end
 
+-- A usage view: tiles, notes and the table; trend cells only for the rows
+-- on screen.
+local function usageBody(s: State, route: Route, load: Load?): { Node }
+	local pending = pendingNode(s, load)
+	if pending or load == nil then
+		return { pending :: Node }
+	end
+	local data = load.data :: Usage.Data
+	local built = data.built :: UsageView.Built
+	local key = State.currentKey(s)
+	local f = string.lower(s.filter[key] or "")
+	local list = State.listRows(s, route, data :: any) :: { any }
+	local out = Usage.head(s.usage, route, data, {
+		shown = #list,
+		filter = f,
+		chip = chip,
+		allowLive = s.config.explore.allow_live_queries,
+	})
+	if #data.rows == 0 then
+		local sc = Usage.podScope(route, State.scope(s, route))
+		local where = if route.node
+			then "on node " .. route.node
+			elseif sc.all then "in all namespaces"
+			elseif sc.namespace then "in " .. sc.namespace
+			else "in the context default namespace"
+		table.insert(out, ui.muted(string.format("No %s %s.", built.kind, where), { key = "empty" }))
+		return out
+	end
+	if #list == 0 then
+		table.insert(out, ui.muted("Nothing matches the filter. Esc clears it.", { key = "empty" }))
+		return out
+	end
+	local rows: { any } = table.create(#list)
+	local keys: { string } = table.create(#list)
+	for i, row in list do
+		rows[i] = { key = row.key, cells = row.cells, action = "open=" .. row.key, raw = row.raw, urow = row }
+		keys[i] = row.key
+	end
+	local trends: UsageView.TrendOpts = {
+		store = s.usage.store,
+		clock = function(at: number): string
+			return M.localTime(s, at)
+		end,
+		off = #data.rows > UsageSeries.MAX_ROWS,
+	}
+	local all = Usage.podScope(route, State.scope(s, route)).all
+	for _, n in
+		tableNodes(s, {
+			key = "grid",
+			headers = data.headers,
+			types = data.types,
+			rows = rows :: any,
+			selected = selectedIndexIn(s, keys),
+			cell = nil,
+			sortable = true,
+			sort = s.sort[key],
+			hide = if all or built.kind ~= "pods" then nil else { NAMESPACE = true },
+			now = nil,
+			cache = data,
+			source = list,
+			rev = s.usage.rev,
+			unsortable = built.unsortable,
+			decorate = function(r: GridRow): GridRow
+				local d = table.clone(r) :: any
+				d.raw = UsageView.withTrends(built, d.urow, trends)
+				return d
+			end,
+		})
+	do
+		table.insert(out, n)
+	end
+	return out
+end
+
 local function listBody(s: State, route: Route, load: Load?): { Node }
 	local pending = pendingNode(s, load)
 	if pending or load == nil then
@@ -766,6 +881,17 @@ local function listBody(s: State, route: Route, load: Load?): { Node }
 			chip("Compare list (x)", "nav=compare", {
 				key = "compare",
 				title = "This list in other contexts of the kubeconfig: present, same, changed, missing (read-only)",
+			})
+		)
+	end
+	if resource == "pods" or resource == "nodes" then
+		table.insert(
+			countRow,
+			chip("Usage (%)", "usage-key=%", {
+				key = "usage",
+				title = if resource == "nodes"
+					then "Nodes against allocatable: used, requested and limits (runs kubectl)"
+					else "These pods against their requests and limits (runs kubectl)",
 			})
 		)
 	end
@@ -823,7 +949,8 @@ local function objState(obj: any): Link.ObjState?
 	return { paused = obj.spec.paused == true, unschedulable = obj.spec.unschedulable == true }
 end
 
-local function actionChips(s: State, ref: Ref): Node
+-- `decode`: the Secret decode chip (object view of a decodable Secret).
+local function actionChips(s: State, ref: Ref, decode: Node?): Node
 	local chips: { Node } = {
 		chip("Describe (d)", "nav=describe", { key = "a-describe" }),
 		chip("Object (y)", "nav=detail", { key = "a-detail" }),
@@ -851,6 +978,9 @@ local function actionChips(s: State, ref: Ref): Node
 		chips,
 		chip("Events (V)", "nav=events", { key = "a-events", title = "Its events timeline (with what it owns)" })
 	)
+	if decode then
+		table.insert(chips, decode)
+	end
 	local info, obj = quickInfo(s, ref)
 	-- Workload shells pick a ready pod at run time; offer them like pod shells.
 	if ref.kind ~= "Pod" and workload then
@@ -1039,7 +1169,19 @@ local function detailBody(s: State, route: Route, load: Load?): { Node }
 	if #owners > 0 then
 		table.insert(out, ui.row(owners, { key = "owners", wrap = true, role = "tern-kube.chips" }))
 	end
-	table.insert(out, actionChips(s, ref))
+	-- Two gates: show_secret_values (else the values are masked) and z.
+	local decodable = obj ~= nil and Redact.fromConfig(s.config).showSecrets and SecretData.decodable(obj)
+	local decoded = decodable and route.decoded == true
+	local decode = if decodable
+		then chip(SecretDataView.label(decoded, "z"), "decode=1", {
+			key = "a-decode",
+			tone = if decoded then "accent" else "warning",
+			title = if decoded
+				then "Hide the decoded values"
+				else "Show the values decoded in a separate card (display only; the tree stays base64)",
+		})
+		else nil
+	table.insert(out, actionChips(s, ref, decode))
 	local controller = GitopsView.controllerLine(gitopsView(s, route, obj, nil), obj)
 	if controller then
 		table.insert(out, controller)
@@ -1052,6 +1194,12 @@ local function detailBody(s: State, route: Route, load: Load?): { Node }
 		local sensitive = type(obj) == "table" and obj.kind == "Secret"
 		for _, n in noticeNodes(s, sensitive, data.masked) do
 			table.insert(out, n)
+		end
+		if decoded then
+			table.insert(
+				out,
+				SecretDataView.card(SecretData.entries(obj), { key = "decoded", hint = "z / Hide decoded" })
+			)
 		end
 		local tree = ObjTree.tree(obj, { id = "obj", policy = Redact.fromConfig(s.config) });
 		(tree.p :: any).key = "tree"
@@ -1666,7 +1814,57 @@ local function eventsBody(s: State, route: Route, load: Load?): { Node }
 	return out
 end
 
+-- The `:` prompt's picker: matching commands, then kinds ranked for the
+-- prompt text (kubectl's static kinds until discovery answers).
+local function kindsBody(s: State, route: Route, load: Load?): { Node }
+	local out: { Node } = {}
+	local data = if load and load.status == "ok" then load.data :: State.KindsData else nil
+	if data and data.partial then
+		table.insert(
+			out,
+			ui.text({
+				ui.span("Partial discovery: ", "warning"),
+				ui.span("kubectl could not read " .. data.partial .. "; those kinds are missing.", "muted"),
+			}, { key = "partial", role = "tern-kube.notice" })
+		)
+	end
+	if s.pendingCommand then
+		table.insert(out, ui.muted("resolving " .. s.pendingCommand.text .. " …", { key = "resolving" }))
+	elseif load and load.status ~= "ok" then
+		local pending = pendingNode(s, load)
+		if pending then
+			table.insert(out, pending)
+		end
+	end
+	local rows: { GridRow } = {}
+	local keys: { string } = {}
+	for i, row in State.kindRows(s, route) do
+		rows[i] = { key = row.key, cells = row.cells, action = "open=" .. row.key }
+		keys[i] = row.key
+	end
+	if #rows == 0 then
+		table.insert(out, ui.muted("No kind or command matches.", { key = "empty" }))
+		return out
+	end
+	for _, n in
+		pagedGrid(
+			"kinds",
+			{ "NAME", "ALIASES", "KIND", "SCOPE" },
+			{ "text", "text", "text", "text" },
+			rows,
+			selectedIndexIn(s, keys),
+			s
+		)
+	do
+		table.insert(out, n)
+	end
+	return out
+end
+
 local function namesBody(s: State, route: Route, load: Load?): { Node }
+	if route.kind == "kinds" then
+		return kindsBody(s, route, load)
+	end
 	local out: { Node } = {}
 	if route.kind == "contexts" and s.targetError then
 		table.insert(out, targetErrorNode(s))
@@ -1939,6 +2137,8 @@ local function body(s: State, cols: number?): Node
 		children = HelmView.body(helmView(s, route))
 	elseif Compare.isRoute(route.kind) then
 		children = compareBody(s, route)
+	elseif Usage.isRoute(route.kind) then
+		children = usageBody(s, route, load)
 	else
 		children = namesBody(s, route, load)
 	end
@@ -1954,7 +2154,7 @@ local HINTS: { [string]: string } = {
 	events = "j/k move · enter open object · / filter · x Warning only · ] [ next/prev Warning · V object events · r refresh · esc back",
 	contexts = "j/k move · enter choose · / filter · esc back",
 	namespaces = "j/k move · enter choose · / filter · esc back",
-	kinds = "j/k move · enter list · / filter · esc back",
+	kinds = "j/k move · enter run · : or / edit · r refetch kinds · esc back",
 	["compare-pick"] = "j/k move · enter pick · / filter · esc back",
 	compare = "j/k move · enter diff · f filter · [ ] context · x pick again · r refetch all · Y copy commands · esc back",
 	["compare-pair"] = "[ ] other context · x pick again · r refetch all · Y copy commands · esc back",
@@ -2014,7 +2214,7 @@ local function objectHint(s: State, route: Route): string
 		end
 	end
 	if list then
-		table.insert(parts, ": kinds")
+		table.insert(parts, ": command")
 		table.insert(parts, "H helm")
 		table.insert(parts, "? help")
 	else
@@ -2063,6 +2263,11 @@ local function dock(s: State): Node
 	local spans: { ui.SpanLike }
 	if s.editing and s.field then
 		spans = { ui.span(s.field .. ": ", "accent"), ui.span("type · enter applies · esc cancels", "muted") }
+	elseif s.editing and route.kind == "kinds" then
+		spans = {
+			ui.span("command: ", "accent"),
+			ui.span("enter runs · tab completes · ↑↓ pick · esc back", "muted"),
+		}
 	elseif s.editing then
 		spans = { ui.span("filter: ", "accent"), ui.span("type to narrow · enter keep · esc done", "muted") }
 	elseif s.targetError then
@@ -2085,6 +2290,7 @@ local function dock(s: State): Node
 			then GitopsView.hint(route, s.gitops, State.gitopsCtx(s))
 			elseif Helm.isRoute(route.kind) then HelmView.hint(route, s.helm)
 			elseif Compare.isRoute(route.kind) then compareHint(s, route)
+			elseif Usage.isRoute(route.kind) then Usage.hint(s.usage, route)
 			elseif route.kind == "list" or route.kind == "detail" then objectHint(s, route)
 			else HINTS[route.kind]
 		if hint and not s.config.mutations.enabled then
@@ -2138,8 +2344,8 @@ local function help(s: State): Node
 		children,
 		ui.muted(
 			if mutations
-				then "Context changes only through the chooser; every query pins --context."
-				else "Context changes only through the chooser; every query pins --context. Mutation keys are hidden (mutations.enabled is false)."
+				then "Context changes only through the chooser (c or :ctx); every query pins --context."
+				else "Context changes only through the chooser (c or :ctx); every query pins --context. Mutation keys are hidden (mutations.enabled is false)."
 		)
 	)
 	return ui.col(children, { key = "help", role = "tern-kube.explore-help" })
@@ -2161,8 +2367,11 @@ function M.view(s: State, cols: number, _rows: number): View
 				key = "filter",
 				text = text,
 				cursor = Textfield.caretFor(if s.editing and s.field == nil then s.input else nil, text),
-				placeholder = if route.kind == "logs" then "search messages, fields and sources" else "filter rows",
-				prompt = "/",
+				placeholder = if route.kind == "logs"
+					then "search messages, fields and sources"
+					elseif route.kind == "kinds" then ExploreCommand.PLACEHOLDER
+					else "filter rows",
+				prompt = if route.kind == "kinds" then ":" else "/",
 			},
 		})
 	end

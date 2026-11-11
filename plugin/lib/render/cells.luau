@@ -2,6 +2,7 @@
 -- One table cell as a text node, styled by what kubectl's value means:
 -- status tones, short ratios, restarts, muted placeholders, mono numbers.
 
+local Model = require("../usage/model")
 local Query = require("../lens/query")
 local Types = require("../model/types")
 local Values = require("../model/values")
@@ -30,6 +31,10 @@ local TONE_STYLE: { [string]: string } = {
 	muted = "muted",
 }
 
+-- `kubectl top nodes` percent columns: usage of allocatable, toned with the
+-- thresholds of Explore's usage view.
+local NODE_PERCENT: { [string]: boolean } = { ["CPU(%)"] = true, ["MEMORY(%)"] = true, ["SWAP(%)"] = true }
+
 -- `finished`: the row's status says it ran to completion (Values.finished);
 -- its short READY is expected, so it is muted instead of warning-toned.
 function M.style(col: string, columnType: ColumnType, value: string, finished: boolean?): string?
@@ -51,6 +56,10 @@ function M.style(col: string, columnType: ColumnType, value: string, finished: b
 			return "warning mono"
 		end
 		return "mono"
+	end
+	if columnType == "percent" and NODE_PERCENT[col] then
+		local tone = Model.tone("node", Values.percent(value))
+		return if tone then tone .. " mono" else "mono"
 	end
 	if NUMERIC[columnType] then
 		return "mono"

@@ -111,6 +111,20 @@ describe("lens view", function()
 		expect(text).toContain("sorted by NAME")
 	end)
 
+	-- `top --sum` prints a separator and a totals row: the header counts pods.
+	it("top --sum: the header counts pods only and the totals read as a footer", function()
+		local c = fromLines("kubectl top pods --sum", {
+			"NAME    CPU(cores)   MEMORY(bytes)   ",
+			"a       1m           2Mi             ",
+			"b       3m           4Mi             ",
+			"        ________     ________        ",
+			"        4m           6Mi             ",
+		}, 0)
+		local node = View.render(c, vsm.default()) :: any
+		expect(nodes.text(header(node))).toContain("2 rows")
+		expect(nodes.text(node)).toContain("Total 4m CPU · 6Mi memory")
+	end)
+
 	it("error-only output shows the kubectl error and exit status natively", function()
 		local node = View.render(build("errors/get_foos"), vsm.default()) :: any
 		expect(node ~= nil).toBe(true)

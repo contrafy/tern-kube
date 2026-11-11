@@ -6,9 +6,11 @@
 -- resolve the target run without a context.
 
 local Command = require("../kubectl/command")
+local Discovery = require("../kubectl/discovery")
 local Kinds = require("../kubectl/kinds")
 local Relations = require("./relations")
 local Types = require("../model/types")
+local UsageParse = require("../usage/parse")
 
 type Ref = Types.ResourceRef
 
@@ -192,8 +194,9 @@ function M.namespaces(program: string, target: Target): { string }
 	return append(M.base(program, target), "get", "namespaces", "-o", "name")
 end
 
+-- The `:` prompt's discovery (kubectl/discovery.luau reads it).
 function M.apiResources(program: string, target: Target): { string }
-	return append(M.base(program, target), "api-resources", "--verbs=list", "-o", "name")
+	return append(M.base(program, target), table.unpack(Discovery.ARGV))
 end
 
 -- Secrets are only ever listed by name: their data never reaches Explore.
@@ -267,6 +270,57 @@ function M.selectorString(selector: any): string?
 		return nil
 	end
 	return table.concat(parts, ",")
+end
+
+-- Usage views (usage/parse.luau templates): what a pods read is narrowed to.
+-- `node` and `name` reach --field-selector: callers validate them first.
+export type UsageFilter = { selector: string?, node: string?, name: string? }
+
+local function usageRead(
+	program: string,
+	target: Target,
+	resource: string,
+	scope: Scope?,
+	f: UsageFilter?,
+	template: string
+): { string }
+	local argv = append(M.base(program, target), "get", resource)
+	if scope then
+		if scope.all then
+			table.insert(argv, "-A")
+		elseif scope.namespace and scope.namespace ~= "" then
+			append(argv, "-n", scope.namespace)
+		end
+	end
+	if f and f.selector and f.selector ~= "" then
+		append(argv, "-l", f.selector)
+	end
+	if f and f.name and f.name ~= "" then
+		append(argv, "--field-selector", "metadata.name=" .. f.name)
+	elseif f and f.node and f.node ~= "" then
+		append(argv, "--field-selector", "spec.nodeName=" .. f.node)
+	end
+	return append(argv, "-o", "jsonpath=" .. template)
+end
+
+-- Requests, limits, node and phase of the pods in scope.
+function M.usagePods(program: string, target: Target, scope: Scope, f: UsageFilter?): { string }
+	return usageRead(program, target, "pods", scope, f, UsageParse.POD_JP)
+end
+
+-- The metrics API rejects spec.nodeName: a node's pods are joined
+-- client-side from an all-namespaces read.
+function M.usagePodMetrics(program: string, target: Target, scope: Scope, f: UsageFilter?): { string }
+	local only: UsageFilter? = if f then { selector = f.selector, name = f.name, node = nil } else nil
+	return usageRead(program, target, "pods.metrics.k8s.io", scope, only, UsageParse.PODM_JP)
+end
+
+function M.usageNodes(program: string, target: Target): { string }
+	return usageRead(program, target, "nodes", nil, nil, UsageParse.NODE_JP)
+end
+
+function M.usageNodeMetrics(program: string, target: Target): { string }
+	return usageRead(program, target, "nodes.metrics.k8s.io", nil, nil, UsageParse.NODEM_JP)
 end
 
 return M

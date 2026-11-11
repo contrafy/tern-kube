@@ -660,8 +660,10 @@ describe("quick actions", function()
 	describe("logs (typed split)", function()
 		local POD = ref("Pod", "web-0", "apps")
 
-		it("is the only typed action, never mutates and has no Explore key", function()
+		it("is typed like the other lens-only actions, never mutates and has no Explore key", function()
 			expect(Quick.typed("logs")).toBe(true)
+			expect(Quick.typed("history")).toBe(true)
+			expect(Quick.typed("can-i-list")).toBe(true)
 			expect(Quick.typed("logs-follow")).toBe(false)
 			expect(Quick.typed("shell")).toBe(false)
 			expect(Quick.gate("logs")).toBe("none")
@@ -734,7 +736,7 @@ describe("quick actions", function()
 		end)
 
 		it("types the verb first so the lens claims the line, flags after the source", function()
-			local l = Quick.typedLine(PINNED, POD, {
+			local l = Quick.typedLine("logs", PINNED, POD, {
 				container = "side",
 				previous = true,
 				since = "5m",
@@ -770,10 +772,12 @@ describe("quick actions", function()
 		end)
 
 		it("names workloads by type and selectors by -l, all containers on request", function()
-			local d = Quick.typedLine(UNPINNED, ref("Deployment", "web", "apps", "apps"), {}) :: Quick.TypedLaunch
+			local d =
+				Quick.typedLine("logs", UNPINNED, ref("Deployment", "web", "apps", "apps"), {}) :: Quick.TypedLaunch
 			expect(d.line).toBe("kubectl logs -n apps deployment/web")
 			expect(d.title).toBe("tern-kube logs deployment apps/web @ current context")
 			local s = Quick.typedLine(
+				"logs",
 				UNPINNED,
 				nil,
 				{ selector = "app=web,tier in (a, b),!canary", namespace = "apps", allContainers = true, prefix = true }
@@ -782,7 +786,7 @@ describe("quick actions", function()
 		end)
 
 		it("single-quotes words with shell syntax so no shell expands them", function()
-			local l = Quick.typedLine({ context = "ctx $(id) `x`; y", kubeconfig = "=cfg" }, POD, {}) :: Quick.TypedLaunch
+			local l = Quick.typedLine("logs", { context = "ctx $(id) `x`; y", kubeconfig = "=cfg" }, POD, {}) :: Quick.TypedLaunch
 			expect(l.refusal).toBeNil()
 			-- zsh expands a leading `=word` to a command path.
 			expect(l.line).toBe("kubectl logs --kubeconfig '=cfg' --context 'ctx $(id) `x`; y' -n apps web-0")
@@ -796,13 +800,13 @@ describe("quick actions", function()
 				{ context = "dom\\user" },
 			}
 			for _, target in targets do
-				local l, e = Quick.typedLine(target, POD, {})
+				local l, e = Quick.typedLine("logs", target, POD, {})
 				assert(l, "builds a copyable line")
 				expect(e).toBeNil()
 				expect(l.refusal).toContain("cannot be typed")
 				expect(l.line).toContain("kubectl logs")
 			end
-			local q = Quick.typedLine({ kubeconfig = "/tmp/it's/config" }, POD, {}) :: Quick.TypedLaunch
+			local q = Quick.typedLine("logs", { kubeconfig = "/tmp/it's/config" }, POD, {}) :: Quick.TypedLaunch
 			expect(q.line).toBe("kubectl logs --kubeconfig '/tmp/it'\\''s/config' -n apps web-0")
 		end)
 
@@ -810,18 +814,100 @@ describe("quick actions", function()
 			local targets: { Quick.Target } =
 				{ { context = "a\nb" }, { context = "a\tb" }, { kubeconfig = "/k\27]0;x" } }
 			for _, target in targets do
-				expect((Quick.typedLine(target, POD, {}))).toBeNil()
+				expect((Quick.typedLine("logs", target, POD, {}))).toBeNil()
 			end
-			expect((Quick.typedLine(UNPINNED, ref("Pod", "p;rm", "ns"), {}))).toBeNil()
-			expect((Quick.typedLine(UNPINNED, POD, { since = "$(id)" }))).toBeNil()
-			expect((Quick.typedLine(UNPINNED, POD, { program = "bash" }))).toBeNil()
-			expect((Quick.typedLine(UNPINNED, nil, {}))).toBeNil()
+			expect((Quick.typedLine("logs", UNPINNED, ref("Pod", "p;rm", "ns"), {}))).toBeNil()
+			expect((Quick.typedLine("logs", UNPINNED, POD, { since = "$(id)" }))).toBeNil()
+			expect((Quick.typedLine("logs", UNPINNED, POD, { program = "bash" }))).toBeNil()
+			expect((Quick.typedLine("logs", UNPINNED, nil, {}))).toBeNil()
+			-- Only typed actions have a typed line.
+			expect((Quick.typedLine("shell", UNPINNED, POD, {}))).toBeNil()
 		end)
 
 		it("has no sh -c form: command() refuses and points to the typed launch", function()
 			local l, e = Quick.command("logs", PINNED, POD, {})
 			expect(l).toBeNil()
 			expect(e).toBe("logs is typed into an interactive split")
+		end)
+	end)
+
+	-- k9s parity: "Show revision N" / "History" and "All permissions" are
+	-- typed into a split so the new lens claims render them; every word
+	-- comes from validated fields.
+	describe("history and can-i-list (typed splits)", function()
+		local DEPLOY = ref("Deployment", "web", "apps", "apps")
+
+		it("history types `rollout history TYPE/NAME --revision=N` for workloads with history", function()
+			local l = Quick.typedLine("history", PINNED, DEPLOY, { revision = 2 }) :: Quick.TypedLaunch
+			expect(l.refusal).toBeNil()
+			expect(l.line).toBe(
+				"kubectl rollout history --kubeconfig '/tmp/kube config' --context kind-tern-kube-dev -n apps deployment/web --revision=2"
+			)
+			expect(l.title).toBe("tern-kube rollout history deployment apps/web revision 2 @ kind-tern-kube-dev")
+			local all =
+				Quick.typedLine("history", UNPINNED, ref("StatefulSet", "db", "apps", "apps"), {}) :: Quick.TypedLaunch
+			expect(all.line).toBe("kubectl rollout history -n apps statefulset/db")
+			expect((Quick.typedLine("history", UNPINNED, ref("Pod", "p", "apps"), {}))).toBeNil()
+			expect((Quick.typedLine("history", UNPINNED, ref("Service", "s", "apps"), {}))).toBeNil()
+		end)
+
+		it("round-trips the revision and rejects any other value", function()
+			local url = Quick.encode("history", PINNED, DEPLOY, { revision = 7, program = "kubecolor" }) :: string
+			expect(url).toContain("revision=7")
+			local req = Quick.decode(url) :: Quick.Request
+			expect(req.action).toBe("history")
+			expect(req.opts.revision).toBe(7)
+			expect(req.opts.program).toBe("kubecolor")
+			for _, bad in { "0", "-1", "1.5", "2147483648", "1;id", "01" } do
+				expect((Quick.decode("tern-kube://act/history?kind=Deployment&name=web&revision=" .. bad))).toBeNil()
+			end
+			expect((Quick.decode("tern-kube://act/history?kind=Deployment&name=web&container=c"))).toBeNil()
+		end)
+
+		it("can-i-list carries namespace and impersonation, and names no object", function()
+			local opts: Quick.Opts = {
+				namespace = "apps",
+				as = "system:serviceaccount:apps:viewer",
+				asGroups = { "system:authenticated", "team-a" },
+				asUid = "u-1",
+			}
+			local url = Quick.encode("can-i-list", PINNED, nil, opts) :: string
+			local req = Quick.decode(url) :: Quick.Request
+			expect(req.ref).toBeNil()
+			expect(req.opts.asGroups).toEqual({ "system:authenticated", "team-a" })
+			local l = Quick.typedLine("can-i-list", req.target, nil, req.opts) :: Quick.TypedLaunch
+			expect(l.argv).toEqual({
+				"kubectl",
+				"auth",
+				"can-i",
+				"--list",
+				"--kubeconfig",
+				"/tmp/kube config",
+				"--context",
+				"kind-tern-kube-dev",
+				"-n",
+				"apps",
+				"--as=system:serviceaccount:apps:viewer",
+				"--as-group=system:authenticated",
+				"--as-group=team-a",
+				"--as-uid=u-1",
+			})
+			expect(l.refusal).toBeNil()
+			expect((Quick.decode("tern-kube://act/can-i-list?kind=Pod&name=p"))).toBeNil()
+		end)
+
+		it("rejects impersonation values outside a safe charset", function()
+			for _, bad in { "a%20b", "a%3Bid", "%24(id)", "a%27b", "-x%0A" } do
+				expect((Quick.decode("tern-kube://act/can-i-list?as=" .. bad))).toBeNil()
+			end
+			for _, bad in { "a,,b", "a,", "%2Ca" } do
+				expect((Quick.decode("tern-kube://act/can-i-list?asgroup=" .. bad))).toBeNil()
+			end
+		end)
+
+		it("has no sh -c form", function()
+			expect((Quick.command("history", PINNED, DEPLOY, {}))).toBeNil()
+			expect((Quick.command("can-i-list", PINNED, nil, {}))).toBeNil()
 		end)
 	end)
 
@@ -1084,6 +1170,104 @@ describe("quick actions", function()
 				expect(Quick.decodeFile(url)).toBeNil()
 			end
 		end)
+	end)
+end)
+
+-- (c) A confirmed debug or run-now split records its outcome: the window
+-- hands Quick.command the run id; the split runs kubectl as a child (no
+-- exec), keeps itself alive through Ctrl-C and a closed pane, and calls
+-- `tern-kube-guard record` with a template built from the same validated
+-- fields as the argv. A missing recorder never stops the action.
+describe("quick outcome records", function()
+	local Plan = require("../../../plugin/lib/mutation/plan")
+	local RUN = string.rep("0f", 16)
+	local CORE = "/plug in/shell/tern-kube-guard"
+	local SET: Quick.Settings = { guardCore = CORE, outcome = { run = RUN } }
+	local POD = ref("Pod", "web", "apps")
+
+	-- The template as the shell passes it to `record` (one single-quoted word).
+	local function template(script: string): string
+		local quoted = string.match(script, ' record (\'[^\']*\') "%$t0" "%$s"') :: string
+		assert(quoted, "no record call in: " .. script)
+		return string.sub(quoted, 2, -2)
+	end
+
+	it("runs debug as a child, then records, then exits with kubectl's status", function()
+		local l = Quick.command("debug-pod", PINNED, POD, {}, SET) :: Quick.Launch
+		local script = unquoteLine(l.line)
+		expect((string.find(script, "exec ", 1, true))).toBeNil()
+		expect(script).toContain("; trap : INT TERM HUP; t0=$(date +%s); ")
+		expect(script).toContain(
+			"; s=$?; "
+				.. sq(CORE)
+				.. " record "
+				.. sq(template(script))
+				.. ' "$t0" "$s" || printf \'tern-kube: outcome not recorded in the audit log\\n\' >&2; exit "$s"'
+		)
+		expect(string.sub(script, -#'exit "$s"')).toBe('exit "$s"')
+	end)
+
+	it("builds a template whose op, family and objects match the approved record", function()
+		local cases: { { action: string, ref: any, opts: Quick.Opts, object: string } } = {
+			{ action = "debug-pod", ref = POD, opts = {}, object = "Pod apps/web" },
+			{ action = "debug-node", ref = ref("Node", "n1"), opts = {}, object = "Node n1" },
+			{
+				action = "cronjob-run",
+				ref = ref("CronJob", "nightly", "b", "batch"),
+				opts = { suffix = "k3x9" },
+				object = "Job b/nightly-manual-k3x9",
+			},
+		}
+		for _, c in cases do
+			local l = Quick.command(c.action, PINNED, c.ref, c.opts, SET) :: Quick.Launch
+			local tpl = template(unquoteLine(l.line))
+			local p = Plan.fromArgv(l.argv, { cwd = "/" }) :: any
+			expect(tpl).toContain('"mode":"quick","run":"' .. RUN .. '","op":"' .. p.operation .. '"')
+			expect(tpl).toContain('"family":"' .. c.action .. '"')
+			expect(tpl).toContain('"context":"kind-tern-kube-dev","context_source":"flag"')
+			expect(tpl).toContain('"objects":["' .. c.object .. '"]')
+			expect(tpl).toContain('"decision":"@"')
+			expect((string.find(tpl, '"cwd"', 1, true))).toBeNil()
+		end
+	end)
+
+	it("keeps run-now's prompt after recording", function()
+		local l = Quick.command(
+			"cronjob-run",
+			PINNED,
+			ref("CronJob", "nightly", "b", "batch"),
+			{ suffix = "k3x9" },
+			SET
+		) :: Quick.Launch
+		local script = unquoteLine(l.line)
+		expect(script).toContain(
+			'>&2; printf \'\\ntern-kube: exit %s; press Enter to close\\n\' "$s"; read -r _; exit "$s"'
+		)
+	end)
+
+	it("uses the remote host's guard on a remote pane, never this machine's path", function()
+		local s: Quick.Settings = { guardCore = CORE, outcome = { run = RUN }, remote = { name = "tk@h" } }
+		local script = unquoteLine((Quick.command("debug-node", PINNED, ref("Node", "n1"), {}, s) :: Quick.Launch).line)
+		expect((string.find(script, CORE, 1, true))).toBeNil()
+		expect(script).toContain('; s=$?; if [ -x "${TKUBE_GUARD_CORE:-}" ]; then "$TKUBE_GUARD_CORE" record ')
+		expect(script).toContain("; else false; fi || printf 'tern-kube: outcome not recorded in the audit log\\n' >&2")
+	end)
+
+	it("runs anyway and says so when this machine has no usable guard core", function()
+		local s: Quick.Settings = { guardCore = "relative/core", outcome = { run = RUN } }
+		local script = unquoteLine((Quick.command("debug-pod", PINNED, POD, {}, s) :: Quick.Launch).line)
+		expect(script).toContain("debug -it")
+		expect(script).toContain(
+			"; s=$?; printf 'tern-kube: outcome not recorded in the audit log\\n' >&2; exit \"$s\""
+		)
+	end)
+
+	it("leaves non-mutating actions and unconfirmed previews alone", function()
+		local shell = unquoteLine((Quick.command("shell", PINNED, POD, {}, SET) :: Quick.Launch).line)
+		expect((string.find(shell, " record ", 1, true))).toBeNil()
+		local plain =
+			unquoteLine((Quick.command("debug-pod", PINNED, POD, {}, { guardCore = CORE }) :: Quick.Launch).line)
+		expect(plain).toContain("; exec ")
 	end)
 end)
 

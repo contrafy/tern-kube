@@ -41,6 +41,19 @@ describe("explore help sections", function()
 		expect(allStartWith(what, { "Drift:" })).toBe(true)
 	end)
 
+	-- Y copies the tern-kube-drift command in drift views, so the help must
+	-- say so there (and that the matrix keeps Y for its kubectl commands).
+	it("the drift section names Y as the CLI copy", function()
+		local found: string? = nil
+		for _, e in Keys.sections("drift", true)[1].entries do
+			if e[1] == "Y" then
+				found = e[2]
+			end
+		end
+		expect(found).toContain("tern-kube-drift")
+		expect(found).toContain("matrix Y copies the kubectl commands")
+	end)
+
 	it("the export and git steps list Export and Git keys first", function()
 		for _, kind in { "export", "git" } do
 			local title, what = firstSection(kind)
@@ -61,6 +74,57 @@ describe("explore help sections", function()
 			compare = compare or string.find(w, "Compare:", 1, true) ~= nil
 		end
 		expect(compare).toBe(true)
+	end)
+
+	-- z only works in a Secret's object view, so it belongs to that view's
+	-- section and nowhere else.
+	it("the object view lists the Secret decode key first", function()
+		local title, what = firstSection("detail")
+		expect(title).toBe("This view")
+		expect(allStartWith(what, { "Object:" })).toBe(true)
+		local z = false
+		for _, e in Keys.sections("detail", true)[1].entries do
+			z = z or e[1] == "z"
+		end
+		expect(z).toBe(true)
+		expect((firstSection("list"))).toBe("Keys")
+	end)
+
+	-- `:` is a prompt now; the help must name what it accepts and its keys.
+	it("the `:` row describes the command prompt", function()
+		local row: { string }? = nil
+		for _, e in Keys.KEYS do
+			if e[1] == ":" then
+				row = e
+			end
+		end
+		local what = (row :: { string })[2]
+		for _, word in { "ns NAME", "ctx NAME", "helm", "events", "tab completes", "esc back" } do
+			expect(what).toContain(word)
+		end
+	end)
+
+	-- `%` works everywhere; `w` (sampling) and enter's drill-in only in the
+	-- usage views, so they lead that view's help and no key means two things
+	-- there.
+	it("the usage views list their keys first, % stays global", function()
+		local title, what = firstSection("usage")
+		expect(title).toBe("This view")
+		expect(allStartWith(what, { "Usage:" })).toBe(true)
+		local keys: { [string]: boolean } = {}
+		for _, e in Keys.sections("usage", true)[1].entries do
+			for key in string.gmatch(e[1], "[^%s/]+") do
+				expect(keys[key]).toBeNil()
+				keys[key] = true
+			end
+		end
+		expect(keys.w).toBe(true)
+		expect(keys.enter).toBe(true)
+		local global = false
+		for _, e in Keys.sections("list", true)[1].entries do
+			global = global or e[1] == "%"
+		end
+		expect(global).toBe(true)
 	end)
 end)
 

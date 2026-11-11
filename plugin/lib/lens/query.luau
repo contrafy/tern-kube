@@ -71,7 +71,9 @@ function M.isProblem(tbl: SnapshotTable, row: ResourceRow): boolean
 	return shortRatio and not finished
 end
 
-type Clause = { index: number?, kind: boolean, values: { [string]: boolean } }
+-- tag: the column is one of the table's facets that no header carries; it
+-- matches when any of the row's tag values for it is selected.
+type Clause = { index: number?, kind: boolean, tag: string?, values: { [string]: boolean } }
 
 -- AND across columns, OR within one column. A filter on a column this table
 -- lacks excludes the whole table.
@@ -84,10 +86,11 @@ local function clauses(tbl: SnapshotTable, filters: { string }): { Clause }?
 		if clause == nil then
 			local index = columnIndex(tbl, col)
 			local isKind = index == nil and col == M.KIND
-			if index == nil and not isKind then
+			local isTag = index == nil and not isKind and tbl.facets ~= nil and table.find(tbl.facets, col) ~= nil
+			if index == nil and not isKind and not isTag then
 				return nil
 			end
-			local created: Clause = { index = index, kind = isKind, values = {} }
+			local created: Clause = { index = index, kind = isKind, tag = if isTag then col else nil, values = {} }
 			clause = created
 			byCol[col] = created
 			table.insert(out, created)
@@ -97,8 +100,24 @@ local function clauses(tbl: SnapshotTable, filters: { string }): { Clause }?
 	return out
 end
 
+local function tagMatches(row: ResourceRow, col: string, values: { [string]: boolean }): boolean
+	local tags = row.tags
+	for _, v in (if tags then tags[col] else nil) or {} :: { string } do
+		if values[v] then
+			return true
+		end
+	end
+	return false
+end
+
 local function matches(tbl: SnapshotTable, row: ResourceRow, cs: { Clause }): boolean
 	for _, c in cs do
+		if c.tag then
+			if not tagMatches(row, c.tag, c.values) then
+				return false
+			end
+			continue
+		end
 		local value = if c.kind then tbl.kind or "" else row.cells[c.index :: number] or ""
 		if not c.values[value] then
 			return false

@@ -155,6 +155,7 @@ local EXPLORE_FIELDS = {
 	"q",
 	"types",
 	"search",
+	"pick",
 }
 
 export type ExploreExtra = {
@@ -177,6 +178,9 @@ export type ExploreExtra = {
 	types: string?,
 	-- Land on the logs route with its `/` filter focused.
 	search: boolean?,
+	-- The context was picked from a list (get-contexts row), not typed as
+	-- --context: Explore opens it chosen, not confirmed.
+	pick: boolean?,
 }
 
 -- `route` opens a view on top of the object (`manifest`, `diff`, `logs`,
@@ -210,6 +214,7 @@ function M.exploreUrl(inv: Invocation, ref: Ref?, extra: ExploreExtra?): string
 		q = e.q,
 		types = e.types,
 		search = if e.search then "1" else nil,
+		pick = if e.pick then "1" else nil,
 	}
 	local parts: { string } = {}
 	for _, k in EXPLORE_FIELDS do
@@ -238,6 +243,27 @@ function M.exploreFilterUrl(inv: Invocation, cwd: string?): string?
 		group = first.group,
 		selector = inv.selector,
 		search = true,
+		cwd = cwd,
+	})
+end
+
+local TOP_KINDS: { [string]: string } = { pod = "Pod", node = "Node" }
+
+-- The lens usage chips: `kubectl top pod|node` reopened in Explore's usage
+-- view with the same pinned target, namespace scope (`*` for -A) and -l.
+-- Without `ref` the whole scope (a named `top pod NAME` too); with a row's
+-- ref that pod's containers or that node's pods. nil for any other command.
+-- --field-selector has no equivalent there and is dropped.
+function M.exploreUsageUrl(inv: Invocation, cwd: string?, ref: Ref?): string?
+	local kind = if inv.verb == "top" then TOP_KINDS[inv.subverb or ""] else nil
+	if kind == nil then
+		return nil
+	end
+	return M.exploreUrl(inv, ref, {
+		route = "usage",
+		kind = kind,
+		namespace = if ref == nil and kind == "Node" then "" else nil,
+		selector = inv.selector,
 		cwd = cwd,
 	})
 end

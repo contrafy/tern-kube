@@ -182,7 +182,7 @@ describe("explore state: target resolution", function()
 	it("every run after resolution pins --context, across every view", function()
 		local s, trace = W.open({ context = W.CTX, namespace = W.NS, kind = "Pod" })
 		s, trace = W.keys(s, { "j", "enter", "R", "escape", "d", "escape", "L", "escape", "escape" }, trace)
-		s, trace = W.keys(s, { "n", "j", "j", "enter", ":", "j", "enter", "r" }, trace)
+		s, trace = W.keys(s, { "n", "j", "j", "enter", ":", "p", "o", "enter", "r" }, trace)
 		local cluster = 0
 		for _, run in trace.runs do
 			if not isKubeconfigQuery(run) then
@@ -947,25 +947,32 @@ describe("explore state: helm links and picker", function()
 		expect(restored.stack[3].release).toBe("web-b")
 	end)
 
-	it("the kinds picker lists `helm releases` first when helm was found; enter opens them", function()
+	it("the kinds picker lists the helm command when helm was found; picking it opens the releases", function()
 		local s = initHelm(W.link({ context = W.CTX, namespace = "*", kind = "Pod" }))
 		s = W.helmKeys(s, { ":" })
-		expect(State.items(s)[1].key).toBe(State.HELM_KIND_ROW)
-		s = W.helmAction(s, "sel", State.HELM_KIND_ROW)
+		expect(State.items(s)[1].key).toBe(":ctx")
+		local keys: { string } = {}
+		for _, item in State.items(s) do
+			table.insert(keys, item.key)
+		end
+		expect(keys).toContain(":helm")
+		s = W.helmAction(s, "sel", ":helm")
 		local opened, trace = W.helmKeys(s, { "enter" })
 		expect(kinds(opened)).toEqual({ "helm-releases" })
 		expect(#State.items(opened)).toBe(5)
 		expect(#trace.runs).toBe(1)
 		local noHelm = W.keys(W.open(), { ":" })
 		for _, item in State.items(noHelm) do
-			expect(item.key == State.HELM_KIND_ROW).toBe(false)
+			expect(item.key == ":helm").toBe(false)
 		end
 	end)
 
-	it("a filter `hr` still finds the picker row", function()
+	-- `hr` is Flux HelmRelease's short name, so it is not claimed, but it
+	-- still surfaces the helm command first.
+	it("typing `hr` still finds the helm row", function()
 		local s = initHelm(W.link({ context = W.CTX, namespace = "*", kind = "Pod" }))
-		s = W.helmKeys(s, { ":", "/", "h", "r", "escape" })
-		expect(State.items(s)[1].key).toBe(State.HELM_KIND_ROW)
+		s = W.helmKeys(s, { ":", "h", "r" })
+		expect(State.items(s)[1].key).toBe(":helm")
 	end)
 end)
 
@@ -1099,6 +1106,285 @@ describe("explore state: restore after a plugin reload", function()
 		end
 		local _, effects = State.update(s, W.key("r"))
 		expect(#effectsOf(effects, "run") > 0).toBe(true)
+	end)
+end)
+
+-- The `:` prompt (k9s): typed kinds, aliases and commands resolve against
+-- discovery (or kubectl's static table first, so built-ins never wait);
+-- nothing typed reaches kubectl except a canonical resource, a validated
+-- namespace or a context of the kubeconfig list.
+describe("explore state: `:` command prompt", function()
+	local function typed(text: string): { string }
+		local out: { string } = {}
+		for ch in string.gmatch(text, ".") do
+			table.insert(out, if ch == " " then "space" else ch)
+		end
+		return out
+	end
+
+	local function press(s: State, names: { string }): (State, { Effect })
+		local all: { Effect } = {}
+		for _, name in names do
+			local effects
+			s, effects = State.update(s, W.key(name))
+			for _, e in effects do
+				table.insert(all, e)
+			end
+		end
+		return s, all
+	end
+
+	local function prompt(s: State, text: string): (State, W.Trace)
+		local names = typed(":" .. text)
+		table.insert(names, "enter")
+		return W.keys(s, names)
+	end
+
+	local function toasts(list: { Effect }): { string }
+		local out: { string } = {}
+		for _, e in list do
+			if e.t == "toast" then
+				table.insert(out, e.text :: string)
+			end
+		end
+		return out
+	end
+
+	local function apiRuns(list: { Effect }): number
+		local n = 0
+		for _, e in list do
+			if e.t == "run" and table.find(e.argv :: { string }, "api-resources") then
+				n += 1
+			end
+		end
+		return n
+	end
+
+	it("`:` opens the kinds picker with the prompt focused", function()
+		local s, effects = State.update(W.open(), W.key(":"))
+		expect(top(s).kind).toBe("kinds")
+		expect(s.editing).toBe(true)
+		expect(#effectsOf(effects, "focus")).toBe(1)
+		expect(apiRuns(effects)).toBe(1)
+	end)
+
+	-- kubectl's built-ins resolve from the static table: no wait for discovery.
+	it("`:po` lists pods before discovery answers", function()
+		local s = W.keys(W.open(), { "escape" })
+		local pending
+		s, pending = press(s, typed(":po"))
+		expect(apiRuns(pending)).toBe(1)
+		s = press(s, { "enter" })
+		expect(#s.stack).toBe(1)
+		expect(top(s).kind).toBe("list")
+		expect(top(s).resource).toBe("pods")
+		expect(s.editing).toBe(false)
+	end)
+
+	-- A CRD short name is only known once discovery answers.
+	it("`:wd` waits for discovery, then lists the CRD", function()
+		local s, pending = press(W.open(), typed(":wd"))
+		local effects
+		s, effects = press(s, { "enter" })
+		expect(top(s).kind).toBe("kinds")
+		expect(s.pendingCommand ~= nil).toBe(true)
+		expect(#toasts(effects)).toBe(0)
+		local settled, trace = W.settle(s, pending)
+		expect(top(settled).kind).toBe("list")
+		expect(top(settled).resource).toBe("widgets.lens.example.com")
+		local last = trace.runs[#trace.runs].argv :: { string }
+		expect(table.find(last, "widgets.lens.example.com") ~= nil).toBe(true)
+	end)
+
+	it("an edit cancels the remembered command", function()
+		local s, pending = press(W.open(), typed(":wd"))
+		s = press(s, { "enter", "x" })
+		expect(s.pendingCommand).toBeNil()
+		s = W.settle(s, pending)
+		expect(top(s).kind).toBe("kinds")
+	end)
+
+	it("an unknown word toasts and keeps the prompt open", function()
+		local s, trace = prompt(W.open(), "xyz")
+		expect(top(s).kind).toBe("kinds")
+		expect(s.editing).toBe(true)
+		expect(toasts(trace.effects)).toContain('No kind or command matches "xyz"')
+	end)
+
+	-- Enter takes the top suggestion only when it is a prefix match.
+	it("a prefix enters its best match; a substring needs an explicit pick", function()
+		local s = prompt(W.open(), "deplo")
+		expect(top(s).resource).toBe("deployments.apps")
+		local sub, trace = prompt(W.open(), "ploy")
+		expect(top(sub).kind).toBe("kinds")
+		expect(#toasts(trace.effects)).toBe(1)
+		sub = W.keys(sub, { "down", "up", "enter" })
+		expect(top(sub).resource).toBe("deployments.apps")
+	end)
+
+	it("tab completes the first word to the highlighted row", function()
+		local s = W.keys(W.open(), typed(":dep"))
+		s = W.keys(s, { "tab" })
+		expect(s.filter[State.currentKey(s)]).toBe("deployments.apps ")
+		expect(s.editing).toBe(true)
+	end)
+
+	it("esc in the prompt goes back in one press", function()
+		local s = W.keys(W.open(), { ":", "d", "escape" })
+		expect(top(s).kind).toBe("list")
+		expect(s.editing).toBe(false)
+	end)
+
+	it("empty enter stops editing and leaves the picker browsable", function()
+		local s = W.keys(W.open(), { ":", "enter" })
+		expect(top(s).kind).toBe("kinds")
+		expect(s.editing).toBe(false)
+		expect(State.items(s)[1].key).toBe(":ctx")
+	end)
+
+	it("a kind with a namespace or -A sets the scope first", function()
+		local s = prompt(W.open(), "deploy tern-test-empty")
+		expect(top(s).resource).toBe("deployments.apps")
+		expect(s.target.namespace).toBe("tern-test-empty")
+		local all = prompt(W.open(), "deploy -A")
+		expect(all.target.allNamespaces).toBe(true)
+		local bad, trace = prompt(W.open(), "deploy Bad_Name")
+		expect(top(bad).kind).toBe("kinds")
+		expect(toasts(trace.effects)).toContain('Not a namespace name: "Bad_Name"')
+	end)
+
+	it("a namespace on a cluster-scoped kind is ignored with a note", function()
+		local before = W.open()
+		local s, trace = prompt(before, "no tern-test-empty")
+		expect(top(s).resource).toBe("nodes")
+		expect(s.target.namespace).toBe(before.target.namespace)
+		expect(toasts(trace.effects)[1]).toContain("cluster-scoped")
+	end)
+
+	-- The chooser rule: a typed context is a choice, never a confirmation.
+	it("`:ctx NAME` switches only to an exact kubeconfig context, unconfirmed", function()
+		local s = prompt(W.open(), "ctx other")
+		expect(s.target.context).toBe("other")
+		expect(s.target.contextSource).toBe("chosen")
+		expect(s.target.confirmed).toBe(false)
+		local partial = prompt(W.open(), "ctx oth")
+		expect(partial.target.context).toBe(W.CTX)
+		expect(top(partial).kind).toBe("contexts")
+		expect(partial.filter[State.currentKey(partial)]).toBe("oth")
+		local bare = prompt(W.open(), "ctx")
+		expect(top(bare).kind).toBe("contexts")
+	end)
+
+	it("`:ns NAME` scopes, `:ns` opens the namespace picker", function()
+		local s = prompt(W.open(), "ns tern-test-empty")
+		expect(s.target.namespace).toBe("tern-test-empty")
+		expect(top(s).kind).toBe("list")
+		local all = prompt(W.open(), "ns -A")
+		expect(all.target.allNamespaces).toBe(true)
+		local picker = prompt(W.open(), "ns")
+		expect(top(picker).kind).toBe("namespaces")
+		local _, trace = prompt(W.open(), "ns Bad_Name")
+		expect(toasts(trace.effects)).toContain('Not a namespace name: "Bad_Name"')
+	end)
+
+	it("`:events` opens the timeline at the root, `:ev NS` scoped", function()
+		local s = prompt(W.open(), "events")
+		expect(#s.stack).toBe(1)
+		expect(top(s).kind).toBe("events")
+		local scoped = prompt(W.open(), "ev tern-test-apps")
+		expect(scoped.target.namespace).toBe("tern-test-apps")
+		expect(top(scoped).kind).toBe("events")
+	end)
+
+	it("`:top` / `:usage` open the usage view, `nodes` its nodes view", function()
+		local s = prompt(W.open(), "top")
+		expect(#s.stack).toBe(1)
+		expect(top(s).kind).toBe("usage")
+		expect(top(s).resource).toBe("pods")
+		local nodes = prompt(W.open(), "usage nodes")
+		expect(top(nodes).resource).toBe("nodes")
+	end)
+
+	it("`:helm` opens the releases, or says helm is missing", function()
+		local s, effects =
+			State.init({ W.link({ context = W.CTX, namespace = "*", kind = "Pod" }) }, nil, W.config(nil), W.helmEnv())
+		s = W.settle(s, effects, W.helmResponder)
+		local names = typed(":helm")
+		table.insert(names, "enter")
+		s = W.helmKeys(s, names)
+		expect(top(s).kind).toBe("helm-releases")
+		local _, trace = prompt(W.open(), "helm")
+		expect(toasts(trace.effects)).toContain("helm not found")
+	end)
+
+	it("a complete discovery is remembered for the host; a cached one runs nothing", function()
+		local _, trace = W.keys(W.open(), { ":" })
+		local remembered = effectsOf(trace.effects, "remember")
+		expect(#remembered).toBe(1)
+		expect(remembered[1].id).toBe("/home/u/.kube/config\0" .. W.CTX)
+		expect(remembered[1].at).toBe(W.AT)
+		local text = remembered[1].text :: string
+		local env = W.env()
+		env.discovery = function(id: string)
+			return if id == remembered[1].id then { text = text, at = 5 } else nil
+		end
+		local s, effects =
+			State.init({ W.link({ context = W.CTX, namespace = W.NS, kind = "Pod" }) }, nil, W.config(nil), env)
+		s = W.settle(s, effects)
+		local after, t2 = W.keys(s, typed(":wd"))
+		expect(apiRuns(t2.effects)).toBe(0)
+		expect((State.currentLoad(after) :: State.Load).fetchedAt).toBe(5)
+		expect(State.items(after)[1].key).toBe("widgets.lens.example.com")
+		local refreshed, t3 = W.keys(W.keys(after, { "escape" }), { ":", "enter", "r" })
+		expect(apiRuns(t3.effects)).toBe(1)
+		expect(#effectsOf(t3.effects, "remember")).toBe(1)
+		expect(top(refreshed).kind).toBe("kinds")
+	end)
+
+	-- kubectl exits 1 when one aggregated API is down; the rest still lists.
+	it("a partial discovery is usable and never remembered", function()
+		local function responder(argv: { string }): (W.Result?, string?)
+			if table.find(argv, "api-resources") then
+				return {
+					status = 1,
+					stdout = "NAME   SHORTNAMES   APIVERSION   NAMESPACED   KIND   VERBS   CATEGORIES\n"
+						.. "pods   po           v1           true         Pod    get,list   all\n",
+					stderr = "error: unable to retrieve the complete list of server APIs: "
+						.. "metrics.k8s.io/v1beta1: the server is currently unable to handle the request\n",
+					timed_out = false,
+				}
+			end
+			return W.responder(argv)
+		end
+		local s, effects = State.update(W.open(), W.key(":"))
+		local trace
+		s, trace = W.settle(s, effects, responder)
+		local load = State.currentLoad(s) :: State.Load
+		expect(load.status).toBe("ok")
+		expect((load.data :: State.KindsData).partial).toBe("metrics.k8s.io/v1beta1")
+		expect(#effectsOf(trace.effects, "remember")).toBe(0)
+	end)
+
+	-- Lens rows (get-contexts) open Explore in a context the user clicked,
+	-- not one typed as --context: chosen and unconfirmed.
+	it("a pick=1 link starts chosen and unconfirmed", function()
+		local s = W.open({ context = "other", pick = "1", kind = "Pod" })
+		expect(s.target.context).toBe("other")
+		expect(s.target.contextSource).toBe("chosen")
+		expect(s.target.confirmed).toBe(false)
+		expect(State.resolved(s)).toBe(true)
+	end)
+
+	it("refuses with live queries off", function()
+		local s, effects = State.init(
+			{ W.link({ context = W.CTX, kind = "Pod" }) },
+			nil,
+			W.config('{"explore":{"allow_live_queries":false}}'),
+			W.env()
+		)
+		local _, out = State.update(s, W.key(":"))
+		expect(#effects).toBe(0)
+		expect(toasts(out)).toContain("Live queries are disabled")
 	end)
 end)
 

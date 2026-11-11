@@ -164,4 +164,36 @@ describe("lens query", function()
 	end)
 end)
 
+-- api-resources VERB / can-i TYPE facets are row tags, not cells: a row
+-- matches when any of its values is selected (OR within a column, AND across).
+describe("lens query tags", function()
+	local function row(name: string, tags: { [string]: { string } }): any
+		return { key = name, cells = { name }, rawLines = {}, warnings = {}, tags = tags }
+	end
+	local tbl: any = {
+		headers = { "NAME" },
+		types = { "text" },
+		facets = { "VERB", "GROUP" },
+		rows = {
+			row("pods", { VERB = { "get", "list" }, GROUP = { "core" } }),
+			row("bindings", { VERB = { "create" }, GROUP = { "core" } }),
+			row("deployments", { VERB = { "list", "patch" }, GROUP = { "apps" } }),
+		},
+	}
+
+	it("matches any tag value, OR within a column and AND across columns", function()
+		local listing = vsm.toggledFilter(vsm.default(), "VERB", "list")
+		expect(names(Query.apply(tbl, listing))).toEqual({ "pods", "deployments" })
+		local either = vsm.toggledFilter(listing, "VERB", "create")
+		expect(names(Query.apply(tbl, either))).toEqual({ "pods", "bindings", "deployments" })
+		local core = vsm.toggledFilter(listing, "GROUP", "core")
+		expect(names(Query.apply(tbl, core))).toEqual({ "pods" })
+	end)
+
+	it("a tag column the table does not facet still excludes the table", function()
+		local other = vsm.toggledFilter(vsm.default(), "CATEGORY", "x")
+		expect(Query.apply(tbl, other).matched).toBe(0)
+	end)
+end)
+
 return nil

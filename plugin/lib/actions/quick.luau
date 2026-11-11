@@ -16,11 +16,13 @@
 -- target and its context, echoes the context and the command line, and
 -- execs kubectl so its exit status is the pane's.
 --
--- `logs` ("Run in split") is the exception: Tern lenses only commands typed
--- at a prompt, so typedLine() builds a plain kubectl line the window types
--- into a new interactive split. That line meets the user's own shell (zsh,
--- bash or fish), so it holds only words all three read literally.
+-- Typed actions are the exception (`logs` "Run in split", `history` "Show
+-- revision N", `can-i-list` "All permissions"): Tern lenses only commands
+-- typed at a prompt, so typedLine() builds a plain kubectl line the window
+-- types into a new interactive split. That line meets the user's own shell
+-- (zsh, bash or fish), so it holds only words all three read literally.
 
+local Audit = require("../mutation/audit")
 local Command = require("../kubectl/command")
 local Kinds = require("../kubectl/kinds")
 local Types = require("../model/types")
@@ -36,6 +38,8 @@ export type ActionId =
 	| "cronjob-run"
 	| "edit"
 	| "logs"
+	| "history"
+	| "can-i-list"
 
 -- How the window opens an action: directly, after the approve block's
 -- confirmation grant, or directly as an editor whose save the guard approves.
@@ -93,6 +97,12 @@ export type Opts = {
 	prefix: boolean?,
 	allContainers: boolean?,
 	program: string?,
+	-- `history`: the revision shown (`--revision=N`).
+	revision: number?,
+	-- `can-i-list`: whom the rules are listed for (impersonation flags).
+	as: string?,
+	asGroups: { string }?,
+	asUid: string?,
 }
 
 -- The host a remote pane is on (window hosts listing) and the ssh words
@@ -100,9 +110,12 @@ export type Opts = {
 export type Remote = { name: string, ssh: string? }
 
 -- quick_actions config; nil or invalid fields keep the defaults.
--- guardCore: absolute path of the plugin's shell/tern-kube-guard (edit).
+-- guardCore: absolute path of the plugin's shell/tern-kube-guard (edit, and
+-- the outcome recorder).
 -- placement: written into links by withHost. remote: the split runs on that
 -- host (its login environment, its loopback, its guard via TKUBE_GUARD_CORE).
+-- outcome: set by the window for a confirmed mutating action: the split
+-- records kubectl's outcome in the audit log with this run id.
 export type Settings = {
 	shellCommand: { string }?,
 	logsTail: number?,
@@ -110,6 +123,7 @@ export type Settings = {
 	guardCore: string?,
 	placement: Place?,
 	remote: Remote?,
+	outcome: { run: string? }?,
 }
 
 -- ref is nil only for selector-only logs (opts.selector, opts.namespace).
@@ -175,6 +189,8 @@ type Spec = {
 	kinds: { [string]: boolean },
 	-- Any named object of any type, custom resources included (kinds unused).
 	anyKind: boolean?,
+	-- Names no object (can-i-list): kind and name are refused.
+	noRef: boolean?,
 	-- Parameters beyond kind/name/namespace/context/kubeconfig.
 	params: { [string]: boolean },
 }
@@ -247,9 +263,25 @@ local SPECS: { [string]: Spec } = {
 			"program",
 		}),
 	},
+	history = {
+		label = "Show revision",
+		key = nil,
+		mutates = false,
+		kinds = set({ "Deployment", "StatefulSet", "DaemonSet" }),
+		params = set({ "revision", "program" }),
+	},
+	["can-i-list"] = {
+		label = "All permissions",
+		key = nil,
+		mutates = false,
+		kinds = {},
+		noRef = true,
+		params = set({ "as", "asgroup", "asuid", "program" }),
+	},
 }
 
--- `logs` is offered by the logs lens's variants only, never per resource.
+-- `logs`, `history` and `can-i-list` are offered by lens views only, never
+-- per resource.
 local ORDER: { ActionId } = { "shell", "logs-follow", "port-forward", "debug-pod", "debug-node", "cronjob-run", "edit" }
 M.ORDER = ORDER
 
@@ -273,6 +305,10 @@ local FIELDS = {
 	"image",
 	"suffix",
 	"program",
+	"revision",
+	"as",
+	"asgroup",
+	"asuid",
 	"context",
 	"kubeconfig",
 	"confirm",
@@ -391,6 +427,29 @@ local CHECKS: { [string]: (string) -> string? } = {
 	place = function(v)
 		return if v == "right" or v == "down" or v == "tab" then nil else "place must be right, down or tab"
 	end,
+	revision = function(v)
+		local n = if string.find(v, "^[1-9]%d*$") and #v <= 10 then tonumber(v) else nil
+		return if n and n <= 2147483647 then nil else "revision must be 1-2147483647"
+	end,
+	as = function(v)
+		return if #v <= 253 and string.find(v, "^[%w%-%._:@/]+$") ~= nil
+			then nil
+			else "as must be a user name of [A-Za-z0-9-._:@/]"
+	end,
+	asuid = function(v)
+		return if #v <= 253 and string.find(v, "^[%w%-%._:@/]+$") ~= nil
+			then nil
+			else "asuid must be a uid of [A-Za-z0-9-._:@/]"
+	end,
+	-- Groups joined by commas (no group name holds one).
+	asgroup = function(v)
+		return if #v <= 2048
+				and string.find(v, "^[%w%-%._:@/]+[%w%-%._:@/,]*$") ~= nil
+				and not string.find(v, ",,", 1, true)
+				and string.sub(v, -1) ~= ","
+			then nil
+			else "asgroup must be group names of [A-Za-z0-9-._:@/], comma-separated"
+	end,
 }
 
 -- logs-follow's tail is a count of lines, not the logs variant's kubectl flag.
@@ -445,6 +504,12 @@ local function fieldsOf(action: string, target: Target, ref: Ref?, opts: Opts): 
 	put("image", opts.image)
 	put("suffix", opts.suffix)
 	put("program", opts.program)
+	put("revision", opts.revision)
+	put("as", opts.as)
+	if opts.asGroups and #opts.asGroups > 0 then
+		f.asgroup = table.concat(opts.asGroups, ",")
+	end
+	put("asuid", opts.asUid)
 	put("context", target.context)
 	put("kubeconfig", target.kubeconfig)
 	put("confirm", opts.confirm)
@@ -500,6 +565,10 @@ local function optsOf(f: { [string]: string }): Opts
 		prefix = if f.prefix then true else nil,
 		allContainers = if f.allcontainers then true else nil,
 		program = f.program,
+		revision = if f.revision then tonumber(f.revision) else nil,
+		as = f.as,
+		asGroups = if f.asgroup then string.split(f.asgroup, ",") else nil,
+		asUid = f.asuid,
 	}
 end
 
@@ -531,6 +600,20 @@ local function validate(action: string, f: { [string]: string }, group: string?)
 		return nil, "container and allcontainers exclude each other"
 	end
 	local kind = f.kind
+	if spec.noRef then
+		if kind or f.name then
+			return nil, action .. " names no object"
+		end
+		local opts = optsOf(f)
+		opts.namespace = f.namespace
+		return {
+			action = action :: ActionId,
+			target = { context = f.context, kubeconfig = f.kubeconfig },
+			ref = nil,
+			opts = opts,
+		},
+			nil
+	end
 	if kind == nil and f.name == nil and f.selector and SELECTOR_ONLY[action] then
 		local opts = optsOf(f)
 		opts.namespace = f.namespace
@@ -926,6 +1009,33 @@ local function followSelector(o: Opts): { string }
 	return out
 end
 
+-- plan.luau's operation names, so the outcome record matches the approved one.
+local QUICK_OPS: { [string]: string } = {
+	["debug-pod"] = "debug",
+	["debug-node"] = "debug node",
+	["cronjob-run"] = "create job",
+}
+
+local NOT_RECORDED = "printf 'tern-kube: outcome not recorded in the audit log\\n' >&2"
+
+-- `tern-kube-guard record TEMPLATE STARTED STATUS` on the split's host (the
+-- audit log there is where kubectl ran). Without a recorder the action has
+-- run anyway: say the record is missing.
+local function recordLine(s: Settings, template: string): string
+	local args = " record " .. Command.quote(template) .. ' "$t0" "$s"'
+	if s.remote then
+		return 'if [ -x "${TKUBE_GUARD_CORE:-}" ]; then "$TKUBE_GUARD_CORE"'
+			.. args
+			.. "; else false; fi || "
+			.. NOT_RECORDED
+	end
+	local core = s.guardCore
+	if core == nil or string.sub(core, 1, 1) ~= "/" or not noControl(core) then
+		return NOT_RECORDED
+	end
+	return Command.quote(core) .. args .. " || " .. NOT_RECORDED
+end
+
 -- The command a validated request runs. Validation is repeated so a caller
 -- cannot skip decode().
 function M.command(action: string, target: Target, ref: Ref?, opts: Opts?, settings: Settings?): (Launch?, string?)
@@ -1056,6 +1166,28 @@ function M.command(action: string, target: Target, ref: Ref?, opts: Opts?, setti
 		table.insert(post, "read -r _")
 		table.insert(post, 'exit "$s"')
 	end
+	if s.outcome and r and M.mutates(action) then
+		local object = if action == "debug-pod"
+			then "Pod " .. (nsName or "") .. "/" .. r.name
+			elseif action == "debug-node" then "Node " .. r.name
+			else "Job " .. (nsName or "") .. "/" .. r.name .. "-manual-" .. (o.suffix :: string)
+		local tpl = Audit.quickTemplate({
+			op = QUICK_OPS[action] or action,
+			family = action,
+			context = req.target.context,
+			namespace = nsName,
+			kubeconfig = req.target.kubeconfig,
+			argv = argv,
+			run = s.outcome.run,
+			objects = { object },
+		})
+		-- kubectl runs as a child: the split outlives it (Ctrl-C, a closed
+		-- pane: kubectl gets SIGHUP and exits 129) to record its status.
+		append(pre, { "trap : INT TERM HUP", "t0=$(date +%s)" })
+		local rest = if #post > 0 then table.move(post, 2, #post, 1, {}) else { 'exit "$s"' }
+		post = { "s=$?", recordLine(s, tpl) }
+		append(post, rest)
+	end
 
 	local ctx = req.target.context
 	title = "tern-kube " .. title
@@ -1175,8 +1307,10 @@ function M.placement(value: any): Placement
 	return { how = "split", dir = "right" }
 end
 
+local TYPED: { [string]: boolean } = { logs = true, history = true, ["can-i-list"] = true }
+
 function M.typed(action: string): boolean
-	return action == "logs"
+	return TYPED[action] == true
 end
 
 -- Words every interactive shell reads literally; a leading `=` is zsh's
@@ -1191,14 +1325,7 @@ local function typable(w: string): boolean
 	return string.find(w, "['\\%c]") == nil
 end
 
--- The `logs` variant as a plain kubectl line for an interactive prompt,
--- rebuilt from validated fields only. A word no quoting keeps literal in
--- every shell sets `refusal`; `line` is then a POSIX copy for the clipboard.
-function M.typedLine(target: Target, ref: Ref?, opts: Opts): (TypedLaunch?, string?)
-	local req, err = validate("logs", fieldsOf("logs", target, ref, opts), if ref then ref.group else nil)
-	if req == nil then
-		return nil, err
-	end
+local function logsArgv(req: Request): ({ string }, string)
 	local o = req.opts
 	local r = req.ref
 	local argv: { string } = { o.program or "kubectl", "logs" }
@@ -1243,7 +1370,71 @@ function M.typedLine(target: Target, ref: Ref?, opts: Opts): (TypedLaunch?, stri
 	if o.prefix then
 		table.insert(argv, "--prefix")
 	end
-	local title = "tern-kube logs " .. what .. " @ " .. (req.target.context or "current context")
+	return argv, "logs " .. what
+end
+
+local function historyArgv(req: Request): ({ string }, string)
+	local o = req.opts
+	local r = req.ref :: Ref
+	local argv: { string } = { o.program or "kubectl", "rollout", "history" }
+	append(argv, connection(req.target))
+	if r.namespace then
+		append(argv, { "-n", r.namespace })
+	end
+	local token = KINDS[r.kind].token
+	table.insert(argv, token .. "/" .. r.name)
+	local what = "rollout history " .. token .. " " .. (if r.namespace then r.namespace .. "/" else "") .. r.name
+	if o.revision then
+		table.insert(argv, string.format("--revision=%d", o.revision))
+		what ..= string.format(" revision %d", o.revision)
+	end
+	return argv, what
+end
+
+local function canIListArgv(req: Request): ({ string }, string)
+	local o = req.opts
+	local argv: { string } = { o.program or "kubectl", "auth", "can-i", "--list" }
+	append(argv, connection(req.target))
+	local what = "auth can-i --list"
+	if o.namespace then
+		append(argv, { "-n", o.namespace })
+		what ..= " -n " .. o.namespace
+	end
+	if o.as then
+		table.insert(argv, "--as=" .. o.as)
+		what ..= " as " .. o.as
+	end
+	for _, g in o.asGroups or {} :: { string } do
+		table.insert(argv, "--as-group=" .. g)
+	end
+	if o.asUid then
+		table.insert(argv, "--as-uid=" .. o.asUid)
+	end
+	return argv, what
+end
+
+-- A typed action (`logs` variants, `history`, `can-i-list`) as a plain
+-- kubectl line for an interactive prompt, program and verb first so the
+-- lens claims it, rebuilt from validated fields only. A word no quoting
+-- keeps literal in every shell sets `refusal`; `line` is then a POSIX copy
+-- for the clipboard.
+function M.typedLine(action: string, target: Target, ref: Ref?, opts: Opts): (TypedLaunch?, string?)
+	if not M.typed(action) then
+		return nil, action .. " is not a typed action"
+	end
+	local req, err = validate(action, fieldsOf(action, target, ref, opts), if ref then ref.group else nil)
+	if req == nil then
+		return nil, err
+	end
+	local argv: { string }, what: string
+	if action == "history" then
+		argv, what = historyArgv(req)
+	elseif action == "can-i-list" then
+		argv, what = canIListArgv(req)
+	else
+		argv, what = logsArgv(req)
+	end
+	local title = "tern-kube " .. what .. " @ " .. (req.target.context or "current context")
 	local words: { string } = table.create(#argv)
 	for i, w in argv do
 		if bare(w) then

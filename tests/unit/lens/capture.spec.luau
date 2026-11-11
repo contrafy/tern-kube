@@ -3,6 +3,7 @@
 -- change between fixture captures, so assertions stick to structure and
 -- stable names.
 local Capture = require("../../../plugin/lib/lens/capture")
+local fixtures = require("../../lib/fixtures")
 local json = require("../../lib/json")
 local runs = require("../../lib/runs")
 local t = require("../../lib/test")
@@ -15,6 +16,20 @@ end
 
 local function fromLines(command: string, lines: { string }, status: number?): Capture.Capture
 	return Capture.build(runs.run(command), lines, status, { decode = json.decode })
+end
+
+-- `kubectl top` captures from the usage evidence (tests/fixtures/kubectl/usage/lens).
+local function topFixture(name: string): Capture.Capture
+	local argv: string? = nil
+	for _, line in fixtures.lines("kubectl/usage/lens/MANIFEST.tsv") do
+		local n, a = string.match(line, "^([^\t]+)\t([^\t]+)")
+		if n == name then
+			argv = a
+		end
+	end
+	assert(argv, "no top fixture " .. name)
+	local lines = fixtures.lines("kubectl/usage/lens/" .. name .. ".txt")
+	return Capture.build(runs.run(argv), lines, 0, { decode = json.decode })
 end
 
 local function headersOf(c: Capture.Capture, i: number): { string }
@@ -177,6 +192,52 @@ describe("lens capture", function()
 		expect(tbl.types).toEqual({ "text", "quantity", "percent", "quantity", "percent" })
 		-- Nodes are cluster-scoped: no namespace in the key.
 		expect(tbl.rows[1].key).toBe("/Node//tern-kube-dev-control-plane")
+	end)
+
+	-- `--sum` ends in a `________` separator and a totals row with empty name
+	-- columns: as rows they sorted, filtered and counted with real pods.
+	it("top --sum: separator and totals are kept apart as totals, not rows", function()
+		local c = topFixture("top-sum")
+		local tbl = (c.snapshot :: any).tables[1]
+		expect(#tbl.rows).toBe(25)
+		for _, key in keysOf(c) do
+			expect((string.find(key, "^/Pod/"))).toBe(1)
+		end
+		expect(c.totals).toEqual({ [1] = { "", "", "101m", "835Mi" } })
+		expect(c.unparsed).toBe(0)
+		local containers = topFixture("top-containers-sum")
+		expect(#(containers.snapshot :: any).tables[1].rows).toBe(4)
+		expect((containers.totals :: any)[1]).toEqual({ "", "", "0m", "0Mi" })
+		expect(build("ns-apps/top_pods").totals).toBeNil()
+	end)
+
+	-- NAME is the container in `--containers` output: refs built from it
+	-- named pods that do not exist (Explore live opened `pod/coredns`).
+	it("top pods --containers: refs from the POD column, keys per container", function()
+		local c = topFixture("top-containers")
+		local tbl = (c.snapshot :: any).tables[1]
+		expect(tbl.kind).toBe("Pod")
+		expect(#tbl.rows).toBe(29)
+		local first = tbl.rows[1]
+		expect(first.key).toBe("/Pod/kube-system/coredns-559f6c778d-9b6b7/coredns")
+		expect(first.ref.name).toBe("coredns-559f6c778d-9b6b7")
+		expect(first.ref.namespace).toBe("kube-system")
+		local keys = keysOf(c)
+		expect(table.find(keys, "/Pod/tern-test-mutate/tk-qa-shell-7999d57d76-fj874/ticker") ~= nil).toBe(true)
+		expect(table.find(keys, "/Pod/tern-test-mutate/tk-qa-shell-7999d57d76-fj874/web") ~= nil).toBe(true)
+		for _, key in keys do
+			expect((string.find(key, "#", 1, true))).toBeNil()
+		end
+		local scoped = (topFixture("top-containers-sum").snapshot :: any).tables[1].rows[1]
+		expect(scoped.key).toBe("/Pod/tern-test-apps/db-0/db")
+		expect(scoped.ref.namespace).toBe("tern-test-apps")
+	end)
+
+	-- SWAP(bytes) read as text, so it sorted as strings.
+	it("top nodes --show-swap: swap bytes are a quantity, swap percent a percent", function()
+		local tbl = (topFixture("top-swap").snapshot :: any).tables[1]
+		expect(tbl.headers[6]).toBe("SWAP(bytes)")
+		expect(tbl.types).toEqual({ "text", "quantity", "percent", "quantity", "percent", "quantity", "percent" })
 	end)
 
 	it("error-only output: no tables, one error diagnostic, exit status kept", function()

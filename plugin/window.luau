@@ -78,8 +78,9 @@ end
 
 -- This machine's config governs only what a link does not carry (`place`,
 -- `tail` come from the pane host's config) and the window-scoped shell
--- command. A remote pane resolves bare kubectl on its own PATH.
-local function launch(at: number, req: Quick.Request, cx: WindowCx, host: PaneHost.PaneHost)
+-- command. A remote pane resolves bare kubectl on its own PATH. `outcome`:
+-- a confirmed mutating action, whose split records kubectl's outcome.
+local function launch(at: number, req: Quick.Request, cx: WindowCx, host: PaneHost.PaneHost, outcome: { run: string? }?)
 	local cfg = ConfigHost.load().config
 	local program = if host.remote then "kubectl" else quickProgram(cfg.kubectl)
 	local target = { context = req.target.context, kubeconfig = req.target.kubeconfig, program = program }
@@ -89,6 +90,7 @@ local function launch(at: number, req: Quick.Request, cx: WindowCx, host: PaneHo
 		debugImage = cfg.quick_actions.debug_image,
 		guardCore = GUARD_CORE,
 		remote = remoteOf(host),
+		outcome = outcome,
 	})
 	if cmd == nil then
 		cx:toast("error", "Tern Kube: invalid quick action", cerr)
@@ -108,12 +110,13 @@ local function launch(at: number, req: Quick.Request, cx: WindowCx, host: PaneHo
 	end
 end
 
--- `logs` variants are typed at the prompt of a new interactive split, not
--- run as its command: Tern lenses only typed commands, and the pane stays
--- at a prompt afterwards. The line is rebuilt from the validated fields;
--- one no shell would read literally is copied instead of typed.
+-- Typed actions (`logs` variants, `history`, `can-i-list`) are typed at the
+-- prompt of a new interactive split, not run as its command: Tern lenses
+-- only typed commands, and the pane stays at a prompt afterwards. The line
+-- is rebuilt from the validated fields; one no shell would read literally
+-- is copied instead of typed.
 local function launchTyped(link: LinkRequest, req: Quick.Request, cx: WindowCx)
-	local typed, err = Quick.typedLine(req.target, req.ref, req.opts)
+	local typed, err = Quick.typedLine(req.action, req.target, req.ref, req.opts)
 	if typed == nil then
 		cx:toast("error", "Tern Kube: invalid quick action", err)
 		return
@@ -196,27 +199,28 @@ end
 
 -- The grant token authorizes running the mutation, so it comes from
 -- /dev/urandom (read by a process: route.link cannot wait, so the approve
--- block opens from the process callback). No clean read, no grant and no
--- approve block: fail closed.
+-- block opens from the process callback), with the run id that correlates
+-- the approved and outcome records. No clean read, no grant and no approve
+-- block: fail closed.
 local function openApprove(url: string, base: string, origin: number?)
 	tern.process.run(Entropy.ARGV, { timeout_ms = Entropy.TIMEOUT_MS }, function(result: ProcessResult, cx: WindowCx?)
 		if cx == nil then
 			log.warn("tern-kube quick action: no window to open the approve block in")
 			return
 		end
-		local token = Entropy.token(result)
+		local token, run = Entropy.tokens(result)
 		if token == nil then
 			log.warn("tern-kube quick action: no randomness for a grant", tostring(result.status), result.stderr)
 			cx:toast("error", "Tern Kube: cannot confirm", "reading /dev/urandom failed; nothing was started")
 			return
 		end
-		local grants, err = Link.mintGrant(tern.kv.get(Link.GRANTS_KEY), token, base, os.time(), Link.GRANT_TTL)
+		local grants, err = Link.mintGrant(tern.kv.get(Link.GRANTS_KEY), token, base, os.time(), Link.GRANT_TTL, run)
 		if grants == nil then
 			cx:toast("error", "Tern Kube: cannot confirm", err)
 			return
 		end
 		tern.kv.set(Link.GRANTS_KEY, grants)
-		if showApprove(cx, { url, token }, origin, true) == nil then
+		if showApprove(cx, { url, token, run :: string }, origin, true) == nil then
 			local rest = table.clone(grants)
 			rest[token] = nil
 			tern.kv.set(Link.GRANTS_KEY, rest)
@@ -240,9 +244,9 @@ local function quickAction(link: LinkRequest, cx: WindowCx): RouteDecision?
 	local host = paneHost(cx, link.pane)
 	local confirm = req.opts.confirm
 	if confirm ~= nil then
-		local ok, rest, why = Link.consumeGrant(tern.kv.get(Link.GRANTS_KEY), confirm, req, os.time())
+		local grant, rest, why = Link.consumeGrant(tern.kv.get(Link.GRANTS_KEY), confirm, req, os.time())
 		tern.kv.set(Link.GRANTS_KEY, rest)
-		if not ok then
+		if grant == nil then
 			cx:toast("error", "Tern Kube: not confirmed", why)
 			return nil
 		end
@@ -250,7 +254,7 @@ local function quickAction(link: LinkRequest, cx: WindowCx): RouteDecision?
 		-- slot of the pane that asked: split beside it while it is open
 		-- (run-now stays), else beside that pane (it is back).
 		local at = if cx.session:pane(link.pane) then link.pane else originOf(link.pane) or link.pane
-		launch(at, req, cx, host)
+		launch(at, req, cx, host, { run = grant.run })
 		return nil
 	end
 	-- Pane records live in this machine's spool; a remote pane's record is
@@ -437,6 +441,15 @@ tern.command({
 	icon = "box",
 	run = function(cx: WindowCx)
 		openExplore(cx, "helm-releases")
+	end,
+})
+
+tern.command({
+	id = "usage",
+	title = "Tern Kube: Resource usage",
+	icon = "box",
+	run = function(cx: WindowCx)
+		openExplore(cx, "usage")
 	end,
 })
 
