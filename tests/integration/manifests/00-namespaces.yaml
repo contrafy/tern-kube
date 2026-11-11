@@ -39,3 +39,10 @@ metadata:
   name: tern-test-logs
   labels:
     lens.example.com/fixture-world: "true"
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: tern-test-usage
+  labels:
+    lens.example.com/fixture-world: "true"

@@ -1,0 +1,1 @@
+{range .items[*]}{.metadata.name}{"\t"}{.status.allocatable.cpu}{","}{.status.allocatable.memory}{","}{.status.allocatable.pods}{"\t"}{.status.capacity.cpu}{","}{.status.capacity.memory}{"\t"}{.spec.unschedulable}{"\t"}{range .status.conditions[?(@.type=="Ready")]}{.status}{end}{"\n"}{end}

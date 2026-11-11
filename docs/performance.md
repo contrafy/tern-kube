@@ -161,6 +161,31 @@ every 10th, so 510 rows):
 Explore renders at most `general.max_rendered_rows` matrix rows at once;
 `enter` on a row diffs the objects already fetched, without a new query.
 
+### Resource usage (1.2.0)
+
+The usage views read pods and the metrics API as jsonpath text (about 100
+bytes per pod; `get pods -A -o json` is about 13 KB per pod). Parse and join
+of the pods and pod-metrics texts, standalone luau, Apple M5, best of 5:
+
+| Pods | metrics text | requests text | parse + join |
+| --- | --- | --- | --- |
+| 2000 | 204 KB | 231 KB | 7.5 ms |
+| 10000 | 1023 KB | 1157 KB | 41.4 ms |
+
+With the plugin VM at roughly 3x standalone, 2000 pods take about 25 ms.
+`scripts/bench.luau` guards it with synthetic text (2000 pods over 20
+namespaces and 10 nodes, a quarter with a sidecar, a tenth without metrics):
+
+| Case | Limit (p95) |
+| --- | --- |
+| usage: 2000 pods parse + join + rows (with tiles) | 100 |
+| usage: render page (`View.pods` over the 2000 rows) | 100 |
+
+Explore renders only the visible window of rows, so only those build spark
+cells (at most 30 numbers each). Series hold at most 30 x 3 numbers per row
+and are off above 5000 rows. A `w` sample costs one metrics read every 15 s
+for 2 minutes; the liveness tick does O(1) work unless a sample is due.
+
 ## Methodology and reproduction
 
 ```sh

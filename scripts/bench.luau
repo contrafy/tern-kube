@@ -11,6 +11,9 @@ local LogsQuery = require("../plugin/lib/logs/query")
 local LogsStore = require("../plugin/lib/logs/store")
 local LogsTypes = require("../plugin/lib/logs/types")
 local Query = require("../plugin/lib/lens/query")
+local UsageModel = require("../plugin/lib/usage/model")
+local UsageParse = require("../plugin/lib/usage/parse")
+local UsageView = require("../plugin/lib/usage/view")
 local View = require("../plugin/lib/lens/view")
 local fixtures = require("../tests/lib/fixtures")
 local json = require("../tests/lib/json")
@@ -172,6 +175,55 @@ assert(
 	"compare bench: unexpected synthetic matrix"
 )
 
+-- The usage views' jsonpath output for USAGE_PODS pods over 20 namespaces and
+-- 10 nodes; every fourth pod has a sidecar, every tenth has no metrics yet.
+local USAGE_PODS = 2000
+local function usageText(): (string, string)
+	local pods: { string } = table.create(USAGE_PODS)
+	local metrics: { string } = {}
+	for i = 1, USAGE_PODS do
+		local ns, name = "ns-" .. (i % 20), "pod-" .. i
+		local sidecar = i % 4 == 0
+		table.insert(
+			pods,
+			string.format(
+				"%s\t%s\tnode-%d\tRunning\t,,,\tapp=%dm,%dMi,500m,512Mi;\t%s\t,",
+				ns,
+				name,
+				i % 10,
+				50 + i % 200,
+				64 + i % 128,
+				if sidecar then "proxy=Always,20m,16Mi,50m,32Mi;" else "setup=,100m,64Mi,,;"
+			)
+		)
+		if i % 10 ~= 0 then
+			table.insert(
+				metrics,
+				string.format(
+					"%s\t%s\t2026-11-11T10:00:00Z\t15s\tapp=%dm,%dKi;%s",
+					ns,
+					name,
+					i % 480,
+					40000 + i * 37 % 400000,
+					if sidecar then "proxy=3m,9000Ki;" else ""
+				)
+			)
+		end
+	end
+	return table.concat(pods, "\n") .. "\n", table.concat(metrics, "\n") .. "\n"
+end
+-- Held only while the usage cases run (cleared before the heap sample).
+local usageInput: { pods: string?, metrics: string?, rows: { UsageModel.PodRow }? } = {}
+usageInput.pods, usageInput.metrics = usageText()
+usageInput.rows =
+	UsageModel.podRows(UsageParse.pods(usageInput.pods :: string), UsageParse.podMetrics(usageInput.metrics :: string))
+local usageRows = usageInput.rows :: { UsageModel.PodRow }
+assert(
+	#usageRows == USAGE_PODS and usageRows[1].metric ~= nil and usageRows[10].metric == nil,
+	"usage bench: unexpected synthetic join"
+)
+usageRows = nil :: any
+
 local cases: { Case } = {
 	{ name = "100 rows: build + render", run = buildAndRender(T100, vsm.default()), p95Limit = 50 },
 	{
@@ -270,6 +322,25 @@ local cases: { Case } = {
 		end,
 		p95Limit = 100,
 	},
+	{
+		name = "usage: 2000 pods parse + join + rows",
+		run = function()
+			local rows = UsageModel.podRows(
+				UsageParse.pods(usageInput.pods :: string),
+				UsageParse.podMetrics(usageInput.metrics :: string)
+			)
+			UsageModel.podTotals(rows)
+		end,
+		p95Limit = 100,
+		items = USAGE_PODS,
+	},
+	{
+		name = "usage: render page",
+		run = function()
+			UsageView.pods(usageInput.rows :: { UsageModel.PodRow }, { metricsRead = true })
+		end,
+		p95Limit = 100,
+	},
 }
 
 local failures: { string } = {}
@@ -295,6 +366,7 @@ for _, case in cases do
 		table.insert(failures, case.name)
 	end
 end
+usageInput.pods, usageInput.metrics, usageInput.rows = nil, nil, nil
 
 -- Strict Luau only offers gcinfo() (no forced collection), so heap use is
 -- sampled: the peak while building and rendering 1000-row captures, and the

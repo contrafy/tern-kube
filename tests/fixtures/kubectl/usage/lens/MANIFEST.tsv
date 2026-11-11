@@ -1,0 +1,6 @@
+name	argv	exit	kubectl_version	server_version
+top-sum	kubectl --context kind-tern-kube-dev top pods -A --sum	0	v1.34.1	v1.37.0
+top-containers	kubectl --context kind-tern-kube-dev top pods -A --containers	0	v1.34.1	v1.37.0
+top-containers-sum	kubectl --context kind-tern-kube-dev top pods -n tern-test-apps --containers --sum	0	v1.34.1	v1.37.0
+top-swap	kubectl --context kind-tern-kube-dev top nodes --show-swap	0	v1.34.1	v1.37.0
+top-nodes	kubectl --context kind-tern-kube-dev top nodes	0	v1.34.1	v1.37.0

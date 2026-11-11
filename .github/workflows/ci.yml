@@ -218,6 +218,15 @@ jobs:
             echo "skipped: tests/integration/events/check.sh is not on this branch"
           fi
 
+      - name: Usage model against real metrics
+        if: ${{ !cancelled() && steps.cluster.outcome == 'success' }}
+        run: |
+          if [ -f tests/integration/usage/check.sh ]; then
+            sh tests/integration/usage/check.sh
+          else
+            echo "skipped: tests/integration/usage/check.sh is not on this branch"
+          fi
+
       - name: Create peer kind cluster
         id: peer
         if: ${{ !cancelled() && steps.cluster.outcome == 'success' }}

@@ -1,0 +1,1 @@
+{range .items[*]}{.metadata.namespace}{"\t"}{.metadata.name}{"\t"}{.timestamp}{"\t"}{.window}{"\t"}{range .containers[*]}{.name}{"="}{.usage.cpu}{","}{.usage.memory}{";"}{end}{"\n"}{end}

@@ -1,0 +1,2 @@
+NAME                          CPU(cores)   CPU(%)   MEMORY(bytes)   MEMORY(%)   SWAP(bytes)   SWAP(%)   
+tern-kube-dev-control-plane   197m         1%       1622Mi          20%         0Mi           0%        
