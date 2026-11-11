@@ -12,6 +12,8 @@ local State = require("../../../plugin/lib/explore/state")
 local G = require("../../lib/gitops_world")
 local W = require("../../lib/explore")
 local X = require("../../lib/gitops_explore")
+local fixtures = require("../../lib/fixtures")
+local json = require("../../lib/json")
 local nodes = require("../../lib/nodes")
 local t = require("../../lib/test")
 local describe, it, expect = t.describe, t.it, t.expect
@@ -468,6 +470,275 @@ describe("explore gitops: one source across contexts", function()
 			expect(hint).toContain(k)
 		end
 		expect(GitopsView.hint({ kind = "drift", source = G.MC_SOURCE })).toContain("x across contexts")
+	end)
+end)
+
+-- The last text a copy effect put on the clipboard.
+local function copied(w: G.World): string?
+	local text: string? = nil
+	for _, e in w.effects do
+		if e.t == "copy" then
+			text = e.text
+		end
+	end
+	return text
+end
+
+-- A source of namespace-less manifests: apps/web.yaml and apps/sub/cm.yaml.
+local CLI_SOURCE = "dir:/repo/cli"
+local NSLESS_WEB = "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: web\nspec:\n  replicas: 1\n"
+local NSLESS_CM = "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: app\ndata:\n  a: b\n"
+
+local function cliWorld(listing: string, extra: { [string]: string }?): G.World
+	local files = {
+		["/repo/cli/web.yaml"] = NSLESS_WEB,
+		["/repo/cli/sub/cm.yaml"] = NSLESS_CM,
+	}
+	for path, text in (extra or {}) :: { [string]: string } do
+		files[path] = text
+	end
+	local w = G.new(files)
+	w.answer = function(argv: { string }): G.Result?
+		if argv[1] == "git" and table.find(argv, "ls-files") then
+			return G.ok(listing)
+		elseif argv[1] == "kubectl" and table.find(argv, "diff") then
+			return G.ok("")
+		end
+		return nil
+	end
+	return w
+end
+
+local function cliReport(w: G.World, ns: string?): (Gitops.G, Gitops.Ctx, Gitops.Route)
+	local ctx = G.ctx(nil, ns or "team")
+	local g = G.ready(w, ctx)
+	local route = { kind = "drift", source = CLI_SOURCE } :: Gitops.Route
+	local effects: { Effect } = {}
+	Gitops.enter(g, ctx, route, false, effects)
+	G.core(w, g, ctx, effects)
+	return g, ctx, route
+end
+
+describe("explore gitops: Copy CLI command", function()
+	-- Probe E/F: without -n the namespace-less documents were diffed in the
+	-- kubeconfig's namespace while the report resolved them in the block's.
+	it("namespace-less documents are diffed with -n of the block's namespace", function()
+		local w = cliWorld("cli/web.yaml\0cli/sub/cm.yaml\0")
+		local g, ctx, route = cliReport(w)
+		local load = Gitops.driftLoad(g, ctx, route) :: Gitops.DriftLoad
+		expect(load.argv).toEqual({
+			"kubectl",
+			"--context",
+			G.CTX,
+			"diff",
+			"-f",
+			"/repo/cli/sub/cm.yaml",
+			"-f",
+			"/repo/cli/web.yaml",
+			"-n",
+			"team",
+		})
+	end)
+
+	it("Y on a report copies the command; -R when git lists exactly the compared files", function()
+		local w = cliWorld("cli/web.yaml\0cli/sub/cm.yaml\0cli/README.md\0")
+		local g, ctx, route = cliReport(w)
+		local handled = G.press(w, g, ctx, route, nil, "Y")
+		expect(handled).toBe(true)
+		expect(copied(w)).toBe(
+			"tern-kube-drift -R -f /repo/cli --context " .. G.CTX .. " -n team --unmanaged configmap,deployment.apps"
+		)
+		local toasts = G.toastTexts(w)
+		expect(toasts[#toasts]).toContain("Copied tern-kube-drift command")
+		expect(toasts[#toasts]).toContain("No --kubeconfig: the command uses your shell's KUBECONFIG")
+	end)
+
+	-- kubectl -R would also read the .json and the ignored file (probes D, G4).
+	it("anything else under the directory kubectl reads: explicit -f files", function()
+		local w = cliWorld("cli/web.yaml\0cli/sub/cm.yaml\0cli/extra.json\0")
+		local g, ctx, route = cliReport(w)
+		G.press(w, g, ctx, route, nil, "Y")
+		expect(copied(w)).toBe(
+			"tern-kube-drift -f /repo/cli/sub/cm.yaml -f /repo/cli/web.yaml --context "
+				.. G.CTX
+				.. " -n team --unmanaged configmap,deployment.apps"
+		)
+	end)
+
+	it("Y on a drift item copies the same command", function()
+		local w = cliWorld("cli/web.yaml\0cli/sub/cm.yaml\0")
+		local g, ctx = cliReport(w)
+		local item = { kind = "drift", source = CLI_SOURCE, item = "missing:/ConfigMap/team/app" } :: Gitops.Route
+		G.press(w, g, ctx, item, nil, "Y")
+		expect(copied(w)).toContain("tern-kube-drift -R -f /repo/cli ")
+	end)
+
+	it("mixed namespaces: no -n, a report note and the same note on the copy", function()
+		local other = "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: o\n  namespace: other\n"
+		local w = cliWorld("", { ["/repo/cli/other.yaml"] = other })
+		local g, ctx, route = cliReport(w)
+		local load = Gitops.driftLoad(g, ctx, route) :: Gitops.DriftLoad
+		expect(table.find(load.argv :: { string }, "-n")).toBeNil()
+		local note = "2 documents without a namespace are compared in the kubeconfig's namespace: "
+			.. "kubectl cannot combine -n with documents of other namespaces"
+		expect((load.report :: any).notes).toContain(note)
+		G.press(w, g, ctx, route, nil, "Y")
+		expect((string.find(copied(w) or "", " -n ", 1, true))).toBeNil()
+		local toasts = G.toastTexts(w)
+		expect(toasts[#toasts]).toContain(note)
+	end)
+
+	-- The CLI reads only its source: an object another source declares is
+	-- unmanaged there, hidden here.
+	it("names objects declared elsewhere that the CLI lists as unmanaged", function()
+		local w = cliWorld("cli/web.yaml\0cli/sub/cm.yaml\0", {
+			["/repo/other/cm.yaml"] = "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: shared\n  namespace: team\n",
+		})
+		local inner = w.answer :: any
+		w.answer = function(argv: { string }, e: Effect): G.Result?
+			if argv[1] == "kubectl" and table.find(argv, "get") and table.find(argv, "-n") then
+				return G.ok(
+					'{"items":[{"apiVersion":"v1","kind":"ConfigMap","metadata":{"name":"shared","namespace":"team"}}]}'
+				)
+			end
+			return inner(argv, e)
+		end
+		local g, ctx, route = cliReport(w)
+		local load = Gitops.driftLoad(g, ctx, route) :: Gitops.DriftLoad
+		expect((load.report :: any).declaredElsewhere).toEqual({ "/ConfigMap/team/shared" })
+		G.press(w, g, ctx, route, nil, "Y")
+		local toasts = G.toastTexts(w)
+		expect(toasts[#toasts]).toContain(
+			"The CLI also lists 1 object declared elsewhere in this repository as unmanaged: configmap/shared"
+		)
+	end)
+
+	it("the matrix chip copies every column in order, pinned to the block's kubeconfig", function()
+		local w = mcWorld()
+		local s = mcMatrix(w)
+		s = X.action(w, s, "gitops-copycli", "")
+		expect(copied(w)).toBe(
+			"tern-kube-drift -f /repo/mc/app.yaml --context "
+				.. G.DEV
+				.. " --context "
+				.. G.DEV2
+				.. " --kubeconfig /home/u/.kube/config --unmanaged configmap,deployment.apps,service"
+		)
+		-- Y in the matrix keeps copying the kubectl commands it ran.
+		local _, effects = State.update(s, W.key("Y", { text = "Y", shift = true }))
+		for _, e in effects do
+			if e.t == "copy" then
+				expect(e.text).toContain("kubectl --kubeconfig")
+			end
+		end
+		local text = nodes.text(Render.view(s, 200, 60).main :: any)
+		expect(text).toContain("Copy CLI command")
+	end)
+
+	-- tern-kube-drift renders charts only with values files; a copy that
+	-- silently used the chart defaults would report something else.
+	it("refuses an auto Helm source rendered with the deployed values", function()
+		local w = X.helmWorld()
+		local s = press(w, X.openHelm(w), "g", { ctrl = true })
+		local id = "helm:/repo/helm/chart:tern-test-helm/shop-a:deployed"
+		s = X.action(w, s, "open", id)
+		expect(top(s).source).toBe(id)
+		w.effects = {}
+		w.toasts = {}
+		s = press(w, s, "Y", { shift = true })
+		expect(copied(w)).toBeNil()
+		expect(w.toasts[1].level).toBe("error")
+		expect(w.toasts[1].sub).toBe(Gitops.CLI_DEPLOYED)
+	end)
+end)
+
+describe("explore gitops: Argo CD / Flux status per target", function()
+	local function tracked(): any
+		for _, o in json.decode(fixtures.read("drift/controllers/workloads.json")).items do
+			local labels = o.metadata.labels or {}
+			if labels["app.kubernetes.io/instance"] == "guestbook" then
+				return o
+			end
+		end
+		error("no guestbook object")
+	end
+
+	-- Bug 1.3-2: one cache for every context labelled cluster B's objects
+	-- with cluster A's controllers.
+	it("controllers are read and kept per target; another context has none until read", function()
+		local w = G.new()
+		local ctxA = G.ctx(nil, "tern-test-gitops")
+		local g = G.ready(w, ctxA)
+		local effects: { Effect } = {}
+		Gitops.noticeObject(g, ctxA, tracked(), effects)
+		G.core(w, g, ctxA, effects)
+		expect((Gitops.owner(g, ctxA, tracked()) :: any).name).toBe("guestbook")
+		local ctxB = table.clone(ctxA)
+		ctxB.target = table.clone(ctxA.target)
+		ctxB.target.context = G.DEV2
+		expect(Gitops.ctl(g, ctxB)).toBeNil()
+		expect(Gitops.owner(g, ctxB, tracked())).toBeNil()
+	end)
+
+	it("r on the chooser and forgetControllers (r on an object) read them again", function()
+		local w = G.new()
+		local ctx = G.ctx(nil, "tern-test-gitops")
+		local g = G.ready(w, ctx)
+		local function apiRuns(): number
+			return count(G.lines(w), " api-resources ")
+		end
+		local effects: { Effect } = {}
+		Gitops.enter(g, ctx, { kind = "drift" }, false, effects)
+		G.core(w, g, ctx, effects)
+		expect(apiRuns()).toBe(1)
+		effects = {}
+		Gitops.enter(g, ctx, { kind = "drift" }, false, effects)
+		G.core(w, g, ctx, effects)
+		expect(apiRuns()).toBe(1)
+		effects = {}
+		Gitops.enter(g, ctx, { kind = "drift" }, true, effects)
+		G.core(w, g, ctx, effects)
+		expect(apiRuns()).toBe(2)
+		Gitops.forgetControllers(g, ctx)
+		effects = {}
+		Gitops.noticeObject(g, ctx, tracked(), effects)
+		G.core(w, g, ctx, effects)
+		expect(apiRuns()).toBe(3)
+	end)
+
+	it("a list that fails is a note, not silently dropped", function()
+		local w = G.new()
+		w.answer = function(argv: { string }): G.Result?
+			if table.find(argv, "applications.argoproj.io") then
+				return G.fail(
+					1,
+					'Error from server (Forbidden): applications.argoproj.io is forbidden: User "u" cannot list'
+				)
+			end
+			return nil
+		end
+		local ctx = G.ctx(nil, "tern-test-gitops")
+		local g = G.ready(w, ctx)
+		local effects: { Effect } = {}
+		Gitops.loadControllers(g, ctx, effects)
+		G.core(w, g, ctx, effects)
+		local set = Gitops.ctlSet(g, ctx) :: any
+		expect(set.notes).toContain(
+			'cannot list applications.argoproj.io: Error from server (Forbidden): applications.argoproj.io is forbidden: User "u" cannot list'
+		)
+	end)
+
+	-- A matrix column of another context never reads controllers and never
+	-- borrows the block's.
+	it("a foreign drift item has no controller unless that target's set is loaded", function()
+		local w = mcWorld()
+		local s = mcMatrix(w)
+		local lines = G.lines(w)
+		expect(count(lines, "--context " .. G.DEV2 .. " api-resources")).toBe(0)
+		local ctxB = State.gitopsCtx(s)
+		ctxB.target = table.clone(ctxB.target)
+		ctxB.target.context = G.DEV2
+		expect(Gitops.ctl(s.gitops, ctxB)).toBeNil()
 	end)
 end)
 

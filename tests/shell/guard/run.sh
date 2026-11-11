@@ -1007,7 +1007,204 @@ verb_cases() {
 	fish) run_code fish '$TKG_CORE status' ;;
 	*) run_code "$sh" '"$TKG_CORE" status' ;;
 	esac
-	expect_out '^guarded verbs: annotate, apply, cordon, delete, drain, edit \(after you save\), label, patch, rollout restart, rollout undo, rollout pause, rollout resume, scale, uncordon$' "status verbs"
+	expect_out '^guarded verbs: annotate, apply, cordon, create \(bare -f/-k and every subcommand but token\), delete, drain, edit \(after you save\), expose, label, patch, replace, rollout restart, rollout undo, rollout pause, rollout resume, run, scale, set env, set image, set resources, set selector, set serviceaccount, set subject, taint, uncordon$' "status verbs"
+	expect_out '^passes through: create token' "status names create token"
+}
+
+# v1.2 verbs: set, replace, taint, create (two subcommand levels, cobra
+# aliases), run, expose, and their input files.
+v12_cases() {
+	sh=$1
+
+	# Waiting line = label + target: proves which guarded name was found.
+	for case_ in 'set image deploy/web c=nginx:2|set image deploy/web c=nginx:2' \
+		'set env deploy/web A=1|set env deploy/web A=1' \
+		'set resources deploy/web --limits=cpu=200m|set resources deploy/web' \
+		'set selector svc/web app=x|set selector svc/web app=x' \
+		'set serviceaccount deploy/web sa1|set serviceaccount deploy/web sa1' \
+		'set sa deploy/web sa1|set serviceaccount deploy/web sa1' \
+		'set subject rolebinding/rb --user=u|set subject rolebinding/rb' \
+		'replace --force -f kust/x.yaml|replace -f kust/x.yaml' \
+		'taint node n1 k=v:NoSchedule|taint node n1 k=v:NoSchedule' \
+		'run web --image=nginx|run web' \
+		'expose deploy web --port=80|expose deploy web' \
+		'create -f kust/x.yaml|create -f kust/x.yaml' \
+		'create -o yaml -f kust/x.yaml|create -f kust/x.yaml' \
+		'create foo -f kust/x.yaml|create foo -f kust/x.yaml' \
+		'create cm cfg --from-literal=a=b|create configmap cfg' \
+		'create configmap cfg|create configmap cfg' \
+		'create -o yaml deployment d --image=x|create deployment d' \
+		'create job j --from=cronjob/c|create job j' \
+		'create ns ns1|create namespace ns1' \
+		'create clusterrolebinding b --clusterrole=view|create clusterrolebinding b' \
+		'create secret generic s --from-literal=a=b|create secret generic s' \
+		'create secret docker-registry r --docker-server=x|create secret docker-registry r' \
+		'create svc nodeport np --tcp=80:8080|create service nodeport np' \
+		'create service clusterip c --tcp=80|create service clusterip c'; do
+		fresh "$sh new verb: ${case_%%|*}"
+		mode deny
+		# shellcheck disable=SC2086
+		run_k "$sh" ${case_%%|*}
+		expect_status 1 "denied ${case_%%|*}"
+		expect_out "waiting for approval in Tern: ${case_#*|} \\(context kind-dev; Ctrl-C cancels\\)\\.\\.\\.\$" "waiting line ${case_%%|*}"
+		expect_not_run "denied ${case_%%|*}"
+	done
+	for args in "set image deploy/web c=nginx:2" "replace --force -f kust/x.yaml" "taint nodes --all k:NoExecute" \
+		"create secret generic s --from-literal=a=b" "create svc nodeport np --tcp=80:8080" "run -it web --image=busybox --rm" \
+		"expose deploy web --port 80"; do
+		fresh "$sh approve: $args"
+		# shellcheck disable=SC2086
+		run_k "$sh" $args
+		expect_status 0 "approved $args"
+		# shellcheck disable=SC2086
+		expect_ran "approved $args" $args
+		# shellcheck disable=SC2086
+		expect_request "$args request" kubectl $args
+		expect_spool_clean "approved $args"
+	done
+	fresh "$sh create -f job.yaml is a bare create"
+	printf 'kind: Job\n' >"$W/job.yaml"
+	run_k "$sh" create -f job.yaml
+	expect_status 0 "create -f job.yaml"
+	expect_files "create -f file" "$W/job.yaml"
+	for args in "replace -f kust/x.yaml" "expose -f kust/x.yaml --port 80" "set image -f kust/x.yaml c=x" "create -k kust"; do
+		fresh "$sh -f/-k input: $args"
+		# shellcheck disable=SC2086
+		run_k "$sh" $args
+		expect_status 0 "$args"
+		case $args in
+		*-k*) expect_files "$args files" "$W/kust/kustomization.yaml" "$W/kust/x.yaml" ;;
+		*) expect_files "$args files" "$W/kust/x.yaml" ;;
+		esac
+	done
+
+	# Outside a Tern pane a guarded command is refused: running proves the
+	# command passed through.
+	for args in "create token sa1" "create token sa1 --duration 1h" "create secret" "create service" "create secret foo" "set" \
+		"set foo" "set env deploy/web --list" "set image --local -f kust/x.yaml c=n" \
+		"set resources --local -f kust/x.yaml --limits=cpu=1" "set env --local -f kust/x.yaml A=1" \
+		"set image deploy/web c=x --dry-run=server" "set env deploy/web A=1 --dry-run=server" \
+		"set resources deploy/web --limits=cpu=1 --dry-run=server" "set selector svc/web a=b --dry-run=server" \
+		"set serviceaccount deploy/web sa --dry-run=server" "set subject rolebinding/rb --user=u --dry-run=client" \
+		"replace -f kust/x.yaml --dry-run=server" "taint node n1 k=v:NoSchedule --dry-run=server" \
+		"run web --image=nginx --dry-run=server" "expose deploy web --port 80 --dry-run=server" \
+		"create -f kust/x.yaml --dry-run=server" "create cm cfg --from-literal=a=b --dry-run=server" \
+		"create secret generic s --from-literal=a=b --dry-run=server" "create secret tls t --cert=c --key=k --dry-run=client" \
+		"create secret docker-registry r --docker-server=x --dry-run=server" "create service nodeport np --tcp=80 --dry-run=server" \
+		"create job j --from=cronjob/c --dry-run=server" "create namespace n --dry-run=server" "create quota q --dry-run=server" \
+		"create role r --verb=get --resource=pods --dry-run=server" "set env deploy/web -e - --dry-run=server" "create token"; do
+		fresh "$sh pass-through: $args"
+		unset TERM_PROGRAM
+		# shellcheck disable=SC2086
+		run_k "$sh" $args
+		expect_status 0 "$args"
+		# shellcheck disable=SC2086
+		expect_ran "$args" $args
+		expect_no_tern "$args"
+	done
+	for args in "set image deploy/web c=x" "set env deploy/web --list --bogus" "set image deploy/web c=x --local=false" \
+		"create secret generic s" "taint node n1 k=v:NoSchedule --dry-run=none"; do
+		fresh "$sh needs approval: $args"
+		unset TERM_PROGRAM
+		# shellcheck disable=SC2086
+		run_k "$sh" $args
+		expect_status 1 "$args"
+		expect_out 'not a Tern pane' "$args is guarded"
+		expect_not_run "$args"
+	done
+
+	for args in "taint node n1 k=v:NoSchedule" "create cm x" "create -f kust/x.yaml" "set image deploy/web c=x" \
+		"replace -f kust/x.yaml" "run web --image=x" "expose deploy web --port 80" "create --bogus token sa1" \
+		"create secret -f kust/x.yaml generic s" "set --bogus foo"; do
+		fresh "$sh unknown flag before: $args"
+		case $args in
+		*--bogus* | 'create secret '*)
+			# shellcheck disable=SC2086
+			run_k "$sh" $args
+			;;
+		*)
+			# shellcheck disable=SC2086
+			run_k "$sh" --some-new-flag x $args
+			;;
+		esac
+		expect_status 1 "unknown flag before $args"
+		expect_out 'cannot tell which kubectl command' "unknown flag before $args"
+		expect_not_run "unknown flag before $args"
+		expect_no_tern "unknown flag before $args"
+	done
+
+	fresh "$sh --from-file=DIR"
+	ln -s c.json "$W/my dir/link.json"
+	run_k "$sh" create cm cfg --from-file='my dir'
+	expect_status 0 "--from-file dir"
+	expect_files "regular files directly inside, no subdir, no symlink" "$W/my dir/a b.yaml" "$W/my dir/c.json" "$W/my dir/notes.txt"
+	expect_request "--from-file dir request" kubectl create cm cfg --from-file='my dir'
+	fresh "$sh --from-file=KEY=PATH"
+	run_k "$sh" create secret generic s --from-file=k="$W/my dir/c.json"
+	expect_status 0 "--from-file key=path"
+	expect_files "key=path lists the path" "$W/my dir/c.json"
+	fresh "$sh --from-file=a,b"
+	run_k "$sh" create configmap cfg --from-file='my dir/a b.yaml,x=my dir/notes.txt' --from-file 'my dir/sub'
+	expect_status 0 "--from-file list"
+	expect_files "comma list and second flag" "$W/my dir/a b.yaml" "$W/my dir/notes.txt" "$W/my dir/sub/nested.yml"
+	fresh "$sh --from-file on docker-registry"
+	run_k "$sh" create secret docker-registry r --from-file=.dockerconfigjson='my dir/c.json'
+	expect_status 0 "docker-registry --from-file"
+	expect_files "docker-registry --from-file" "$W/my dir/c.json"
+	fresh "$sh --from-env-file"
+	run_k "$sh" create cm cfg --from-env-file='my dir/notes.txt'
+	expect_status 0 "--from-env-file"
+	expect_files "--from-env-file" "$W/my dir/notes.txt"
+	expect_out "waiting for approval in Tern: create configmap cfg --from-env-file my dir/notes.txt " "--from-env-file waiting line"
+	fresh "$sh --from-env-file list"
+	run_k "$sh" create secret generic s --from-env-file='my dir/notes.txt,my dir/c.json'
+	expect_status 0 "--from-env-file list"
+	expect_files "--from-env-file splits commas like kubectl" "$W/my dir/c.json" "$W/my dir/notes.txt"
+	fresh "$sh --cert/--key"
+	run_k "$sh" create secret tls t --cert='my dir/c.json' --key "$W/my dir/notes.txt"
+	expect_status 0 "--cert/--key"
+	expect_files "--cert and --key" "$W/my dir/c.json" "$W/my dir/notes.txt"
+	expect_request "tls request" kubectl create secret tls t --cert='my dir/c.json' --key "$W/my dir/notes.txt"
+	fresh "$sh --from-file changed after approval"
+	mode stale
+	run_k "$sh" create cm cfg --from-file='my dir'
+	expect_status 1 "from-file changed"
+	expect_out 'fingerprint mismatch' "from-file changed"
+	expect_not_run "from-file changed"
+
+	# The a"b element carries a literal double quote on purpose.
+	# shellcheck disable=SC2089
+	for m in "set env deploy/web -e -|reads variables from stdin" "set env deploy/web --env=-|reads variables from stdin" \
+		"set env deploy/web --env -|reads variables from stdin" "set env deploy/web -|reads variables from stdin" \
+		"create cm c --from-file=-|stdin" "create cm c --from-file=k=-|stdin" "create cm c --from-env-file=-|stdin" \
+		"create secret tls t --cert=- --key=k|stdin" "create cm c --from-file=https://example.com/x|remote files" \
+		"create cm c --from-file=nope|no such file" "create secret tls t --cert=nope --key=nope|no such file" \
+		"create cm c --from-env-file=kust|not a regular file" "create cm c --from-file=|empty --from-file" \
+		"create cm c --from-file=a\"b|double quote" "run web --image=x -f kust/x.yaml|not supported by the guard" \
+		"run web --image=x -k kust|not supported by the guard"; do
+		fresh "$sh refused: ${m%%|*}"
+		# shellcheck disable=SC2086,SC2090
+		run_k "$sh" ${m%%|*}
+		expect_status 1 "${m%%|*}"
+		expect_out "${m#*|}" "${m%%|*} message"
+		expect_not_run "${m%%|*}"
+		expect_no_tern "${m%%|*}"
+	done
+
+	fresh "$sh waiting line hides literal values"
+	mode deny
+	run_k "$sh" create secret generic s --from-literal=password=hunter2 --from-literal hunter5
+	expect_out "waiting for approval in Tern: create secret generic s \\(context" "literal waiting line"
+	expect_no_out 'hunter' "literal value hidden"
+	fresh "$sh waiting line hides docker password"
+	mode deny
+	run_k "$sh" create secret docker-registry r --docker-password=hunter4 --docker-username=u
+	expect_no_out 'hunter' "docker password hidden"
+	fresh "$sh waiting line masks set env secrets"
+	mode deny
+	run_k "$sh" set env deploy/web DB_PASSWORD=hunter3 Api_Key=hunter6 PLAIN=visible -e TOKEN=hunter7
+	expect_out "waiting for approval in Tern: set env deploy/web DB_PASSWORD=<redacted> Api_Key=<redacted> PLAIN=visible \\(context" "set env waiting line"
+	expect_no_out 'hunter' "set env values hidden"
 }
 
 # The copy of an unapproved edit that the hook saved in TMPDIR.
@@ -1230,6 +1427,123 @@ edit_cases() {
 	else ok; fi
 }
 
+# `tern-kube-guard record`: a confirmed debug / run-now split reports
+# kubectl's outcome. The template comes from the window; whatever the
+# caller passes, at most one well-formed quick record is appended, to the
+# audit log next to TKUBE_SPOOL, and a refusal leaves the log untouched.
+RUN_ID=0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f
+QTPL='{"v":1,"decided_at":@,"decision":"@","mode":"quick","run":"'$RUN_ID'","op":"debug","family":"debug-pod","context":"kind-dev","context_source":"flag","argv":["kubectl","debug"],"exit_code":@,"started_at":@,"finished_at":@,"objects":["Pod apps/web"],"objects_total":1}'
+record_run() {
+	"$core" record "$@" >"$root/out" 2>&1
+	st=$?
+}
+expect_log_lacks() {
+	if [ -e "$root/audit.log" ]; then bad "$1: audit.log written: $(cat "$root/audit.log")"; else ok; fi
+}
+expect_log() {
+	if grep -F -q -- "$1" "$root/audit.log" 2>/dev/null; then ok; else bad "$2: audit.log lacks $1"; fi
+}
+
+record_cases() {
+	fresh "record: executed"
+	record_run "$QTPL" 1790000000 0
+	expect_status 0 "recorded"
+	expect_log '"decision":"executed","mode":"quick","run":"'$RUN_ID'"' "executed record"
+	expect_log '"exit_code":0,"started_at":1790000000,"finished_at":' "filled fields"
+	if grep -q '@' "$root/audit.log"; then bad "a placeholder is left: $(cat "$root/audit.log")"; else ok; fi
+	if [ "$(wc -l <"$root/audit.log" | tr -d ' ')" = 1 ]; then ok; else bad "not exactly one line"; fi
+	perm=$(ls -l "$root/audit.log" | cut -c1-10)
+	if [ "$perm" = "-rw-------" ]; then ok; else bad "audit.log mode $perm"; fi
+
+	fresh "record: failed"
+	record_run "$QTPL" 1790000000 129
+	expect_status 0 "recorded"
+	expect_log '"decision":"failed"' "failed record"
+	expect_log '"exit_code":129' "exit status"
+
+	fresh "record: refusals"
+	for bad_ in \
+		"$(printf '%s' "$QTPL" | sed 's/"exit_code":@,//')" \
+		"$(printf '%s' "$QTPL" | sed 's/"objects_total":1/"objects_total":1,"exit_code":@/')" \
+		"$(printf '%s' "$QTPL" | sed 's/"mode":"quick"/"mode":"guard"/')" \
+		"$(printf '%s' "$QTPL" | sed 's/^{"v":1,/{"v":2,/')" \
+		"$(printf '%s\n{}' "$QTPL")" \
+		"$QTPL x"; do
+		record_run "$bad_" 1790000000 0
+		expect_status 1 "malformed template refused"
+		expect_out 'outcome not recorded' "says why"
+	done
+	record_run "$QTPL" 1790000000 "0; id"
+	expect_status 1 "non-digit status refused"
+	record_run "$QTPL" now 0
+	expect_status 1 "non-digit start refused"
+	expect_log_lacks "nothing appended"
+	record_run "$QTPL" 1
+	expect_status 2 "usage"
+	TKUBE_SPOOL=spool record_run "$QTPL" 1 0
+	expect_status 1 "relative TKUBE_SPOOL refused"
+	(unset TKUBE_SPOOL && "$core" record "$QTPL" 1 0) >"$root/out" 2>&1
+	st=$?
+	expect_status 1 "unset TKUBE_SPOOL refused"
+	expect_log_lacks "nothing appended"
+	: >"$root/elsewhere"
+	ln -s "$root/elsewhere" "$root/audit.log"
+	record_run "$QTPL" 1 0
+	expect_status 1 "symlinked audit.log refused"
+	if [ -s "$root/elsewhere" ]; then bad "wrote through the symlink"; else ok; fi
+	rm -f "$root/audit.log" "$root/elsewhere"
+
+	# The real split script from plugin/lib/actions/quick.luau, with a
+	# context holding a quote, against the fake kubectl and this core.
+	if [ ! -x "$luau" ]; then
+		case_name="record: split round-trip"
+		skip "needs $luau"
+		return
+	fi
+	fresh "record: debug split"
+	echo 3 >"$FAKE_DIR/exit"
+	line=$(cd "$here" && "$luau" quickline.luau -a debug-pod "kind'x" "$core" "$RUN_ID")
+	sh -c "$line" >"$root/out" 2>&1 </dev/null
+	st=$?
+	expect_status 3 "split exits with kubectl's status"
+	expect_ran "debug ran as typed" debug -it --context "kind'x" -n apps web --image=busybox:1.36 --profile=general
+	expect_log '"decision":"failed","mode":"quick","run":"'$RUN_ID'","op":"debug","family":"debug-pod","context":"kind'"'"'x"' "debug outcome"
+	expect_log '"exit_code":3' "debug status"
+
+	fresh "record: run-now split"
+	line=$(cd "$here" && "$luau" quickline.luau -a cronjob-run kind-dev "$core" "$RUN_ID")
+	sh -c "$line" >"$root/out" 2>&1 </dev/null
+	st=$?
+	expect_status 0 "run-now exits 0"
+	expect_log '"decision":"executed","mode":"quick","run":"'$RUN_ID'","op":"create job","family":"cronjob-run"' "run-now outcome"
+	expect_log '"objects":["Job batch/nightly-manual-k3x9"]' "job object"
+	expect_out 'press Enter to close' "run-now keeps its prompt"
+
+	fresh "record: remote split"
+	line=$(cd "$here" && "$luau" quickline.luau -a debug-pod kind-dev remote "$RUN_ID")
+	TKUBE_GUARD_CORE=$core sh -c "$line" >"$root/out" 2>&1 </dev/null
+	st=$?
+	expect_status 0 "remote debug"
+	expect_log '"family":"debug-pod"' "remote outcome through TKUBE_GUARD_CORE"
+
+	fresh "record: no recorder"
+	echo 4 >"$FAKE_DIR/exit"
+	line=$(cd "$here" && "$luau" quickline.luau -a debug-pod kind-dev remote "$RUN_ID")
+	(unset TKUBE_GUARD_CORE && sh -c "$line") >"$root/out" 2>&1 </dev/null
+	st=$?
+	expect_status 4 "runs anyway with kubectl's status"
+	expect_out 'outcome not recorded' "says the outcome is missing"
+	if [ -e "$FAKE_DIR/call-1" ]; then ok; else bad "kubectl did not run"; fi
+	line=$(cd "$here" && "$luau" quickline.luau -a debug-pod kind-dev "$root/no such core" "$RUN_ID")
+	fresh "record: missing local core"
+	sh -c "$line" >"$root/out" 2>&1 </dev/null
+	st=$?
+	expect_status 0 "runs anyway"
+	expect_out 'outcome not recorded' "says the outcome is missing"
+}
+
+record_cases
+
 for sh in $shells; do
 	TKG_SNIP=$repo/shell/tern-kube.$sh
 	TKG_CORE=$core
@@ -1237,6 +1551,7 @@ for sh in $shells; do
 	core_cases "$sh"
 	[ "$sh" = dash ] || snippet_cases "$sh"
 	verb_cases "$sh"
+	v12_cases "$sh"
 	edit_cases "$sh"
 done
 for want in zsh bash fish; do

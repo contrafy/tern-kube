@@ -47,7 +47,7 @@ measure() {
 	xkey end
 }
 paste() {
-	printf '%s' "$1" | pbcopy
+	clip_set "$1"
 	xkey cmd+v
 }
 field_is() { [ "$(field "$1")" = "$2" ]; }
@@ -120,8 +120,9 @@ approve_closed || return
 eq "the cancelled scale changed nothing" "$(jp $MNS deploy/tk-e2e-web '{.spec.replicas}')" 1
 
 # --- Approve: typed delete confirmation ----------------------------------------
-# In the 1280x800 test window the field sits below the block's fold, where a
-# click lands outside the window, so the caret moves with Home (a native edit).
+# In the 1280x800 test viewport the field sits below the block's fold, where
+# a click lands outside the viewport, so the caret moves with Home (a native
+# edit).
 xkey ctrl+d
 approve_open || return
 a_ready || return

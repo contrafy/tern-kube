@@ -61,11 +61,19 @@ describe("argv.lensSupport", function()
 			{ "edit deploy/web", "raw" },
 			{ "explain pods", "raw" },
 			{ "rollout status deploy/web", "rollout status" },
-			{ "rollout history deploy/web", "rollout history" },
+			{ "rollout history deploy/web -o json", "--revision=N" },
+			{ "rollout history deploy/web -o yaml", "--revision=N" },
+			{ "config view", "kubectl config view" },
+			{ "config use-context x", "kubectl config use-context" },
+			{ "auth whoami", "kubectl auth whoami" },
+			{ "auth reconcile -f x.yaml", "kubectl auth reconcile" },
+			{ "api-resources -o json", "use the table or -o wide" },
+			{ "api-resources -o yaml", "use the table or -o wide" },
+			{ "api-resources --no-headers", "use the table or -o wide" },
 			{ "label pods --list", "--list" },
 			{ "annotate deploy/web --list", "--list" },
 			{ "drain n1 --ignore-daemonsets", "kubectl drain" },
-			{ "config view", "kubectl config" },
+			{ "config", "kubectl config" },
 			{ "", "No kubectl command" },
 		}
 		for _, c in cases do
@@ -107,6 +115,34 @@ describe("argv.lensSupport", function()
 			local s = support(line)
 			expect(s.supported).toBe(false)
 			expect(s.reason).toContain("watch")
+		end
+	end)
+
+	-- v1.2 k9s parity: these four reads get native views (rollout history
+	-- list and --revision, get-contexts, api-resources, can-i).
+	it("offers native views for rollout history, get-contexts, api-resources and can-i", function()
+		for _, line in
+			{
+				"rollout history deploy/web",
+				"rollout history deploy/web --revision=2",
+				"rollout history deploy/web --revision=2 -o json",
+				"rollout history deploy/web --revision 2 -o yaml",
+				"rollout history deploy/web -o name",
+				"rollout history deployment -l app=web",
+				"config get-contexts",
+				"config get-contexts -o name",
+				"config get-contexts --no-headers",
+				"api-resources",
+				"api-resources -o wide",
+				"api-resources -o name --namespaced=false",
+				"auth can-i get pods",
+				"auth can-i --list -n x",
+				"--as=system:serviceaccount:a:b auth can-i list pods -q",
+			}
+		do
+			local s = support(line)
+			expect(s.supported).toBe(true)
+			expect(s.reason).toBeNil()
 		end
 	end)
 

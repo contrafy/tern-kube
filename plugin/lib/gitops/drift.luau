@@ -120,6 +120,10 @@ export type Report = {
 	-- Keys of declared objects with no diff segment and no absence: what
 	-- kubectl diff found equal to the manifest (sorted, unique).
 	inSync: { string },
+	-- Live objects in scope hidden because a document of another source of
+	-- the repository declares them (sorted). tern-kube-drift only reads its
+	-- source, so it lists these as unmanaged.
+	declaredElsewhere: { string },
 	notes: { string },
 }
 
@@ -341,6 +345,14 @@ local function exclusion(source: Source, obj: { [string]: any }, ref: Ref): stri
 	then
 		return "helm release record"
 	end
+	-- Shared with bin/tern-kube-drift (docs/gitops.md "Unmanaged objects").
+	if obj.type == "kubernetes.io/service-account-token" then
+		return "service account token"
+	elseif string.sub(ref.name, 1, 7) == "system:" then
+		return "system object"
+	elseif labels["kubernetes.io/bootstrapping"] ~= nil then
+		return "cluster bootstrapping"
+	end
 	if labels["argocd.argoproj.io/secret-type"] ~= nil then
 		return "argo cd bookkeeping"
 	end
@@ -449,6 +461,7 @@ function M.report(source: Source, index: Index, segments: { Segment }, live: { a
 	local missing: { Missing } = {}
 	local unmanaged: { [string]: Unmanaged } = {}
 	local seen: { [Doc]: boolean } = {}
+	local elsewhere: { [string]: boolean } = {}
 
 	for _, diffSeg in segments do
 		local seg = diffSeg
@@ -522,6 +535,10 @@ function M.report(source: Source, index: Index, segments: { Segment }, live: { a
 				)
 			end
 		end
+		local mine: { [Doc]: boolean } = {}
+		for _, doc in docs do
+			mine[doc] = true
+		end
 		for key, entry in liveByKey do
 			local ref = entry.ref
 			if unmanaged[key] or not ref.namespace or not namespaces[ref.namespace :: string] then
@@ -531,16 +548,20 @@ function M.report(source: Source, index: Index, segments: { Segment }, live: { a
 				continue
 			end
 			local indexed = false
+			local own = false
 			for _, doc in index.docs do
 				if not doc.patch and doc.ref and docMatches(doc, key, ref, opts) then
 					indexed = true
-					break
+					own = own or mine[doc] == true
 				end
 			end
+			local reason = exclusion(source, entry.obj, ref)
 			if indexed then
+				if not own and reason == nil then
+					elsewhere[key] = true
+				end
 				continue
 			end
-			local reason = exclusion(source, entry.obj, ref)
 			if reason then
 				table.insert(ignored, { key = key, reason = reason })
 			else
@@ -585,6 +606,7 @@ function M.report(source: Source, index: Index, segments: { Segment }, live: { a
 			docs = #docs,
 		},
 		inSync = sortedKeys(inSyncKeys),
+		declaredElsewhere = sortedKeys(elsewhere),
 		notes = notes,
 	}
 end
@@ -651,6 +673,7 @@ function M.namespaceMissing(source: Source, index: Index, namespace: string, opt
 			docs = #parts.docs,
 		},
 		inSync = {},
+		declaredElsewhere = {},
 		notes = notes,
 	}
 end

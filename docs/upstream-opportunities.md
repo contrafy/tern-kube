@@ -220,8 +220,8 @@ observed is marked `[not observed]`.
 
 ## 16. `route.link` cannot await
 
-- Impact: the window cannot run a process (here: 16 bytes of
-  `/dev/urandom` for a grant token) before deciding what a link does.
+- Impact: the window cannot run a process (here: 32 bytes of
+  `/dev/urandom` for a grant token and a run id) before deciding what a link does.
 - Workaround: return `{handled = true}` at once and open the approve block
   from the `tern.process.run` callback with `cx:new_block`, which lands on
   the window's current host rather than the link's pane host.
@@ -232,7 +232,7 @@ observed is marked `[not observed]`.
 ## 17. `tern.fs.read` of character devices
 
 - Impact: no in-VM randomness for capability tokens in the window half.
-- Workaround: `od -An -tx1 -N16 /dev/urandom` through `tern.process.run`
+- Workaround: `od -An -tx1 -N32 /dev/urandom` through `tern.process.run`
   (`plugin/lib/env/entropy.luau`), failing closed without a clean read.
 - Ask: allow capped reads of `/dev/urandom`, or a `tern.random.bytes(n)`.
 - Reproduction: a capped `tern.fs.read` of `/dev/urandom` in the window half

@@ -32,8 +32,15 @@ end
 local transcript = (require :: any)("./.transcripts/" .. work)
 
 local init = transcript.init
+local initArgs = { unhex(init.arg) }
+if init.grant then
+	table.insert(initArgs, unhex(init.grant))
+	if init.run then
+		table.insert(initArgs, unhex(init.run))
+	end
+end
 local s, effects = Session.init({
-	args = if init.grant then { unhex(init.arg), unhex(init.grant) } else { unhex(init.arg) },
+	args = initArgs,
 	now = init.now,
 	config = {
 		mutations = {

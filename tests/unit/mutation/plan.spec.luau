@@ -55,7 +55,11 @@ describe("mutation plan families", function()
 		expect(rejected("kubectl get pods")).toEqual({ "info:not-mutation" })
 		expect(rejected("kubectl rollout status deployment/web")).toEqual({ "info:not-mutation" })
 		expect(rejected("kubectl apply view-last-applied deployment/web")).toEqual({ "info:not-mutation" })
-		expect(rejected("kubectl create job x --image=busybox")).toEqual({ "info:not-mutation" })
+		-- create token issues a credential and stores nothing (no dry run exists).
+		expect(rejected("kubectl create token robot")).toEqual({ "info:not-mutation" })
+		expect(rejected("kubectl create secret")).toEqual({ "info:not-mutation" })
+		expect(rejected("kubectl set env deployment/web --list")).toEqual({ "info:not-mutation" })
+		expect(rejected("kubectl set image --local -f web.yaml app=nginx:1.27")).toEqual({ "info:not-mutation" })
 		expect(rejected("kubectl delete --help")).toEqual({ "info:not-mutation" })
 	end)
 
@@ -64,6 +68,72 @@ describe("mutation plan families", function()
 		expect(p.argv).toEqual({ "kubectl", "rollout", "restart", "deployment/web" })
 		expect(p.operation).toBe("rollout restart")
 		expect(p.program).toBe("kubectl")
+	end)
+end)
+
+-- v1.2 guarded verbs: each must reach a preview that shows what changes, or
+-- be refused; none may pass unpreviewed.
+describe("mutation plan v1.2 verbs", function()
+	it("plans set, replace, taint, create, run and expose", function()
+		local img = plan("kubectl set image deployment/web app=nginx:1.27")
+		expect(img.family).toBe("set-image")
+		expect(img.operation).toBe("set image")
+		expect(img.resources[1].name).toBe("web")
+		expect(plan("kubectl set env deployment/web DB_PASSWORD=x").edits).toEqual({
+			{ key = "DB_PASSWORD", value = "x", remove = false },
+		})
+		expect(plan("kubectl set resources deploy web --limits=cpu=200m").family).toBe("set-resources")
+		expect(plan("kubectl set sa deploy web robot").family).toBe("set-serviceaccount")
+		expect(plan("kubectl set subject rolebinding admin --user=alice").family).toBe("set-subject")
+		expect(plan("kubectl set selector svc web app=web").family).toBe("set-selector")
+		local r = plan("kubectl replace -f web.yaml")
+		expect(r.family).toBe("replace")
+		expect(r.force).toBe(false)
+		local f = plan("kubectl replace --force -f web.yaml")
+		expect(f.force).toBe(true)
+		expect(f.operation).toBe("replace --force")
+		local tp = plan("kubectl taint nodes n1 dedicated=gpu:NoSchedule old-")
+		expect(tp.family).toBe("taint")
+		local want: { any } = {
+			{ key = "dedicated", value = "gpu", effect = "NoSchedule", remove = false },
+			{ key = "old", remove = true },
+		}
+		expect(tp.taints :: { any }).toEqual(want)
+		expect(tp.targetNamespace).toBeNil()
+		expect(tp.resources[1].kind).toBe("Node")
+		local sec = plan("kubectl create secret generic s1 --from-literal=password=hunter2")
+		expect(sec.family).toBe("create")
+		expect(sec.subverb).toBe("secret generic")
+		expect(sec.operation).toBe("create secret generic")
+		expect(plan("kubectl create -f app.yaml").operation).toBe("create")
+		expect(plan("kubectl create job x --image=busybox").family).toBe("create")
+		expect(plan("kubectl run tmp --image=busybox -it --rm").family).toBe("run")
+		local e = plan("kubectl expose deploy web --port=80 --selector=app=web")
+		expect(e.family).toBe("expose")
+		-- --selector is the new Service's selector, not a target filter.
+		expect(e.selector).toBeNil()
+	end)
+
+	it("refuses what the preview cannot model", function()
+		expect(rejected("kubectl create --edit -f app.yaml")).toEqual({ "error:interactive" })
+		expect(rejected("kubectl run tmp --image=busybox -f pod.yaml")).toEqual({ "error:unsupported" })
+		expect(rejected("kubectl set env deployment/web -e -")).toEqual({ "error:stdin" })
+		expect(rejected("kubectl set env deployment/web -")).toEqual({ "error:stdin" })
+		expect(rejected("kubectl replace --force")).toEqual({ "error:missing-target" })
+		expect(rejected("kubectl taint nodes n1")).toEqual({ "error:invalid" })
+		expect(rejected("kubectl taint nodes k=v:NoSchedule")).toEqual({ "error:missing-target" })
+		expect(rejected("kubectl taint nodes n1 k=v:Sometimes")).toEqual({ "error:invalid" })
+		expect(rejected("kubectl set image deployment/web")).toEqual({ "error:invalid" })
+		expect(rejected("kubectl set image deployment app=x")).toEqual({ "error:missing-target" })
+		expect(rejected("kubectl create")).toEqual({ "error:missing-target" })
+	end)
+
+	it("lets their dry runs through: kubectl itself changes nothing", function()
+		expect(rejected("kubectl taint nodes n1 k:NoExecute --dry-run=server")).toEqual({ "info:dry-run" })
+		expect(rejected("kubectl create secret generic s --from-literal=a=b --dry-run=client")).toEqual({
+			"info:dry-run",
+		})
+		expect(rejected("kubectl replace --force -f x.yaml --dry-run=server")).toEqual({ "info:dry-run" })
 	end)
 end)
 

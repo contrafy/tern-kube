@@ -257,15 +257,20 @@ cronjob_manifest() { # NAME -> stdout
 }
 
 # The suite owns its CronJob instead of relying on the fixture world, which a
-# freshly created cluster (CI) does not have.
+# freshly created cluster (CI) does not have. After the block confirms, the
+# split the window would open (splitline.luau) runs here against the real
+# guard core: its outcome record carries the approved record's run id.
 scenario_cronjob_quick() {
 	suffix=it$(date +%s | tail -c 6)
 	cronjob_manifest tkm-nightly | k apply -f - >/dev/null
 	grant=0123456789abcdef0123456789abcdef
+	run=fedcba98765432100123456789abcdef
 	TK_GRANT=$grant
+	TK_RUN=$run
 	tk_begin cronjob-quick \
 		"tern-kube://act/cronjob-run?kind=CronJob&name=tkm-nightly&namespace=$NS&suffix=$suffix&context=$CTX"
 	TK_GRANT=
+	TK_RUN=
 	tk_expect phase ready
 	tk_expect_has steps "dry-run=ok"
 	tk_key enter
@@ -275,6 +280,31 @@ scenario_cronjob_quick() {
 	tk_effects_has open
 	tk_check "the open link carries the window's token" grep -q "confirm=$grant" "$TK_W/effects.log"
 	tk_check "no job was created by the block" sh -c "! kubectl --kubeconfig '$KC' --context $CTX -n $NS get job tkm-nightly-manual-$suffix"
+	tk_check "the approval is logged as quick with the run id" \
+		grep -q "\"decision\":\"approved\",\"mode\":\"quick\",\"run\":\"$run\"" "$TK_W/audit.log"
+	tk_check "the grant token is not in the audit log" sh -c "! grep -q $grant '$TK_W/audit.log'"
+
+	opened=$(sed -n 's/^open //p' "$TK_W/effects.log" | head -n 1)
+	line=$("$TK_LUAU" "$TK_REPO/tests/integration/mutate/splitline.luau" -a "$opened" "$TK_REPO/shell/tern-kube-guard" "$run")
+	log=${TK_SPOOL%/*}/audit.log
+	rm -f "$log"
+	out=$(TKUBE_SPOOL=$TK_SPOOL sh -c "$line" 2>&1 </dev/null)
+	st=$?
+	tk_log "split: rc=$st $out"
+	if [ "$st" = 0 ]; then tk_ok "the split created the job (rc=0)"; else tk_fail "split rc=$st: $out"; fi
+	tk_check "job tkm-nightly-manual-$suffix exists" k -n "$NS" get job "tkm-nightly-manual-$suffix"
+	tk_check "the split recorded the outcome with the same run id" \
+		grep -q "\"decision\":\"executed\",\"mode\":\"quick\",\"run\":\"$run\",\"op\":\"create job\",\"family\":\"cronjob-run\"" "$log"
+	tk_check "the outcome names the job" grep -q "\"objects\":\\[\"Job $NS/tkm-nightly-manual-$suffix\"\\]" "$log"
+	cat "$log" >>"$TK_W/audit.log" 2>/dev/null
+
+	out=$(TKUBE_SPOOL=$TK_SPOOL sh -c "$line" 2>&1 </dev/null)
+	st=$?
+	tk_log "split again: rc=$st $out"
+	if [ "$st" != 0 ]; then tk_ok "a second create fails (rc=$st)"; else tk_fail "the job was created twice"; fi
+	tk_check "the failure is recorded" grep -q "\"decision\":\"failed\",\"mode\":\"quick\",\"run\":\"$run\"" "$log"
+	rm -f "$log"
+	k -n "$NS" delete job "tkm-nightly-manual-$suffix" --ignore-not-found >/dev/null
 	k -n "$NS" delete cronjob tkm-nightly --ignore-not-found >/dev/null
 }
 
@@ -447,6 +477,8 @@ TK_REQUEST=$3 TK_PANES="\"$TERN_PANE\"" tk_begin "$TK_GUARD_NAME" "$3" >>"$TK_RE
 # The last driver pass prints only S_* assignments: the scenario sources them.
 cp "$TK_W/driver.out" "$TK_W/preview.state"
 [ -n "${TK_GUARD_EDIT:-}" ] && sh -c "$TK_GUARD_EDIT"
+# TK_GUARD_COPY=1 presses y (copy the command) before deciding.
+[ -n "${TK_GUARD_COPY:-}" ] && tk_key y y >>"$TK_REPO/.sandbox/mutate-it/guard.out"
 case ${TK_GUARD_DECISION:-approve} in
 approve)
 	[ -n "$S_token" ] && tk_type "$S_token" >>"$TK_REPO/.sandbox/mutate-it/guard.out"
@@ -890,6 +922,80 @@ scenario_undo_verify_refuses() {
 	gone rollout/tkm-undo.yaml
 }
 
+# (b) A selector is resolved again when kubectl runs: the block re-reads the
+# set at confirm and refuses when it changed (an object added, or deleted and
+# re-created under the same name), before anything is deleted.
+selx_file() { # NAME: a manifest of a configmap the selection scenarios select
+	f=$TK_REPO/.sandbox/mutate-it/files/$1.yaml
+	mkdir -p "$(dirname "$f")"
+	printf 'apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: %s\n  namespace: %s\n  labels:\n    tkm-selx: "yes"\ndata:\n  k: v\n' \
+		"$1" "$NS" >"$f"
+	printf '%s' "$f"
+}
+
+selx_reset() { # NAME...: only these configmaps carry the label
+	k -n "$NS" delete configmap -l tkm-selx=yes --ignore-not-found --wait=true >/dev/null 2>&1
+	for n in "$@"; do
+		k apply -f "$(selx_file "$n")" >/dev/null || tk_fail "cannot create $n"
+	done
+}
+
+selx_count() {
+	k -n "$NS" get configmap -l tkm-selx=yes -o name 2>/dev/null | wc -l | tr -d ' '
+}
+
+scenario_selection_unchanged() {
+	selx_reset tkm-selx-a tkm-selx-b
+	guard_scenario selection-unchanged
+	out=$(TK_GUARD_NAME=selection-unchanged-block TK_GUARD_DECISION=approve \
+		guard_kubectl --context "$CTX" -n "$NS" delete configmap -l tkm-selx=yes 2>&1)
+	st=$?
+	guard_log "delete -l (unchanged)" "$st" "$out"
+	block_state selection-unchanged-block final
+	tk_expect phase closed
+	if [ "$st" = 0 ]; then tk_ok "deleted after the re-check"; else tk_fail "guard rc=$st"; fi
+	if [ "$(selx_count)" = 0 ]; then tk_ok "both configmaps deleted"; else tk_fail "$(selx_count) left"; fi
+	tk_check "the block re-read the selection" grep -q "jsonpath={range .items" "$TK_REPO/.sandbox/mutate-it/selection-unchanged-block/evidence.log"
+}
+
+scenario_selection_added() {
+	selx_reset tkm-selx-a tkm-selx-b
+	late=$(selx_file tkm-selx-c)
+	guard_scenario selection-added
+	out=$(TK_GUARD_NAME=selection-added-block TK_GUARD_DECISION=approve \
+		TK_GUARD_EDIT="kubectl --context $CTX apply -f '$late' >/dev/null" \
+		guard_kubectl --context "$CTX" -n "$NS" delete configmap -l tkm-selx=yes 2>&1)
+	st=$?
+	guard_log "delete -l (a match added before confirm)" "$st" "$out"
+	block_state selection-added-block final
+	tk_expect phase ready
+	tk_expect_has confirm_error "The selection now matches 3 object(s) (previewed 2)"
+	tk_expect_has confirm_error "+ConfigMap $NS/tkm-selx-c"
+	if [ "$st" != 0 ]; then tk_ok "the guard ran nothing (rc=$st)"; else tk_fail "guard rc=0"; fi
+	if [ "$(selx_count)" = 3 ]; then tk_ok "nothing deleted"; else tk_fail "$(selx_count) configmaps left, want 3"; fi
+	selx_reset
+}
+
+scenario_selection_recreated() {
+	selx_reset tkm-selx-a tkm-selx-b
+	again=$(selx_file tkm-selx-b)
+	before=$(live configmap/tkm-selx-b '{.metadata.uid}')
+	guard_scenario selection-recreated
+	out=$(TK_GUARD_NAME=selection-recreated-block TK_GUARD_DECISION=approve \
+		TK_GUARD_EDIT="kubectl --context $CTX -n $NS delete configmap tkm-selx-b --wait=true >/dev/null && kubectl --context $CTX apply -f '$again' >/dev/null" \
+		guard_kubectl --context "$CTX" -n "$NS" delete configmap -l tkm-selx=yes 2>&1)
+	st=$?
+	guard_log "delete -l (a match re-created before confirm)" "$st" "$out"
+	block_state selection-recreated-block final
+	tk_expect phase ready
+	tk_expect_has confirm_error "ConfigMap $NS/tkm-selx-b re-created since the preview"
+	after=$(live configmap/tkm-selx-b '{.metadata.uid}')
+	if [ -n "$after" ] && [ "$after" != "$before" ]; then tk_ok "tkm-selx-b has a new uid"; else tk_fail "uid $before -> $after"; fi
+	if [ "$st" != 0 ]; then tk_ok "the guard ran nothing (rc=$st)"; else tk_fail "guard rc=0"; fi
+	if [ "$(selx_count)" = 2 ]; then tk_ok "nothing deleted"; else tk_fail "$(selx_count) configmaps left, want 2"; fi
+	selx_reset
+}
+
 scenario_pause_resume() {
 	fresh rollout/tkm-pause.yaml
 	tk_begin pause "$(link pause deployment tkm-pause)"
@@ -1128,6 +1234,402 @@ scenario_edit_invalid_approvable() {
 	esac
 	expect_live "label tier unchanged" one configmap/tkm-edit '{.metadata.labels.tier}'
 	gone meta/tkm-edit.yaml
+}
+
+# Guard 1.2 verbs: set, replace (--force), taint, create, run, expose -------------
+
+G12=guard12
+
+g12_reset() { # removes what the guard12 scenarios create besides their manifests
+	k -n "$NS" delete secret/tkm-g12-sec configmap/tkm-g12-dir job/tkm-g12-job cronjob/tkm-g12-cron \
+		pod/tkm-g12-run pod/tkm-g12-att service/tkm-g12-svc --ignore-not-found --wait=true >/dev/null 2>&1
+}
+
+g12_work() { # a fresh scratch dir for a scenario's files
+	d=$TK_REPO/.sandbox/mutate-it/files/$1
+	rm -rf "$d"
+	mkdir -p "$d"
+	printf '%s' "$d"
+}
+
+block_dir() { # BLOCK
+	printf '%s' "$TK_REPO/.sandbox/mutate-it/$1"
+}
+
+scenario_guard_set_image() {
+	fresh "$G12/tkm-g12.yaml"
+	guard_scenario guard-set-image
+	out=$(TK_GUARD_NAME=guard-set-image-block TK_GUARD_DECISION=approve \
+		guard_kubectl --context "$CTX" -n "$NS" set image deployment/tkm-g12 main=registry.k8s.io/pause:3.9 2>&1)
+	st=$?
+	guard_log "set image" "$st" "$out"
+	block_state guard-set-image-block preview
+	tk_expect phase ready
+	tk_expect tier simple
+	tk_expect_has reasons "simple:set-image"
+	tk_expect_has steps "targets=ok"
+	tk_expect_has steps "after=ok"
+	tk_expect segments "modify:Deployment/tkm-g12"
+	tk_expect_line - "image: registry.k8s.io/pause:3.10"
+	tk_expect_line + "image: registry.k8s.io/pause:3.9"
+	block_state guard-set-image-block final
+	tk_expect phase closed
+	if [ "$st" = 0 ]; then tk_ok "guard executed after approval"; else tk_fail "guard rc=$st"; fi
+	expect_live "image is pause:3.9" registry.k8s.io/pause:3.9 deployment/tkm-g12 '{.spec.template.spec.containers[0].image}'
+}
+
+# kubectl prints nothing for an unchanged object: no change, never a deletion.
+scenario_guard_set_noop() {
+	fresh "$G12/tkm-g12.yaml"
+	guard_scenario guard-set-noop
+	out=$(TK_GUARD_NAME=guard-set-noop-block TK_GUARD_DECISION=deny \
+		guard_kubectl --context "$CTX" -n "$NS" set image deployment/tkm-g12 main=registry.k8s.io/pause:3.10 2>&1)
+	st=$?
+	guard_log "set image (same image)" "$st" "$out"
+	block_state guard-set-noop-block preview
+	tk_expect phase ready
+	tk_expect_has steps "after=ok"
+	tk_expect_has reasons "no-change"
+	tk_expect_lacks segments "delete:"
+	tk_expect_lacks segments "modify:"
+	if [ "$st" != 0 ]; then tk_ok "denied (rc=$st)"; else tk_fail "guard rc=0 after a denial"; fi
+}
+
+# tkm-g12 runs pause:3.10, tkm-g12b pause:3.9: only tkm-g12b changes.
+scenario_guard_set_all_mixed() {
+	fresh "$G12/tkm-g12.yaml"
+	guard_scenario guard-set-all-mixed
+	out=$(TK_GUARD_NAME=guard-set-all-mixed-block TK_GUARD_DECISION=approve \
+		guard_kubectl --context "$CTX" -n "$NS" set image deployment -l tkm-g12=yes main=registry.k8s.io/pause:3.10 2>&1)
+	st=$?
+	guard_log "set image -l" "$st" "$out"
+	block_state guard-set-all-mixed-block preview
+	tk_expect phase ready
+	tk_expect tier typed
+	tk_expect_has reasons "typed:broad-selector"
+	tk_expect segments "modify:Deployment/tkm-g12b"
+	tk_expect_lacks segments "delete:"
+	tk_expect_has unchanged "tkm-g12"
+	block_state guard-set-all-mixed-block final
+	tk_expect phase closed
+	if [ "$st" = 0 ]; then tk_ok "guard executed after the typed approval"; else tk_fail "guard rc=$st"; fi
+	expect_live "tkm-g12b now pause:3.10" registry.k8s.io/pause:3.10 deployment/tkm-g12b '{.spec.template.spec.containers[0].image}'
+	expect_live "tkm-g12 kept pause:3.10" registry.k8s.io/pause:3.10 deployment/tkm-g12 '{.spec.template.spec.containers[0].image}'
+	gone "$G12/tkm-g12.yaml"
+}
+
+scenario_guard_set_env_stdin_refused() {
+	fresh "$G12/tkm-g12.yaml"
+	guard_scenario guard-set-env-stdin
+	rm -rf "$(block_dir guard-set-env-stdin-block)"
+	out=$(echo 'X=1' | TK_GUARD_NAME=guard-set-env-stdin-block TK_GUARD_DECISION=approve \
+		guard_kubectl --context "$CTX" -n "$NS" set env deployment/tkm-g12 -e - 2>&1)
+	st=$?
+	guard_log "set env -e -" "$st" "$out"
+	if [ "$st" != 0 ]; then tk_ok "refused (rc=$st)"; else tk_fail "guard rc=0"; fi
+	case $out in *stdin*) tk_ok "the refusal names stdin" ;; *) tk_fail "no stdin refusal" ;; esac
+	tk_check "no approve block opened" sh -c "[ ! -f '$(block_dir guard-set-env-stdin-block)/preview.state' ]"
+	expect_live "no env added" "" deployment/tkm-g12 '{.spec.template.spec.containers[0].env}'
+	gone "$G12/tkm-g12.yaml"
+}
+
+scenario_guard_replace() {
+	fresh "$G12/tkm-g12-cfg.yaml"
+	work=$(g12_work replace)
+	sed 's/LOG_LEVEL: info/LOG_LEVEL: debug/' "$M/$G12/tkm-g12-cfg.yaml" >"$work/cfg.yaml"
+	guard_scenario guard-replace
+	out=$(TK_GUARD_NAME=guard-replace-block TK_GUARD_DECISION=approve \
+		guard_kubectl --context "$CTX" replace -f "$work/cfg.yaml" 2>&1)
+	st=$?
+	guard_log "replace -f" "$st" "$out"
+	block_state guard-replace-block preview
+	tk_expect phase ready
+	tk_expect tier simple
+	tk_expect_has reasons "simple:replace"
+	tk_expect_has reasons "replace-no-rv"
+	tk_expect segments "modify:ConfigMap/tkm-g12-cfg"
+	tk_expect_line - "LOG_LEVEL: info"
+	tk_expect_line + "LOG_LEVEL: debug"
+	block_state guard-replace-block final
+	tk_expect phase closed
+	if [ "$st" = 0 ]; then tk_ok "replaced after approval"; else tk_fail "guard rc=$st"; fi
+	expect_live "LOG_LEVEL=debug" debug configmap/tkm-g12-cfg '{.data.LOG_LEVEL}'
+}
+
+# A file with a stale resourceVersion: the dry run conflicts, nothing changes.
+scenario_guard_replace_conflict() {
+	fresh "$G12/tkm-g12-cfg.yaml"
+	work=$(g12_work replace-conflict)
+	k -n "$NS" get configmap tkm-g12-cfg -o yaml | sed 's/LOG_LEVEL: info/LOG_LEVEL: debug/' >"$work/cfg.yaml"
+	k -n "$NS" label configmap tkm-g12-cfg tkm-bump=1 >/dev/null || tk_fail "cannot bump the resourceVersion"
+	guard_scenario guard-replace-conflict
+	out=$(TK_GUARD_NAME=guard-replace-conflict-block TK_GUARD_DECISION=approve \
+		guard_kubectl --context "$CTX" replace -f "$work/cfg.yaml" 2>&1)
+	st=$?
+	guard_log "replace -f (stale resourceVersion)" "$st" "$out"
+	block_state guard-replace-conflict-block preview
+	tk_expect tier blocked
+	tk_expect_has reasons "blocked:preview-failed"
+	tk_expect_has view "the object has been modified"
+	if [ "$st" != 0 ]; then tk_ok "nothing ran (rc=$st)"; else tk_fail "guard rc=0"; fi
+	expect_live "LOG_LEVEL unchanged" info configmap/tkm-g12-cfg '{.data.LOG_LEVEL}'
+	gone "$G12/tkm-g12-cfg.yaml"
+}
+
+# A selector change is immutable: only --force (delete + create) applies it.
+scenario_guard_replace_force() {
+	fresh "$G12/tkm-g12-imm.yaml"
+	work=$(g12_work replace-force)
+	sed 's/app: tkm-g12-imm$/app: tkm-g12-imm2/' "$M/$G12/tkm-g12-imm.yaml" >"$work/imm.yaml"
+	before=$(live deployment/tkm-g12-imm '{.metadata.uid}')
+	guard_scenario guard-replace-force
+	out=$(TK_GUARD_NAME=guard-replace-force-block TK_GUARD_DECISION=approve \
+		guard_kubectl --context "$CTX" replace --force -f "$work/imm.yaml" 2>&1)
+	st=$?
+	guard_log "replace --force -f" "$st" "$out"
+	block_state guard-replace-force-block preview
+	tk_expect phase ready
+	tk_expect tier typed
+	tk_expect_has reasons "typed:replace-force"
+	tk_expect_has reasons "force-needed"
+	tk_expect_has steps "dry-run=ok"
+	tk_expect_has view "field is immutable"
+	tk_check "no dry run carries --force" sh -c "! grep -e '--dry-run=server' '$(block_dir guard-replace-force-block)/effects.log' | grep -q -e '--force'"
+	block_state guard-replace-force-block final
+	tk_expect phase closed
+	if [ "$st" = 0 ]; then tk_ok "replaced after the typed approval"; else tk_fail "guard rc=$st"; fi
+	after=$(live deployment/tkm-g12-imm '{.metadata.uid}')
+	if [ -n "$after" ] && [ "$after" != "$before" ]; then tk_ok "new uid ($before -> $after)"; else tk_fail "uid $before -> $after"; fi
+	expect_live "the new selector" tkm-g12-imm2 deployment/tkm-g12-imm '{.spec.selector.matchLabels.app}'
+	k -n "$NS" delete deployment tkm-g12-imm --ignore-not-found --wait=false >/dev/null 2>&1
+}
+
+# Taints: a key per run; every exit removes it (and uncordons) like uncordon_node.
+TAINT_KEY=
+
+untaint_node() {
+	uncordon_node
+	[ -n "$NODE" ] && [ -n "$TAINT_KEY" ] && k taint node "$NODE" "$TAINT_KEY-" >/dev/null 2>&1
+	return 0
+}
+
+taint_begin() {
+	NODE=$(k get nodes -o jsonpath='{.items[0].metadata.name}')
+	TAINT_KEY=tkm-taint-$$
+	trap untaint_node EXIT
+	trap 'untaint_node; exit 130' INT TERM
+}
+
+node_taints() {
+	k get node "$NODE" -o jsonpath='{.spec.taints}' 2>&1
+}
+
+# NoExecute would evict coredns and the fixtures: only ever denied here.
+scenario_taint_noexecute_deny() {
+	taint_begin
+	guard_scenario taint-noexecute-deny
+	out=$(TK_GUARD_NAME=taint-noexecute-block TK_GUARD_DECISION=deny \
+		guard_kubectl --context "$CTX" taint node "$NODE" "$TAINT_KEY=x:NoExecute" 2>&1)
+	st=$?
+	guard_log "taint NoExecute (deny)" "$st" "$out"
+	block_state taint-noexecute-block preview
+	tk_expect phase ready
+	tk_expect tier typed
+	tk_expect_has reasons "typed:taint-noexecute"
+	tk_expect_has steps "after=ok"
+	tk_expect_has steps "pods:$NODE=ok"
+	tk_expect_has view "coredns"
+	tk_expect_lacks reasons "taint-evictions-unknown"
+	tk_expect_line + "$TAINT_KEY"
+	if [ "$st" != 0 ]; then tk_ok "denied (rc=$st)"; else tk_fail "guard rc=0 after a denial"; fi
+	case $(node_taints) in
+	*"$TAINT_KEY"*) tk_fail "the node carries $TAINT_KEY" ;;
+	*) tk_ok "node taints unchanged" ;;
+	esac
+	untaint_node
+}
+
+scenario_taint_prefer_roundtrip() {
+	taint_begin
+	guard_scenario taint-prefer-roundtrip
+	out=$(TK_GUARD_NAME=taint-prefer-add-block TK_GUARD_DECISION=approve \
+		guard_kubectl --context "$CTX" taint node "$NODE" "$TAINT_KEY=1:PreferNoSchedule" 2>&1)
+	st=$?
+	guard_log "taint PreferNoSchedule" "$st" "$out"
+	block_state taint-prefer-add-block preview
+	tk_expect phase ready
+	tk_expect_has reasons "taint-prefer"
+	tk_expect_lacks reasons "taint-noexecute"
+	tk_expect_line + "$TAINT_KEY"
+	if [ "$st" = 0 ]; then tk_ok "tainted after approval"; else tk_fail "guard rc=$st"; fi
+	case $(node_taints) in
+	*"$TAINT_KEY"*PreferNoSchedule* | *PreferNoSchedule*"$TAINT_KEY"*) tk_ok "node has $TAINT_KEY:PreferNoSchedule" ;;
+	*) tk_fail "no $TAINT_KEY taint: $(node_taints)" ;;
+	esac
+	out=$(TK_GUARD_NAME=taint-prefer-remove-block TK_GUARD_DECISION=approve \
+		guard_kubectl --context "$CTX" taint node "$NODE" "$TAINT_KEY:PreferNoSchedule-" 2>&1)
+	st=$?
+	guard_log "taint remove" "$st" "$out"
+	block_state taint-prefer-remove-block preview
+	tk_expect_has reasons "simple:taint-remove"
+	tk_expect_line - "$TAINT_KEY"
+	if [ "$st" = 0 ]; then tk_ok "untainted after approval"; else tk_fail "guard rc=$st"; fi
+	case $(node_taints) in
+	*"$TAINT_KEY"*) tk_fail "$TAINT_KEY still on the node" ;;
+	*) tk_ok "$TAINT_KEY removed" ;;
+	esac
+	untaint_node
+	expect_schedulable "the node stays schedulable"
+}
+
+# The literal never reaches the view, the copy, the audit logs or the response.
+scenario_guard_create_secret_masked() {
+	g12_reset
+	lit=tkm-S3cr3t-g12
+	guard_scenario guard-create-secret-masked
+	b=$(block_dir guard-create-secret-block)
+	out=$(TK_GUARD_NAME=guard-create-secret-block TK_GUARD_DECISION=approve TK_GUARD_COPY=1 \
+		guard_kubectl --context "$CTX" -n "$NS" create secret generic tkm-g12-sec "--from-literal=password=$lit" 2>&1)
+	st=$?
+	guard_log "create secret generic" "$st" "$out"
+	block_state guard-create-secret-block preview
+	tk_expect phase ready
+	tk_expect_has reasons "secret-masked"
+	tk_expect_has command "--from-literal=password=<redacted>"
+	tk_expect_lacks command "$lit"
+	tk_expect segments "create:Secret/tkm-g12-sec"
+	if [ "$st" = 0 ]; then tk_ok "created after approval"; else tk_fail "guard rc=$st"; fi
+	tk_check "the secret holds the literal" sh -c \
+		"[ \"\$(kubectl --kubeconfig '$KC' --context $CTX -n $NS get secret tkm-g12-sec -o jsonpath='{.data.password}' | base64 -d)\" = '$lit' ]"
+	tk_check "copied the masked command" grep -q "^copy .*password=<redacted>" "$b/effects.log"
+	tk_check "the copy lacks the literal" sh -c "! grep '^copy ' '$b/effects.log' | grep -q '$lit'"
+	tk_check "view.txt lacks the literal" sh -c "! grep -q '$lit' '$b/view.txt'"
+	tk_check "the block's audit.log lacks the literal" sh -c "[ -s '$b/audit.log' ] && ! grep -q '$lit' '$b/audit.log'"
+	tk_check "the guard's audit.log lacks the literal" sh -c "! grep -q '$lit' '$TK_REPO/.sandbox/mutate-it/audit.log'"
+	tk_check "the response was written" grep -q "^wrote .*resp-.*audit=" "$b/evidence.log"
+	tk_check "the response template lacks the literal" sh -c "! grep '^wrote .*resp-' '$b/evidence.log' | grep -q '$lit'"
+	g12_reset
+}
+
+# Files inside a --from-file directory are fingerprinted like -f files.
+scenario_guard_create_fromdir_fingerprint() {
+	g12_reset
+	work=$(g12_work fromdir)
+	mkdir -p "$work/cfg/sub"
+	printf 'one\n' >"$work/cfg/a.txt"
+	printf 'two\n' >"$work/cfg/b.txt"
+	printf 'skipped\n' >"$work/cfg/sub/c.txt"
+	guard_scenario guard-create-fromdir
+	out=$(TK_GUARD_NAME=guard-create-fromdir-block TK_GUARD_DECISION=approve \
+		TK_GUARD_EDIT_AFTER="printf 'changed\n' >'$work/cfg/b.txt'" \
+		guard_kubectl --context "$CTX" -n "$NS" create configmap tkm-g12-dir "--from-file=$work/cfg" 2>&1)
+	st=$?
+	guard_log "create configmap --from-file=DIR (edited after approval)" "$st" "$out"
+	block_state guard-create-fromdir-block preview
+	tk_expect phase ready
+	tk_expect segments "create:ConfigMap/tkm-g12-dir"
+	tk_expect_has diff_text "a.txt"
+	tk_expect_lacks diff_text "c.txt"
+	case $out in
+	*"fingerprint mismatch"*) tk_ok "the guard refused the edited directory" ;;
+	*) tk_fail "no fingerprint mismatch" ;;
+	esac
+	if [ "$st" != 0 ]; then tk_ok "nothing ran (rc=$st)"; else tk_fail "guard rc=0"; fi
+	tk_check "no configmap created" sh -c "! kubectl --kubeconfig '$KC' --context $CTX -n $NS get configmap tkm-g12-dir"
+}
+
+scenario_guard_create_job_from_cronjob() {
+	g12_reset
+	cronjob_manifest tkm-g12-cron | k apply -f - >/dev/null || tk_fail "cannot create tkm-g12-cron"
+	guard_scenario guard-create-job
+	out=$(TK_GUARD_NAME=guard-create-job-block TK_GUARD_DECISION=approve \
+		guard_kubectl --context "$CTX" -n "$NS" create job tkm-g12-job --from=cronjob/tkm-g12-cron 2>&1)
+	st=$?
+	guard_log "create job --from=cronjob" "$st" "$out"
+	block_state guard-create-job-block preview
+	tk_expect phase ready
+	tk_expect_has steps "dry-run=ok"
+	block_state guard-create-job-block final
+	tk_expect phase closed
+	if [ "$st" = 0 ]; then tk_ok "created after approval"; else tk_fail "guard rc=$st"; fi
+	expect_live "the job comes from the cronjob" manual job/tkm-g12-job '{.metadata.annotations.cronjob\.kubernetes\.io/instantiate}'
+	g12_reset
+}
+
+scenario_guard_create_exists_blocked() {
+	fresh "$G12/tkm-g12-cfg.yaml"
+	guard_scenario guard-create-exists
+	out=$(TK_GUARD_NAME=guard-create-exists-block TK_GUARD_DECISION=approve \
+		guard_kubectl --context "$CTX" -n "$NS" create configmap tkm-g12-cfg --from-literal=LOG_LEVEL=trace 2>&1)
+	st=$?
+	guard_log "create configmap (exists)" "$st" "$out"
+	block_state guard-create-exists-block preview
+	tk_expect tier blocked
+	tk_expect_has reasons "blocked:preview-failed"
+	tk_expect_has view "already exists"
+	if [ "$st" != 0 ]; then tk_ok "nothing ran (rc=$st)"; else tk_fail "guard rc=0"; fi
+	expect_live "LOG_LEVEL unchanged" info configmap/tkm-g12-cfg '{.data.LOG_LEVEL}'
+	gone "$G12/tkm-g12-cfg.yaml"
+}
+
+scenario_guard_run() {
+	g12_reset
+	guard_scenario guard-run
+	out=$(TK_GUARD_NAME=guard-run-block TK_GUARD_DECISION=approve \
+		guard_kubectl --context "$CTX" -n "$NS" run tkm-g12-run --image=registry.k8s.io/pause:3.10 --restart=Never 2>&1)
+	st=$?
+	guard_log "run" "$st" "$out"
+	block_state guard-run-block preview
+	tk_expect phase ready
+	tk_expect_has steps "after=ok"
+	tk_expect segments "create:Pod/tkm-g12-run"
+	if [ "$st" = 0 ]; then tk_ok "pod created after approval"; else tk_fail "guard rc=$st"; fi
+	expect_live "pod image" registry.k8s.io/pause:3.10 pod/tkm-g12-run '{.spec.containers[0].image}'
+	g12_reset
+}
+
+# kubectl refuses --dry-run with attach flags: the preview drops them.
+scenario_guard_run_attach_preview() {
+	g12_reset
+	guard_scenario guard-run-attach
+	out=$(TK_GUARD_NAME=guard-run-attach-block TK_GUARD_DECISION=deny \
+		guard_kubectl --context "$CTX" -n "$NS" run tkm-g12-att -it --rm --restart=Never --image=registry.k8s.io/pause:3.10 2>&1)
+	st=$?
+	guard_log "run -it --rm (deny)" "$st" "$out"
+	block_state guard-run-attach-block preview
+	tk_expect phase ready
+	tk_expect_has steps "after=ok"
+	tk_expect_has reasons "run-attach"
+	tk_expect_has reasons "run-rm"
+	tk_expect_has command "--rm"
+	tk_check "a dry run ran" sh -c "grep -q -e '--dry-run=server' '$(block_dir guard-run-attach-block)/effects.log'"
+	if grep -e '--dry-run=server' "$(block_dir guard-run-attach-block)/effects.log" |
+		grep -Eq -e "(^| |')(-it|-i|-t|--rm|--tty|--stdin|--attach)('| |=|\$)"; then
+		tk_fail "the dry run carries an attach flag"
+	else
+		tk_ok "the dry run has no -it/--rm/--tty/--stdin"
+	fi
+	if [ "$st" != 0 ]; then tk_ok "denied (rc=$st)"; else tk_fail "guard rc=0 after a denial"; fi
+	tk_check "no pod" sh -c "! kubectl --kubeconfig '$KC' --context $CTX -n $NS get pod tkm-g12-att"
+}
+
+scenario_guard_expose_nodeport() {
+	fresh "$G12/tkm-g12.yaml"
+	g12_reset
+	guard_scenario guard-expose-nodeport
+	out=$(TK_GUARD_NAME=guard-expose-block TK_GUARD_DECISION=deny \
+		guard_kubectl --context "$CTX" -n "$NS" expose deployment/tkm-g12 --name=tkm-g12-svc --type=NodePort --port=80 2>&1)
+	st=$?
+	guard_log "expose --type=NodePort (deny)" "$st" "$out"
+	block_state guard-expose-block preview
+	tk_expect phase ready
+	tk_expect_has steps "targets=ok"
+	tk_expect_has steps "after=ok"
+	tk_expect_has reasons "public-service"
+	tk_expect segments "create:Service/tkm-g12-svc"
+	if [ "$st" != 0 ]; then tk_ok "denied (rc=$st)"; else tk_fail "guard rc=0 after a denial"; fi
+	tk_check "no service" sh -c "! kubectl --kubeconfig '$KC' --context $CTX -n $NS get service tkm-g12-svc"
+	gone "$G12/tkm-g12.yaml"
 }
 
 # helm rollback scenarios: releases of the fixture charts in their own
@@ -1396,7 +1898,11 @@ ALL="apply_one apply_many diff_modify_cancel stale_file scale restart delete_typ
 context_drift server_drift rbac_deny_dry_run tiny_timeout cronjob_quick cronjob_quick_no_token guard_roundtrip secret_redaction apply_prompt
 guard_disabled guard_namespace_bound label_one label_selector_typed label_conflict_fails annotate_overwrite patch_merge patch_cr_merge
 patch_json_typed patch_file_changed_refused undo_previous undo_to_revision undo_single_revision_fails
-undo_verify_refuses pause_resume cordon_uncordon drain_preflight drain_pdb_blocked drain_ok edit_request
+undo_verify_refuses selection_unchanged selection_added selection_recreated pause_resume cordon_uncordon drain_preflight
+drain_pdb_blocked drain_ok edit_request guard_set_image guard_set_noop guard_set_all_mixed guard_set_env_stdin_refused
+guard_replace guard_replace_conflict guard_replace_force taint_noexecute_deny taint_prefer_roundtrip
+guard_create_secret_masked guard_create_fromdir_fingerprint guard_create_job_from_cronjob guard_create_exists_blocked
+guard_run guard_run_attach_preview guard_expose_nodeport
 edit_renamed_blocked edit_invalid_approvable helm_rollback helm_stale helm_pending helm_missing_rev helm_rbac
 helm_secret_echo helm_cleanup"
 

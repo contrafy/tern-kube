@@ -58,6 +58,27 @@ local exec: (h: Host, effects: { Effect }) -> ()
 local start: (h: Host, saved: any) -> ()
 local rememberScope: (s: State.State) -> ()
 
+-- `api-resources` output per target (State.discoveryId), shared by every
+-- block of this plugin VM so a second `:` runs nothing. Memory only, never
+-- on disk; the oldest target goes past DISCOVERY_MAX; `r` refetches.
+M.DISCOVERY_MAX = 16
+local discoveries: { [string]: { text: string, at: number } } = {}
+local discoveryOrder: { string } = {}
+
+local function rememberDiscovery(id: string, text: string, at: number)
+	if discoveries[id] == nil then
+		table.insert(discoveryOrder, id)
+		if #discoveryOrder > M.DISCOVERY_MAX then
+			discoveries[table.remove(discoveryOrder, 1) :: string] = nil
+		end
+	end
+	discoveries[id] = { text = text, at = at }
+end
+
+local function discovery(id: string): { text: string, at: number }?
+	return discoveries[id]
+end
+
 -- The tag this block puts on the mutations it starts (Link `origin`).
 function M.origin(cx: BlockCx): string
 	return "explore:" .. (string.gsub(tostring(cx.pane), "[^%w:%-_.]", "_"))
@@ -273,6 +294,10 @@ function exec(h: Host, effects: { Effect })
 			h.cx:open(e.url or "")
 		elseif e.t == "save" then
 			h.cx:save()
+		elseif e.t == "remember" then
+			if e.id and e.text then
+				rememberDiscovery(e.id, e.text, e.at or os.time())
+			end
 		elseif e.t == "focus" then
 			h.cx:frame({ { "focus", e.id or State.FILTER_INPUT } })
 		elseif e.t == "blur" then
@@ -433,6 +458,7 @@ local function stateEnv(cx: BlockCx, pending: boolean): State.Env
 		utcOffset = utcOffset(),
 		lastScope = readLastScope(),
 		origin = M.origin(cx),
+		discovery = discovery,
 	}
 end
 

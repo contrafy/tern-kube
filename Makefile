@@ -37,7 +37,8 @@ test-runner-selfcheck: tools
 bench: tools fixtures
 	@$(LUAU) scripts/bench.luau
 
-# Drives an isolated Tern window (local only; skipped when `tern` is absent).
+# Drives an isolated headless Tern session, no window (local only; skipped
+# when `tern` is absent).
 e2e:
 	@sh scripts/e2e.sh
 
@@ -92,6 +93,11 @@ test-shell-login:
 # Two kind clusters: scripts/cluster.sh create && scripts/cluster.sh create-peer.
 test-integration-compare: tools
 	@sh tests/integration/compare/run.sh
+
+.PHONY: test-integration-k9s
+# kind cluster tern-kube-dev: rollout history / get-contexts / api-resources / can-i lens views.
+test-integration-k9s: tools
+	@sh tests/integration/k9s/check.sh
 
 .PHONY: shots-optimize
 OXIPNG = $(BIN)/oxipng

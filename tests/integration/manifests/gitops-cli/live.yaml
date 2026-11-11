@@ -1,0 +1,81 @@
+# The cluster side of tests/integration/gitops/cli-equivalence.sh, applied
+# into a namespace recreated on every run. Against repo/: web is scaled,
+# app-config, base-cm and rel-cm edited, plain-a in sync, plain-b and odd
+# missing, hand-made unmanaged.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: tern-test-gitops-cli
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web
+  namespace: tern-test-gitops-cli
+  labels:
+    app: web
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: web
+  template:
+    metadata:
+      labels:
+        app: web
+    spec:
+      containers:
+        - name: pause
+          image: registry.k8s.io/pause:3.10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: web
+  namespace: tern-test-gitops-cli
+spec:
+  selector:
+    app: web
+  ports:
+    - port: 80
+      targetPort: 80
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-config
+  namespace: tern-test-gitops-cli
+data:
+  LOG_LEVEL: debug
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: plain-a
+  namespace: tern-test-gitops-cli
+data:
+  mode: steady
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: base-cm
+  namespace: tern-test-gitops-cli
+data:
+  tier: patched
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: rel-cm
+  namespace: tern-test-gitops-cli
+data:
+  color: red
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: hand-made
+  namespace: tern-test-gitops-cli
+data:
+  owner: someone

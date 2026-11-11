@@ -67,6 +67,15 @@ describe("native table columns", function()
 		expect(Table.priority(h, 2) > Table.priority(h, 7)).toBe(true)
 	end)
 
+	-- Relations' VIA badges are the edge's evidence (a heuristic selector
+	-- match is warning-toned); RELATION only restates it (owner -> owns).
+	-- At the default 1280 px viewport the Explore split hid VIA first.
+	it("keeps the relations VIA badge longer than the RELATION verb", function()
+		local h = { "NAME", "KIND", "RELATION", "VIA", "STATUS" }
+		expect(Table.priority(h, 4) > Table.priority(h, 3)).toBe(true)
+		expect(Table.priority(h, 5) > Table.priority(h, 4)).toBe(true)
+	end)
+
 	it("lets NAME take the spare width and cut in the middle so pod suffixes stay unique", function()
 		local c = col(Table.table(spec()), "NAME")
 		expect(c.grow).toBe(1)

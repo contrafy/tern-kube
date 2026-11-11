@@ -20,7 +20,11 @@ M.KEYS = {
 	{ "r", "Refresh this view (the only way data is re-read)", "Refresh" },
 	{ "c", "Choose the context", "context chip" },
 	{ "n", "Choose the namespace scope", "namespace chip" },
-	{ ":", "Choose a resource kind", "" },
+	{
+		":",
+		"Command prompt: a kind or alias (po, deploy, svc, cm, CRD short names), ns NAME, ctx NAME, helm, events, top; enter jumps, tab completes, esc back",
+		"",
+	},
 	{ "d", "Describe (native view)", "Describe" },
 	{ "y", "Object view (fields as a tree)", "Object" },
 	{ "R", "Related objects with provenance", "Relations" },
@@ -73,11 +77,22 @@ M.KEYS = {
 		"mutates",
 	},
 	{ "Y", "Copy the kubectl command of this view", "Copy command" },
+	{
+		"z",
+		"Object: show / hide a Secret's values decoded, display only (needs security.show_secret_values)",
+		"Decode values",
+	},
 	{ "m", "Open the object's manifest at its line (indexes the repository first)", "Manifest" },
 	{ "=", "Diff the live object against its manifest (kubectl diff)", "Diff vs manifest" },
 	{ "ctrl+g", "Drift report: choose a manifest source, compare it with the cluster", "" },
 	{ "E", "Export the object (or the filtered list) as clean manifests: preview, then w writes", "Export" },
 	{ "f / a / A / X", "Drift: filter, apply the selected manifest / the source, export all shown", "" },
+	{
+		"Y",
+		"Drift: copy the tern-kube-drift command that reproduces the report (needs the 0.4.0 CLI); "
+			.. "in the matrix Y copies the kubectl commands, the Copy CLI command chip the CLI",
+		"Copy CLI command",
+	},
 	{ "t / w / b", "Export: change directory, write the files, branch and commit", "" },
 	{ "b e p P o", "Git: branch, message, push, pull request, only exported files (enter runs)", "" },
 	{ "H", "Helm releases; on an object managed by Helm: its release", "Helm release chip" },
@@ -97,6 +112,19 @@ M.KEYS = {
 	},
 	{ "ctrl+g", "Helm: drift of the auto-detected chart directory", "" },
 	{ "Y", "Helm: copy the pinned helm command of this view", "Copy command" },
+	{
+		"%",
+		"Resource usage of what is in view: pods against requests and limits, a pod's containers, nodes against allocatable",
+		"Usage chip",
+	},
+	{ "enter", "Usage: a pod's containers, a node's pods (containers need no new query)", "Click a row" },
+	{ "%", "Usage: switch between pods and nodes", "Pods / Nodes chip" },
+	{
+		"w",
+		"Usage: sample the metrics every 15 s for 2 minutes (trend columns only); w again stops",
+		"Sample chip",
+	},
+	{ "r / Y", "Usage: read everything again / copy every pinned command, one per line", "Refresh" },
 	{ "?", "This help", "?" },
 }
 
@@ -117,6 +145,10 @@ local function groupsOf(kind: string): { [string]: boolean }
 		return { drift = true, compare = true }
 	elseif kind == "export" or kind == "git" then
 		return { export = true, git = true }
+	elseif kind == "usage" then
+		return { usage = true }
+	elseif kind == "detail" then
+		return { object = true }
 	end
 	return {}
 end

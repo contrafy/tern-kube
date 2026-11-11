@@ -114,11 +114,16 @@ describe("controllers.parse", function()
 		expect(drift.revision).toBe("master@sha1:0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c")
 	end)
 
-	it("resolves Flux HelmRelease charts stored in a GitRepository", function()
+	-- helm-controller v2 records the applied chart in status.history[0];
+	-- lastAttemptedRevision is what it is trying, possibly failing, to apply.
+	it("reads the applied HelmRelease chart from history, not the attempted revision", function()
 		local hr = find(world(), "flux-helm", "podinfo")
 		expect(hr.repoURL).toBe("https://github.com/contrafy/tern-kube.git")
 		expect(hr.path).toBe("./charts/podinfo")
-		expect(hr.revision).toBe("6.7.0")
+		expect(hr.revision).toBe("6.6.3")
+		expect(hr.appliedRevision).toBe("6.6.3")
+		expect(hr.attemptedRevision).toBe("6.7.0")
+		expect(hr.chart).toEqual({ name = "podinfo", version = "6.6.3", appVersion = "6.6.3", revision = 4 })
 		expect(hr.sync).toBe("Unknown")
 		expect(hr.health).toBeNil()
 	end)
@@ -157,6 +162,119 @@ describe("controllers.parse", function()
 		expect(set.controllers[1].sources).toEqual({})
 		expect(set.controllers[1].repoURL).toBeNil()
 		expect(#Controllers.parse({}).controllers).toBe(0)
+	end)
+end)
+
+describe("controllers: the controller's own status", function()
+	it("reads Argo CD revisions, the last operation, errors and the sync policy", function()
+		local set = world()
+		local app = find(set, "argocd", "guestbook")
+		expect(app.appliedRevision).toBe("4f2a9c1e8b7d6a5f4e3d2c1b0a9f8e7d6c5b4a39")
+		expect(app.attemptedRevision).toBe("4f2a9c1e8b7d6a5f4e3d2c1b0a9f8e7d6c5b4a39")
+		expect(app.phase).toBe("Succeeded")
+		expect(app.finishedAt).toBe("2026-10-08T00:05:00Z")
+		expect(app.reconciledAt).toBe("2026-10-08T00:05:00Z")
+		expect(app.autoSync).toEqual({ prune = true, selfHeal = true })
+		expect(app.errors).toBeNil()
+		local drifted = find(set, "argocd", "guestbook-drifted")
+		-- Multi-source: the git directory's revision, not the chart's.
+		expect(drifted.appliedRevision).toBe("4f2a9c1e8b7d6a5f4e3d2c1b0a9f8e7d6c5b4a39")
+		expect(drifted.phase).toBe("Failed")
+		expect(drifted.operationMessage).toBe("one or more objects failed to apply")
+		expect(drifted.autoSync).toEqual({ prune = false, selfHeal = false })
+		expect(drifted.errors).toEqual({
+			count = 1,
+			message = "Failed sync attempt to 4f2a9c1: one or more objects failed to apply",
+			type = "SyncError",
+		})
+		expect(find(set, "argocd", "charted").autoSync).toBeNil()
+	end)
+
+	it("reads Flux revisions, Ready reason, suspend and interval", function()
+		local set = world()
+		local drift = find(set, "flux-kustomize", "drift")
+		expect(drift.appliedRevision).toBe("master@sha1:0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c")
+		expect(drift.attemptedRevision).toBe("master@sha1:4f2a9c1e8b7d6a5f4e3d2c1b0a9f8e7d6c5b4a39")
+		expect(drift.ready).toBe("False")
+		expect(drift.reason).toBe("HealthCheckFailed")
+		expect(drift.reconciledAt).toBe("2026-10-08T00:00:00Z")
+		expect(drift.interval).toBe("10m")
+		expect(drift.suspended).toBe(false)
+		local paused = find(set, "flux-kustomize", "paused")
+		expect(paused.suspended).toBe(true)
+		expect(paused.ready).toBe("True")
+	end)
+
+	it("owners carry the controller's status fields", function()
+		local o = Controllers.owner(workload("argo-label"), world()) :: Controllers.Owner
+		expect(o.appliedRevision).toBe("4f2a9c1e8b7d6a5f4e3d2c1b0a9f8e7d6c5b4a39")
+		expect(o.autoSync).toEqual({ prune = true, selfHeal = true })
+	end)
+
+	it("commit() finds the git commit in Argo and Flux revision spellings", function()
+		local sha = "4f2a9c1e8b7d6a5f4e3d2c1b0a9f8e7d6c5b4a39"
+		expect(Controllers.commit(sha)).toBe(sha)
+		expect(Controllers.commit("master@sha1:" .. sha)).toBe(sha)
+		expect(Controllers.commit("sha1:" .. sha)).toBe(sha)
+		expect(Controllers.commit("refs/heads/main@sha1:" .. string.upper(sha))).toBe(sha)
+		expect(Controllers.commit("6.7.0")).toBeNil()
+		expect(Controllers.commit("main")).toBeNil()
+		expect(Controllers.commit(nil)).toBeNil()
+	end)
+
+	it("statusText() tones Synced/Healthy/Ready as success, drift as warning, failures as error", function()
+		local set = world()
+		local function st(kind: string, name: string): { string }
+			local text, tone = Controllers.statusText(find(set, kind, name))
+			return { text, tone }
+		end
+		expect(st("argocd", "guestbook")).toEqual({ "Synced · Healthy", "success" })
+		expect(st("argocd", "guestbook-drifted")).toEqual({ "OutOfSync · Degraded · SyncError", "error" })
+		expect(st("argocd", "charted")).toEqual({ "Unknown · Missing", "warning" })
+		expect(st("flux-kustomize", "apps")).toEqual({ "Ready", "success" })
+		expect(st("flux-kustomize", "drift")).toEqual({ "Not ready (HealthCheckFailed)", "error" })
+		expect(st("flux-kustomize", "paused")).toEqual({ "Suspended", "warning" })
+		expect(st("flux-helm", "podinfo")).toEqual({ "Unknown (Progressing)", "warning" })
+	end)
+
+	-- The warning a user sees before applying by hand: will the controller
+	-- undo it?
+	it("revertRisk() names self-heal, auto-sync, Flux re-apply and suspend", function()
+		local set = world()
+		expect(Controllers.revertRisk(find(set, "argocd", "guestbook"))).toBe(
+			"Argo CD self-heal is on: changes applied outside Git are reverted"
+		)
+		expect(Controllers.revertRisk(find(set, "argocd", "guestbook-drifted"))).toBe(
+			"Argo CD auto-sync: the next sync overwrites changes not in Git"
+		)
+		expect(Controllers.revertRisk(find(set, "argocd", "charted"))).toBeNil()
+		expect(Controllers.revertRisk(find(set, "flux-kustomize", "apps"))).toBe(
+			"Flux re-applies this source every 10m: changes applied outside Git are reverted"
+		)
+		expect(Controllers.revertRisk(find(set, "flux-kustomize", "paused"))).toBe(
+			"Flux Kustomization suspended: changes stay until it is resumed"
+		)
+		-- helm-controller only corrects drift with driftDetection enabled.
+		expect(Controllers.revertRisk(find(set, "flux-helm", "podinfo"))).toBeNil()
+		local hr = table.clone(find(set, "flux-helm", "podinfo"))
+		hr.driftDetection = true
+		expect(Controllers.revertRisk(hr)).toBe(
+			"Flux re-applies this source every 10m: changes applied outside Git are reverted"
+		)
+	end)
+
+	it("forSource() picks the controllers whose checkout path is the source", function()
+		local set = world()
+		local repo = { root = "/r", remotes = { "https://github.com/contrafy/tern-kube.git" } }
+		local function localPathOf(c: Controllers.Controller): string?
+			return Controllers.localPath(c, repo)
+		end
+		local names: { string } = {}
+		for _, c in Controllers.forSource(set, localPathOf, "/r/tests/integration/manifests/gitops/workloads") do
+			table.insert(names, c.controller .. "/" .. c.name)
+		end
+		expect(names).toEqual({ "argocd/guestbook", "flux-kustomize/apps" })
+		expect(Controllers.forSource(set, localPathOf, "/r/elsewhere")).toEqual({})
 	end)
 end)
 

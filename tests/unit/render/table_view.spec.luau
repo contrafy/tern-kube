@@ -614,6 +614,104 @@ describe("table view events overlay", function()
 	end)
 end)
 
+-- `kubectl top` captures from the usage evidence (tests/fixtures/kubectl/usage/lens).
+local function topFixture(name: string): Capture.Capture
+	local argv: string? = nil
+	for _, line in fixtures.lines("kubectl/usage/lens/MANIFEST.tsv") do
+		local n, a = string.match(line, "^([^\t]+)\t([^\t]+)")
+		if n == name then
+			argv = a
+		end
+	end
+	assert(argv, "no top fixture " .. name)
+	local lines = fixtures.lines("kubectl/usage/lens/" .. name .. ".txt")
+	return Capture.build(runs.run(argv), lines, 0, { decode = json.decode })
+end
+
+local function cellText(node: any, value: string): any
+	return nodes.find(node, function(n)
+		return n.k == "text" and nodes.ownText(n) == value
+	end)
+end
+
+describe("table view kubectl top", function()
+	-- The `--sum` separator and totals are kubectl's footer, not pods: they
+	-- must not count, filter or sort with the rows.
+	it("--sum totals render as a footer line after the rows, whatever the sort", function()
+		local c = topFixture("top-sum")
+		local node, counts = render(c, vsm.sortedBy(vsm.default(), "CPU(cores)", true))
+		expect(counts).toEqual({ shown = 25, matched = 25, total = 25 })
+		expect(nodes.find(node, nodes.hasText("________"))).toBeNil()
+		local footer = nodes.find(node, nodes.role("tern-kube.totals")) :: any
+		assert(footer, "no totals footer")
+		expect(nodes.text(footer)).toBe("Total 101m CPU · 835Mi memory")
+		local children = (node :: any).c
+		expect(children[#children]).toBe(footer)
+		local filtered = render(c, vsm.toggledFilter(vsm.default(), "NAMESPACE", "kube-system"))
+		expect(#rowNames(filtered)).toBe(9)
+		expect(nodes.find(filtered, nodes.role("tern-kube.totals")) ~= nil).toBe(true)
+		expect(nodes.find(render(build("ns-apps/top_pods"), vsm.default()), nodes.role("tern-kube.totals"))).toBeNil()
+	end)
+
+	-- Same thresholds as Explore's usage view (usage/model.luau, scale node).
+	it("node percent columns are toned at 80% (warning) and 95% (error)", function()
+		local c = Capture.build(runs.run("kubectl top nodes --show-swap"), {
+			"NAME   CPU(cores)   CPU(%)   MEMORY(bytes)   MEMORY(%)   SWAP(bytes)   SWAP(%)",
+			"a      9000m        85%      7000Mi          97%         0Mi           79%",
+		}, 0, { decode = json.decode })
+		local node = render(c, vsm.default())
+		expect(table.find(nodes.tones(cellText(node, "85%")), "warning") ~= nil).toBe(true)
+		expect(table.find(nodes.tones(cellText(node, "97%")), "error") ~= nil).toBe(true)
+		local calm = nodes.tones(cellText(node, "79%"))
+		expect(table.find(calm, "warning") == nil and table.find(calm, "error") == nil).toBe(true)
+	end)
+
+	-- kubectl top has usage only; Explore's usage view adds requests, limits
+	-- and allocatable for the same scope.
+	it("top pod and top node captures offer Usage vs requests in Explore; get does not", function()
+		expect(chipAction(render(topFixture("top-sum"), vsm.default()), "Usage vs requests in Explore")).toBe(
+			"explore-usage=1"
+		)
+		local nodesView = render(topFixture("top-nodes"), vsm.default())
+		local chip = nodes.find(nodesView, nodes.key("explore-usage")) :: any
+		assert(chip, "no usage chip on top nodes")
+		expect(chip.p.tone).toBe("accent")
+		expect(chip.p.title).toBe(
+			"kubectl top shows usage only; Explore adds requests, limits and allocatable (runs kubectl)"
+		)
+		local one = Capture.build(runs.run("kubectl top pod web-1 -n apps"), {
+			"NAME    CPU(cores)   MEMORY(bytes)",
+			"web-1   1m           2Mi",
+		}, 0, { decode = json.decode })
+		expect(nodes.find(render(one, vsm.default()), nodes.key("explore-usage")) ~= nil).toBe(true)
+		local fs = Capture.build(runs.run("kubectl top pods --field-selector status.phase=Running"), {
+			"NAME    CPU(cores)   MEMORY(bytes)",
+			"web-1   1m           2Mi",
+		}, 0, { decode = json.decode })
+		local fsChip = nodes.find(render(fs, vsm.default()), nodes.key("explore-usage")) :: any
+		expect(fsChip.p.title).toContain("--field-selector is not carried")
+		expect(nodes.find(render(build("ns-apps/get_pods"), vsm.default()), nodes.key("explore-usage"))).toBeNil()
+	end)
+
+	-- Explore live on a container row opens the real pod (POD column); Usage
+	-- in Explore opens that pod's containers (a node row: its pods).
+	it("pod and node rows of top captures offer Usage in Explore next to Explore live", function()
+		local key = "/Pod/tern-test-mutate/tk-qa-shell-7999d57d76-fj874/ticker"
+		local node = render(topFixture("top-containers"), vsm.opened(vsm.default(), key))
+		local insp = nodes.find(node, nodes.role("tern-kube.inspector")) :: any
+		expect(chipAction(insp, "Explore live")).toBe("explore=" .. key)
+		expect(chipAction(insp, "Usage in Explore")).toBe("explore-route=usage|" .. key)
+		local nodeKey = "/Node//tern-kube-dev-control-plane"
+		local nodeInsp = nodes.find(
+			render(topFixture("top-nodes"), vsm.opened(vsm.default(), nodeKey)),
+			nodes.role("tern-kube.inspector")
+		)
+		expect(chipAction(nodeInsp, "Usage in Explore")).toBe("explore-route=usage|" .. nodeKey)
+		local getPods = render(build("ns-apps/get_pods"), vsm.opened(vsm.default(), "/Pod/tern-test-apps/db-0"))
+		expect(nodes.find(getPods, nodes.hasText("Usage in Explore"))).toBeNil()
+	end)
+end)
+
 -- Plan 7: rows of Helm-managed objects link their release. `-o json` rows
 -- read the release annotations (captured `helm install` objects); plain
 -- tables only know it from `--show-labels` and the instance label.
@@ -677,6 +775,88 @@ describe("table view Helm release chip", function()
 		expect(chips[1].p.title).toContain("Probably")
 		-- An instance label without managed-by=Helm is not Helm's.
 		expect(#helmChips(c, "apps/Deployment/tern-test-helm-ui/plain")).toBe(0)
+	end)
+end)
+
+-- `-o json` Secrets: the decode chip sits in the inspect view's chip row
+-- and the card above the Object tree, only with security.show_secret_values
+-- and only after a click; the tree keeps kubectl's base64.
+describe("table view Secret decode", function()
+	local SHOW = { showSecrets = true, strict = false }
+	local PLAIN = "kube-lens-test-not-a-secret"
+	local ENCODED = "a3ViZS1sZW5zLXRlc3Qtbm90LWEtc2VjcmV0"
+
+	local function secretJson(name: string): string
+		return string.format(
+			'{"apiVersion":"v1","kind":"Secret","metadata":{"name":"%s","namespace":"ns"},'
+				.. '"data":{"password":"%s","empty":""},"type":"Opaque"}',
+			name,
+			ENCODED
+		)
+	end
+
+	local function single(policy: any): Capture.Capture
+		return Capture.build(
+			runs.run("kubectl get secret s -n ns -o json"),
+			{ secretJson("s") },
+			0,
+			{ decode = json.decode, policy = policy }
+		)
+	end
+
+	local function decodeChip(view: any): any
+		return nodes.find(view, nodes.key("decode"))
+	end
+
+	local function card(view: any): any
+		return nodes.find(view, nodes.role("tern-kube.secret-decoded"))
+	end
+
+	it("masked values get no chip and no card", function()
+		local view = render(single(nil), vsm.toggledDecoded(vsm.default()))
+		expect(decodeChip(view)).toBeNil()
+		expect(card(view)).toBeNil()
+	end)
+
+	it("the chip decodes into a card above the Object tree", function()
+		local c = single(SHOW)
+		local view = render(c, vsm.default())
+		local chip = decodeChip(view)
+		expect(nodes.text(chip)).toBe("Decode values")
+		expect(card(view)).toBeNil()
+		local next = decodeAction(nodes.action(chip) :: string) :: vsm.ViewState
+		expect(next.decoded).toBe(true)
+		local decoded = render(c, next)
+		expect(nodes.text(card(decoded))).toContain(PLAIN)
+		expect(nodes.text(decodeChip(decoded))).toBe("Hide decoded")
+		local children = (nodes.find(decoded, nodes.role("tern-kube.inspect")) :: any).c
+		local cardAt, objectAt
+		for i, n in children do
+			if nodes.find(n, nodes.role("tern-kube.secret-decoded")) then
+				cardAt = i
+			elseif n.p and n.p.key == "object" then
+				objectAt = i
+			end
+		end
+		expect(cardAt < objectAt).toBe(true)
+		local tree = nodes.text(nodes.find(decoded, nodes.kind("tree")) :: any)
+		expect(tree).toContain(ENCODED)
+		for _, a in nodes.actions(decoded) do
+			expect((string.find(a, PLAIN, 1, true))).toBeNil()
+		end
+	end)
+
+	it("a list decodes the inspected row only; other kinds get no chip", function()
+		local c = Capture.build(runs.run("kubectl get secrets,configmaps -n ns -o json"), {
+			'{"apiVersion":"v1","kind":"List","items":[' .. secretJson("a") .. "," .. secretJson("b") .. ",",
+			'{"apiVersion":"v1","kind":"ConfigMap","metadata":{"name":"c","namespace":"ns"},"data":{"k":"v"}}]}',
+		}, 0, { decode = json.decode, policy = SHOW })
+		local a = vsm.toggledDecoded(vsm.inspect(vsm.default(), "/Secret/ns/a"))
+		expect(nodes.text(card((render(c, a))))).toContain(PLAIN)
+		expect(card((render(c, vsm.inspect(a, "/Secret/ns/b"))))).toBeNil()
+		expect(decodeChip((render(c, vsm.inspect(vsm.default(), "/ConfigMap/ns/c"))))).toBeNil()
+		-- The inline inspector (row opened, not inspected) has no card.
+		expect(card((render(c, vsm.opened(vsm.default(), "/Secret/ns/a"))))).toBeNil()
 	end)
 end)
 

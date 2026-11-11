@@ -4,6 +4,7 @@ local Capture = require("./lib/lens/capture")
 local Command = require("./lib/kubectl/command")
 local ConfigHost = require("./config_host")
 local HelmChip = require("./lib/render/helm_chip")
+local LensChips = require("./lib/render/lens_chips")
 local Link = require("./lib/mutation/link")
 local LogsParse = require("./lib/logs/parse")
 local LogsRender = require("./lib/logs/render")
@@ -84,7 +85,9 @@ type LogsState = {
 type LensState = CaptureState | LogsState
 
 -- Structured output is only valid as a whole; while it streams, raw is shown.
-local NEEDS_FINISH: { [string]: boolean } = { json = true, yaml = true, describe = true }
+-- The revision view and the can-i card need the whole output (and the
+-- exit status: `can-i -q` answers only with it).
+local NEEDS_FINISH: { [string]: boolean } = { json = true, yaml = true, describe = true, revision = true, cani = true }
 
 -- Parsing cost is linear in lines (about 15 us per line in the plugin VM), and
 -- Tern waits for `view` before feeding more output: past general.max_rows
@@ -163,11 +166,20 @@ local function cwdOf(run: LensRun): string?
 	return if cwd and string.sub(cwd, 1, 1) == "/" then cwd else nil
 end
 
-local EXPLORE_ROUTES: { [string]: boolean } = { manifest = true, diff = true, events = true, compare = true }
+local EXPLORE_ROUTES: { [string]: boolean } =
+	{ manifest = true, diff = true, events = true, compare = true, usage = true }
 
 local function exploreFilterAction(state: CaptureState, cx: EffectCx)
 	local inv = Argv.parse(state.run.program, state.run.args)
 	local url = Command.exploreFilterUrl(inv, cwdOf(state.run))
+	if url then
+		cx:open(url)
+	end
+end
+
+local function exploreUsageAction(state: CaptureState, cx: EffectCx)
+	local inv = Argv.parse(state.run.program, state.run.args)
+	local url = Command.exploreUsageUrl(inv, cwdOf(state.run))
 	if url then
 		cx:open(url)
 	end
@@ -184,7 +196,13 @@ local function exploreAction(state: CaptureState, key: string, cx: EffectCx, rou
 	end
 	-- window.luau's route.link claims every tern-kube:// URL; an unclaimed
 	-- one would fall through to the OS and show a system dialog.
-	cx:open(Command.exploreUrl(capture.invocation, row.ref, { route = route, cwd = cwdOf(state.run) }))
+	local cwd = cwdOf(state.run)
+	local url = if route == "usage"
+		then Command.exploreUsageUrl(capture.invocation, cwd, row.ref)
+		else Command.exploreUrl(capture.invocation, row.ref, { route = route, cwd = cwd })
+	if url then
+		cx:open(url)
+	end
 end
 
 -- Inspector quick-action chips carry a tern-kube://act/ link built by
@@ -302,7 +320,7 @@ local function logsLinks(state: LogsState): LogsRender.Links
 		if url == nil then
 			return
 		end
-		local typed = Quick.typedLine(target, ref, opts)
+		local typed = Quick.typedLine("logs", target, ref, opts)
 		table.insert(links.variants, { label = label, url = url, title = if typed then typed.line else label })
 	end
 	local containers = containersOf(state.store)
@@ -393,6 +411,28 @@ local function logsEvent(state: LogsState, act: string, value: string, cx: Effec
 	end
 end
 
+-- k9s-parity chips (history, contexts, api-resources, can-i) send a row key;
+-- the URL and the copied text are rebuilt from the capture.
+local function lensExploreAction(state: CaptureState, key: string, cx: EffectCx)
+	local capture = captureOf(state)
+	local url = if capture then LensChips.exploreUrl(capture, key, cwdOf(state.run)) else nil
+	if url then
+		cx:open(url)
+	end
+end
+
+local function lensCopyAction(state: CaptureState, value: string, cx: EffectCx)
+	local what, key = string.match(value, "^([%w%-]+)|(.+)$")
+	local capture = captureOf(state)
+	local text = if capture and what and key then LensChips.copyText(capture, what, key) else nil
+	if text == nil then
+		cx:toast("error", "Nothing to copy", "The row is no longer in this snapshot")
+		return
+	end
+	cx:copy(text)
+	cx:toast("success", "Copied", text)
+end
+
 local function captureEvent(state: CaptureState, act: string, value: string, cx: EffectCx)
 	if act == "v" then
 		state.view = Viewstate.decode(value)
@@ -409,8 +449,14 @@ local function captureEvent(state: CaptureState, act: string, value: string, cx:
 		quickAction(value, cx)
 	elseif act == "explore-filter" then
 		exploreFilterAction(state, cx)
+	elseif act == "explore-usage" then
+		exploreUsageAction(state, cx)
 	elseif act == "mutate" then
 		mutateAction(value, cx)
+	elseif act == "explore-row" then
+		lensExploreAction(state, value, cx)
+	elseif act == "lens-copy" then
+		lensCopyAction(state, value, cx)
 	elseif act == HelmChip.ACT then
 		helmAction(state, value, cx)
 	end

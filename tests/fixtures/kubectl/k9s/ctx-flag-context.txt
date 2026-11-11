@@ -1,0 +1,6 @@
+CURRENT   NAME                                              CLUSTER              AUTHINFO             NAMESPACE
+          arn:aws:eks:us-east-1:123456789012:cluster/prod   kind-tern-kube-dev   kind-tern-kube-dev   
+*         kind-tern-kube-dev                                kind-tern-kube-dev   kind-tern-kube-dev   
+          tk spaced                                         kind-tern-kube-dev   kind-tern-kube-dev   
+          tk-apps                                           kind-tern-kube-dev   kind-tern-kube-dev   tern-test-apps
+          tk-broken                                         nowhere              nobody               x

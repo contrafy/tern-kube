@@ -1,8 +1,9 @@
 #!/bin/sh
-# End-to-end tests in a real, isolated Tern window (`make e2e`). Local only:
-# needs Tern, jq, a desktop session and the disposable kind cluster
-# tern-kube-dev (scripts/cluster.sh create); skipped with a message when
-# `tern` is not installed.
+# End-to-end tests in a real, isolated, headless Tern session (`make e2e`):
+# `scripts/dev-tern.sh start` runs `tern serve` and a sandbox daemon, no
+# window ever opens. Local only: needs Tern, jq and the disposable kind
+# cluster tern-kube-dev (scripts/cluster.sh create); skipped with a message
+# when `tern` is not installed.
 #
 #   scripts/e2e.sh [--only GLOB] [--shots] [--perf] [--keep] [--remote]
 #
@@ -11,8 +12,8 @@
 # a live read-only cluster cannot produce (mutation results, 1000+ rows,
 # 16 MiB output) switch the pane to the fake kubectl serving recorded
 # fixtures and say so in the scenario. --shots writes
-# docs/screenshots/m1-*.png, --perf prints in-window timings for
-# docs/performance.md, --keep leaves the window running. --remote also runs
+# docs/screenshots/m1-*.png, --perf prints in-session timings for
+# docs/performance.md, --keep leaves the session running. --remote also runs
 # the remote-host scenarios (60-67, 69) against the disposable Linux host of
 # scripts/remote-host.sh (`up` it first, any sandbox): the e2e sandbox
 # registers it again (`attach`), its `status` must pass, and the snapshot is
@@ -22,9 +23,10 @@
 # first), after applying tests/integration/manifests/compare to each;
 # without E2E_MC they are skipped.
 #
-# The window runs in its own sandbox (TK_E2E_SANDBOX, default
-# /tmp/tk-tern-e2e) with a snapshot copy of plugin.toml and plugin/, so edits made while it
-# runs do not reload the plugin under test.
+# The session runs in its own sandbox (TK_E2E_SANDBOX, default
+# /tmp/tk-tern-e2e) with a snapshot copy of plugin.toml and plugin/, so edits
+# made while it runs do not reload the plugin under test. Its viewport is
+# 1280x800 at scale 2 (2560x1600 screenshots), as the README images.
 
 set -u
 
@@ -32,7 +34,7 @@ repo=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 tern_bin=${TERN_BIN:-tern}
 
 if ! command -v "$tern_bin" >/dev/null 2>&1; then
-	echo "e2e: SKIPPED: \`$tern_bin\` is not installed; the e2e suite drives a real Tern window."
+	echo "e2e: SKIPPED: \`$tern_bin\` is not installed; the e2e suite drives a real Tern session."
 	exit 0
 fi
 command -v jq >/dev/null 2>&1 || {
@@ -56,7 +58,7 @@ while [ $# -gt 0 ]; do
 	--keep) keep=1 ;;
 	--remote) remote=1 ;;
 	*)
-		sed -n '2,27p' "$0" | sed 's/^# \{0,1\}//'
+		sed -n '2,29p' "$0" | sed 's/^# \{0,1\}//'
 		exit 2
 		;;
 	esac
@@ -68,7 +70,7 @@ export E2E_REPO="$repo"
 # shellcheck source=../tests/e2e/lib.sh
 . "$repo/tests/e2e/lib.sh"
 
-# Safety before any window starts: the real kubectl must talk to kind only.
+# Safety before any session starts: the real kubectl must talk to kind only.
 kubeconfig="$repo/.sandbox/kubeconfig"
 real_kubectl=$(PATH=$(printf '%s' "$PATH" | tr ':' '\n' | grep -v "^$repo/tests/bin\$" | paste -sd: -) command -v kubectl || true)
 need() {
@@ -100,21 +102,20 @@ if [ "$mc" = 1 ]; then
 fi
 
 cleanup() {
-	clip_restore
 	if [ $keep = 0 ]; then
 		# Built by the Helm scenarios (tests/e2e/helm.sh) on first use.
 		[ -d "$E2E_SB/helm" ] && helm_world_down
 		dev stop >/dev/null 2>&1
 		i=0
-		while [ -n "${window_pid:-}" ] && kill -0 "$window_pid" 2>/dev/null && [ $i -lt 40 ]; do
+		while [ -n "${session_pid:-}" ] && kill -0 "$session_pid" 2>/dev/null && [ $i -lt 40 ]; do
 			sleep 0.25
 			i=$((i + 1))
 		done
-		[ -n "${window_pid:-}" ] && kill "$window_pid" 2>/dev/null
+		[ -n "${session_pid:-}" ] && kill "$session_pid" 2>/dev/null
 		sleep 0.5
 		rm -rf "$E2E_SB" 2>/dev/null || { sleep 1 && rm -rf "$E2E_SB"; }
 	else
-		echo "e2e: window kept running (TK_TERN_SANDBOX=$E2E_SB sh scripts/dev-tern.sh stop)"
+		echo "e2e: session kept running (TK_TERN_SANDBOX=$E2E_SB sh scripts/dev-tern.sh stop)"
 	fi
 }
 
@@ -139,7 +140,7 @@ if [ $remote = 1 ]; then
 		need "scripts/remote-host.sh status failed"
 	}
 	sh "$rh" install "$E2E_SB/pkg" >/dev/null || need "cannot link the snapshot on the remote host"
-	# The window reaches the host with the harness's ssh, never ~/.ssh's.
+	# The session reaches the host with the harness's ssh, never ~/.ssh's.
 	PATH="$TK_REMOTE_PATH:$PATH"
 	unset SSH_AUTH_SOCK
 fi
@@ -152,22 +153,19 @@ exec sh '$E2E_SB/edit-script' "\$@"
 EOF
 chmod +x "$E2E_SB/kube-editor"
 export TK_DEV_KUBE_EDITOR="$E2E_SB/kube-editor"
-clip_save
 trap cleanup EXIT
 trap 'exit 130' INT TERM
 
-dev start >"$E2E_SB/window.out" 2>&1 &
-window_pid=$!
-E2E_WAIT=30 wait_for "the sandbox window" ctl ready || {
-	cat "$E2E_SB/window.out" >&2
-	exit 1
+dev start >"$E2E_SB/session.out" 2>&1 &
+session_pid=$!
+dev wait-ready 30 || {
+	cat "$E2E_SB/session.out" >&2
+	need "the sandbox session did not start"
 }
 # Already a snapshot of the plugin files: link it as it is.
 dev link --live "$E2E_SB/pkg" >/dev/null 2>&1 || need "cannot link the plugin"
-E2E_WAIT=30 wait_for "the first prompt" ctl ready || exit 1
-# Only 13's narrow layout needs a given window size (it checks the column
-# tier instead when the window keeps its size).
-window_size 1280 800 || echo "e2e: the window stays $(viewport), not 1280x800 (a tiling window manager?)"
+dev wait-ready 30 || need "no first prompt in the sandbox session"
+viewport_size 1280 800 || need "the viewport stays $(viewport), not 1280x800"
 sleep 0.5
 
 # Same check inside the pane the scenarios type into.
@@ -212,7 +210,7 @@ for f in "$repo"/tests/e2e/scenarios/*.sh; do
 	else
 		failed="$failed $name"
 		echo "FAIL $name"
-		ctl shot "e2e-fail-$name" >/dev/null 2>&1 && echo "     shot: $E2E_SB/target/shots/tern/live/e2e-fail-$name.png"
+		png=$(dev shot "e2e-fail-$name" 2>/dev/null) && echo "     shot: $png"
 		ctl key escape >/dev/null 2>&1
 		ctl key ctrl+c >/dev/null 2>&1
 	fi

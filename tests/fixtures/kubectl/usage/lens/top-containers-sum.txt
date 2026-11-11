@@ -1,0 +1,7 @@
+POD                    NAME    CPU(cores)   MEMORY(bytes)   
+db-0                   db      0m           0Mi             
+node-agent-bv5fl       agent   0m           0Mi             
+web-65d7d99975-6jsgc   web     0m           0Mi             
+web-65d7d99975-mtxxk   web     0m           0Mi             
+                               ________     ________        
+                               0m           0Mi             

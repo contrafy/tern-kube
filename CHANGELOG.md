@@ -8,6 +8,35 @@ release (0.x minor versions could break them).
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-11-11
+
+### Added
+
+- **Explore `:` prompt.** `:` opens a focused prompt: `:po`, `:deploy`, `:svc`, `:cm` and every short name the cluster reports (`kubectl api-resources`, cached per context), plus `:ns NAME`, `:ctx NAME`, `:helm`, `:events`, `:top` / `:usage`, and `:deploy NS` to set the scope; Tab completes, Enter on a prefix takes the top match.
+- **New lens views:** `kubectl rollout history` (revisions with Show revision and Roll back to N through the approve block), `rollout history --revision=N`, `config get-contexts` (Explore in this context), `api-resources` (filters by scope, group and verb; Explore a kind) and `auth can-i` (a yes / no card; `--list` as a filterable table; Explore chips hidden while impersonating).
+- **Resource usage.** `%` (or **Tern Kube: Resource usage**, or the chip on `kubectl top` output) opens an Explore usage view: pods and nodes with CPU and memory as a share of requests and limits (the busiest container for limits) and of node allocatable, with tiles for totals, pods near their limits and pods without requests; `enter` on a node lists its pods. `w` samples metrics every 15 s for 2 minutes and draws a trend per row; it is visible, time-boxed and never starts on its own.
+- **Copy CLI command.** `Y` on a drift report or item (and a chip on the multi-cluster matrix) copies the `tern-kube-drift` command that reproduces it, and says how the CLI's unmanaged list will differ.
+- **Argo CD / Flux status.** Drift sources, reports and objects managed by an Argo CD Application, Flux Kustomization or HelmRelease show the controller's verdict, the revision it applied compared with your checkout, the last sync, and whether it would revert a manual change (self-heal, auto-sync, Flux interval).
+- **Decoded Secret values.** With `security.show_secret_values` on, `z` in the Explore object view (or a chip on `-o yaml` / `-o json` of a Secret) shows a display-only card with the values decoded; control and invisible characters are escaped, binary data is a short hex dump, and nothing is decoded by default or saved.
+- **More guarded verbs.** The shell guard and the approve block now cover `set image|env|resources|selector|serviceaccount|subject`, `replace` (`--force` deletes and recreates: always typed, previewed as a delete plus a replace), `taint` (NoExecute lists the pods it would evict and is always typed), `create` (including `secret generic|tls|docker-registry` and `service …`, with `--from-literal` and `--docker-password` values masked everywhere), `run` and `expose`, each with a server dry run and a before/after diff. `create token` runs without approval.
+- **Guard: target sets re-checked at confirm.** A selector, `--all` or type-only target set is read again before kubectl runs; any added, removed or recreated object refuses.
+- **Audit outcomes for quick actions.** Debug and CronJob run-now record the executed or failed outcome with the same run id as their approval (`mode: quick`).
+
+### Changed
+
+- `kubectl top`: `--sum` totals and the `--containers` rows are no longer read as pods; node percentages are toned at 80 % and 95 %.
+- Explore drift passes `-n` for manifests without a namespace, so they are compared in the namespace the report names instead of `default`.
+- Controller status is read per context and re-read on `r`; a Flux HelmRelease shows the deployed chart revision, not the last attempt.
+- `tern-kube-drift` 0.4.0 skips the same system objects Explore skips (service-account tokens, `system:` names, bootstrap objects, objects being deleted).
+- Explore relations keep the VIA column (the evidence for each link) longer than RELATION when the pane narrows.
+- Development: `scripts/dev-tern.sh start` and `make e2e` run a headless `tern serve` session (no window; an in-process daemon for the host half, the window half loaded into serve); `start --window` keeps the windowed sandbox. Screenshots come out at 1280x800 and scale 2 (2560x1600), and e2e no longer touches your clipboard.
+
+### Fixed
+
+- Tern 0.9.16: output whose only content is a note, such as `No resources found`, showed raw instead of the native view (0.9.16 falls back to raw for any lens view with a `lines` node). Tested on Tern 0.9.16.
+- Explore logs and events: the selected row is a tint with an accent edge instead of the solid accent fill, so its time, level and reason stay readable.
+- README and docs screenshots are regenerated headlessly at 1280x800 (2x) from the current release.
+
 ## [1.1.0] - 2026-11-10
 
 ### Added
@@ -279,7 +308,8 @@ First public beta.
 - Docs: SDK capability matrix, configuration, performance, architecture,
   security model, testing, releasing.
 
-[Unreleased]: https://github.com/contrafy/tern-kube/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/contrafy/tern-kube/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/contrafy/tern-kube/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/contrafy/tern-kube/compare/v1.0.1...v1.1.0
 [1.0.1]: https://github.com/contrafy/tern-kube/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/contrafy/tern-kube/compare/v0.6.0...v1.0.0

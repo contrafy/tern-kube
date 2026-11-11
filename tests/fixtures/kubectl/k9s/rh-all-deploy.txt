@@ -1,0 +1,10 @@
+deployment.apps/fresh 
+REVISION  CHANGE-CAUSE
+1         <none>
+
+deployment.apps/hist 
+REVISION  CHANGE-CAUSE
+1         initial pause 3.10
+2         downgrade to 3.9 (it's a test)
+3         downgrade to 3.9 (it's a test)
+

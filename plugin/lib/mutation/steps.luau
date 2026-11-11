@@ -11,6 +11,8 @@ local Objdiff = require("./objdiff")
 local Query = require("../helm/query")
 local Resource = require("../model/resource")
 local Rollout = require("./rollout")
+local Selection = require("./selection")
+local Taint = require("./taint")
 local T = require("./types")
 local Types = require("../model/types")
 local flagTables = require("../kubectl/flags")
@@ -28,6 +30,19 @@ M.MAX_EDIT_PATCH_BYTES = 262144
 
 -- Families whose targets are Nodes: the namespace is never pinned.
 M.NODE_FAMILIES = { cordon = true, uncordon = true, drain = true } :: { [string]: boolean }
+
+-- `kubectl set <sub>`: targets read like label, after from the server dry run.
+M.SET_FAMILIES = {
+	["set-image"] = true,
+	["set-env"] = true,
+	["set-resources"] = true,
+	["set-selector"] = true,
+	["set-serviceaccount"] = true,
+	["set-subject"] = true,
+} :: { [string]: boolean }
+
+-- Families that create objects: no before state, the dry run is the after.
+M.CREATE_FAMILIES = { create = true, run = true } :: { [string]: boolean }
 
 -- cordon/uncordon/drain take node names; `node/NAME` is accepted.
 function M.nodeName(positional: string): string
@@ -130,7 +145,7 @@ end
 -- default when pinning cannot conflict with namespaces declared in -f/-k
 -- inputs (kubectl rejects an explicit -n that differs from the manifest's).
 function M.pinnedNamespace(plan: Plan): string?
-	if M.NODE_FAMILIES[plan.family] or plan.family == "edit" then
+	if M.NODE_FAMILIES[plan.family] or plan.family == "edit" or plan.family == "taint" then
 		return nil
 	end
 	if plan.explicitNamespace then
@@ -186,17 +201,45 @@ local function step(plan: Plan, id: string, kind: T.StepKind, label: string, arg
 	return { id = id, kind = kind, label = label, argv = argv, env = env, timeoutMs = 0 }
 end
 
-local function resourcePositionals(plan: Plan): { string }?
-	if plan.family ~= "label" and plan.family ~= "annotate" then
-		return nil
+local function setTargets(positionals: { string }, sub: string?): { string }
+	if sub == "serviceaccount" then
+		return table.move(positionals, 1, #positionals - 1, 1, {})
 	end
 	local out: { string } = {}
-	for _, p in plan.invocation.positionals do
+	for _, p in positionals do
 		if not Argv.isLabelEdit(p) then
 			table.insert(out, p)
 		end
 	end
 	return out
+end
+
+local function resourcePositionals(plan: Plan): { string }?
+	local f = plan.family
+	local inv = plan.invocation
+	if f == "label" or f == "annotate" then
+		return setTargets(inv.positionals, nil)
+	elseif M.SET_FAMILIES[f] then
+		return setTargets(inv.positionals, plan.subverb)
+	elseif f == "taint" then
+		local out: { string } = {}
+		for _, p in inv.positionals do
+			if not Argv.isTaintSpec(p) then
+				table.insert(out, p)
+			end
+		end
+		return out
+	end
+	return nil
+end
+
+-- Flags `get` shares with the command: expose's --selector and -l set the
+-- Service's selector and labels, they select nothing.
+local function getFlags(plan: Plan): { [string]: boolean }
+	if plan.family == "expose" then
+		return { filename = true, kustomize = true, recursive = true }
+	end
+	return GET_FLAGS
 end
 
 local function targets(plan: Plan, label: string): Step
@@ -205,7 +248,7 @@ local function targets(plan: Plan, label: string): Step
 		"targets",
 		"targets",
 		label,
-		rebuild(plan, { "get" }, { only = GET_FLAGS, positionals = resourcePositionals(plan) }, { "-o", "json" })
+		rebuild(plan, { "get" }, { only = getFlags(plan), positionals = resourcePositionals(plan) }, { "-o", "json" })
 	)
 end
 
@@ -213,14 +256,13 @@ local function dryRun(plan: Plan, verb: { string }, label: string): Step
 	return step(plan, "dry-run", "dry-run", label, rebuild(plan, verb, { drop = PRINTER }, { "--dry-run=server" }))
 end
 
-local function after(plan: Plan, verb: { string }, label: string): Step
-	return step(
-		plan,
-		"after",
-		"after",
-		label,
-		rebuild(plan, verb, { drop = PRINTER }, { "--dry-run=server", "-o", "json" })
-	)
+-- `tail`: words after the dry-run flags (`--` and the container command).
+local function after(plan: Plan, verb: { string }, label: string, drop: { [string]: boolean }?, tail: { string }?): Step
+	local extra = { "--dry-run=server", "-o", "json" }
+	for _, w in (tail or {}) :: { string } do
+		table.insert(extra, w)
+	end
+	return step(plan, "after", "after", label, rebuild(plan, verb, { drop = drop or PRINTER }, extra))
 end
 
 local function nodeTargets(plan: Plan): Step
@@ -361,6 +403,124 @@ local function helmSteps(plan: Plan): { Step }
 	return out
 end
 
+-- kubectl refuses a dry run with the attach flags (and --rm without them):
+-- `run` is previewed without attaching.
+local RUN_DROP = {
+	["dry-run"] = true,
+	output = true,
+	template = true,
+	stdin = true,
+	tty = true,
+	attach = true,
+	rm = true,
+	["leave-stdin-open"] = true,
+	quiet = true,
+}
+-- `replace` refuses these without --force.
+local PROBE_DROP = {
+	["dry-run"] = true,
+	output = true,
+	template = true,
+	force = true,
+	wait = true,
+	timeout = true,
+	["grace-period"] = true,
+	cascade = true,
+}
+local DELETE_FLAGS = { filename = true, kustomize = true, recursive = true, cascade = true, ["grace-period"] = true }
+
+-- `--` and the container command (run, create deployment|job|cronjob).
+local function dashTail(plan: Plan): { string }?
+	local rest = plan.invocation.afterDash
+	if #rest == 0 then
+		return nil
+	end
+	local out = { "--" }
+	table.move(rest, 1, #rest, 2, out)
+	return out
+end
+
+local function commandWords(plan: Plan, verb: string): { string }
+	local out = { verb }
+	for w in string.gmatch(plan.subverb or "", "%S+") do
+		table.insert(out, w)
+	end
+	return out
+end
+
+-- replace --force: the file's objects as JSON, offline (`--local`, kubectl's
+-- own decoder): kubectl cannot dry-run a forced replace.
+local function fileObjects(plan: Plan): Step
+	local argv: { string } = { plan.program, "patch", "--local", "--type=merge", "-p", "{}" }
+	for _, f in plan.filenames do
+		table.insert(argv, "-f")
+		table.insert(argv, f)
+	end
+	if plan.kustomize then
+		table.insert(argv, "-k")
+		table.insert(argv, plan.kustomize :: string)
+	end
+	if plan.recursive then
+		table.insert(argv, "-R")
+	end
+	table.insert(argv, "-o")
+	table.insert(argv, "json")
+	local s = step(plan, "convert", "convert", "Read the file's objects", argv)
+	s.env = {}
+	return s
+end
+
+local function addsEffect(plan: Plan, effect: string): boolean
+	for _, t in plan.taints do
+		if not t.remove and t.effect == effect then
+			return true
+		end
+	end
+	return false
+end
+
+-- set/replace/taint/create/run/expose (the guard's v1.2 verbs).
+local function newVerbSteps(plan: Plan): { Step }
+	local f = plan.family
+	if M.SET_FAMILIES[f] then
+		return { targets(plan, "Read the objects"), after(plan, commandWords(plan, "set"), "Server-side dry run") }
+	elseif f == "replace" and plan.force then
+		local probe = after(plan, { "replace" }, "Replace without --force (server dry run)", PROBE_DROP)
+		probe.id = "probe"
+		probe.kind = "probe"
+		probe.soft = true
+		return {
+			targets(plan, "Read the live objects"),
+			fileObjects(plan),
+			step(
+				plan,
+				"dry-run",
+				"dry-run",
+				"Delete server dry run",
+				rebuild(plan, { "delete" }, { only = DELETE_FLAGS, drop = PRINTER }, { "--dry-run=server" })
+			),
+			probe,
+		}
+	elseif f == "replace" then
+		-- The file as written: an object without resourceVersion overwrites
+		-- concurrent changes (risk replace-no-rv).
+		local file = fileObjects(plan)
+		file.soft = true
+		return { targets(plan, "Read the live objects"), file, after(plan, { "replace" }, "Server-side dry run") }
+	elseif f == "taint" then
+		local out = { targets(plan, "Read the nodes"), after(plan, { "taint" }, "Server-side dry run") }
+		if addsEffect(plan, "NoSchedule") then
+			table.insert(out, nodesStep(plan))
+		end
+		return out
+	elseif f == "run" then
+		return { after(plan, { "run" }, "Server-side dry run (without attaching)", RUN_DROP, dashTail(plan)) }
+	elseif f == "expose" then
+		return { targets(plan, "Read the object to expose"), after(plan, { "expose" }, "Server-side dry run") }
+	end
+	return { after(plan, commandWords(plan, "create"), "Server-side dry run", nil, dashTail(plan)) }
+end
+
 function M.forPlan(plan: Plan, timeoutMs: number?): { Step }
 	local out: { Step }
 	local family = plan.family
@@ -455,6 +615,8 @@ function M.forPlan(plan: Plan, timeoutMs: number?): { Step }
 			)
 		end
 		table.insert(out, nodesStep(plan))
+	elseif family ~= "edit" then
+		out = newVerbSteps(plan)
 	else
 		local edit = plan.edit :: T.EditInput
 		out = {
@@ -639,6 +801,77 @@ local function helmDiffSteps(
 	return { s }, nil
 end
 
+function M.podsStepId(node: string): string
+	return "pods:" .. node
+end
+
+-- Nodes whose server dry run adds a NoExecute taint or changes its value,
+-- in targets order; `before`/`after` by node name.
+function M.noExecuteNodes(
+	results: { [string]: StepResult },
+	decode: (string) -> any
+): ({ string }, { [string]: any }, { [string]: any })
+	local names: { string } = {}
+	local before: { [string]: any } = {}
+	local afterBy: { [string]: any } = {}
+	local t, a = results.targets, results.after
+	if t == nil or a == nil or not t.ok or not a.ok then
+		return names, before, afterBy
+	end
+	for _, obj in (Objdiff.decodeStream(a.stdout, decode) or {}) :: { any } do
+		local name = metaOf(obj).name
+		if type(name) == "string" then
+			afterBy[name] = obj
+		end
+	end
+	for _, obj in (Objdiff.decodeStream(t.stdout, decode) or {}) :: { any } do
+		local name = metaOf(obj).name
+		if type(name) == "string" then
+			before[name] = obj
+			if afterBy[name] and #Taint.newNoExecute(obj, afterBy[name]) > 0 then
+				table.insert(names, name)
+			end
+		end
+	end
+	return names, before, afterBy
+end
+
+-- taint: the pods on each node a NoExecute taint lands on (soft: an
+-- unreadable list is an unknown risk states). At most MAX_OBJECTS nodes;
+-- beyond that the evictions are reported as not computed.
+function M.taintPodSteps(
+	plan: Plan,
+	results: { [string]: StepResult },
+	budget: number,
+	decode: (string) -> any
+): { Step }?
+	local names = M.noExecuteNodes(results, decode)
+	if #names == 0 or #names > M.MAX_OBJECTS then
+		return nil
+	end
+	local out: { Step } = {}
+	for _, node in names do
+		local s = factStep(
+			plan,
+			"pods",
+			"Read the pods on " .. node,
+			prefixed(plan, nil, {
+				"get",
+				"pods",
+				"--all-namespaces",
+				"--field-selector",
+				"spec.nodeName=" .. node,
+				"-o",
+				"json",
+			})
+		)
+		s.id = M.podsStepId(node)
+		s.timeoutMs = budget
+		table.insert(out, s)
+	end
+	return out
+end
+
 -- Stage 2, from the stage-1 results keyed by step id: nil, nil when the
 -- family has none; an error string fails the preview with that text.
 function M.followUp(
@@ -652,6 +885,8 @@ function M.followUp(
 		return editSteps(plan, results, budget)
 	elseif plan.family == "helm-rollback" then
 		return helmDiffSteps(plan, results, budget, decode)
+	elseif plan.family == "taint" then
+		return M.taintPodSteps(plan, results, budget, decode), nil
 	elseif plan.family ~= "undo" then
 		return nil, nil
 	end
@@ -686,21 +921,26 @@ end
 -- Re-read at confirm: what decided the preview must not have moved
 -- (`rollout undo` without --to-revision is relative to the newest revision;
 -- a helm upgrade or another rollback since the preview changes what the
--- rollback replaces).
+-- rollback replaces; a selector or --all matches again when kubectl runs).
 function M.verifySteps(plan: Plan): { Step }
+	local out: { Step } = {}
 	local kind: T.StepKind? = if plan.family == "undo"
 		then "history"
 		elseif plan.family == "helm-rollback" then "helm-history"
 		else nil
-	if kind == nil then
-		return {}
-	end
-	for _, s in plan.steps do
-		if s.kind == kind then
-			return { s }
+	if kind then
+		for _, s in plan.steps do
+			if s.kind == kind then
+				table.insert(out, s)
+				break
+			end
 		end
 	end
-	return {}
+	local sel = Selection.step(plan)
+	if sel then
+		table.insert(out, sel)
+	end
+	return out
 end
 
 -- Re-read after a run: the targets and the diff again; for a helm rollback

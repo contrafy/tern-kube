@@ -7,8 +7,9 @@
 -- guarded verb.
 --
 -- Grants: the window mints a random token for a mutating quick action
--- (debug-pod, debug-node, cronjob-run), stores `{url, expires}` under it in
--- its own tern.kv and hands it to the approve block as args[2]. The block may
+-- (debug-pod, debug-node, cronjob-run), stores `{url, expires, run}` under it
+-- in its own tern.kv and hands it and the run id to the approve block as
+-- args[2] and args[3]. The block may
 -- run on another host (no shared kv): after confirmation it only opens the
 -- pinned action link with `confirm=<token>`, and the window consumes the
 -- token (one use, expiry, the minted link extended only by resolved fields)
@@ -74,7 +75,8 @@ export type Programs = { kubectl: string, helm: string?, rollback: HelmTypes.Rol
 
 export type Prompt = { text: string, hint: string, prefill: string }
 
-export type Grant = { url: string, expires: number }
+-- `run`: the quick action's run id (audit correlation, not a capability).
+export type Grant = { url: string, expires: number, run: string? }
 export type Grants = { [string]: Grant }
 
 local M = {}
@@ -162,6 +164,8 @@ local EXTRA: { [string]: { [string]: boolean } } = {
 	patch = { patch = true, patchtype = true },
 	drain = { drain = true },
 	rollback = { release = true, revision = true, wait = true, cleanup = true, force = true },
+	-- `rollout undo --to-revision=N` (lens history chips); absent: the previous one.
+	undo = { revision = true },
 }
 local OP_PARAMS = {
 	"replicas",
@@ -822,6 +826,9 @@ function M.argv(r: Request, programs: Programs): { string }?
 		add("rollout", "restart", t)
 	elseif op == "undo" or op == "pause" or op == "resume" then
 		add("rollout", op, t)
+		if op == "undo" and r.revision then
+			add(string.format("--to-revision=%d", r.revision :: number))
+		end
 	elseif op == "scale" then
 		add("scale", t, string.format("--replicas=%d", r.replicas :: number))
 	elseif op == "label" or op == "annotate" then
@@ -1235,6 +1242,24 @@ function M.forRef(op: Op, ref: Types.ResourceRef, origin: Origin): (string?, str
 	})
 end
 
+-- `rollout undo --to-revision=revision` of one workload (lens history
+-- chips); nil (with the reason) when the kind has no rollout history.
+function M.forRevision(ref: Types.ResourceRef, revision: number, origin: Origin): (string?, string?)
+	return M.encode({
+		op = "undo",
+		kind = Command.resourceType(ref),
+		name = ref.name,
+		namespace = if ref.namespace ~= "" then ref.namespace else nil,
+		recursive = false,
+		overwrite = false,
+		context = origin.context,
+		source = if origin.context then origin.source else nil,
+		kubeconfig = origin.kubeconfig,
+		revision = revision,
+		origin = origin.origin,
+	})
+end
+
 export type RollbackToggles = { wait: boolean?, cleanup: boolean?, force: boolean? }
 
 -- A rollback of release `key` to `revision` (Explore ctrl+r). Unset option
@@ -1346,7 +1371,7 @@ local function live(grants: any, now: number): Grants
 			and type(g.expires) == "number"
 			and g.expires >= now
 		then
-			out[token] = { url = g.url, expires = g.expires }
+			out[token] = { url = g.url, expires = g.expires, run = if isToken(g.run) then g.run else nil }
 		end
 	end
 	return out
@@ -1367,16 +1392,27 @@ end
 
 -- Stored grants plus one for `base`, the unconfirmed quick-action link the
 -- window hands the approve block; expired and malformed entries are dropped.
-function M.mintGrant(grants: any, token: string, base: string, now: number, ttl: number?): (Grants?, string?)
+-- `run` (32 hex) correlates the quick action's audit records.
+function M.mintGrant(
+	grants: any,
+	token: string,
+	base: string,
+	now: number,
+	ttl: number?,
+	run: string?
+): (Grants?, string?)
 	if not isToken(token) then
 		return nil, "grant token must be 32 lowercase hex characters"
+	end
+	if run ~= nil and not isToken(run) then
+		return nil, "run id must be 32 lowercase hex characters"
 	end
 	local req = Quick.decode(base)
 	if req == nil or req.opts.confirm ~= nil then
 		return nil, "a grant needs a quick-action link without a confirmation"
 	end
 	local out = live(grants, now)
-	out[token] = { url = base, expires = now + (ttl or M.GRANT_TTL) }
+	out[token] = { url = base, expires = now + (ttl or M.GRANT_TTL), run = run }
 	return out, nil
 end
 
@@ -1402,22 +1438,23 @@ local function extends(base: string, confirmed: string): boolean
 end
 
 -- One use: the token is removed whether or not it matches, so a guessed or
--- replayed token never succeeds twice. Returns the remaining grants.
-function M.consumeGrant(grants: any, token: string?, confirmed: Quick.Request, now: number): (boolean, Grants, string?)
+-- replayed token never succeeds twice. Returns the consumed grant (nil when
+-- refused) and the remaining grants.
+function M.consumeGrant(grants: any, token: string?, confirmed: Quick.Request, now: number): (Grant?, Grants, string?)
 	local rest = live(grants, now)
 	if not isToken(token) then
-		return false, rest, "the confirmation token is malformed"
+		return nil, rest, "the confirmation token is malformed"
 	end
 	local g = rest[token :: string]
 	rest[token :: string] = nil
 	if g == nil then
-		return false, rest, "the confirmation expired or was already used; confirm again"
+		return nil, rest, "the confirmation expired or was already used; confirm again"
 	end
 	local url = M.quickBase(confirmed)
 	if url == nil or not extends(g.url, url) then
-		return false, rest, "the confirmation was given for a different action"
+		return nil, rest, "the confirmation was given for a different action"
 	end
-	return true, rest, nil
+	return g, rest, nil
 end
 
 return M

@@ -23,6 +23,17 @@ export type Family =
 	| "drain"
 	| "edit"
 	| "helm-rollback"
+	| "set-image"
+	| "set-env"
+	| "set-resources"
+	| "set-selector"
+	| "set-serviceaccount"
+	| "set-subject"
+	| "replace"
+	| "taint"
+	| "create"
+	| "run"
+	| "expose"
 
 -- Same vocabulary as Explore's target provenance.
 export type ContextSource = "flag" | "chosen" | "inferred"
@@ -76,6 +87,9 @@ export type EditInput = { file: string, original: string }
 -- label/annotate positional edits: `key=value` sets, `key-` removes.
 export type LabelEdit = { key: string, value: string?, remove: boolean }
 
+-- A `kubectl taint` spec: `key[=value]:Effect` adds, `key[:Effect]-` removes.
+export type TaintSpec = { key: string, value: string?, effect: string?, remove: boolean }
+
 export type DrainOpts = {
 	ignoreDaemonsets: boolean,
 	deleteEmptyDir: boolean,
@@ -99,6 +113,10 @@ export type DrainOpts = {
 -- helm-history  `helm history --max N -o json` (latest revision and status)
 -- nodes     `get nodes -o json` (cordon/drain: is another node schedulable?)
 -- pdbs      `get poddisruptionbudgets -o json` (scale to 0: does a budget protect the pods?)
+-- selection `get -o jsonpath` of a target set at confirm (selection.luau)
+-- convert   also: replace --force, the file's objects as JSON (offline)
+-- probe     replace --force: the same replace without --force (server dry run)
+-- pods      taint: `get pods -A --field-selector spec.nodeName=N` (evictions)
 export type StepKind =
 	"dry-run"
 	| "diff"
@@ -113,6 +131,9 @@ export type StepKind =
 	| "helm-history"
 	| "nodes"
 	| "pdbs"
+	| "selection"
+	| "probe"
+	| "pods"
 
 export type Step = {
 	id: string,
@@ -195,6 +216,12 @@ export type Plan = {
 	-- rollout undo --to-revision (nil or 0: previous).
 	toRevision: number?,
 	drain: DrainOpts?,
+	-- replace --force (delete, then create).
+	force: boolean,
+	-- taint specs; {} for other families.
+	taints: { TaintSpec },
+	-- set/create subcommand as resolved (`image`, `secret generic`).
+	subverb: string?,
 	-- Guard edit approvals only.
 	edit: EditInput?,
 	helm: HelmRollback?,

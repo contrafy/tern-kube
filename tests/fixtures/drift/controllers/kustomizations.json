@@ -8,12 +8,12 @@
                 "annotations": {
                     "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"kustomize.toolkit.fluxcd.io/v1\",\"kind\":\"Kustomization\",\"metadata\":{\"annotations\":{},\"name\":\"apps\",\"namespace\":\"tern-test-gitops\"},\"spec\":{\"interval\":\"10m\",\"path\":\"./tests/integration/manifests/gitops/workloads\",\"prune\":true,\"sourceRef\":{\"kind\":\"GitRepository\",\"name\":\"tern-kube\"},\"targetNamespace\":\"tern-test-gitops\"}}\n"
                 },
-                "creationTimestamp": "2026-10-08T17:13:43Z",
+                "creationTimestamp": "2026-11-11T16:24:55Z",
                 "generation": 1,
                 "name": "apps",
                 "namespace": "tern-test-gitops",
-                "resourceVersion": "17058",
-                "uid": "0e70d7f5-d305-4fb5-8eda-3f5098a329af"
+                "resourceVersion": "1039603",
+                "uid": "fe75a551-48d6-4bf1-8928-ce9946f5bf72"
             },
             "spec": {
                 "force": false,
@@ -57,12 +57,12 @@
                 "annotations": {
                     "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"kustomize.toolkit.fluxcd.io/v1\",\"kind\":\"Kustomization\",\"metadata\":{\"annotations\":{},\"name\":\"drift\",\"namespace\":\"tern-test-gitops\"},\"spec\":{\"interval\":\"10m\",\"path\":\"./tests/integration/manifests/drift/baseline\",\"prune\":false,\"sourceRef\":{\"kind\":\"GitRepository\",\"name\":\"tern-kube\",\"namespace\":\"tern-test-gitops\"}}}\n"
                 },
-                "creationTimestamp": "2026-10-08T17:13:43Z",
+                "creationTimestamp": "2026-11-11T16:24:55Z",
                 "generation": 1,
                 "name": "drift",
                 "namespace": "tern-test-gitops",
-                "resourceVersion": "17059",
-                "uid": "bfa89b00-0da9-48a0-8454-1a20c8b47373"
+                "resourceVersion": "1039604",
+                "uid": "e3c4c60a-c212-4a2c-a203-c0c6a0c475f1"
             },
             "spec": {
                 "force": false,
@@ -96,6 +96,47 @@
                 ],
                 "lastAppliedRevision": "master@sha1:0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c",
                 "lastAttemptedRevision": "master@sha1:4f2a9c1e8b7d6a5f4e3d2c1b0a9f8e7d6c5b4a39",
+                "observedGeneration": 1
+            }
+        },
+        {
+            "apiVersion": "kustomize.toolkit.fluxcd.io/v1",
+            "kind": "Kustomization",
+            "metadata": {
+                "annotations": {
+                    "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"kustomize.toolkit.fluxcd.io/v1\",\"kind\":\"Kustomization\",\"metadata\":{\"annotations\":{},\"name\":\"paused\",\"namespace\":\"tern-test-gitops\"},\"spec\":{\"interval\":\"10m\",\"path\":\"./tests/integration/manifests/gitops/paused\",\"prune\":false,\"sourceRef\":{\"kind\":\"GitRepository\",\"name\":\"tern-kube\"},\"suspend\":true}}\n"
+                },
+                "creationTimestamp": "2026-11-11T16:24:55Z",
+                "generation": 1,
+                "name": "paused",
+                "namespace": "tern-test-gitops",
+                "resourceVersion": "1039605",
+                "uid": "e008f565-b929-4f92-818a-1e6e6ca9d734"
+            },
+            "spec": {
+                "force": false,
+                "interval": "10m",
+                "path": "./tests/integration/manifests/gitops/paused",
+                "prune": false,
+                "sourceRef": {
+                    "kind": "GitRepository",
+                    "name": "tern-kube"
+                },
+                "suspend": true
+            },
+            "status": {
+                "conditions": [
+                    {
+                        "lastTransitionTime": "2026-10-07T00:00:00Z",
+                        "message": "Applied revision: master@sha1:0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c",
+                        "observedGeneration": 1,
+                        "reason": "ReconciliationSucceeded",
+                        "status": "True",
+                        "type": "Ready"
+                    }
+                ],
+                "lastAppliedRevision": "master@sha1:0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c",
+                "lastAttemptedRevision": "master@sha1:0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c",
                 "observedGeneration": 1
             }
         }

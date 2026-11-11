@@ -111,12 +111,13 @@ describe("explore gitops: manifest index lifecycle", function()
 	-- --no-optional-locks: a plain `git status` rewrites .git/index, and Tern
 	-- reloads a linked plugin on any write under its directory, so every
 	-- reload-restored route would trigger the next reload.
-	it("a finished scan reads the remotes, then git status of the manifest files", function()
+	it("a finished scan reads the remotes, then git status of the manifest files and HEAD", function()
 		local w, g = setup()
 		expect(Gitops.ready(g)).toBe(true)
 		expect(G.lines(w)).toEqual({
 			"git -C /repo remote -v",
 			"git -C /repo --no-optional-locks status --porcelain=v1 -z -- *.yaml *.yml *Kustomization",
+			"git -C /repo rev-parse --verify -q HEAD",
 		})
 		expect(g.repo.git).toBe(true)
 		expect(g.repo.remotes).toEqual({ G.REMOTE })
@@ -596,23 +597,36 @@ describe("explore gitops: drift", function()
 				"dir:/repo/drift/pending 3 2",
 			})
 			expect(G.lines(w)[1]).toBe("kubectl --context kind-tern-kube-dev api-resources -o name")
-			expect(g.ctl.status).toBe("ok")
+			expect((Gitops.ctl(g, ctx) :: Gitops.Ctl).status).toBe("ok")
 			local items = Gitops.items(g, ctx, { kind = "drift" })
 			local _, nav = G.press(w, g, ctx, { kind = "drift" }, items[2], "enter")
 			expect((nav :: any).push).toEqual({ kind = "drift", source = "dir:/repo/drift/baseline" })
 		end
 	)
 
+	-- Then the -R proof for a copied CLI command (local git, read-only) and
+	-- the controllers for the report's card, pinned the same way.
 	it("a directory source diffs exactly its files and lists its kinds in its namespaces, pinned", function()
 		local w = report()
 		expect(G.lines(w)).toEqual({
+			"git -C /repo ls-files -c -o -z -- drift",
 			"kubectl --context kind-tern-kube-dev get configmap,deployment.apps,service,serviceaccount,widget.lens.example.com -n "
 				.. NS
 				.. " -o json",
 			"kubectl --context kind-tern-kube-dev diff -f /repo/drift/baseline/app.yaml -f /repo/drift/baseline/service.yaml -f /repo/drift/baseline/widgets.yaml -f /repo/drift/namespace.yaml -f /repo/drift/pending/extra.yaml",
+			"kubectl --context kind-tern-kube-dev api-resources -o name",
+			"kubectl --context kind-tern-kube-dev get applications.argoproj.io -A -o json",
+			"kubectl --context kind-tern-kube-dev get kustomizations.kustomize.toolkit.fluxcd.io -A -o json",
+			"kubectl --context kind-tern-kube-dev get helmreleases.helm.toolkit.fluxcd.io -A -o json",
+			"kubectl --context kind-tern-kube-dev get gitrepositories.source.toolkit.fluxcd.io -A -o json",
 		})
-		local diffRun = w.effects[#w.effects]
-		expect(diffRun.env).toEqual({ KUBECTL_EXTERNAL_DIFF = "" })
+		local diffRun: Effect? = nil
+		for _, e in w.effects do
+			if e.t == "run" and table.find(e.argv :: { string }, "diff") then
+				diffRun = e
+			end
+		end
+		expect((diffRun :: Effect).env).toEqual({ KUBECTL_EXTERNAL_DIFF = "" })
 	end)
 
 	it("buckets: changed, missing in cluster, unmanaged; defaults and owned objects ignored", function()
@@ -1266,7 +1280,7 @@ describe("explore gitops: git flow", function()
 		local effects: { Effect } = {}
 		expect(Gitops.startGit(g, ctx, effects)).toBe(false)
 		expect(effects[1].text).toBe("Write an export first")
-		expect(#w.runs).toBe(2)
+		expect(#w.runs).toBe(3)
 	end)
 
 	it("checks status, HEAD, remotes and gh, then defaults to branch + add + commit only", function()

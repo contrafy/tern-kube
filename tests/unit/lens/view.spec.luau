@@ -111,6 +111,20 @@ describe("lens view", function()
 		expect(text).toContain("sorted by NAME")
 	end)
 
+	-- `top --sum` prints a separator and a totals row: the header counts pods.
+	it("top --sum: the header counts pods only and the totals read as a footer", function()
+		local c = fromLines("kubectl top pods --sum", {
+			"NAME    CPU(cores)   MEMORY(bytes)   ",
+			"a       1m           2Mi             ",
+			"b       3m           4Mi             ",
+			"        ________     ________        ",
+			"        4m           6Mi             ",
+		}, 0)
+		local node = View.render(c, vsm.default()) :: any
+		expect(nodes.text(header(node))).toContain("2 rows")
+		expect(nodes.text(node)).toContain("Total 4m CPU · 6Mi memory")
+	end)
+
 	it("error-only output shows the kubectl error and exit status natively", function()
 		local node = View.render(build("errors/get_foos"), vsm.default()) :: any
 		expect(node ~= nil).toBe(true)
@@ -214,6 +228,12 @@ describe("lens view", function()
 		expect(nodes.text(node)).toContain("No resources found")
 		expect(nodes.find(node, nodes.role("tern-kube.exit"))).toBeNil()
 		expect(nodes.find(node, nodes.role("tern-kube.diagnostics"))).toBeNil()
+	end)
+
+	it("info notes avoid the lines node, which makes Tern 0.9.16 show the raw output instead", function()
+		local node = View.render(build("ns-empty/get_pods"), vsm.default()) :: any
+		expect(nodes.find(node, nodes.kind("lines"))).toBeNil()
+		expect(nodes.text(node)).toContain("No resources found")
 	end)
 
 	it("partial captures say how many lines were not understood", function()

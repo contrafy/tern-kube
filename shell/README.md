@@ -5,11 +5,21 @@ block that previews them (server dry-run, `kubectl diff` or before/after
 object diffs, risk-tier confirmation). Only after you approve does the guard
 run the exact command you typed. Guarded: `apply`, `delete`, `scale`,
 `patch`, `label`, `annotate`, `cordon`, `uncordon`, `drain`,
-`rollout restart|undo|pause|resume`, and `edit` (approved after you save, see
-below). Everything else runs immediately, unchanged (one `sh` start plus an
-argv scan, a few milliseconds), and so do commands that cannot change the
-cluster: `--dry-run=client|server`, `patch|label|annotate --local`,
-`label|annotate --list`.
+`rollout restart|undo|pause|resume`, `set image|env|resources|selector|
+serviceaccount|subject`, `replace`, `taint`, `run`, `expose`, `create`
+(`create -f/-k` and every subcommand, e.g. `create configmap`, `create job`,
+`create secret generic|tls|docker-registry`, `create service nodeport`; not
+`create token`), and `edit` (approved after you save, see below). Everything
+else runs immediately, unchanged (one `sh` start plus an argv scan, a few
+milliseconds), and so do commands that cannot change the cluster:
+`--dry-run=client|server`, `patch|label|annotate|set ... --local`,
+`label|annotate|set env --list`.
+
+Mutating commands the guard does not intercept (they run immediately):
+`create token` (prints a credential; it has no dry run and nothing is
+persisted), `autoscale`, `certificate approve|deny`, `auth reconcile`,
+`apply set-last-applied|edit-last-applied`, a typed `kubectl debug` (the
+Explore debug quick action is approved), and `cp`, `exec`, `attach`.
 
 The guard is a POSIX sh core, `shell/tern-kube-guard`, plus one small
 activation file per shell that defines a `kubectl` function calling it. It
@@ -163,8 +173,17 @@ record".
   when a mutating verb appears in the command is refused; put command flags
   after the verb.
 - Inputs that cannot be fingerprinted are refused: stdin (`-f -`,
-  `--patch-file -`, `/dev/stdin`), URLs, paths containing a newline, `-f`
-  values containing `"`. Save the manifests or the patch to a file first.
+  `--patch-file -`, `--from-file -`, `--from-env-file -`, `--cert -`,
+  `--key -`, `set env -e -` or a `-` argument, `/dev/stdin`), URLs, paths
+  containing a newline, `-f`, `--from-file` and `--from-env-file` values
+  containing `"`. Save the data to a file first. `kubectl run -f/-k` (the
+  `--rm` delete inputs) is refused.
+- Files a `create configmap|secret` reads (`--from-file`, `--from-env-file`,
+  `--cert`, `--key`) are fingerprinted like `-f` files; a `--from-file`
+  directory covers the regular files directly inside it.
+- The waiting line never shows `--from-literal`, `--docker-password` or
+  other flag values; `set env KEY=VALUE` arguments whose key looks like a
+  credential (password, secret, token, key, ...) show as `KEY=<redacted>`.
 - Files a kustomization pulls from outside its directory are not covered by
   the fingerprint.
 - The fingerprint is checked just before kubectl starts (for `edit`: just

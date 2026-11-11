@@ -1,0 +1,52 @@
+apiVersion: apps/v1
+kind: ReplicaSet
+metadata:
+  annotations:
+    deployment.kubernetes.io/desired-replicas: "1"
+    deployment.kubernetes.io/max-replicas: "2"
+    deployment.kubernetes.io/revision: "2"
+    kubernetes.io/change-cause: downgrade to 3.9 (it's a test)
+  creationTimestamp: "2026-11-11T16:24:18Z"
+  generation: 2
+  labels:
+    app: hist
+    pod-template-hash: 78b5887f68
+  name: hist-78b5887f68
+  namespace: tern-test-k9s
+  ownerReferences:
+  - apiVersion: apps/v1
+    blockOwnerDeletion: true
+    controller: true
+    kind: Deployment
+    name: hist
+    uid: c34233a9-daea-43c7-80a6-ded3fbbf6e14
+  resourceVersion: "1039259"
+  uid: 02b733e7-fdc4-426d-8ca9-c1779e892a53
+spec:
+  replicas: 0
+  selector:
+    matchLabels:
+      app: hist
+      pod-template-hash: 78b5887f68
+  template:
+    metadata:
+      labels:
+        app: hist
+        pod-template-hash: 78b5887f68
+    spec:
+      containers:
+      - image: registry.k8s.io/pause:3.9
+        imagePullPolicy: IfNotPresent
+        name: pause
+        resources: {}
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext: {}
+      terminationGracePeriodSeconds: 1
+status:
+  observedGeneration: 2
+  replicas: 0
+  terminatingReplicas: 0

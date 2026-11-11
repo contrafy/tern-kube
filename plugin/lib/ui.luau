@@ -121,10 +121,6 @@ function M.tree(nodes: { TreeNode }, props: { [string]: any }?): Node
 	return { k = "tree", p = withProps({ nodes = nodes }, props) }
 end
 
-function M.lines(children: { Node }, props: { [string]: any }?): Node
-	return { k = "lines", p = withProps({}, props), c = children }
-end
-
 function M.rule(label: { SpanLike }?, props: { [string]: any }?): Node
 	return { k = "rule", p = withProps(if label then { label = M.spans(label) } else {}, props) }
 end

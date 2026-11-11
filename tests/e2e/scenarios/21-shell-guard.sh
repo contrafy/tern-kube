@@ -3,7 +3,12 @@
 # approve block; approve runs it (exit 0 propagates), deny exits 1 and Ctrl-C
 # exits 130, both leaving the Deployment unchanged. The snippet's pane env
 # record then pins the pane's own KUBECONFIG (set only in this shell) on a
-# quick action launched from that pane's lens.
+# quick action launched from that pane's lens. Headless, the panes live on
+# the in-process daemon Tern attaches as host "sandbox", a remote host to
+# the window: window pane ids differ from the shell's TERN_PANE and a quick
+# action from a remote pane takes the login environment's kubeconfig
+# (docs/remote-hosts.md), so there the record is checked on disk and the
+# split must say where its kubeconfig comes from.
 focused_id() {
 	ctl state | jq -r '.focused.id'
 }
@@ -29,6 +34,8 @@ ctl tab new >/dev/null
 E2E_WAIT=10 wait_for "a new tab" not_focused "$home_tab"
 guard_pane=$(focused_id)
 E2E_WAIT=10 wait_for "the new tab's prompt" at_prompt
+sh_line "print -r -- \$TERN_PANE >'$E2E_SB/guard-pane'"
+shell_pane=$(cat "$E2E_SB/guard-pane")
 sh_line "cd '$E2E_REPO' && source shell/tern-kube.zsh && clear"
 sh_line tern-kube-guard-status
 expect_grid "guarded verbs ask for approval" || return
@@ -42,7 +49,7 @@ scale() { # REPLICAS
 scale 2 || return
 contains "guard mode" "$(atext)" "Shell guard approval"
 # The guard records its physical cwd (`pwd -P`): /tmp is /private/tmp on macOS.
-contains "requesting pane" "$(atext)" "shell pane $guard_pane in $(cd "$E2E_REPO" && pwd -P)"
+contains "requesting pane" "$(atext)" "shell pane $shell_pane in $(cd "$E2E_REPO" && pwd -P)"
 xkey t
 xkey enter
 approve_closed || return
@@ -92,6 +99,12 @@ native
 click_text 'tk-e2e-web-*' '.tk-grid .tk-c'
 click_text Logs '[data-role="tern-kube.inspector"] .sf-act'
 E2E_WAIT=15 quick_pane "tern-kube logs pod $MNS/tk-e2e-web-" || return
-E2E_WAIT=10 wait_for "the logs process" pgrep -f -- "logs -f --tail=200 --kubeconfig $pinned --context kind-tern-kube-dev -n $MNS tk-e2e-web-"
+if host_current sandbox; then
+	eq "pane env record" "$(cat "$E2E_SB/cfg/plugin-data/tern-kube/spool/pane-$shell_pane.env")" "kubeconfig=$pinned"
+	expect_grid "tern-kube: sandbox: kubeconfig from the login environment" || return
+	E2E_WAIT=10 wait_for "the logs process" pgrep -f -- "kubectl logs -f --tail=200 --context kind-tern-kube-dev -n $MNS tk-e2e-web-"
+else
+	E2E_WAIT=10 wait_for "the logs process" pgrep -f -- "logs -f --tail=200 --kubeconfig $pinned --context kind-tern-kube-dev -n $MNS tk-e2e-web-"
+fi
 guard_tab_close
 eq "back in the first tab" "$(ctl state | jq -r '.focused.id')" "$home_tab"

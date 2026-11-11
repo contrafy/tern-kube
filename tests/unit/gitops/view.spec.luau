@@ -407,10 +407,10 @@ describe("gitops view: controller line", function()
 		local effects: { Gitops.Effect } = {}
 		Gitops.loadControllers(g, ctx, effects)
 		G.core(w, g, ctx, effects)
-		expect(g.ctl.status).toBe("ok")
+		expect((Gitops.ctl(g, ctx) :: Gitops.Ctl).status).toBe("ok")
 		local tracked: any = nil
 		for _, o in json.decode(fixtures.read("drift/controllers/workloads.json")).items do
-			local owner = Controllers.owner(o, g.ctl.set :: any)
+			local owner = Controllers.owner(o, Gitops.ctlSet(g, ctx) :: any)
 			if owner and owner.controller == "argocd" then
 				tracked = o
 				break
@@ -432,6 +432,9 @@ describe("gitops view: controller line", function()
 		}, tracked) :: any
 		local text = nodes.text(line)
 		expect(text).toContain("Managed by Argo CD app ")
+		expect(text).toContain("applied 4f2a9c1")
+		-- The first tracked object belongs to guestbook-drifted (auto-sync, no self-heal).
+		expect(text).toContain("Argo CD auto-sync: the next sync overwrites changes not in Git")
 		expect(
 			nodes.find(line, nodes.role("tern-kube.gitops-controller")) ~= nil
 				or line.p.role == "tern-kube.gitops-controller"
@@ -462,6 +465,111 @@ describe("gitops view: controller line", function()
 			"Drift web"
 		)
 		expect(GitopsView.crumb(g, { kind = "git" })).toBe("Git")
+	end)
+end)
+
+-- The repository the controller fixtures point at, checked out at /repo:
+-- the drift world under tests/integration/manifests/drift. HEAD is the
+-- commit Flux applied; Argo CD applied another one.
+describe("gitops view: Argo CD / Flux status", function()
+	local BASE = "/repo/tests/integration/manifests/drift"
+	local SOURCE = "dir:" .. BASE .. "/baseline"
+	local HEAD = "0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c"
+
+	local function setup(): (G.World, Gitops.G, Gitops.Ctx)
+		local files: { [string]: string } = {}
+		for path, text in G.driftFiles() do
+			files[BASE .. string.sub(path, #"/repo/drift" + 1)] = text
+		end
+		local w = G.new(files)
+		w.remotes = "origin\thttps://github.com/contrafy/tern-kube.git (fetch)\n"
+		w.answer = function(argv: { string }): G.Result?
+			if argv[1] == "git" and table.find(argv, "rev-parse") then
+				return G.ok(HEAD .. "\n")
+			end
+			return nil
+		end
+		local ctx = G.ctx(nil, "tern-test-drift")
+		local g = G.ready(w, ctx)
+		local effects: { Gitops.Effect } = {}
+		Gitops.enter(g, ctx, { kind = "drift" }, false, effects)
+		G.core(w, g, ctx, effects)
+		return w, g, ctx
+	end
+
+	local function view(g: Gitops.G, ctx: Gitops.Ctx, route: any): GitopsView.Ctx
+		return {
+			g = g,
+			gctx = ctx,
+			route = route,
+			selectedKey = nil,
+			grid = function()
+				return {}
+			end,
+			chip = function(text: string, action: string)
+				return { k = "chip", p = { label = text, actions = { click = action } } } :: any
+			end,
+			object = nil,
+		}
+	end
+
+	it("the chooser note carries each controller's verdict and applied revision", function()
+		local _, g, ctx = setup()
+		local entry = Gitops.findSource(g, ctx, SOURCE) :: Gitops.SourceEntry
+		expect(entry.note).toBe(
+			"Argo CD app guestbook-drifted: OutOfSync · Degraded · SyncError @4f2a9c1, "
+				.. "Flux Kustomization drift: Not ready (HealthCheckFailed) @0b1c2d3"
+		)
+		-- Another namespace: the note says where the controller deploys.
+		local other = table.clone(ctx)
+		other.target = table.clone(ctx.target)
+		other.target.namespace = "elsewhere"
+		local entryOther = Gitops.findSource(g, other, SOURCE) :: Gitops.SourceEntry
+		expect(entryOther.note).toContain("@4f2a9c1 (deploys to ns tern-test-drift; n switches)")
+	end)
+
+	it("the report card compares what the controller applied with the checkout", function()
+		local w, g, ctx = setup()
+		local route = { kind = "drift", source = SOURCE }
+		local effects: { Gitops.Effect } = {}
+		Gitops.enter(g, ctx, route :: any, false, effects)
+		G.core(w, g, ctx, effects)
+		local load = Gitops.driftLoad(g, ctx, route :: any) :: Gitops.DriftLoad
+		local cards = GitopsView.controllerCards(view(g, ctx, route), load)
+		expect(#cards).toBe(2)
+		expect((cards[1].p :: any).role).toBe("tern-kube.gitops-controller-status")
+		local argo = nodes.text(cards[1])
+		expect(argo).toContain("Argo CD app guestbook-drifted: OutOfSync · Degraded · SyncError")
+		expect(argo).toContain(
+			"applied 4f2a9c1 · your checkout 0b1c2d3: this report compares your checkout, not what the controller applied"
+		)
+		expect(argo).toContain("last sync Failed: one or more objects failed to apply")
+		expect(argo).toContain("reconciled 2026-10-08T00:06:00Z")
+		local flux = nodes.text(cards[2])
+		expect(flux).toContain("applied 0b1c2d3 · your checkout 0b1c2d3 (same) · attempted 4f2a9c1")
+	end)
+
+	it("revert warnings sit above the apply chips", function()
+		local w, g, ctx = setup()
+		local route = { kind = "drift", source = SOURCE }
+		local effects: { Gitops.Effect } = {}
+		Gitops.enter(g, ctx, route :: any, false, effects)
+		G.core(w, g, ctx, effects)
+		local out = GitopsView.body(view(g, ctx, route))
+		local riskAt, chipsAt = 0, 0
+		for i, n in out do
+			local role = (n.p :: any).role
+			if role == "tern-kube.gitops-controller-risk" and riskAt == 0 then
+				riskAt = i
+			elseif role == "tern-kube.chips" and (n.p :: any).key == "rc" then
+				chipsAt = i
+			end
+		end
+		expect(riskAt > 0 and chipsAt > riskAt).toBe(true)
+		local text = nodes.text({ k = "col", p = {}, c = out } :: any)
+		expect(text).toContain("Argo CD auto-sync: the next sync overwrites changes not in Git")
+		expect(text).toContain("Flux re-applies this source every 10m: changes applied outside Git are reverted")
+		expect(nodes.actions({ k = "col", p = {}, c = out } :: any)).toContain("gitops-key=Y")
 	end)
 end)
 

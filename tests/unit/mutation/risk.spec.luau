@@ -887,4 +887,191 @@ describe("risk: edit", function()
 	end)
 end)
 
+local function deploy(image: string, extra: { [string]: any }?): any
+	local spec: any = { template = { spec = { containers = { { name = "app", image = image } } } } }
+	for k, v in (extra or {}) :: { [string]: any } do
+		spec[k] = v
+	end
+	return { apiVersion = "apps/v1", kind = "Deployment", metadata = { name = "web", namespace = "apps" }, spec = spec }
+end
+
+local function objects(pairs_: { Objdiff.Pair }): Objdiff.Result
+	return Objdiff.compute(pairs_, { showSecretValues = false })
+end
+
+describe("risk: v1.2 guarded verbs", function()
+	it("set image names the image change and flags :latest and the * container", function()
+		local before, after = deploy("nginx:1.26"), deploy("nginx:latest")
+		local p = plan("kubectl set image deployment/web *=nginx:latest")
+		local a = Risk.assess(
+			p,
+			facts({
+				live = { before },
+				targets = { ref("Deployment", "web", "apps") },
+				objects = objects({ { key = "k", before = before, after = after } }),
+			})
+		)
+		expect(a.tier).toBe("simple")
+		expect(reason(a, "set-image").text).toContain("nginx:1.26 -> nginx:latest")
+		expect(reason(a, "image-wildcard").severity).toBe("medium")
+		expect(reason(a, "mutable-tag").advisory).toBe(true)
+	end)
+
+	it("set env warns about credentials stored in clear; set resources about lowered limits", function()
+		local a = Risk.assess(plan("kubectl set env deployment/web DB_PASSWORD=x"), OK)
+		expect(reason(a, "env-secret-literal").severity).toBe("medium")
+		local lim = function(v: string): any
+			local d = deploy("nginx:1.26")
+			d.spec.template.spec.containers[1].resources = { limits = { memory = v } }
+			return d
+		end
+		local r = Risk.assess(
+			plan("kubectl set resources deployment/web --limits=memory=64Mi"),
+			facts({ objects = objects({ { key = "k", before = lim("1Gi"), after = lim("64Mi") } }) })
+		)
+		expect(reason(r, "limits-lowered").text).toContain("1Gi -> 64Mi")
+	end)
+
+	it("set selector and set subject need the target typed", function()
+		expect(Risk.assess(plan("kubectl set selector svc web app=x"), OK).tier).toBe("typed")
+		expect(Risk.assess(plan("kubectl set subject clusterrolebinding admin --user=eve"), OK).tier).toBe("typed")
+	end)
+
+	it("set on a paused deployment says the rollout waits", function()
+		local paused = deploy("nginx:1.26", { paused = true })
+		local a = Risk.assess(plan("kubectl set image deployment/web app=nginx:1.27"), facts({ live = { paused } }))
+		expect(reason(a, "rollout-paused").severity).toBe("info")
+	end)
+
+	it("replace is simple; --force is always typed and the probe tells whether it is needed", function()
+		local r = Risk.assess(
+			plan("kubectl replace -f web.yaml"),
+			facts({ replace = { noResourceVersion = { "Deployment apps/web" } } })
+		)
+		expect(r.tier).toBe("simple")
+		expect(reason(r, "replace").severity).toBe("medium")
+		expect(reason(r, "replace-no-rv").text).toContain("Deployment apps/web")
+		local needed = Risk.assess(
+			plan("kubectl replace --force -f web.yaml"),
+			facts({
+				replace = {
+					noResourceVersion = {},
+					probeOk = false,
+					probeError = 'The Deployment "web" is invalid: spec.selector: field is immutable',
+				},
+			})
+		)
+		expect(needed.tier).toBe("typed")
+		expect(reason(needed, "replace-force").severity).toBe("high")
+		expect(reason(needed, "force-needed").text).toContain("field is immutable")
+		local unneeded = Risk.assess(
+			plan("kubectl replace --force -f web.yaml"),
+			facts({ replace = { noResourceVersion = {}, probeOk = true } })
+		)
+		expect(reason(unneeded, "force-unneeded").severity).toBe("medium")
+	end)
+
+	it("a NoExecute taint is always typed and counts the computed evictions", function()
+		local p = plan("kubectl taint nodes n1 k=v:NoExecute")
+		local none = Risk.assess(p, facts({ taint = { nodes = {}, unknown = {} } }))
+		expect(none.tier).toBe("typed")
+		local some = Risk.assess(
+			p,
+			facts({
+				taint = {
+					nodes = {
+						{
+							node = "n1",
+							evictions = {
+								taints = {},
+								immediate = { { namespace = "a", name = "p1" } },
+								delayed = { { namespace = "a", name = "p2", seconds = 300 } },
+								stays = {},
+							},
+						},
+					},
+					unknown = {},
+				},
+			})
+		)
+		expect(reason(some, "taint-noexecute").text).toContain("evicts 1 pod(s) now, 1 after")
+		local unknown = Risk.assess(p, facts({ taint = { nodes = {}, unknown = { "pods on n1 could not be read" } } }))
+		expect(reason(unknown, "taint-evictions-unknown").tier).toBe("typed")
+	end)
+
+	it("NoSchedule is simple unless no other schedulable node lacks it; Prefer and removal are simple", function()
+		local p = plan("kubectl taint nodes n1 k=v:NoSchedule")
+		local ready = { { type = "Ready", status = "True" } }
+		local function node(name: string): any
+			return { metadata = { name = name }, spec = {}, status = { conditions = ready } }
+		end
+		local two = facts({ targets = { ref("Node", "n1") }, cluster = { nodes = { node("n1"), node("n2") } } })
+		expect(Risk.assess(p, two).tier).toBe("simple")
+		local one = facts({ targets = { ref("Node", "n1") }, cluster = { nodes = { node("n1") } } })
+		local last = Risk.assess(p, one)
+		expect(last.tier).toBe("typed")
+		expect(reason(last, "taint-noschedule-last").severity).toBe("high")
+		expect(reason(Risk.assess(plan("kubectl taint nodes n1 k=v:PreferNoSchedule"), OK), "taint-prefer").severity).toBe(
+			"low"
+		)
+		expect(Risk.assess(plan("kubectl taint nodes n1 k-"), OK).tier).toBe("simple")
+	end)
+
+	it("create names what it creates, masks secrets and types a global default priority", function()
+		local secret = {
+			apiVersion = "v1",
+			kind = "Secret",
+			metadata = { name = "s1", namespace = "apps" },
+			data = { a = "Yg==" },
+		}
+		local p = plan("kubectl create secret generic s1 --from-literal=a=b")
+		local a = Risk.assess(p, facts({ objects = objects({ { key = "k", after = secret } }) }))
+		expect(a.tier).toBe("simple")
+		expect(reason(a, "create").text).toContain("Secret apps/s1")
+		expect(reason(a, "secret-masked").severity).toBe("info")
+		expect(a.token).toBe("s1")
+		expect(Risk.assess(plan("kubectl create priorityclass top --value=1000 --global-default"), OK).tier).toBe(
+			"typed"
+		)
+		expect(reason(Risk.assess(plan("kubectl create quota q --hard=pods=1"), OK), "quota").severity).toBe("medium")
+	end)
+
+	it("run states the attach it skipped; privileged after objects are typed", function()
+		local p = plan("kubectl run tmp --image=busybox -it --rm")
+		local a = Risk.assess(
+			p,
+			facts({
+				manifests = {
+					{
+						path = "pod",
+						text = "apiVersion: v1\nkind: Pod\nmetadata:\n  name: tmp\nspec:\n  containers:\n    - name: tmp\n"
+							.. "      securityContext:\n        privileged: true\n",
+					},
+				},
+				baseline = {},
+			})
+		)
+		expect(reason(a, "run-attach").severity).toBe("info")
+		expect(reason(a, "run-rm").severity).toBe("info")
+		expect(reason(a, "privileged").tier).toBe("typed")
+	end)
+
+	it("expose flags external IPs (typed) and public services (simple)", function()
+		local a = Risk.assess(
+			plan("kubectl expose deploy web --port=80 --type=NodePort --external-ip=1.2.3.4"),
+			facts({
+				manifests = {
+					{
+						path = "svc",
+						text = "apiVersion: v1\nkind: Service\nmetadata:\n  name: web\nspec:\n  type: NodePort\n",
+					},
+				},
+				baseline = {},
+			})
+		)
+		expect(reason(a, "external-ip").tier).toBe("typed")
+		expect(reason(a, "public-service").severity).toBe("medium")
+	end)
+end)
+
 return nil

@@ -22,9 +22,11 @@
 }
 
 /* Keyboard selection: stronger than hover/open so it is visible while the
-   pointer rests elsewhere. */
+   pointer rests elsewhere. A tint, not the solid accent fill, so the toned
+   time, level and state words of logs, events and matrix rows stay
+   readable (as on native tables); the left edge marks the row. */
 [data-role="tern-kube.explore"] .tk-grid .tk-sel .tk-c {
-	background: var(--accent-fill);
+	background: color-mix(in srgb, var(--accent) 22%, transparent);
 }
 
 [data-role="tern-kube.explore"] .tk-grid .tk-sel .tk-c:first-child {

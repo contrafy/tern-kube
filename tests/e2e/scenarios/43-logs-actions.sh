@@ -19,6 +19,11 @@ pod=${pod#pod/}
 panes_are() {
 	[ "$(pane_count)" -eq "$1" ]
 }
+# The headless session's log is written asynchronously: a line logged as
+# the split opened may land a moment later.
+logged() {
+	grep -q "$1" "$(window_log)"
+}
 
 # Without -c the Defaulted line names every container: a variant per other one.
 lens "kubectl logs -n $lns $pod"
@@ -31,7 +36,7 @@ click_text 'Follow in split' "$ACTS" || return
 E2E_WAIT=15 quick_pane "tern-kube logs pod $lns/$pod" || return
 eq "follow opened one split" "$(pane_count)" $((before + 1))
 eq "follow split is raw (not lensed)" "$(count "$LOGS")" 1
-grep -q 'tern-kube quick action.*logs-follow' "$(window_log)" || fail "no logs-follow quick action logged"
+E2E_WAIT=5 wait_for "the logs-follow quick action logged" logged 'tern-kube quick action.*logs-follow'
 ctl close >/dev/null
 E2E_WAIT=5 wait_for "the follow split to close" panes_are "$before"
 ctl click 30 600 >/dev/null
@@ -42,8 +47,7 @@ click_text '▸ side' "$ACTS" || return
 E2E_WAIT=15 wait_for "a typed split" panes_are $((before + 1)) || return
 E2E_WAIT=20 wait_for "the typed command lensed in the new split" has "$LOGS" 2 || return
 E2E_WAIT=20 wait_for "the typed split back at its prompt" idle || return
-grep -q "tern-kube typed quick action.*logs.*$lns/$pod:side" "$(window_log)" ||
-	fail "no typed logs launch logged for $pod:side"
+E2E_WAIT=5 wait_for "the typed logs launch logged for $pod:side" logged "tern-kube typed quick action.*logs.*$lns/$pod:side"
 # Block text in the tree is truncated; the grid cells hold the records.
 contains "typed split shows the side container" "$(ltext "$LOGS .tk-grid *")" "side: beat"
 eq "typed split stays open at its prompt" "$(pane_count)" $((before + 1))

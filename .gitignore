@@ -6,3 +6,4 @@
 tests/fixtures/generated.luau
 tests/integration/mutate/.transcripts/
 tests/integration/compare/.transcripts/
+tests/integration/gitops/.transcripts/

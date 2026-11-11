@@ -20,7 +20,9 @@ original output one click away (**Raw**).
 - `describe` renders as cards with an events timeline, `-o yaml` as a
   document list, and `apply` / `delete` / `scale` / `rollout restart` as a
   result summary (a result, never a preview).
-- Secret values are masked in the native view.
+- Secret values are masked in the native view. With
+  `security.show_secret_values` on, **Decode values** (`z` in Explore) shows
+  them decoded in a separate display-only card, on demand.
 - `kubectl logs` renders as records: level, source, time and parsed JSON,
   klog or logfmt fields, level and source chips, **First error**, a row
   inspector with copy chips, and variants (other container, `--previous`)
@@ -46,8 +48,12 @@ Pipelines and redirected output are never lensed.
 **Explore live** on a row, or **Tern Kube: Explore** in the palette, opens a
 live block beside the pane. Its lists are sortable tables that fill the
 pane, with ready / not ready / restart counts on top. It pins the context it
-queries, shows where that context came from, and refreshes only when you ask,
-after a change it made itself, or when Tern reloads the plugin.
+queries, shows where that context came from, and refreshes only when you ask
+(`r`, or a two-minute usage sample you start with `w`), after a change it
+made itself, or when Tern reloads the plugin. Usage (`%`, or **Tern Kube:
+Resource usage**) shows pods and nodes against requests, limits and
+allocatable, with namespace and node tiles; `w` samples metrics every 15 s
+for two minutes for the trend columns.
 
 ![Relations of a Deployment](docs/screenshots/m2-relations-dark-wide.png)
 
@@ -58,7 +64,7 @@ after a change it made itself, or when Tern reloads the plugin.
 | `d` `y` `L` `R` | describe, object, logs, relations |
 | `v` `V` | namespace events, events of the focused object |
 | `s` `l` `shift+f` | shell, follow logs, port-forward in a split |
-| `c` `n` `:` | context, namespace, kind |
+| `c` `n` `:` | context, namespace, kind; `:` takes `po`, `deploy NS`, `ctx NAME`, `ns NAME`, `helm`, `events`, `top` and every cluster short name |
 | `ctrl+d` `ctrl+r` `shift+s` | delete, rollout restart, scale |
 | `e` | edit in a split, approve after saving |
 | `t` `T` `X` | label, annotate, patch |
@@ -66,7 +72,9 @@ after a change it made itself, or when Tern reloads the plugin.
 | `C` `u` `D` | cordon, uncordon, drain |
 | `H` | Helm releases (palette: **Tern Kube: Helm releases**); on a Helm-managed object, its release |
 | `x` | compare across contexts: the focused object, or the list in view |
-| `r` `Y` `?` | refresh, copy the command, help |
+| `%` | resource usage: pods against requests and limits, nodes against allocatable (`%` again toggles, `w` samples for two minutes) |
+| `r` `Y` `?` | refresh, copy the command (on drift reports: the `tern-kube-drift` command), help |
+| `z` | decoded Secret values (only with `security.show_secret_values`) |
 
 In logs (`L`): `]` `[` next/previous error, `x` level floor, `a` container,
 `o` previous instance, `w` wrap, `/` search, `enter` inspector. In events
@@ -200,6 +208,7 @@ Everything below is in 1.0. Release history: [CHANGELOG.md](CHANGELOG.md).
 | --- | --- |
 | **Lens** | |
 | `get`, `describe`, `top`, mutation results as native views | done |
+| `top` totals footer, container rows, usage tones, Usage in Explore chip | done |
 | Claims `kubectl` and `kubecolor`, also after global flags | done |
 | Typed column sort; status, namespace, kind, Problems filters | done |
 | Inline row inspector and full Inspect view | done |
@@ -208,14 +217,17 @@ Everything below is in 1.0. Release history: [CHANGELOG.md](CHANGELOG.md).
 | Secrets masked; raw fallback for watches, jsonpath, huge output | done |
 | Narrow-window columns; view state survives plugin reload | done |
 | Native `kubectl logs` lens | done |
+| `rollout history`, `config get-contexts`, `api-resources`, `auth can-i` views | done |
+| Decoded Secret values on request (with `show_secret_values`) | done |
 | **Explore** | |
 | Live block with pinned context and its provenance | done |
-| k9s-style keys; context, namespace and kind pickers | done |
+| k9s-style keys and `:` prompt with cluster aliases; context, namespace and kind pickers | done |
 | Describe, object, parsed logs (`explore.logs_tail` lines) | done |
 | Relations graph with provenance | done |
 | Namespace events timeline | done |
 | Helm releases with history | done |
 | Compare one object across contexts | done |
+| Resource usage: % of requests, limits and allocatable, tiles, trends | done |
 | **Quick actions** | |
 | Pod shell; workloads pick a ready pod | done |
 | Follow logs; workloads by selector, all containers | done |
@@ -228,6 +240,7 @@ Everything below is in 1.0. Release history: [CHANGELOG.md](CHANGELOG.md).
 | Approve block: server dry run, per-resource `kubectl diff` | done |
 | Risk tiers; re-verifies argv, target and files before running | done |
 | JSON-lines audit log | done |
+| Target sets re-checked at confirm; outcomes recorded for guarded commands and quick actions | done |
 | Before/after object diffs for `patch`, `label`, `annotate`, `rollout undo`/`pause`/`resume` | done |
 | `cordon`, `uncordon`, `drain` with eviction and PodDisruptionBudget preview; `edit` as preview then apply | done |
 | Helm rollback through the approve block | done |
@@ -236,6 +249,7 @@ Everything below is in 1.0. Release history: [CHANGELOG.md](CHANGELOG.md).
 | Guards `apply`, `delete`, `scale`, `rollout restart` | done |
 | Fails closed outside Tern, on timeout or mismatch | done |
 | Guards `rollout undo`/`pause`/`resume`, `patch`, `label`, `annotate`, `cordon`, `uncordon`, `drain`, `edit` | done |
+| Guards `set`, `replace` (incl. `--force`), `taint`, `create`, `run`, `expose`; secret literals masked | done |
 | **GitOps** | |
 | Manifest index: YAML, Kustomize, configured or auto-detected Helm releases | done |
 | Open manifest at its line; diff vs live object | done |
@@ -244,6 +258,7 @@ Everything below is in 1.0. Release history: [CHANGELOG.md](CHANGELOG.md).
 | Export clean manifests; Secrets as placeholders | done |
 | Branch and commit; push and `gh pr create` opt-in | done |
 | `tern-kube-drift` CLI (text, Markdown, JSON) and CI example | done |
+| Copy the CLI command that reproduces a drift report or matrix | done |
 | Helm values diff and chart auto-detect | done |
 | Compare one source against several clusters | done |
 | **Settings and config** | |
@@ -287,9 +302,16 @@ releases diff and drift but do not export. Node shell is a debug pod.
 ```sh
 make bootstrap   # pinned tools into .tools/
 make check       # format, lint, typecheck, unit tests, benchmark
-make e2e         # drives an isolated Tern window; needs Docker
+make e2e         # drives an isolated headless Tern session; needs Docker
+scripts/dev-tern.sh start  # headless sandbox session (no window)
 scripts/dev-tern.sh link   # load a snapshot into the sandbox Tern
 ```
+
+Sandboxes and `make e2e` are headless by default: `dev-tern.sh start` runs
+`tern serve` (no window, no GUI process, a 1280x800 viewport at scale 2),
+driven with `dev-tern.sh ctl`, `run`, `expect` and `shot`. `start --window`
+opens a real Tern window instead; it takes focus and tiles into your
+desktop, so use it only when you want to watch.
 
 `dev-tern.sh link` copies the checkout without `.git`, `.sandbox` and
 `.tools` into the sandbox and links the copy: Tern reloads a linked plugin on

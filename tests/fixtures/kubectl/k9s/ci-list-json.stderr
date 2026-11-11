@@ -1,0 +1,2 @@
+error: unknown shorthand flag: 'o' in -o
+See 'kubectl auth can-i --help' for usage.

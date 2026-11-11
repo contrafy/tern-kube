@@ -4,10 +4,13 @@
 
 local Argv = require("../kubectl/argv")
 local Capture = require("./capture")
+local CaniView = require("../render/cani_view")
 local DescribeView = require("../render/describe_view")
+local K9s = require("./k9s")
 local Header = require("../render/header")
 local MutationView = require("../render/mutation_view")
 local Quick = require("../actions/quick")
+local RevisionView = require("../render/revision_view")
 local TableView = require("../render/table_view")
 local Viewstate = require("./viewstate")
 local Types = require("../model/types")
@@ -33,11 +36,20 @@ end
 
 function M.render(capture: Capture, vs: ViewState, opts: Options?): Node?
 	local mode = capture.mode
-	if mode == "raw" or capture.lineCount == 0 then
+	-- `can-i -q` prints nothing: the exit status is the answer.
+	if mode == "raw" or (capture.lineCount == 0 and mode ~= "cani") then
 		return nil
 	end
 	local notes = if opts then opts.notes else nil
-	if mode == "table" or mode == "name" or mode == "json" then
+	local k9s = capture.k9s
+	if k9s and #k9s.headerNotes > 0 then
+		local merged = table.clone(notes or {})
+		for _, n in k9s.headerNotes do
+			table.insert(merged, n)
+		end
+		notes = merged
+	end
+	if mode == "table" or mode == "name" or mode == "json" or K9s.TABLE_MODES[mode] then
 		local tableOpts: TableView.Options? = if opts
 			then { pageSize = opts.pageSize, mutations = opts.mutations, quick = opts.quick }
 			else nil
@@ -52,6 +64,11 @@ function M.render(capture: Capture, vs: ViewState, opts: Options?): Node?
 		body = DescribeView.render(capture, vs, Viewstate)
 	elseif mode == "mutation" then
 		body = MutationView.render(capture, vs, Viewstate)
+	elseif mode == "revision" then
+		body =
+			RevisionView.render(capture, vs, if opts then { mutations = opts.mutations, quick = opts.quick } else nil)
+	elseif mode == "cani" then
+		body = CaniView.render(capture, if opts then { mutations = opts.mutations, quick = opts.quick } else nil)
 	else
 		body = YamlView.render(capture, vs, Viewstate)
 	end

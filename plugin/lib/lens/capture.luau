@@ -8,6 +8,7 @@ local Describe = require("../parse/describe")
 local EventsModel = require("../events/model")
 local Json = require("../parse/json")
 local Kinds = require("../kubectl/kinds")
+local K9s = require("./k9s")
 local Mutation = require("../parse/mutation")
 local Redact = require("../model/redact")
 local Resource = require("../model/resource")
@@ -16,7 +17,7 @@ local Types = require("../model/types")
 local Values = require("../model/values")
 local Yaml = require("../parse/yaml")
 
-export type Mode = "table" | "json" | "yaml" | "describe" | "mutation" | "name" | "raw"
+export type Mode = "table" | "json" | "yaml" | "describe" | "mutation" | "name" | "raw" | K9s.Mode
 
 -- The events overlay on a table capture (`kubectl events`, `get events`,
 -- their watches): row refs are the involved objects; `notes` holds the
@@ -50,6 +51,11 @@ export type Capture = {
 	-- The output ended in the `^C` of a Ctrl-C (a stopped watch).
 	interrupted: boolean,
 	events: EventsInfo?,
+	-- `kubectl top --sum` totals cells by table index (aligned with the
+	-- table's headers); never rows.
+	totals: { [number]: { string } }?,
+	-- rollout history / get-contexts / api-resources / can-i data (lens/k9s).
+	k9s: K9s.Detail?,
 }
 
 export type Run = { program: string, args: { string } }
@@ -79,6 +85,10 @@ local function modeFor(inv: Invocation, supported: boolean): Mode
 		return "raw"
 	end
 	local verb = inv.verb
+	local special: Mode? = K9s.modeOf(inv)
+	if special then
+		return special
+	end
 	if inv.output == "json" then
 		return "json"
 	elseif inv.output == "yaml" then
@@ -280,22 +290,81 @@ local function uniqueKey(seen: { [string]: number }, key: string): string
 	return candidate
 end
 
+local TOP_NAME_COLUMNS = { "NAMESPACE", "POD", "NAME" }
+
+-- `kubectl top --sum` ends in a `________` separator row and a totals row,
+-- both with empty name columns. Drops them from `parsed.rows`; returns the
+-- totals cells.
+local function takeTopTotals(inv: Invocation, headers: { string }, parsed: ParsedTable): { string }?
+	if inv.verb ~= "top" then
+		return nil
+	end
+	local nameCols: { number } = {}
+	for _, h in TOP_NAME_COLUMNS do
+		local i = indexOf(headers, h)
+		if i then
+			table.insert(nameCols, i)
+		end
+	end
+	if #nameCols == 0 then
+		return nil
+	end
+	local totals: { string }? = nil
+	local kept: { Types.TableRow } = {}
+	for _, row in parsed.rows do
+		local footer = true
+		for _, i in nameCols do
+			if (row.cells[i] or "") ~= "" then
+				footer = false
+				break
+			end
+		end
+		if not footer then
+			table.insert(kept, row)
+			continue
+		end
+		local separator = true
+		for _, v in row.cells do
+			if not string.find(v, "^_*$") then
+				separator = false
+				break
+			end
+		end
+		if not separator then
+			totals = row.cells
+		end
+	end
+	if #kept ~= #parsed.rows then
+		parsed.rows = kept
+	end
+	return totals
+end
+
 local function snapshotTable(
 	inv: Invocation,
 	parsed: ParsedTable,
 	tableIndex: number,
 	seen: { [string]: number }
-): SnapshotTable
+): (SnapshotTable, { string }?)
 	local headers: { string } = table.create(#parsed.columns)
 	for i, col in parsed.columns do
 		headers[i] = col.name
 	end
+	local totals = takeTopTotals(inv, headers, parsed)
 	local cellRows: { { string } } = table.create(#parsed.rows)
 	for i, row in parsed.rows do
 		cellRows[i] = row.cells
 	end
 	local nameCol = indexOf(headers, "NAME")
 	local nsCol = indexOf(headers, "NAMESPACE")
+	-- `top pods --containers`: NAME is the container, POD the object.
+	local containerCol: number? = nil
+	if inv.verb == "top" then
+		local podCol = indexOf(headers, "POD")
+		if podCol then
+			containerCol, nameCol = nameCol, podCol
+		end
+	end
 	local guess, prefixed = tableKind(inv, parsed, nameCol)
 	local rows: { ResourceRow } = table.create(#parsed.rows)
 	for i, row in parsed.rows do
@@ -321,6 +390,10 @@ local function snapshotTable(
 				source = "snapshot",
 			}
 			key = Resource.key(ref :: Types.ResourceRef)
+			local container = if containerCol then row.cells[containerCol] else nil
+			if container and container ~= "" then
+				key ..= "/" .. container
+			end
 		else
 			key = "t" .. tableIndex .. "#" .. i
 		end
@@ -338,7 +411,8 @@ local function snapshotTable(
 		headers = headers,
 		types = columnTypes(headers, cellRows),
 		rows = rows,
-	}
+	},
+		totals
 end
 
 local function isUnrecognised(d: Types.Diagnostic): boolean
@@ -492,6 +566,7 @@ local function buildTable(inv: Invocation, lines: { string }, status: number?, c
 	local unparsed = 0
 	local events: EventsInfo? = if Argv.isEventsListing(inv) then { notes = {} } else nil
 	local recovered: { [number]: boolean } = {}
+	local totals: { [number]: { string } }? = nil
 	for i, parsed in result.tables do
 		if events then
 			for line in realignEvents(parsed, lines) do
@@ -499,7 +574,13 @@ local function buildTable(inv: Invocation, lines: { string }, status: number?, c
 			end
 			tables[i] = eventsTable(inv, parsed, i, seen, events.notes)
 		else
-			tables[i] = snapshotTable(inv, parsed, i, seen)
+			local tbl, sum = snapshotTable(inv, parsed, i, seen)
+			tables[i] = tbl
+			if sum then
+				local byTable = totals or {}
+				byTable[i] = sum
+				totals = byTable
+			end
 		end
 		unparsed += #parsed.unparsed
 	end
@@ -518,6 +599,7 @@ local function buildTable(inv: Invocation, lines: { string }, status: number?, c
 		end
 	end
 	capture.events = events
+	capture.totals = totals
 	capture.diagnostics = diagnostics
 	capture.unparsed = unparsed
 	capture.snapshot = {
@@ -569,7 +651,7 @@ local function buildName(inv: Invocation, lines: { string }, status: number?, ca
 			headerLine = nil,
 			unparsed = {},
 		}
-		table.insert(tables, snapshotTable(inv, parsed, i, seen))
+		table.insert(tables, (snapshotTable(inv, parsed, i, seen)))
 	end
 	capture.diagnostics = diagnostics
 	capture.unparsed = unparsed
@@ -814,6 +896,8 @@ function M.build(run: Run, rawLines: { string }, status: number?, deps: Deps): C
 		masked = false,
 		interrupted = interrupted,
 		events = nil,
+		totals = nil,
+		k9s = nil,
 	}
 	if mode == "table" then
 		buildTable(inv, lines, status, capture)
@@ -835,6 +919,28 @@ function M.build(run: Run, rawLines: { string }, status: number?, deps: Deps): C
 		local parsed = Mutation.parse(verb, lines)
 		capture.mutation = parsed
 		capture.diagnostics = parsed.diagnostics
+	elseif mode ~= "raw" then
+		local built = K9s.build(mode :: K9s.Mode, inv, lines, status)
+		capture.k9s = built.detail
+		capture.diagnostics = built.diagnostics
+		capture.unparsed = built.unparsed
+		if built.describe then
+			capture.describe = built.describe
+			if capture.policy.strict then
+				capture.describe, capture.masked = redactDescribe(built.describe, inv)
+			end
+		end
+		if built.tables then
+			capture.snapshot = {
+				invocation = inv,
+				exitCode = status,
+				tables = built.tables,
+				diagnostics = built.diagnostics,
+				truncated = false,
+				confidence = confidenceOf(built.unparsed),
+				reason = nil,
+			}
+		end
 	end
 	return capture
 end

@@ -82,6 +82,10 @@ contains "denied edit diff" "$(atext)" "LEVEL: trace"
 denied_dir=$(cat "$E2E_SB/edit-tmpdir")
 xkey escape
 approve_closed || return
+# The split is a quarter of the 1280 px viewport, so the denial line wraps
+# and grid text matches one row: zoom it (the terminal reflows) to read it.
+ctl zoom >/dev/null
+sleep 0.5
 E2E_WAIT=20 expect_grid "tern-kube: kubectl edit exited 1: denied in Tern" || return
 expect_grid "your edit is saved at" || return
 ctl key enter >/dev/null

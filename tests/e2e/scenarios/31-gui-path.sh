@@ -1,11 +1,11 @@
 # Regression: Tern started from the Dock/Finder (launchd) runs plugins with
 # PATH=/usr/bin:/bin:/usr/sbin:/sbin, where tern.process.run found no
 # kubectl (/usr/local/bin, /opt/homebrew/bin) and Explore showed a Lua
-# traceback twice. The window restarts with `dev-tern.sh start --gui-path`
+# traceback twice. The session restarts with `dev-tern.sh start --gui-path`
 # (no TKUBE_KUBECTL either); tern-kube must take PATH from the login shell
 # (the sandbox zsh), run kubectl by its absolute path, report where it found
 # it in Settings > Status, and turn a missing kubectl into one actionable
-# card. The normal window comes back at the end.
+# card. The normal session comes back at the end.
 ST="[data-surface='plugin.tern-kube.settings']"
 CFG=$E2E_SB/xdg/tern-kube/config.json
 GUI_PATH=/usr/bin:/bin:/usr/sbin:/sbin
@@ -14,12 +14,12 @@ gui_cleanup() {
 	if [ -f "$E2E_SB/config.before-gui" ]; then
 		cp "$E2E_SB/config.before-gui" "$CFG"
 	fi
-	restart_window >/dev/null
+	restart_session >/dev/null
 }
 trap gui_cleanup EXIT
 
 from=$(log_lines)
-restart_window --gui-path || return
+restart_session --gui-path || return
 read_shell() { tail -n +"$((from + 1))" "$(daemon_log)" | grep -q 'tern-kube shell env read'; }
 E2E_WAIT=10 wait_for "the login-shell PATH read" read_shell || return
 

@@ -76,6 +76,42 @@ function M.clean(obj: any): any
 	return copy
 end
 
+-- replace --force deletes and re-creates: identity, age and status of the
+-- live object do not carry over, so neither side shows them.
+function M.recreated(objects: { any }): { any }
+	local out: { any } = {}
+	for _, obj in objects do
+		local copy = M.clean(obj)
+		local o = map(copy)
+		local metadata = if o then map(o.metadata) else nil
+		if metadata and next(metadata) ~= nil then
+			metadata.uid = nil
+			metadata.creationTimestamp = nil
+			metadata.selfLink = nil
+		end
+		if o then
+			o.status = nil
+		end
+		table.insert(out, copy)
+	end
+	return out
+end
+
+-- Objects as YAML documents for the text heuristics (risk manifestReasons).
+function M.manifests(
+	objects: { any },
+	opts: { null: any?, isList: ((t: { [any]: any }) -> boolean)? }
+): { { path: string, text: string } }
+	local out: { { path: string, text: string } } = {}
+	for i, obj in objects do
+		table.insert(out, {
+			path = M.identity(obj) or ("object " .. i),
+			text = Emit.yaml(obj, { null = opts.null, isList = opts.isList }),
+		})
+	end
+	return out
+end
+
 local function isList(obj: any): boolean
 	local o = map(obj)
 	return o ~= nil and type(o.kind) == "string" and string.sub(o.kind, -4) == "List" and type(o.items) == "table"

@@ -220,6 +220,7 @@ describe("explore query", function()
 		expect(Query.currentContext("k", nil)).toEqual({ "k", "config", "current-context" })
 	end)
 
+	-- -o wide: the `:` prompt needs short names, Kind and scope per row.
 	it("pickers pin the context", function()
 		expect(Query.namespaces("k", target())).toContain("--context")
 		expect(Query.apiResources("k", target())).toEqual({
@@ -231,7 +232,7 @@ describe("explore query", function()
 			"api-resources",
 			"--verbs=list",
 			"-o",
-			"name",
+			"wide",
 		})
 	end)
 

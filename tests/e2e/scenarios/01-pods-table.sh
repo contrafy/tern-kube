@@ -13,8 +13,8 @@ contains "first row after desc sort" "$(texts '.tk-grid .tk-c' | jq -r '.[0]')" 
 click_text db-0 '.tk-grid .tk-c'
 has '[data-role="tern-kube.inspector"]' || fail "row click opened no inspector"
 click_text "Copy describe"
-eq "clipboard" "$(clip)" "kubectl describe pod db-0 -n tern-test-apps"
 contains "toast" "$(alltext '.toast span')" "Copied"
+eq "clipboard" "$(clip)" "kubectl describe pod db-0 -n tern-test-apps"
 
 click_text Inspect
 has '[data-role="tern-kube.inspect"]' || fail "Inspect opened no full view"

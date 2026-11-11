@@ -156,6 +156,9 @@ export type ResourceRow = {
 	cells: { string },
 	rawLines: { number },
 	warnings: { string },
+	-- Facet values that are not cells (api-resources VERB, can-i TYPE),
+	-- by facet column; a row may carry several values per column.
+	tags: { [string]: { string } }?,
 }
 
 export type SnapshotTable = {
@@ -164,6 +167,11 @@ export type SnapshotTable = {
 	headers: { string },
 	types: { ColumnType },
 	rows: { ResourceRow },
+	-- Heading when the view shows several tables (`deployment.apps/web`).
+	title: string?,
+	-- Facet columns of this table (headers or tag columns), replacing the
+	-- default STATUS/NAMESPACE/KIND/TYPE.
+	facets: { string }?,
 }
 
 export type Confidence = "high" | "partial" | "unsupported"

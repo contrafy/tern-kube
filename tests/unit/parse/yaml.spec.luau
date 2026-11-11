@@ -407,4 +407,65 @@ describe("yaml.split performance", function()
 	end)
 end)
 
+-- The decode card reads values from kubectl's own YAML lines; a key
+-- misread here would decode the wrong value or skip one silently.
+describe("Yaml.secretData", function()
+	local function pairsOf(source: { string }): { { key: string, value: string } }?
+		local r = Yaml.splitLines(source)
+		return Yaml.secretData(source, r.docs[1])
+	end
+
+	it("reads a single Secret's data, quoted keys and empty values included", function()
+		local got = pairsOf({
+			"apiVersion: v1",
+			"data:",
+			'  "true": eWVz',
+			'  empty: ""',
+			"  password: aHVudGVyMi1mYWtl # trailing comment",
+			"  'single': eA==",
+			"kind: Secret",
+			"metadata:",
+			"  name: s",
+			"type: Opaque",
+		})
+		expect(got).toEqual({
+			{ key = "true", value = "eWVz" },
+			{ key = "empty", value = "" },
+			{ key = "password", value = "aHVudGVyMi1mYWtl" },
+			{ key = "single", value = "eA==" },
+		})
+	end)
+
+	it("reads each Secret of a List", function()
+		local source = {
+			"apiVersion: v1",
+			"items:",
+			"- apiVersion: v1",
+			"  data:",
+			"    a: eA==",
+			"  kind: Secret",
+			"  metadata:",
+			"    name: one",
+			"- data:",
+			"    b: eQ==",
+			"  kind: Secret",
+			"  metadata:",
+			"    name: two",
+			"kind: List",
+			"metadata:",
+			'  resourceVersion: ""',
+		}
+		local r = Yaml.splitLines(source)
+		expect(#r.docs).toBe(2)
+		expect(Yaml.secretData(source, r.docs[1])).toEqual({ { key = "a", value = "eA==" } })
+		expect(Yaml.secretData(source, r.docs[2])).toEqual({ { key = "b", value = "eQ==" } })
+	end)
+
+	it("a Secret without data has none; other kinds are not Secrets", function()
+		expect(pairsOf({ "apiVersion: v1", "kind: Secret", "metadata:", "  name: s" })).toEqual({})
+		expect(pairsOf({ "apiVersion: v1", "data: {}", "kind: Secret", "metadata:", "  name: s" })).toEqual({})
+		expect(pairsOf({ "apiVersion: v1", "data:", "  a: eA==", "kind: ConfigMap", "metadata:", "  name: c" })).toBeNil()
+	end)
+end)
+
 return nil

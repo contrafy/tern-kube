@@ -1,0 +1,3 @@
+name	argv	exit	kubectl_version	server_version
+ar-partial	kubectl --context kind-tern-kube-dev api-resources -o wide	1	v1.34.1	v1.37.0
+ci-no-reason	kubectl --context kind-tern-kube-dev auth can-i create pods -n tern-test-k9s	1	v1.34.1	v1.37.0

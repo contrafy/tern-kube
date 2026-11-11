@@ -411,4 +411,47 @@ describe("approve view: track 1 verbs", function()
 	end)
 end)
 
+describe("approve view: v1.2 guarded verbs", function()
+	local function guardArgv(argv: { string }, world: A.World?): Session.State
+		local s, effects = A.init(A.requestPath(), { request = A.request({ argv = argv }) })
+		A.drive(s, effects, A.cluster(world))
+		return s
+	end
+
+	it("never shows a secret literal: header, exact command and step rows are masked", function()
+		local s = guardArgv({ "kubectl", "create", "secret", "generic", "s1", "--from-literal=password=hunter2" }, {
+			["step:after"] = A.ok(
+				'{"apiVersion":"v1","kind":"Secret","metadata":{"name":"s1","namespace":"apps"},"data":{"password":"aHVudGVyMg=="}}'
+			),
+		})
+		A.send(s, A.key("c", "c"), A.cluster())
+		expect(s.showCommand).toBe(true)
+		local text = N.text(Render.view(s).main)
+		expect(text).toContain("<redacted>")
+		expect((string.find(text, "hunter2", 1, true))).toBeNil()
+		expect((string.find(text, "aHVudGVyMg", 1, true))).toBeNil()
+	end)
+
+	it("lists the pods a NoExecute taint evicts and counts them in the summary", function()
+		local function node(taints: string): string
+			return '{"apiVersion":"v1","kind":"Node","metadata":{"name":"n1"},"spec":{' .. taints .. "}}"
+		end
+		local s = guardArgv({ "kubectl", "taint", "nodes", "n1", "k=v:NoExecute" }, {
+			["step:targets"] = A.ok(node("")),
+			["step:after"] = A.ok(node('"taints":[{"key":"k","value":"v","effect":"NoExecute"}]')),
+			["step:pods:n1"] = A.ok(
+				'{"kind":"List","items":[{"metadata":{"namespace":"apps","name":"web-1"},"spec":{},"status":{}},'
+					.. '{"metadata":{"namespace":"apps","name":"db-0"},"spec":{"tolerations":[{"operator":"Exists",'
+					.. '"tolerationSeconds":60}]},"status":{}}]}'
+			),
+		})
+		local v = Render.view(s)
+		local card = N.text(N.find(v.main, N.key("taint")) :: N.Node)
+		expect(card).toContain("web-1")
+		expect(card).toContain("evicted now")
+		expect(card).toContain("evicted after 60s")
+		expect(N.text(N.find(v.main, N.key("summary")) :: N.Node)).toContain("1 evicted now")
+	end)
+end)
+
 return nil

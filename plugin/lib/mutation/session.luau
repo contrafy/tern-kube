@@ -8,9 +8,10 @@
 --           block executes the pinned argv after confirmation (a rollback
 --           link runs `helm rollback`; context reads still use kubectl);
 --   quick   tern-kube://act/<debug-pod|debug-node|cronjob-run>?... with the
---           window-minted grant token as args[2]: after confirmation the
---           block opens the action link with confirm=<token>; the window
---           consumes the grant and runs the split;
+--           window-minted grant token as args[2] and its run id as args[3]:
+--           after confirmation the block logs the approval with the run id
+--           and opens the action link with confirm=<token>; the window
+--           consumes the grant and runs the split, which records the outcome;
 --   guard   <spool>/req-<nonce>.json from `tern open --wait` (shell/PROTOCOL.md):
 --           the block never executes; it writes resp-<nonce>.env and exits 0.
 --
@@ -42,8 +43,10 @@ local Redact = require("../model/redact")
 local RevDiff = require("../helm/revdiff")
 local Risk = require("./risk")
 local Rollout = require("./rollout")
+local Selection = require("./selection")
 local Steps = require("./steps")
 local T = require("./types")
+local Taint = require("./taint")
 local Textfield = require("../textfield")
 local Types = require("../model/types")
 local Viewstate = require("../lens/viewstate")
@@ -224,6 +227,8 @@ export type State = {
 	launch: Quick.Launch?,
 	-- Quick mode: the window's grant token (args[2]); travels back in the link.
 	grantToken: string?,
+	-- Quick mode: the window's run id (args[3]), logged with the approval.
+	runId: string?,
 	request: GuardRequest?,
 	-- The request is authentic (spool, nonce, pane): a deny can be written.
 	canRespond: boolean,
@@ -256,6 +261,10 @@ export type State = {
 	editSet: Edit.EditSet?,
 	editFacts: Risk.EditFacts?,
 	helmFacts: Risk.HelmFacts?,
+	-- taint: pods a NoExecute taint evicts, per node.
+	taintFacts: Risk.TaintFacts?,
+	-- replace: file objects without resourceVersion; --force probe outcome.
+	replaceFacts: Risk.ReplaceFacts?,
 	-- helm rollback: `kubectl diff` of the target manifest (masked); s.diff
 	-- holds the change between the two stored revisions.
 	liveDiff: Diffseg.Summary?,
@@ -277,7 +286,10 @@ export type State = {
 		fingerprint: string?,
 		target: TargetInfo?,
 		current: string?,
-		history: StepRun?,
+		-- Steps.verifySteps runs by tag (v-history, v-selection); `index` is
+		-- the one running.
+		runs: { [string]: StepRun }?,
+		index: number?,
 	},
 	typed: string,
 	-- Caret and undo history of the typed field (its text is `typed`).
@@ -467,7 +479,8 @@ local function audit(s: State, effects: { Effect }, decision: Audit.Decision, ex
 	end
 	local exec = s.exec
 	local record = Audit.record(plan, {
-		mode = if s.mode == "guard" then "guard" else "native",
+		mode = s.mode,
+		run = s.runId,
 		decision = decision,
 		tier = if s.assessment then s.assessment.tier else nil,
 		fingerprint = s.fingerprint,
@@ -991,7 +1004,16 @@ end
 -- object diff or its inputs are missing.
 local function afterObjects(s: State, plan: T.Plan, live: { any }): { any }?
 	local f = plan.family
-	if f == "patch" or f == "label" or f == "annotate" then
+	if
+		f == "patch"
+		or f == "label"
+		or f == "annotate"
+		or Steps.SET_FAMILIES[f]
+		or Steps.CREATE_FAMILIES[f]
+		or f == "taint"
+		or f == "expose"
+		or (f == "replace" and not plan.force)
+	then
 		local run = okRun(s, "after")
 		return if run then (Objdiff.decodeStream(run.stdout or "", s.decode)) else nil
 	elseif f == "pause" or f == "resume" then
@@ -1017,6 +1039,9 @@ local function afterObjects(s: State, plan: T.Plan, live: { any }): { any }?
 			end
 		end
 		return out
+	elseif f == "replace" then
+		local run = okRun(s, "convert")
+		return if run then (Objdiff.decodeStream(run.stdout or "", s.decode)) else nil
 	elseif f == "edit" then
 		local out: { any } = {}
 		for _, run in s.steps do
@@ -1033,25 +1058,40 @@ local function afterObjects(s: State, plan: T.Plan, live: { any }): { any }?
 end
 
 -- Only objects both sides know are diffed: a missing side means a step
--- did not cover it, not that it would be created or deleted.
+-- did not cover it, not that it would be created or deleted. Exceptions:
+-- creates have no before side; `kubectl set` prints only the objects it
+-- changes, so a target without an after object is unchanged.
 local function computeObjects(s: State, plan: T.Plan)
-	local targets = okRun(s, "targets")
-	if targets == nil or plan.family == "apply" then
-		return
+	local f = plan.family
+	local live: { any } = {}
+	if not Steps.CREATE_FAMILIES[f] then
+		local targets = okRun(s, "targets")
+		if targets == nil or f == "apply" then
+			return
+		end
+		local decoded = Objdiff.decodeStream(targets.stdout or "", s.decode)
+		if decoded == nil then
+			return
+		end
+		live = decoded
+		s.live = live
 	end
-	local live = Objdiff.decodeStream(targets.stdout or "", s.decode)
-	if live == nil then
-		return
-	end
-	s.live = live
-	local after = afterObjects(s, plan, live :: { any })
+	local after = afterObjects(s, plan, live)
 	if after == nil then
 		return
 	end
+	local before = if f == "expose" then {} else live
+	if plan.force then
+		before = Objdiff.recreated(before)
+		after = Objdiff.recreated(after :: { any })
+	end
+	local creates = Steps.CREATE_FAMILIES[f] or f == "expose"
 	local both: { Objdiff.Pair } = {}
-	for _, p in Objdiff.pair(live :: { any }, after :: { any }) do
-		if p.before ~= nil and p.after ~= nil then
+	for _, p in Objdiff.pair(before, after :: { any }) do
+		if p.after ~= nil and (p.before ~= nil or creates) then
 			table.insert(both, p)
+		elseif p.before ~= nil and Steps.SET_FAMILIES[f] then
+			table.insert(both, { key = p.key, before = p.before, after = p.before })
 		end
 	end
 	s.objects = Objdiff.compute(both, {
@@ -1060,6 +1100,91 @@ local function computeObjects(s: State, plan: T.Plan)
 		isList = s.json.isList,
 	})
 	s.diff = (s.objects :: Objdiff.Result).summary
+	if Steps.SET_FAMILIES[f] or creates or f == "replace" or f == "taint" then
+		-- The advisory manifest heuristics read what the change introduces:
+		-- the after objects against the live ones.
+		local opts = { null = s.json.null, isList = s.json.isList }
+		local afterSide: { any } = {}
+		local beforeSide: { any } = {}
+		for _, p in both do
+			table.insert(afterSide, p.after)
+			if p.before ~= nil then
+				table.insert(beforeSide, p.before)
+			end
+		end
+		s.manifests = Objdiff.manifests(afterSide, opts)
+		s.baseline = Objdiff.manifests(beforeSide, opts)
+	end
+end
+
+local function replaceFacts(s: State, plan: T.Plan): Risk.ReplaceFacts
+	local facts: Risk.ReplaceFacts = { noResourceVersion = {} }
+	if plan.force then
+		local probe = runOf(s, "probe")
+		local o = if probe then probe.outcome else nil
+		if probe and o then
+			facts.probeOk = o.ok
+			if not o.ok then
+				facts.probeError = Steps.headline(probe.stderr)
+			end
+		end
+		return facts
+	end
+	local file = okRun(s, "convert")
+	local objects: { any } = if file then Objdiff.decodeStream(file.stdout or "", s.decode) or {} else {}
+	for _, obj in objects do
+		local meta = if type(obj) == "table" and type(obj.metadata) == "table" then obj.metadata else {}
+		if meta.resourceVersion == nil or meta.resourceVersion == "" then
+			table.insert(
+				facts.noResourceVersion,
+				tostring(obj.kind)
+					.. " "
+					.. (if type(meta.namespace) == "string" then meta.namespace .. "/" else "")
+					.. tostring(meta.name)
+			)
+		end
+	end
+	return facts
+end
+
+-- taint: evictions per node a NoExecute taint lands on, from the stage-2
+-- pods reads; nodes the preview could not cover are named in `unknown`.
+local function taintFacts(s: State): Risk.TaintFacts
+	local facts: Risk.TaintFacts = { nodes = {}, unknown = {} }
+	local names, before, afterBy = Steps.noExecuteNodes(stepResults(s), s.decode)
+	if #names > Steps.MAX_OBJECTS then
+		table.insert(
+			facts.unknown,
+			string.format(
+				"evictions not computed for %d nodes (the preview reads at most %d)",
+				#names,
+				Steps.MAX_OBJECTS
+			)
+		)
+		return facts
+	end
+	for _, node in names do
+		local run = runOf(s, Steps.podsStepId(node))
+		local o = if run then run.outcome else nil
+		local items: { any }? = nil
+		if run and o and o.ok then
+			local doc = decodeOne(s, run.stdout or "")
+			items = if type(doc) == "table" and type(doc.items) == "table" then doc.items else nil
+		end
+		if items then
+			table.insert(facts.nodes, { node = node, evictions = Taint.evictions(before[node], afterBy[node], items) })
+		else
+			table.insert(
+				facts.unknown,
+				string.format(
+					"pods on %s could not be read (%s)",
+					node,
+					if o then o.text elseif run then "no result" else "not read"
+				)
+			)
+		end
+	end
+	return facts
 end
 
 local function computeFamilyFacts(s: State, plan: T.Plan)
@@ -1113,6 +1238,10 @@ local function computeFamilyFacts(s: State, plan: T.Plan)
 			end
 		end
 		s.editFacts = facts
+	elseif plan.family == "taint" then
+		s.taintFacts = taintFacts(s)
+	elseif plan.family == "replace" then
+		s.replaceFacts = replaceFacts(s, plan)
 	end
 end
 
@@ -1265,6 +1394,8 @@ local function finishPreview(s: State, effects: { Effect })
 		undo = s.undo,
 		edit = s.editFacts,
 		helm = s.helmFacts,
+		taint = s.taintFacts,
+		replace = s.replaceFacts,
 		cluster = cluster,
 	}
 	s.assessment = Risk.assess(plan, facts)
@@ -1303,6 +1434,8 @@ local function resetPreview(s: State)
 	s.editSet = nil
 	s.editFacts = nil
 	s.helmFacts = nil
+	s.taintFacts = nil
+	s.replaceFacts = nil
 	s.liveDiff = nil
 	s.liveExpanded = {}
 	s.baseline = nil
@@ -1488,7 +1621,7 @@ end
 -- `rollout undo` without --to-revision restores "the previous revision":
 -- a rollout since the preview moves that target.
 local function rolloutMoved(s: State): string?
-	local run = s.verify.history
+	local run = if s.verify.runs then (s.verify.runs :: { [string]: StepRun })["v-history"] else nil
 	if run == nil then
 		return nil
 	end
@@ -1516,6 +1649,24 @@ local function rolloutMoved(s: State): string?
 		end
 	end
 	return nil
+end
+
+-- A selector or --all is resolved again when kubectl runs: the set read at
+-- confirm must be the previewed one, object for object (uid included).
+local function selectionMoved(s: State): string?
+	local run = if s.verify.runs then (s.verify.runs :: { [string]: StepRun })["v-selection"] else nil
+	if run == nil then
+		return nil
+	end
+	local o = run.outcome
+	if o == nil or not o.ok then
+		return "Cannot re-read the selection" .. (if o then ": " .. o.text else "") .. ". Press r to preview again."
+	end
+	local now, why = Selection.parse(run.stdout or "")
+	if now == nil then
+		return "Cannot re-read the selection: " .. (why or "?") .. ". Press r to preview again."
+	end
+	return Selection.compare(Selection.fromLive(s.live or {}), now)
 end
 
 local function finishVerify(s: State, effects: { Effect })
@@ -1591,6 +1742,11 @@ local function finishVerify(s: State, effects: { Effect })
 		refuse(s, effects, moved)
 		return
 	end
+	local changed = selectionMoved(s)
+	if changed then
+		refuse(s, effects, changed)
+		return
+	end
 	if s.request and s.now > deadline(s.request :: GuardRequest) then
 		s.phase = "expired"
 		return
@@ -1602,6 +1758,26 @@ local function finishVerify(s: State, effects: { Effect })
 		return
 	end
 	proceed(s, effects)
+end
+
+local function verifyTag(step: T.Step): string
+	return if step.kind == "selection" then "v-selection" else "v-history"
+end
+
+-- Runs Steps.verifySteps(plan)[index]; false when there is none left.
+local function emitVerify(s: State, effects: { Effect }, index: number): boolean
+	local plan = s.plan :: T.Plan
+	local step = Steps.verifySteps(plan)[index]
+	if step == nil then
+		return false
+	end
+	local tag = verifyTag(step)
+	local runs = s.verify.runs or {}
+	runs[tag] = { step = step, status = "running" }
+	s.verify.runs = runs
+	s.verify.index = index
+	emitStep(s, effects, tag, step, plan.cwd)
+	return true
 end
 
 local function verifyNext(s: State, effects: { Effect }, after: string)
@@ -1628,14 +1804,8 @@ local function verifyNext(s: State, effects: { Effect }, after: string)
 		emitRun(s, effects, "v-current", argv, { env = penv })
 		return
 	end
-	if after == "v-target" or after == "v-current" then
-		local again = Steps.verifySteps(plan)
-		if #again > 0 then
-			local step = again[1]
-			s.verify.history = { step = step, status = "running" }
-			emitStep(s, effects, "v-history", step, plan.cwd)
-			return
-		end
+	if (after == "v-target" or after == "v-current") and emitVerify(s, effects, 1) then
+		return
 	end
 	finishVerify(s, effects)
 end
@@ -1757,6 +1927,7 @@ local function blank(env: Init, mode: Mode): State
 		quick = nil,
 		launch = nil,
 		grantToken = nil,
+		runId = nil,
 		request = nil,
 		canRespond = false,
 		denyReason = nil,
@@ -1783,6 +1954,8 @@ local function blank(env: Init, mode: Mode): State
 		editSet = nil,
 		editFacts = nil,
 		helmFacts = nil,
+		taintFacts = nil,
+		replaceFacts = nil,
 		liveDiff = nil,
 		liveExpanded = {},
 		baseline = nil,
@@ -1882,7 +2055,8 @@ end
 
 -- The window minted the grant in its own kv; this block may run on another
 -- host, so it only carries the token back. An old window half sends none.
-local function initQuick(s: State, url: string, token: string?, effects: { Effect })
+-- The run id is only logged (Audit drops a malformed one).
+local function initQuick(s: State, url: string, token: string?, run: string?, effects: { Effect })
 	if type(token) ~= "string" or #token ~= 32 or string.find(token, "^[0-9a-f]+$") == nil then
 		fail(
 			s,
@@ -1891,6 +2065,7 @@ local function initQuick(s: State, url: string, token: string?, effects: { Effec
 		return
 	end
 	s.grantToken = token
+	s.runId = run
 	local req, e = Quick.decode(url)
 	if req == nil then
 		fail(s, "Invalid quick action link: " .. (e or "?"))
@@ -1990,7 +2165,7 @@ function M.init(env: Init): (State, { Effect })
 		elseif native then
 			initNative(s, arg, effects)
 		else
-			initQuick(s, arg, env.args[2], effects)
+			initQuick(s, arg, env.args[2], env.args[3], effects)
 		end
 		return s, effects
 	end
@@ -2166,13 +2341,15 @@ local function onResult(s: State, tag: string, r: ProcessResult, effects: { Effe
 	elseif tag == "v-current" then
 		s.verify.current = if r.status == 0 then nonEmpty(firstLine(r.stdout)) else nil
 		verifyNext(s, effects, "v-current")
-	elseif tag == "v-history" and s.verify.history then
-		local run = s.verify.history :: StepRun
+	elseif (tag == "v-history" or tag == "v-selection") and s.verify.runs and (s.verify.runs :: any)[tag] then
+		local run = (s.verify.runs :: { [string]: StepRun })[tag]
 		run.outcome = outcomeOf(run.step, r)
 		run.status = if (run.outcome :: Steps.Outcome).ok then "ok" else "failed"
 		run.stdout = r.stdout
 		run.stderr = r.stderr
-		finishVerify(s, effects)
+		if not emitVerify(s, effects, (s.verify.index or 0) + 1) then
+			finishVerify(s, effects)
+		end
 	elseif tag == "exec" then
 		local ex = s.exec :: Exec
 		ex.finishedAt = s.now
@@ -2376,7 +2553,11 @@ local function applyAction(s: State, act: string, value: string?, effects: { Eff
 	elseif act == "copy" then
 		local text = M.commandText(s)
 		table.insert(effects, { t = "copy", text = text })
-		table.insert(effects, { t = "toast", level = "success", text = "Copied the command" })
+		table.insert(effects, {
+			t = "toast",
+			level = "success",
+			text = if M.commandMasked(s) then "Copied the command (values masked)" else "Copied the command",
+		})
 	elseif act == "help" then
 		s.help = not s.help
 	elseif act == "rerun" then
@@ -2579,12 +2760,12 @@ function M.watch(s: State): { pane: string?, cancelPath: string? }
 	return { pane = r.pane, cancelPath = M.cancelPath(r) }
 end
 
--- The command as it will run, for display and copying.
-function M.commandText(s: State): string
+-- The command as it will run: an environment prefix and the argv.
+local function commandParts(s: State): (string, { string })
 	if s.mode == "guard" and s.request then
-		return Command.format((s.request :: GuardRequest).argv)
+		return "", (s.request :: GuardRequest).argv
 	elseif s.mode == "quick" and s.launch then
-		return Command.format((s.launch :: Quick.Launch).argv)
+		return "", (s.launch :: Quick.Launch).argv
 	end
 	local plan = s.plan
 	-- Before the target resolves (or when resolving it failed) the command
@@ -2599,9 +2780,23 @@ function M.commandText(s: State): string
 		if env.HELM_DRIVER then
 			prefix = "HELM_DRIVER=" .. Command.quote(env.HELM_DRIVER) .. " " .. prefix
 		end
-		return prefix .. Command.format(plan.execArgv)
+		return prefix, plan.execArgv
 	end
-	return Command.format(s.argv or {})
+	return "", s.argv or {}
+end
+
+-- The command as it will run, for display and copying, with credentials
+-- and secret literals masked (Audit.redactArgv); the user typed the
+-- original in their shell.
+function M.commandText(s: State): string
+	local prefix, argv = commandParts(s)
+	return prefix .. Command.format(Audit.redactArgv(argv))
+end
+
+-- Whether commandText masked something.
+function M.commandMasked(s: State): boolean
+	local prefix, argv = commandParts(s)
+	return M.commandText(s) ~= prefix .. Command.format(argv)
 end
 
 function M.deadline(s: State): number?

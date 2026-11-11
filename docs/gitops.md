@@ -28,6 +28,24 @@ shows the owning application with its sync and health status, and links
 to the source path when the application's repository URL matches one of
 your local remotes. Tern Kube never writes Argo CD or Flux objects.
 
+The source chooser (`ctrl+g`) counts the Argo CD / Flux controllers read
+from the current context (`r` reads them again); each context keeps its
+own, so one cluster's applications never label another's objects. A drift
+report whose source a controller deploys shows one card per controller:
+its verdict (`Argo CD app X: OutOfSync · Healthy`, `Flux Kustomization Y:
+Ready` ...), the commit it applied against your checkout's HEAD (`this
+report compares your checkout, not what the controller applied` when they
+differ) and its last sync. Above the apply chips, and on the object's
+controller line, a revert-risk sentence says when an apply outside Git will
+not stick: Argo CD self-heal (reverted) or auto-sync (overwritten on the
+next sync), a Flux Kustomization re-applying on its interval, a HelmRelease
+only with `spec.driftDetection.mode: enabled`; a suspended Flux object
+keeps changes until resumed. To try this without a controller, install
+only the vendored, digest-checked CRDs with
+`scripts/fixtures/gitops-crds.sh install [MARKER]` (`check` verifies the
+digests, `remove-if-installed MARKER` deletes them only when that run
+installed them) and write `status` into the objects by hand.
+
 ### Open manifest and diff vs manifest
 
 From an Explore object, or with the **Manifest** / **Diff vs manifest**
@@ -67,6 +85,27 @@ every source and whatever reports were opened before.
 A directory source covers every manifest below it, subdirectories
 included. The CLI's `-f DIR` reads only the directory's own files, like
 `kubectl diff -f`; pass `-R` for the same scope as Explore.
+
+`Y` on a report or one of its items (chip **Copy CLI command (Y)**, and
+the same chip on the [matrix](#across-clusters)) copies the
+[tern-kube-drift](#tern-kube-drift-cli) command that reproduces the report:
+the same source, `--context` for the report's context (on the matrix one
+per column, base first) and `--kubeconfig` when the context comes from a
+kubeconfig other than your shell's. A directory source becomes `-R -f DIR`
+only when `git ls-files -c -o` lists exactly the files Explore compared
+(at most 5000); otherwise, for example with JSON or git-ignored manifests,
+each file is passed with `-f`. A Kustomization becomes `-k DIR`, a Helm
+source `--helm CHART --release R` with its values files. Documents without
+a namespace get `-n` with the report's namespace when every other document
+names that namespace too; when they are mixed with documents of other
+namespaces kubectl refuses `-n`, so the command has none and the report
+(and the copy toast) notes that those documents are compared in the
+kubeconfig's namespace. The toast also lists objects declared elsewhere in
+the repository, which the CLI, reading only its source, reports as
+unmanaged, and warns when there is no `--kubeconfig`. An auto-detected
+Helm source compared with the release's deployed values is refused: the
+CLI renders only with values files, so pick the values-file variant or
+copy it as a `gitops.helm` entry.
 
 For an object missing in the cluster, the diff leaves out the
 `creationTimestamp` and `uid` the server dry run made up: the real create
@@ -356,7 +395,12 @@ are expected to be absent from Git are skipped: anything with
 service-account token and Helm release Secrets, objects of a Helm release
 (`meta.helm.sh/release-name`) and Helm hooks (`helm.sh/hook`), events,
 endpoints, endpoint slices, leases, `default` and `kube-*` namespaces and
-built-in `system:` / bootstrap RBAC objects.
+built-in `system:` / bootstrap RBAC objects. Since 0.4.0 it also skips
+objects being deleted (`deletionTimestamp`), Argo CD's own Secrets
+(`argocd.argoproj.io/secret-type`) and `default/kubernetes`, and Explore
+skips the same set (service-account token Secrets, `system:` names, the
+`kubernetes.io/bootstrapping` label), so both list the same unmanaged
+objects for the same source.
 
 ### Several contexts
 

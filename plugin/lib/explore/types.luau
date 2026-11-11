@@ -33,6 +33,7 @@ export type RouteKind =
 	| "helm-diff"
 	| "compare"
 	| "matrix"
+	| "usage"
 
 export type Route = {
 	kind: RouteKind,
@@ -50,6 +51,10 @@ export type Route = {
 	previous: boolean?,
 	-- logs without a ref: the `-l` selector.
 	selector: string?,
+	-- usage: `-l` of the pods read, as for logs. resource is `pods` or
+	-- `nodes`; a pods usage `ref` is one pod's containers.
+	-- usage (pods): the node whose pods are shown (all namespaces).
+	node: string?,
 	-- logs: --since and --tail from a lens link (tail nil = explore.logs_tail).
 	since: string?,
 	tail: number?,
@@ -93,6 +98,9 @@ export type Route = {
 	keys: { string }?,
 	-- compare: restored after a plugin reload and not fetched again (r does).
 	reloaded: boolean?,
+	-- detail of a Secret: its values shown decoded (z). Never saved (State.save
+	-- copies explicit fields) and dropped when another view is pushed over it.
+	decoded: boolean?,
 }
 
 export type Item = { key: string, ref: Ref?, value: string? }
@@ -123,7 +131,8 @@ export type FileWrite = { path: string, text: string }
 -- `files` through tern.fs and answers with a `result`; `openfile` opens
 -- `path` at `line` in a Tern file block; `restart` re-runs init with the
 -- current config and program; `focus` gives field `id` the caret, `blur`
--- takes it from every field.
+-- takes it from every field; `remember` keeps discovery output `text`
+-- (read at `at`) for target `id` in the host's memory (never on disk).
 export type Effect = {
 	t: "run"
 		| "copy"
@@ -139,7 +148,8 @@ export type Effect = {
 		| "readtree"
 		| "write"
 		| "openfile"
-		| "restart",
+		| "restart"
+		| "remember",
 	tag: string?,
 	argv: { string }?,
 	env: { [string]: string }?,
@@ -156,6 +166,7 @@ export type Effect = {
 	line: number?,
 	scan: ScanOpts?,
 	files: { FileWrite }?,
+	at: number?,
 }
 
 export type Msg = {

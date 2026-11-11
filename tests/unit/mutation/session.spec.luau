@@ -631,6 +631,98 @@ describe("approve session: guard requests", function()
 	end)
 end)
 
+-- A selector is resolved again when kubectl runs: a configmap labelled while
+-- the user reads the preview would be deleted unseen. Confirm re-reads the
+-- set and refuses when it is not the previewed one; previewing again fixes
+-- it, so the refusal is never final (guard mode included).
+describe("approve session: selection re-check at confirm", function()
+	local ARGV = { "kubectl", "delete", "cm", "-l", "tk=sel", "-n", "apps" }
+	local function cm(name: string, uid: string): string
+		return string.format(
+			'{"apiVersion":"v1","kind":"ConfigMap","metadata":{"name":"%s","namespace":"apps","uid":"%s"}}',
+			name,
+			uid
+		)
+	end
+	local function list(items: { string }): string
+		return '{"apiVersion":"v1","kind":"List","items":[' .. table.concat(items, ",") .. "]}"
+	end
+	local PREVIEWED = list({ cm("a", "u1"), cm("b", "u2") })
+	local function world(atConfirm: string?): A.World
+		local w: A.World = {
+			["step:targets"] = A.ok(PREVIEWED),
+			["step:dry-run"] = A.ok('configmap "a" deleted (server dry run)\nconfigmap "b" deleted (server dry run)\n'),
+		}
+		if atConfirm then
+			w["v-selection"] = A.ok(atConfirm)
+		end
+		return w
+	end
+	local function confirmWith(atConfirm: string?): (Session.State, A.Drive)
+		local s, effects = A.init(A.requestPath(), { request = A.request({ argv = ARGV, namespace = "apps" }) })
+		local respond = A.cluster(world(atConfirm))
+		A.drive(s, effects, respond)
+		expect(s.phase).toBe("ready")
+		local typed = (s.requirements :: any).typed
+		if typed then
+			A.typeText(s, typed, respond)
+		end
+		return s, A.send(s, A.key("enter"), respond)
+	end
+
+	it("re-reads the set with the targets flags and approves when it is unchanged", function()
+		local s, d = confirmWith(nil)
+		local v = A.find(d.runs, "run", "v-selection") :: Effect
+		local argv = table.concat(argvOf(v), " ")
+		expect(argv).toContain("get cm --selector=tk=sel")
+		expect(argv).toContain("jsonpath=")
+		present(A.find(d.effects, "write", "respond"))
+		expect(s.decided).toBe(true)
+	end)
+
+	it("refuses when another object matches now, naming it; previewing again fixes it", function()
+		local s, d = confirmWith("v1\tConfigMap\tapps\ta\tu1\nv1\tConfigMap\tapps\tb\tu2\nv1\tConfigMap\tapps\tc\tu3\n")
+		expect(A.find(d.effects, "write", "respond")).toBeNil()
+		expect(s.phase).toBe("ready")
+		expect(s.stale).toBe(true)
+		expect(s.final ~= true).toBe(true)
+		expect(s.confirmError).toContain("now matches 3 object(s) (previewed 2)")
+		expect(s.confirmError).toContain("+ConfigMap apps/c")
+		expect(Session.canRerun(s)).toBe(true)
+		local audit = A.find(d.effects, "audit") :: Effect
+		expect(audit.line).toContain('"decision":"blocked"')
+	end)
+
+	it("refuses an object deleted and re-created under the same name (new uid)", function()
+		local s, d = confirmWith("v1\tConfigMap\tapps\ta\tu1\nv1\tConfigMap\tapps\tb\tu9\n")
+		expect(A.find(d.effects, "write", "respond")).toBeNil()
+		expect(s.confirmError).toContain("ConfigMap apps/b re-created since the preview")
+	end)
+
+	it("refuses when the set cannot be read again", function()
+		local s, effects = A.init(A.requestPath(), { request = A.request({ argv = ARGV, namespace = "apps" }) })
+		local w = world(nil)
+		w["v-selection"] = A.failed(1, "error: You must be logged in to the server (Unauthorized)")
+		local respond = A.cluster(w)
+		A.drive(s, effects, respond)
+		local typed = (s.requirements :: any).typed
+		if typed then
+			A.typeText(s, typed, respond)
+		end
+		local d = A.send(s, A.key("enter"), respond)
+		expect(A.find(d.effects, "write", "respond")).toBeNil()
+		expect(s.confirmError).toContain("Cannot re-read the selection")
+		expect(s.confirmError).toContain("Unauthorized")
+	end)
+
+	it("does not re-read named targets", function()
+		local s, effects = A.init(A.requestPath(), { request = A.request({}) })
+		A.drive(s, effects, A.cluster())
+		local d = A.send(s, A.key("enter"), A.cluster())
+		expect(A.find(d.runs, "run", "v-selection")).toBeNil()
+	end)
+end)
+
 describe("approve session: quick-action mutations", function()
 	local NODE = "tern-kube://act/debug-node?kind=Node&name=worker-1&context=kind-dev"
 
@@ -660,13 +752,39 @@ describe("approve session: quick-action mutations", function()
 		expect(req.target.kubeconfig).toBe("/k/config")
 		expect(req.opts.image).toBe(Quick.DEFAULT_IMAGE)
 		local grants = Link.mintGrant(nil, A.TOKEN, NODE, 1000) :: Link.Grants
-		expect((Link.consumeGrant(grants, A.TOKEN, req, 1010))).toBe(true)
+		expect((Link.consumeGrant(grants, A.TOKEN, req, 1010)) ~= nil).toBe(true)
 		expect(A.find(d.effects, "grant")).toBeNil()
 		expect(A.find(first.runs, "run", "nonce")).toBeNil()
 		expect(A.find(d.runs, "run", "nonce")).toBeNil()
 		expect(A.find(d.runs, "run", "exec")).toBeNil()
 		present(A.find(d.effects, "audit"))
 		present(A.find(d.effects, "exit"))
+	end)
+
+	-- The run id (args[3]) ties this approved record to the split's outcome
+	-- record, which the window builds and the split appends.
+	it("logs the approval as mode quick with the window's run id", function()
+		local run = string.rep("ab", 16)
+		local s, effects = A.init(NODE, { run = run })
+		A.drive(s, effects, A.cluster())
+		A.typeText(s, "worker-1", A.cluster())
+		local d = A.send(s, A.key("enter"), A.cluster())
+		local audit = A.find(d.effects, "audit") :: Effect
+		expect(audit.line).toContain('"decision":"approved","mode":"quick","run":"' .. run .. '"')
+		expect((string.find(audit.line :: string, A.TOKEN, 1, true))).toBeNil()
+	end)
+
+	it("still confirms without a run id (an older window), logging none", function()
+		for _, run in { "", "NOT-HEX" } do
+			local s, effects = A.init(NODE, { run = run })
+			A.drive(s, effects, A.cluster())
+			A.typeText(s, "worker-1", A.cluster())
+			local d = A.send(s, A.key("enter"), A.cluster())
+			present(A.find(d.effects, "open"))
+			local audit = A.find(d.effects, "audit") :: Effect
+			expect(audit.line).toContain('"mode":"quick"')
+			expect((string.find(audit.line :: string, '"run"', 1, true))).toBeNil()
+		end
 	end)
 
 	it("fails closed without a well-formed token from the window (version skew)", function()
@@ -1024,6 +1142,98 @@ describe("approve session: edit approvals", function()
 		local a = s.assessment :: any
 		expect(a.tier).toBe("simple")
 		expect(a.reasons[1].id).toBe("edit-rejected")
+	end)
+end)
+
+describe("approve session: v1.2 guarded verbs", function()
+	local function guardArgv(argv: { string }, world: A.World?): (Session.State, A.Drive)
+		local s, effects = A.init(A.requestPath(), { request = A.request({ argv = argv }) })
+		return s, A.drive(s, effects, A.cluster(world))
+	end
+
+	local SECRET = '{"apiVersion":"v1","kind":"Secret","metadata":{"name":"s1","namespace":"apps"},'
+		.. '"data":{"password":"aHVudGVyMg=="},"type":"Opaque"}'
+
+	it("previews create secret with the literal masked in the command, the copy and the audit record", function()
+		local argv = { "kubectl", "create", "secret", "generic", "s1", "--from-literal=password=hunter2" }
+		local s, d = guardArgv(argv, { ["step:after"] = A.ok(SECRET) })
+		expect(s.phase).toBe("ready")
+		expect(s.plan and s.plan.family).toBe("create")
+		expect(s.diff and s.diff.create).toBe(1)
+		local after = A.find(d.runs, "run", "step:after") :: Effect
+		-- The step itself runs the real literal: the dry run must create what kubectl will.
+		expect(table.find(argvOf(after), "--from-literal=password=hunter2") ~= nil).toBe(true)
+		expect(Session.commandText(s)).toContain("'--from-literal=password=<redacted>'")
+		expect((string.find(Session.commandText(s), "hunter2", 1, true))).toBeNil()
+		local c = A.send(s, A.key("y"), A.cluster())
+		local copy = A.find(c.effects, "copy") :: Effect
+		expect((string.find(copy.text :: string, "hunter2", 1, true))).toBeNil()
+		expect((A.find(c.effects, "toast") :: Effect).text).toBe("Copied the command (values masked)")
+		local ok = A.send(s, A.key("enter"), A.cluster())
+		local w = A.find(ok.effects, "write") :: Effect
+		expect((string.find(w.text :: string, "hunter2", 1, true))).toBeNil()
+		expect((string.find(w.text :: string, "aHVudGVyMg", 1, true))).toBeNil()
+		expect(w.text).toContain('"op":"create secret generic"')
+	end)
+
+	-- kubectl set prints only the objects it changes (empty stdout when none).
+	it("reads a set image without after objects as unchanged, never as a deletion", function()
+		local s = guardArgv(
+			{ "kubectl", "set", "image", "deployment/web", "app=nginx:1.27" },
+			{ ["step:after"] = A.ok("") }
+		)
+		expect(s.phase).toBe("ready")
+		expect(s.objects and #s.objects.unchanged).toBe(1)
+		expect(s.diff and s.diff.delete).toBe(0)
+		local ids: { string } = {}
+		for _, r in (s.assessment :: any).reasons do
+			table.insert(ids, r.id)
+		end
+		expect(table.find(ids, "no-change") ~= nil).toBe(true)
+	end)
+
+	it("computes the evictions of a NoExecute taint from the pods on the node", function()
+		local function node(taints: string): string
+			return '{"apiVersion":"v1","kind":"Node","metadata":{"name":"n1"},"spec":{' .. taints .. "}}"
+		end
+		local pods = '{"kind":"List","items":[{"metadata":{"namespace":"apps","name":"web-1"},"spec":{},'
+			.. '"status":{"phase":"Running"}}]}'
+		local s, d = guardArgv({ "kubectl", "taint", "nodes", "n1", "k=v:NoExecute" }, {
+			["step:targets"] = A.ok(node("")),
+			["step:after"] = A.ok(node('"taints":[{"key":"k","value":"v","effect":"NoExecute"}]')),
+			["step:pods:n1"] = A.ok(pods),
+		})
+		expect(s.phase).toBe("ready")
+		present(A.find(d.runs, "run", "step:pods:n1"))
+		local f = s.taintFacts :: any
+		expect(#f.nodes[1].evictions.immediate).toBe(1)
+		expect((s.assessment :: any).tier).toBe("typed")
+	end)
+
+	it("previews replace --force from the file's objects; the delete dry run and probe never carry --force", function()
+		local live = '{"apiVersion":"v1","kind":"ConfigMap","metadata":{"name":"cfg","namespace":"apps","uid":"u1",'
+			.. '"resourceVersion":"5"},"data":{"a":"1"}}'
+		local file =
+			'{"apiVersion":"v1","kind":"ConfigMap","metadata":{"name":"cfg","namespace":"apps"},"data":{"a":"2"}}'
+		local s, d = guardArgv({ "kubectl", "replace", "--force", "-f", "cfg.yaml" }, {
+			["step:targets"] = A.ok(live),
+			["step:convert"] = A.ok(file),
+			["step:probe"] = A.ok(file),
+		})
+		expect(s.phase).toBe("ready")
+		expect(s.diff and s.diff.modify).toBe(1)
+		for _, e in d.runs do
+			if e.t == "run" and string.sub(e.tag or "", 1, 5) == "step:" then
+				expect(table.find(argvOf(e), "--force=true")).toBeNil()
+			end
+		end
+		expect((s.assessment :: any).tier).toBe("typed")
+		-- The re-created object gets a new uid: the diff must not claim it keeps "u1".
+		for _, seg in (s.diff :: any).segments do
+			for _, line in seg.lines do
+				expect((string.find(line, "u1", 1, true))).toBeNil()
+			end
+		end
 	end)
 end)
 

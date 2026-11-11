@@ -20,6 +20,7 @@ local describe, it, expect = t.describe, t.it, t.expect
 
 local ROOT = "/repo/drift"
 local SOURCE: Drift.Source = { type = "dir", root = "/repo", path = ROOT, label = "drift" }
+local CM = "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: %s\n  namespace: %s\n"
 
 local function addDocs(docs: { Drift.Doc }, rel: string, text: string, source: Drift.Source)
 	for _, d in Yaml.split(text).docs do
@@ -494,6 +495,59 @@ describe("drift.report edge cases", function()
 		local r = Drift.report(SOURCE, index(), {}, nil, { diffNotes = { "Warning: x" } })
 		expect(r.notes).toContain("Warning: x")
 	end)
+
+	-- tern-kube-drift only knows its own source, so it lists objects another
+	-- source of the repository declares as unmanaged. The report exposes
+	-- those keys so the copied CLI command can say why the two differ.
+	it("exposes live objects hidden because another source declares them", function()
+		local a: Drift.Source = { type = "dir", root = "/repo", path = ROOT .. "/a" }
+		local b: Drift.Source = { type = "dir", root = "/repo", path = ROOT .. "/b" }
+		local docs: { Drift.Doc } = {}
+		addDocs(docs, "a/cm.yaml", string.format(CM, "app-config", "ns"), a)
+		addDocs(docs, "b/cm.yaml", string.format(CM, "declared-in-b", "ns"), b)
+		local function cm(name: string): any
+			return { apiVersion = "v1", kind = "ConfigMap", metadata = { name = name, namespace = "ns" } }
+		end
+		local objects = { cm("app-config"), cm("declared-in-b"), cm("stray") }
+		local r = Drift.report(a, { docs = docs }, {}, objects, {})
+		expect(keys(r.unmanaged)).toEqual({ "/ConfigMap/ns/stray" })
+		expect(r.declaredElsewhere).toEqual({ "/ConfigMap/ns/declared-in-b" })
+		expect(Drift.report(a, { docs = docs }, {}, nil, {}).declaredElsewhere).toEqual({})
+	end)
+
+	-- Explore and tern-kube-drift 0.4.0 skip the same live objects
+	-- (docs/gitops.md "Unmanaged objects"), or the copied command disagrees.
+	it("ignores service account tokens, system: names and bootstrapping objects like the CLI", function()
+		local docs: { Drift.Doc } = {}
+		addDocs(docs, "cm.yaml", string.format(CM, "app-config", "ns"), SOURCE)
+		local objects: { any } = {
+			{ apiVersion = "v1", kind = "ConfigMap", metadata = { name = "app-config", namespace = "ns" } },
+			{
+				apiVersion = "v1",
+				kind = "Secret",
+				type = "kubernetes.io/service-account-token",
+				metadata = { name = "tok", namespace = "ns" },
+			},
+			{ apiVersion = "v1", kind = "ConfigMap", metadata = { name = "system:x", namespace = "ns" } },
+			{
+				apiVersion = "v1",
+				kind = "ConfigMap",
+				metadata = {
+					name = "boot",
+					namespace = "ns",
+					labels = { ["kubernetes.io/bootstrapping"] = "rbac-defaults" },
+				},
+			},
+			{ apiVersion = "v1", kind = "Secret", metadata = { name = "stray", namespace = "ns" } },
+		}
+		local r = Drift.report(SOURCE, { docs = docs }, {}, objects, { unmanagedKinds = { "ConfigMap", "Secret" } })
+		expect(keys(r.unmanaged)).toEqual({ "/Secret/ns/stray" })
+		expect(ignoredPairs(r)).toEqual({
+			"/ConfigMap/ns/boot = cluster bootstrapping",
+			"/ConfigMap/ns/system:x = system object",
+			"/Secret/ns/tok = service account token",
+		})
+	end)
 end)
 
 -- A context where the source's namespace does not exist yet (a new cluster)
@@ -504,7 +558,6 @@ describe("drift.namespaceMissing", function()
 		addDocs(docs, "a.yaml", text, SOURCE)
 		return { docs = docs }
 	end
-	local CM = "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: %s\n  namespace: %s\n"
 
 	it("reads the namespace from kubectl's error", function()
 		expect(Drift.missingNamespace('Error from server (NotFound): namespaces "new-ns" not found\n')).toBe("new-ns")

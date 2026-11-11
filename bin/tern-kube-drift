@@ -14,7 +14,7 @@
 set -u
 if [ -n "${ZSH_VERSION-}" ]; then emulate sh; fi
 
-VERSION=0.3.0
+VERSION=0.4.0
 prog=tern-kube-drift
 
 usage() {
@@ -478,7 +478,9 @@ collect() {
 	if [ -n "$namespace" ]; then
 		namespaces=$(printf '%s\n%s\n' "$namespaces" "$namespace" | LC_ALL=C sort -u)
 	fi
-	ltpl='{{range .items}}{{.apiVersion}}{{"\t"}}{{.kind}}{{"\t"}}{{.metadata.namespace}}{{"\t"}}{{.metadata.name}}{{"\t"}}{{if .metadata.ownerReferences}}owned{{else}}-{{end}}{{"\t"}}{{if .type}}{{.type}}{{else}}-{{end}}{{"\t"}}{{with .metadata.labels}}{{index . "kubernetes.io/bootstrapping"}}{{end}}{{"\t"}}{{with .metadata.annotations}}{{index . "helm.sh/hook"}}{{end}}{{"\t"}}{{with .metadata.annotations}}{{index . "meta.helm.sh/release-name"}}{{end}}{{"\n"}}{{end}}'
+	# Columns: apiVersion, kind, namespace, name, owned, type, bootstrapping
+	# label, helm hook, helm release, being deleted, argocd secret-type label.
+	ltpl='{{range .items}}{{.apiVersion}}{{"\t"}}{{.kind}}{{"\t"}}{{.metadata.namespace}}{{"\t"}}{{.metadata.name}}{{"\t"}}{{if .metadata.ownerReferences}}owned{{else}}-{{end}}{{"\t"}}{{if .type}}{{.type}}{{else}}-{{end}}{{"\t"}}{{with .metadata.labels}}{{index . "kubernetes.io/bootstrapping"}}{{end}}{{"\t"}}{{with .metadata.annotations}}{{index . "helm.sh/hook"}}{{end}}{{"\t"}}{{with .metadata.annotations}}{{index . "meta.helm.sh/release-name"}}{{end}}{{"\t"}}{{if .metadata.deletionTimestamp}}deleting{{else}}-{{end}}{{"\t"}}{{with .metadata.labels}}{{index . "argocd.argoproj.io/secret-type"}}{{end}}{{"\n"}}{{end}}'
 	: >"$cdir/live.tsv"
 	old_ifs=$IFS
 	set -f
@@ -516,13 +518,17 @@ collect() {
 		{
 			ns = nv($3); kind = $2; name = $4
 			if (ns != "" && !(ns in cover)) next
-			if ($5 == "owned") next
+			# The same exclusions as the drift report in Explore (docs/gitops.md
+			# "Unmanaged objects"): keep the two lists in step.
+			if ($5 == "owned" || $10 == "deleting") next
 			if (kind == "Event" || kind == "Endpoints" || kind == "EndpointSlice" || kind == "Lease") next
 			if (kind == "ServiceAccount" && name == "default") next
 			if (kind == "ConfigMap" && name == "kube-root-ca.crt") next
+			if (kind == "Service" && ns == "default" && name == "kubernetes") next
 			if (kind == "Secret" && ($6 == "helm.sh/release.v1" || $6 == "kubernetes.io/service-account-token")) next
 			if (kind == "Namespace" && (name == "default" || name ~ /^kube-/)) next
 			if (nv($7) != "" || name ~ /^system:/) next
+			if (nv($11) != "") next
 			# Objects of a Helm release (and its hooks) are the release'\''s,
 			# whatever the source: never unmanaged.
 			if (nv($8) != "" || nv($9) != "") next

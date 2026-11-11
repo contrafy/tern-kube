@@ -4,6 +4,9 @@
 #   tern-kube-guard kubectl [ARGS...]   run kubectl, asking Tern for approval
 #                                       first when the verb mutates
 #   tern-kube-guard status              print what the guard would do here
+#   tern-kube-guard record TEMPLATE STARTED STATUS
+#                                       append a quick action's outcome to
+#                                       the audit log (never runs kubectl)
 #
 # Normally reached through the `kubectl` function that shell/tern-kube.zsh,
 # shell/tern-kube.bash or shell/tern-kube.fish define. The request/response
@@ -71,6 +74,134 @@ tkg_edit_lb='|allow-missing-template-keys|output-patch|recursive|save-config|sho
 tkg_edit_lv='|field-manager|filename|kustomize|output|subresource|template|validate|'
 tkg_edit_sb='|R|'
 tkg_edit_sv='|f|k|o|'
+tkg_setimage_lb='|all|allow-missing-template-keys|local|recursive|show-managed-fields|'
+tkg_setimage_lv='|dry-run|field-manager|filename|kustomize|output|selector|template|'
+tkg_setimage_sb='|R|'
+tkg_setimage_sv='|f|k|l|o|'
+tkg_setenv_lb='|all|allow-missing-template-keys|list|local|overwrite|recursive|resolve|show-managed-fields|'
+tkg_setenv_lv='|containers|dry-run|env|field-manager|filename|from|keys|kustomize|output|prefix|selector|template|'
+tkg_setenv_sb='|R|'
+tkg_setenv_sv='|c|e|f|k|l|o|'
+tkg_setresources_lb='|all|allow-missing-template-keys|local|recursive|show-managed-fields|'
+tkg_setresources_lv='|containers|dry-run|field-manager|filename|kustomize|limits|output|requests|selector|template|'
+tkg_setresources_sb='|R|'
+tkg_setresources_sv='|c|f|k|l|o|'
+tkg_setselector_lb='|all|allow-missing-template-keys|local|recursive|show-managed-fields|'
+tkg_setselector_lv='|dry-run|field-manager|filename|output|resource-version|template|'
+tkg_setselector_sb='|R|'
+tkg_setselector_sv='|f|o|'
+tkg_setsa_lb='|all|allow-missing-template-keys|local|recursive|show-managed-fields|'
+tkg_setsa_lv='|dry-run|field-manager|filename|kustomize|output|template|'
+tkg_setsa_sb='|R|'
+tkg_setsa_sv='|f|k|o|'
+tkg_setsubject_lb='|all|allow-missing-template-keys|local|recursive|show-managed-fields|'
+tkg_setsubject_lv='|dry-run|field-manager|filename|group|kustomize|output|selector|serviceaccount|template|user|'
+tkg_setsubject_sb='|R|'
+tkg_setsubject_sv='|f|k|l|o|'
+tkg_replace_lb='|allow-missing-template-keys|force|recursive|save-config|show-managed-fields|wait|'
+tkg_replace_lv='|cascade|dry-run|field-manager|filename|grace-period|kustomize|output|raw|subresource|template|timeout|validate|'
+tkg_replace_sb='|R|'
+tkg_replace_sv='|f|k|o|'
+tkg_taint_lb='|all|allow-missing-template-keys|overwrite|show-managed-fields|'
+tkg_taint_lv='|dry-run|field-manager|output|selector|template|validate|'
+tkg_taint_sb='|'
+tkg_taint_sv='|l|o|'
+tkg_run_lb='|allow-missing-template-keys|attach|command|expose|force|leave-stdin-open|privileged|quiet|recursive|rm|save-config|show-managed-fields|stdin|tty|wait|'
+tkg_run_lv='|annotations|cascade|dry-run|env|field-manager|filename|grace-period|image|image-pull-policy|kustomize|labels|output|override-type|overrides|pod-running-timeout|port|restart|template|timeout|'
+tkg_run_sb='|R|i|q|t|'
+tkg_run_sv='|f|k|l|o|'
+tkg_expose_lb='|allow-missing-template-keys|recursive|save-config|show-managed-fields|'
+tkg_expose_lv='|cluster-ip|dry-run|external-ip|field-manager|filename|kustomize|labels|load-balancer-ip|name|output|override-type|overrides|port|protocol|selector|session-affinity|target-port|template|type|'
+tkg_expose_sb='|R|'
+tkg_expose_sv='|f|k|l|o|'
+tkg_create_lb='|allow-missing-template-keys|edit|recursive|save-config|show-managed-fields|windows-line-endings|'
+tkg_create_lv='|dry-run|field-manager|filename|kustomize|output|raw|selector|template|validate|'
+tkg_create_sb='|R|'
+tkg_create_sv='|f|k|l|o|'
+tkg_create_clusterrole_lb='|allow-missing-template-keys|save-config|show-managed-fields|'
+tkg_create_clusterrole_lv='|aggregation-rule|dry-run|field-manager|non-resource-url|output|resource|resource-name|template|validate|verb|'
+tkg_create_clusterrole_sb='|'
+tkg_create_clusterrole_sv='|o|'
+tkg_create_clusterrolebinding_lb='|allow-missing-template-keys|save-config|show-managed-fields|'
+tkg_create_clusterrolebinding_lv='|clusterrole|dry-run|field-manager|group|output|serviceaccount|template|user|validate|'
+tkg_create_clusterrolebinding_sb='|'
+tkg_create_clusterrolebinding_sv='|o|'
+tkg_create_configmap_lb='|allow-missing-template-keys|append-hash|save-config|show-managed-fields|'
+tkg_create_configmap_lv='|dry-run|field-manager|from-env-file|from-file|from-literal|output|template|validate|'
+tkg_create_configmap_sb='|'
+tkg_create_configmap_sv='|o|'
+tkg_create_cronjob_lb='|allow-missing-template-keys|save-config|show-managed-fields|'
+tkg_create_cronjob_lv='|dry-run|field-manager|image|output|restart|schedule|template|validate|'
+tkg_create_cronjob_sb='|'
+tkg_create_cronjob_sv='|o|'
+tkg_create_deployment_lb='|allow-missing-template-keys|save-config|show-managed-fields|'
+tkg_create_deployment_lv='|dry-run|field-manager|image|output|port|replicas|template|validate|'
+tkg_create_deployment_sb='|'
+tkg_create_deployment_sv='|o|r|'
+tkg_create_ingress_lb='|allow-missing-template-keys|save-config|show-managed-fields|'
+tkg_create_ingress_lv='|annotation|class|default-backend|dry-run|field-manager|output|rule|template|validate|'
+tkg_create_ingress_sb='|'
+tkg_create_ingress_sv='|o|'
+tkg_create_job_lb='|allow-missing-template-keys|save-config|show-managed-fields|'
+tkg_create_job_lv='|dry-run|field-manager|from|image|output|template|validate|'
+tkg_create_job_sb='|'
+tkg_create_job_sv='|o|'
+tkg_create_namespace_lb='|allow-missing-template-keys|save-config|show-managed-fields|'
+tkg_create_namespace_lv='|dry-run|field-manager|output|template|validate|'
+tkg_create_namespace_sb='|'
+tkg_create_namespace_sv='|o|'
+tkg_create_poddisruptionbudget_lb='|allow-missing-template-keys|save-config|show-managed-fields|'
+tkg_create_poddisruptionbudget_lv='|dry-run|field-manager|max-unavailable|min-available|output|selector|template|validate|'
+tkg_create_poddisruptionbudget_sb='|'
+tkg_create_poddisruptionbudget_sv='|o|'
+tkg_create_priorityclass_lb='|allow-missing-template-keys|global-default|save-config|show-managed-fields|'
+tkg_create_priorityclass_lv='|description|dry-run|field-manager|output|preemption-policy|template|validate|value|'
+tkg_create_priorityclass_sb='|'
+tkg_create_priorityclass_sv='|o|'
+tkg_create_quota_lb='|allow-missing-template-keys|save-config|show-managed-fields|'
+tkg_create_quota_lv='|dry-run|field-manager|hard|output|scopes|template|validate|'
+tkg_create_quota_sb='|'
+tkg_create_quota_sv='|o|'
+tkg_create_role_lb='|allow-missing-template-keys|save-config|show-managed-fields|'
+tkg_create_role_lv='|dry-run|field-manager|output|resource|resource-name|template|validate|verb|'
+tkg_create_role_sb='|'
+tkg_create_role_sv='|o|'
+tkg_create_rolebinding_lb='|allow-missing-template-keys|save-config|show-managed-fields|'
+tkg_create_rolebinding_lv='|clusterrole|dry-run|field-manager|group|output|role|serviceaccount|template|user|validate|'
+tkg_create_rolebinding_sb='|'
+tkg_create_rolebinding_sv='|o|'
+tkg_create_serviceaccount_lb='|allow-missing-template-keys|save-config|show-managed-fields|'
+tkg_create_serviceaccount_lv='|dry-run|field-manager|output|template|validate|'
+tkg_create_serviceaccount_sb='|'
+tkg_create_serviceaccount_sv='|o|'
+tkg_create_secret_generic_lb='|allow-missing-template-keys|append-hash|save-config|show-managed-fields|'
+tkg_create_secret_generic_lv='|dry-run|field-manager|from-env-file|from-file|from-literal|output|template|type|validate|'
+tkg_create_secret_generic_sb='|'
+tkg_create_secret_generic_sv='|o|'
+tkg_create_secret_tls_lb='|allow-missing-template-keys|append-hash|save-config|show-managed-fields|'
+tkg_create_secret_tls_lv='|cert|dry-run|field-manager|key|output|template|validate|'
+tkg_create_secret_tls_sb='|'
+tkg_create_secret_tls_sv='|o|'
+tkg_create_secret_docker_registry_lb='|allow-missing-template-keys|append-hash|save-config|show-managed-fields|'
+tkg_create_secret_docker_registry_lv='|docker-email|docker-password|docker-server|docker-username|dry-run|field-manager|from-file|output|template|validate|'
+tkg_create_secret_docker_registry_sb='|'
+tkg_create_secret_docker_registry_sv='|o|'
+tkg_create_service_clusterip_lb='|allow-missing-template-keys|save-config|show-managed-fields|'
+tkg_create_service_clusterip_lv='|clusterip|dry-run|field-manager|output|tcp|template|validate|'
+tkg_create_service_clusterip_sb='|'
+tkg_create_service_clusterip_sv='|o|'
+tkg_create_service_externalname_lb='|allow-missing-template-keys|save-config|show-managed-fields|'
+tkg_create_service_externalname_lv='|dry-run|external-name|field-manager|output|tcp|template|validate|'
+tkg_create_service_externalname_sb='|'
+tkg_create_service_externalname_sv='|o|'
+tkg_create_service_loadbalancer_lb='|allow-missing-template-keys|save-config|show-managed-fields|'
+tkg_create_service_loadbalancer_lv='|dry-run|field-manager|output|tcp|template|validate|'
+tkg_create_service_loadbalancer_sb='|'
+tkg_create_service_loadbalancer_sv='|o|'
+tkg_create_service_nodeport_lb='|allow-missing-template-keys|save-config|show-managed-fields|'
+tkg_create_service_nodeport_lv='|dry-run|field-manager|node-port|output|tcp|template|validate|'
+tkg_create_service_nodeport_sb='|'
+tkg_create_service_nodeport_sv='|o|'
 # END generated flags
 
 tkg_nl='
@@ -126,6 +257,7 @@ tkg_short_arity() {
 	k) tkg_n=kustomize ;;
 	R) tkg_n=recursive ;;
 	n) tkg_n=namespace ;;
+	e) tkg_n='env' ;;
 	*) tkg_n=$1 ;;
 	esac
 }
@@ -206,26 +338,59 @@ tkg_walk() {
 	done
 }
 
-# Phase 1: find the verb with the global flag set only (as cobra does while
-# it searches for the subcommand).
+# Phase 1: find the command like cobra does while it searches for the
+# subcommand: the global flag set before the verb, then the flags of each
+# command found so far (create has its own; set, create secret and create
+# service only the global ones). `kubectl create -f job.yaml` is a bare
+# create: job.yaml is the value of create's -f.
 tkg_on_flag() { :; }
 tkg_on_unknown() {
-	[ -z "$tkg_sub" ] && [ -z "$tkg_unknown" ] && tkg_unknown=$1
+	[ -z "$tkg_unknown" ] && tkg_unknown=$1
 	return 0
 }
 tkg_on_pos() {
+	tkg_stop=1
 	if [ -z "$tkg_verb" ]; then
 		tkg_verb=$1
-		[ "$1" = rollout ] || tkg_stop=1
-	else
+		case $1 in
+		rollout | set) tkg_stop=0 ;;
+		create)
+			tkg_v_lb=$tkg_create_lb tkg_v_lv=$tkg_create_lv tkg_v_sb=$tkg_create_sb tkg_v_sv=$tkg_create_sv
+			tkg_stop=0
+			;;
+		esac
+	elif [ -z "$tkg_sub" ]; then
 		tkg_sub=$1
-		tkg_stop=1
+		tkg_sub_raw=$1
+		case $tkg_verb:$1 in
+		create:cm) tkg_sub=configmap ;;
+		create:cj) tkg_sub=cronjob ;;
+		create:deploy) tkg_sub=deployment ;;
+		create:ing) tkg_sub=ingress ;;
+		create:ns) tkg_sub=namespace ;;
+		create:pdb) tkg_sub=poddisruptionbudget ;;
+		create:pc) tkg_sub=priorityclass ;;
+		create:resourcequota) tkg_sub=quota ;;
+		create:svc) tkg_sub=service ;;
+		create:sa) tkg_sub=serviceaccount ;;
+		set:sa) tkg_sub=serviceaccount ;;
+		esac
+		case $tkg_verb:$tkg_sub in
+		create:secret | create:service)
+			tkg_v_lb='|' tkg_v_lv='|' tkg_v_sb='|' tkg_v_sv='|'
+			tkg_stop=0
+			;;
+		esac
+	else
+		tkg_sub2=$1
 	fi
 }
 
 tkg_find_verb() {
 	tkg_verb=
 	tkg_sub=
+	tkg_sub_raw=
+	tkg_sub2=
 	tkg_unknown=
 	tkg_v_lb='|'
 	tkg_v_lv='|'
@@ -233,19 +398,48 @@ tkg_find_verb() {
 	tkg_v_sv='|'
 	tkg_walk "$@"
 	case $tkg_verb in
-	apply | delete | scale | patch | label | annotate | cordon | uncordon | drain | edit) tkg_guarded=$tkg_verb ;;
+	apply | delete | scale | patch | label | annotate | cordon | uncordon | drain | edit | replace | taint | run | expose) tkg_guarded=$tkg_verb ;;
 	rollout)
 		case $tkg_sub in
 		restart | undo | pause | resume) tkg_guarded=$tkg_sub ;;
 		esac
 		;;
+	set)
+		case $tkg_sub in
+		image | env | resources | selector | subject) tkg_guarded=set$tkg_sub ;;
+		serviceaccount) tkg_guarded=setsa ;;
+		esac
+		;;
+	create)
+		case $tkg_sub in
+		token) ;;
+		secret)
+			case $tkg_sub2 in
+			generic | tls) tkg_guarded=create_secret_$tkg_sub2 ;;
+			docker-registry) tkg_guarded=create_secret_docker_registry ;;
+			esac
+			;;
+		service)
+			case $tkg_sub2 in
+			clusterip | externalname | loadbalancer | nodeport) tkg_guarded=create_service_$tkg_sub2 ;;
+			esac
+			;;
+		clusterrole | clusterrolebinding | configmap | cronjob | deployment | ingress | job | namespace | \
+			poddisruptionbudget | priorityclass | quota | role | rolebinding | serviceaccount)
+			tkg_guarded=create_$tkg_sub
+			;;
+		# No positional, or one that is not a subcommand: create's own -f/-k.
+		*) tkg_guarded=create ;;
+		esac
+		;;
 	esac
 	[ -n "$tkg_guarded" ] || [ -z "$tkg_unknown" ] && return 0
-	# An unknown flag before the verb may have swallowed it: fail closed when
-	# a mutating verb could be the real one.
+	# An unknown flag before the command name may have swallowed it: fail
+	# closed when a mutating command could be the real one.
 	for tkg_t in "$@"; do
 		case $tkg_t in
-		apply | delete | scale | rollout | patch | label | annotate | cordon | uncordon | drain | edit)
+		apply | delete | scale | rollout | patch | label | annotate | cordon | uncordon | drain | edit | \
+			set | replace | taint | create | run | expose)
 			tkg_err "cannot tell which kubectl command this is: unknown flag $tkg_unknown before the command name may take '$tkg_t' or another word as its value."
 			tkg_refuse "move the flag after the command name (kubectl $tkg_t ... $tkg_unknown) and retry."
 			;;
@@ -255,7 +449,8 @@ tkg_find_verb() {
 }
 
 # Phase 2: the guarded verb is known; collect what the request needs.
-# Input kinds: f (-f value), k (-k value), p (--patch-file value).
+# Input kinds: f (-f value), k (-k value), p (--patch-file value), F (a
+# --from-file source), e (--from-env-file value), c (--cert), y (--key).
 tkg_add_raw() {
 	case $2 in
 	*'
@@ -268,8 +463,31 @@ tkg_add_raw() {
 tkg_input_flag() {
 	case $1 in
 	p) printf '%s' --patch-file ;;
+	F) printf '%s' --from-file ;;
+	e) printf '%s' --from-env-file ;;
+	c) printf '%s' --cert ;;
+	y) printf '%s' --key ;;
 	*) printf '%s' "-$1" ;;
 	esac
+}
+
+# Adds each element of the string-slice flag value $2 (kubectl splits it on
+# commas as CSV) as input kind $1; a --from-file element is [KEY=]SOURCE.
+tkg_add_slice() {
+	case $2 in
+	*'"'*) tkg_refuse "$(tkg_input_flag "$1") values containing a double quote are not supported by the guard." ;;
+	esac
+	tkg_rest=$2,
+	while [ -n "$tkg_rest" ]; do
+		tkg_el=${tkg_rest%%,*}
+		tkg_rest=${tkg_rest#*,}
+		if [ "$1" = F ]; then
+			case $tkg_el in
+			*=*) tkg_el=${tkg_el#*=} ;;
+			esac
+		fi
+		tkg_add_raw "$1" "$tkg_el"
+	done
 }
 
 tkg_true() {
@@ -289,17 +507,19 @@ tkg_on_flag2() {
 	local) if tkg_true "$2"; then tkg_local=1; else tkg_local=; fi ;;
 	list) if tkg_true "$2"; then tkg_list=1; else tkg_list=; fi ;;
 	filename)
-		case $2 in
-		*'"'*) tkg_refuse "-f values containing a double quote are not supported by the guard." ;;
-		esac
-		tkg_rest=$2,
-		while [ -n "$tkg_rest" ]; do
-			tkg_add_raw f "${tkg_rest%%,*}"
-			tkg_rest=${tkg_rest#*,}
-		done
+		[ "$tkg_guarded" = run ] && tkg_run_input=-f
+		tkg_add_slice f "$2"
 		;;
-	kustomize) tkg_add_raw k "$2" ;;
+	kustomize)
+		[ "$tkg_guarded" = run ] && tkg_run_input=-k
+		tkg_add_raw k "$2"
+		;;
 	patch-file) tkg_add_raw p "$2" ;;
+	from-file) tkg_add_slice F "$2" ;;
+	from-env-file) tkg_add_slice e "$2" ;;
+	cert) tkg_add_raw c "$2" ;;
+	key) tkg_add_raw y "$2" ;;
+	env) [ "$tkg_guarded" = setenv ] && [ "$2" = - ] && tkg_env_stdin=1 ;;
 	esac
 }
 
@@ -315,13 +535,31 @@ tkg_scan_guarded() {
 	tkg_list=
 	tkg_raw=
 	tkg_unknown2=
+	tkg_env_stdin=
+	tkg_run_input=
 	tkg_on_flag() {
 		[ "$1" = namespace ] && tkg_ns_set=1
 		tkg_on_flag2 "$@"
 	}
 	tkg_on_unknown() { tkg_unknown2=$1; }
 	tkg_pos=
-	tkg_on_pos() { tkg_pos="$tkg_pos $1"; }
+	tkg_on_pos() {
+		if [ "$tkg_guarded" = setenv ]; then
+			case $1 in
+			-) tkg_env_stdin=1 ;;
+			*=*)
+				# The waiting line never shows a credential typed as KEY=VALUE.
+				case $(printf '%s' "${1%%=*}" | tr '[:upper:]' '[:lower:]') in
+				*password* | *passwd* | *secret* | *token* | *key* | *credential* | *private*)
+					tkg_pos="$tkg_pos ${1%%=*}=<redacted>"
+					return 0
+					;;
+				esac
+				;;
+			esac
+		fi
+		tkg_pos="$tkg_pos $1"
+	}
 	tkg_walk "$@"
 	tkg_describe
 }
@@ -332,10 +570,15 @@ tkg_describe() {
 	tkg_d=${tkg_pos# }
 	tkg_d=${tkg_d#"$tkg_verb"}
 	tkg_label=$tkg_verb
-	if [ "$tkg_verb" = rollout ]; then
+	if [ "$tkg_guarded" != "$tkg_verb" ]; then
 		tkg_d=${tkg_d# }
-		tkg_d=${tkg_d#"$tkg_guarded"}
-		tkg_label="rollout $tkg_guarded"
+		tkg_d=${tkg_d#"$tkg_sub_raw"}
+		tkg_label="$tkg_verb $tkg_sub"
+		if [ -n "$tkg_sub2" ]; then
+			tkg_d=${tkg_d# }
+			tkg_d=${tkg_d#"$tkg_sub2"}
+			tkg_label="$tkg_label $tkg_sub2"
+		fi
 	fi
 	tkg_ifs=$IFS
 	IFS=$tkg_nl
@@ -364,7 +607,8 @@ tkg_passes_through() {
 	esac
 	case $tkg_guarded in
 	patch) [ -n "$tkg_local" ] ;;
-	label | annotate) [ -n "$tkg_local" ] || [ -n "$tkg_list" ] ;;
+	label | annotate | setenv) [ -n "$tkg_local" ] || [ -n "$tkg_list" ] ;;
+	setimage | setresources | setselector | setsa | setsubject) [ -n "$tkg_local" ] ;;
 	*) return 1 ;;
 	esac
 }
@@ -408,17 +652,21 @@ tkg_resolve_context() {
 tkg_check_value() {
 	case $2 in
 	-)
-		if [ "$1" = p ]; then
-			tkg_refuse "reading a patch from stdin (--patch-file -) cannot be previewed; save it to a file and pass --patch-file FILE."
-		fi
-		tkg_refuse "reading manifests from stdin (-f -) cannot be previewed; save them to a file and pass -f FILE."
+		case $1 in
+		p) tkg_refuse "reading a patch from stdin (--patch-file -) cannot be previewed; save it to a file and pass --patch-file FILE." ;;
+		f | k) tkg_refuse "reading manifests from stdin (-f -) cannot be previewed; save them to a file and pass -f FILE." ;;
+		esac
+		tkg_t=$(tkg_input_flag "$1")
+		tkg_refuse "$tkg_t - (stdin) cannot be previewed; save the data to a file and pass $tkg_t FILE."
 		;;
 	'') tkg_refuse "empty $(tkg_input_flag "$1") value." ;;
 	http://* | https://*)
-		if [ "$1" = p ]; then
-			tkg_refuse "remote patch files ($2) cannot be fingerprinted; download it and pass --patch-file FILE."
-		fi
-		tkg_refuse "remote manifests ($2) cannot be fingerprinted; download them and pass -f FILE."
+		case $1 in
+		p) tkg_refuse "remote patch files ($2) cannot be fingerprinted; download it and pass --patch-file FILE." ;;
+		f | k) tkg_refuse "remote manifests ($2) cannot be fingerprinted; download them and pass -f FILE." ;;
+		esac
+		tkg_t=$(tkg_input_flag "$1")
+		tkg_refuse "remote files ($2) cannot be fingerprinted; download it and pass $tkg_t FILE."
 		;;
 	esac
 }
@@ -440,7 +688,8 @@ tkg_list_inputs() {
 		/*) ;;
 		*) tkg_p=$tkg_cwd/$tkg_p ;;
 		esac
-		if [ "$tkg_kind" = p ]; then
+		case $tkg_kind in p | e | c | y) tkg_exact=1 ;; *) tkg_exact= ;; esac
+		if [ -n "$tkg_exact" ]; then
 			# kubectl reads exactly this path: never a directory walk.
 			[ -e "$tkg_p" ] || tkg_refuse "no such file: $tkg_p"
 			[ -f "$tkg_p" ] || tkg_refuse "$tkg_p is not a regular file (directories, stdin, devices and pipes cannot be previewed)."
@@ -457,7 +706,12 @@ tkg_list_inputs() {
 *' 2>/dev/null)" ]; then
 				tkg_refuse "a file name under $tkg_p contains a newline; the guard cannot fingerprint it."
 			fi
-			if [ "$tkg_kind" = k ]; then
+			if [ "$tkg_kind" = F ]; then
+				# kubectl keys every regular file directly inside (no
+				# extension filter; subdirectories and symlinks skipped).
+				(cd -- "$tkg_p" && find . -mindepth 1 -maxdepth 1 -type f) >"$tkg_work/found" ||
+					tkg_refuse "cannot list $tkg_p."
+			elif [ "$tkg_kind" = k ]; then
 				(cd -- "$tkg_p" && find . ! -type d) >"$tkg_work/found" ||
 					tkg_refuse "cannot list $tkg_p."
 			elif [ -n "$tkg_rec" ]; then
@@ -664,7 +918,8 @@ tkg_status() {
 		printf 'tern: %s not found (%s; TERN_EXE is set in Tern panes, TERN_BIN overrides)\n' "$tkg_tern" "$tkg_tern_src"
 	fi
 	printf 'approval timeout: %ss\n' "${TKUBE_GUARD_TIMEOUT:-600}"
-	printf 'guarded verbs: annotate, apply, cordon, delete, drain, edit (after you save), label, patch, rollout restart, rollout undo, rollout pause, rollout resume, scale, uncordon\n'
+	printf 'guarded verbs: annotate, apply, cordon, create (bare -f/-k and every subcommand but token), delete, drain, edit (after you save), expose, label, patch, replace, rollout restart, rollout undo, rollout pause, rollout resume, run, scale, set env, set image, set resources, set selector, set serviceaccount, set subject, taint, uncordon\n'
+	printf 'passes through: create token (prints a credential; nothing is stored)\n'
 	if [ "${TERM_PROGRAM-}" != tern ] || [ -z "${TERN_PANE-}" ]; then
 		printf 'this shell: not a Tern pane; guarded verbs are refused\n'
 	elif [ -z "${TKUBE_SPOOL-}" ]; then
@@ -915,6 +1170,10 @@ tkg_run() {
 tkg_guard() {
 	tkg_scan_guarded "$@"
 	tkg_passes_through && exec kubectl "$@"
+	[ -z "$tkg_env_stdin" ] ||
+		tkg_refuse "kubectl set env with '-' reads variables from stdin, which cannot be previewed; pass them as KEY=VALUE arguments or --from."
+	[ -z "$tkg_run_input" ] ||
+		tkg_refuse "kubectl run $tkg_run_input (the --rm delete inputs) is not supported by the guard."
 	tkg_ifs=$IFS
 	IFS='
 '
@@ -1226,6 +1485,58 @@ p $tkg_orig
 	exit 0
 }
 
+tkg_record_refuse() {
+	tkg_err "outcome not recorded: $*"
+	exit 1
+}
+
+# `tern-kube-guard record TEMPLATE STARTED STATUS`: the split of a confirmed
+# mutating quick action reports kubectl's outcome (shell/PROTOCOL.md "Quick
+# outcome records"). The template comes from the window; it is checked to be
+# one quick-mode record with each placeholder exactly once, so filling it in
+# cannot change its shape. Exit 0 recorded, 1 refused, 2 usage.
+tkg_record_quick() {
+	if [ $# != 3 ]; then
+		echo "usage: tern-kube-guard record TEMPLATE STARTED STATUS" >&2
+		exit 2
+	fi
+	case $2 in '' | *[!0-9]*) tkg_record_refuse "STARTED is not a number of seconds." ;; esac
+	case $3 in '' | *[!0-9]*) tkg_record_refuse "STATUS is not an exit status." ;; esac
+	case ${TKUBE_SPOOL-} in
+	/*) ;;
+	*) tkg_record_refuse "TKUBE_SPOOL is not an absolute path (not a Tern pane with tern-kube loaded?)." ;;
+	esac
+	tkg_tpl=$1
+	case $tkg_tpl in
+	*[[:cntrl:]]*) tkg_record_refuse "the template is not one line." ;;
+	'{"v":1,'*'}') ;;
+	*) tkg_record_refuse "the template is not an audit record." ;;
+	esac
+	case $tkg_tpl in
+	*'"mode":"quick"'*) ;;
+	*) tkg_record_refuse "the template is not a quick action record." ;;
+	esac
+	for tkg_t in '"decided_at":@' '"decision":"@"' '"exit_code":@' '"started_at":@' '"finished_at":@'; do
+		case $tkg_tpl in
+		*"$tkg_t"*"$tkg_t"*) tkg_record_refuse "the template repeats $tkg_t." ;;
+		*"$tkg_t"*) ;;
+		*) tkg_record_refuse "the template lacks $tkg_t." ;;
+		esac
+	done
+	tkg_log=${TKUBE_SPOOL%/*}/audit.log
+	[ ! -L "$tkg_log" ] || tkg_record_refuse "$tkg_log is a symlink."
+	tkg_fin=$(date +%s)
+	if [ "$3" = 0 ]; then tkg_d=executed; else tkg_d=failed; fi
+	tkg_fill '"decided_at":@' "\"decided_at\":$tkg_fin"
+	tkg_fill '"decision":"@"' "\"decision\":\"$tkg_d\""
+	tkg_fill '"exit_code":@' "\"exit_code\":$3"
+	tkg_fill '"started_at":@' "\"started_at\":$2"
+	tkg_fill '"finished_at":@' "\"finished_at\":$tkg_fin"
+	(umask 077 && printf '%s\n' "$tkg_tpl" >>"$tkg_log") 2>/dev/null ||
+		tkg_record_refuse "cannot append to $tkg_log."
+	exit 0
+}
+
 tkg_hint="nothing was executed. To run it anyway, without preview or confirmation, use: command kubectl ..."
 tkg_sig_status=130
 case ${1-} in
@@ -1246,8 +1557,12 @@ edit-hook)
 status)
 	tkg_status
 	;;
+record)
+	shift
+	tkg_record_quick "$@"
+	;;
 *)
-	echo "usage: tern-kube-guard kubectl [ARGS...] | tern-kube-guard status" >&2
+	echo "usage: tern-kube-guard kubectl [ARGS...] | tern-kube-guard status | tern-kube-guard record TEMPLATE STARTED STATUS" >&2
 	exit 2
 	;;
 esac

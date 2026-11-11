@@ -1,0 +1,6 @@
+NAME                  SHORTNAMES   APIVERSION   NAMESPACED   KIND                 VERBS                                                        CATEGORIES
+controllerrevisions                apps/v1      true         ControllerRevision   create,delete,deletecollection,get,list,patch,update,watch   
+daemonsets            ds           apps/v1      true         DaemonSet            create,delete,deletecollection,get,list,patch,update,watch   all
+deployments           deploy       apps/v1      true         Deployment           create,delete,deletecollection,get,list,patch,update,watch   all
+replicasets           rs           apps/v1      true         ReplicaSet           create,delete,deletecollection,get,list,patch,update,watch   all
+statefulsets          sts          apps/v1      true         StatefulSet          create,delete,deletecollection,get,list,patch,update,watch   all

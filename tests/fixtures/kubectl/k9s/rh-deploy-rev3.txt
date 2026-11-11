@@ -1,0 +1,17 @@
+deployment.apps/hist with revision #3
+Pod Template:
+  Labels:	app=hist
+	pod-template-hash=76cd7cdd49
+  Annotations:	kubernetes.io/change-cause: downgrade to 3.9 (it's a test)
+  Containers:
+   pause:
+    Image:	registry.k8s.io/pause:3.9
+    Port:	<none>
+    Host Port:	<none>
+    Environment:
+      MODE:	x
+    Mounts:	<none>
+  Volumes:	<none>
+  Node-Selectors:	<none>
+  Tolerations:	<none>
+

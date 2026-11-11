@@ -3,9 +3,16 @@
 # sandbox (default /tmp/tk-tern, override with TK_TERN_SANDBOX) and never
 # touches the default Tern config, daemon socket or logs.
 #
-#   start [--fake | --gui-path] [--shell zsh|fish|bash] [--print]
-#                     run the sandbox window in the foreground (keep it in a
-#                     long-lived terminal/service). Shells and the daemon
+#   start [--window] [--fake | --gui-path] [--shell zsh|fish|bash] [--print]
+#                     run the sandbox session in the foreground (keep it in a
+#                     long-lived terminal/service). Headless by default:
+#                     `tern serve` with an in-process daemon attached as
+#                     host "sandbox" (`ctl remote loopback`), no window and
+#                     no GUI process, a 1280x800 viewport at scale 2 (`ctl
+#                     resize` changes it), shots under <sandbox>/out/serve.
+#                     --window opens a real Tern window instead (old
+#                     behaviour; only with the user's OK, it takes focus and
+#                     tiles into the desktop). Shells and the daemon
 #                     always get KUBECONFIG=.sandbox/kubeconfig and a neutral
 #                     login shell, zsh by default (sandbox ZDOTDIR, no user
 #                     rc files); --shell fish reads only <sandbox>/xdg/fish/
@@ -17,7 +24,7 @@
 #                     kubeconfig's context is kind-tern-kube-dev. --fake puts
 #                     tests/bin (fake kubectl and kubecolor) first on PATH. In
 #                     a pane, `tk_fake [DIR]` and `tk_real` switch.
-#                     --gui-path starts the window and daemon with the PATH
+#                     --gui-path starts the session and daemon with the PATH
 #                     a Dock/Finder (launchd) start has,
 #                     /usr/bin:/bin:/usr/sbin:/sbin, and no TKUBE_KUBECTL;
 #                     panes still get the sandbox rc. --print shows the
@@ -30,20 +37,26 @@
 #                     reloads a linked plugin on any file change below it
 #                     (.git included), so a live link reloads on every
 #                     edit, commit or checkout; run link again to pick up
-#                     edits. --live links DIR itself (reload on change)
+#                     edits. --live links DIR itself (reload on change; a
+#                     headless session's window half reloads on link and
+#                     reload only)
 #   unlink            remove the link and reload
-#   reload            reload the sandbox daemon's plugins
+#   reload            reload the sandbox daemon's plugins (and headless, the
+#                     window half)
 #   list              plugins of the sandbox daemon
 #   ctl ARGS...       tern ctl against the sandbox control socket, killed
 #                     after TK_CTL_TIMEOUT seconds (default 60)
-#   wait-ready [SECS] wait until the window answers `ready` (default 30 s)
+#   wait-ready [SECS] wait until the session answers `ready` and, headless,
+#                     shows the in-process daemon's host (default 30 s)
 #   run LINE          type LINE and Enter into the focused pane
 #   expect TEXT       wait until a plugin surface shows TEXT
-#   shot NAME [DEST]  screenshot the window; prints the PNG path (copied to
+#   shot NAME [DEST]  screenshot the session; prints the PNG path (copied to
 #                     DEST when given)
-#   logs [daemon|window]  print the sandbox log path
-#   pids window|daemon  pids of the sandbox window or daemon
-#   stop              quit the sandbox window and its daemon (TERM, then
+#   logs [daemon|window]  print the sandbox log path (headless: both are
+#                     tern-serve.log; --window: tern-daemon.log, tern.log)
+#   pids window|daemon  pids of the sandbox session (serve or window) or of
+#                     a window's daemon (headless: none, it runs in serve)
+#   stop              quit the sandbox session and its daemon (TERM, then
 #                     KILL, whatever does not exit)
 #   clean             stop, then delete the sandbox
 #   env               print the sandbox environment as shell assignments
@@ -74,7 +87,8 @@ export HELM_CONFIG_HOME="$sb/helm/config"
 export HELM_CACHE_HOME="$sb/helm/cache"
 export HELM_DATA_HOME="$sb/helm/data"
 window_log="${STENCIL_LOG:-warn,stencil=info,tern::plugin=debug}"
-# CLI calls (ctl, plugin reload) log to stderr; only the window logs verbosely.
+# CLI calls (ctl, plugin reload) log to stderr; only the session and its
+# daemon log verbosely.
 export STENCIL_LOG=warn
 # Inherited from a surrounding Tern pane; they describe the user's Tern.
 unset TERN_WINDOW_KEY TERN_WINDOW_SOCKET TERN_PANE TERN_PANE_SOCKET TERN_BLOB_DIR \
@@ -134,16 +148,64 @@ quoted() {
 	printf '"%s"' "$1"
 }
 
-# Pids of the sandbox window (`tern --control <sb>/ctl.sock DIR`, not the
-# `tern ctl --control ...` clients) and of its daemon (`tern daemon --socket
-# <sb>/d.sock`). Anchored so a caller whose command line names the sandbox
-# never matches.
+# Pids of the sandbox session (`tern serve --control <sb>/ctl.sock ...` or
+# the window `tern --control <sb>/ctl.sock DIR`, not the `tern ctl
+# --control ...` clients) and of a window's daemon (`tern daemon --socket
+# <sb>/d.sock`; a headless session's daemon runs inside serve). Anchored so
+# a caller whose command line names the sandbox never matches.
 window_pids() {
-	pgrep -f -- "^[^ ]*tern --control $ctl_sock( |\$)" 2>/dev/null | tr '\n' ' ' | sed 's/ $//'
+	pgrep -f -- "^[^ ]*tern (serve )?--control $ctl_sock( |\$)" 2>/dev/null | tr '\n' ' ' | sed 's/ $//'
 }
 
 daemon_pids() {
 	pgrep -f -- "^[^ ]*tern daemon --socket $sb/d.sock\$" 2>/dev/null | tr '\n' ' ' | sed 's/ $//'
+}
+
+# A headless session runs the plugin's host half in an in-process daemon
+# that `start` attaches as host $loop_host (`ctl remote loopback`), and its
+# window half (route.link, palette commands) in serve's own plugin set,
+# which `ctl plugins fixtures` loads from $fixture_dir (STENCIL_FIXTURE_ROOT
+# is an app crate directory with goldens; its plugins are
+# ../plugins/fixtures). link points $fixture_dir/tern-kube at the plugin.
+loop_host=sandbox
+fixture_root="$sb/fixture/crates/tern"
+fixture_dir="$sb/fixture/crates/plugins/fixtures"
+
+# window_plugins: headless, (re)load the window half from $fixture_dir.
+window_plugins() {
+	headless || return 0
+	ctl_within 30 plugins fixtures >/dev/null
+}
+
+headless() {
+	[ "$(cat "$sb/session" 2>/dev/null)" != window ]
+}
+
+# Ready: every pane at its prompt and, headless, the loopback host shown.
+session_ready() {
+	ctl_within 25 ready >/dev/null 2>&1 || return 1
+	headless || return 0
+	ctl_within 10 state 2>/dev/null | grep -q "\"current\":\"$loop_host\""
+}
+
+# plugin_cli ARGS...: `tern plugin ARGS` against the session's daemon. A
+# headless session's in-process daemon listens in serve's TMPDIR, at
+# tern-loopback-<serve pid>-<n>/daemon.sock, not at <sb>/d.sock.
+plugin_cli() {
+	if headless; then
+		_pid=$(window_pids)
+		_sock=
+		for _s in "${TMPDIR:-/tmp}"/tern-loopback-"$_pid"-*/daemon.sock; do
+			[ -S "$_s" ] && _sock=$_s && break
+		done
+		[ -n "$_pid" ] && [ -n "$_sock" ] || {
+			echo "dev-tern: no headless session with its daemon in $sb (start, then wait-ready)" >&2
+			return 1
+		}
+		bounded 30 env TERN_DAEMON_SOCKET="$_sock" "$tern_bin" plugin "$@"
+	else
+		bounded 30 "$tern_bin" plugin "$@"
+	fi
 }
 
 # wait_gone LISTER STEPS: until LISTER prints nothing, at most STEPS x 0.25 s.
@@ -334,6 +396,16 @@ EOF
 	chmod 0755 "$sb/bash/bash"
 }
 
+# Headless: nothing listens at <sb>/d.sock; panes and splits reach the
+# session's in-process daemon at TERN_PANE_SOCKET, so `tern open --wait` (the
+# shell guard, EDITOR) needs that socket as TERN_DAEMON_SOCKET.
+# shellcheck disable=SC2016 # the rc files expand these, not this script
+pane_daemon_loopback() {
+	echo 'if [ -n "${TERN_PANE_SOCKET:-}" ]; then export TERN_DAEMON_SOCKET="$TERN_PANE_SOCKET"; fi' >>"$zdot/.zshenv"
+	echo 'set -q TERN_PANE_SOCKET; and set -gx TERN_DAEMON_SOCKET $TERN_PANE_SOCKET' >>"$sb/xdg/fish/config.fish"
+	echo 'if [ -n "${TERN_PANE_SOCKET:-}" ]; then export TERN_DAEMON_SOCKET="$TERN_PANE_SOCKET"; fi' >>"$sb/bash/bashrc"
+}
+
 # The real kubectl: first on PATH outside tests/bin.
 real_kubectl() {
 	PATH=$(printf '%s' "$PATH" | tr ':' '\n' | grep -v "^$fake_bin\$" | paste -sd: -) command -v kubectl || true
@@ -344,12 +416,14 @@ cmd=${1:-}
 
 case $cmd in
 start)
+	window=0
 	fake=0
 	print=0
 	gui=0
 	shell=zsh
 	while [ $# -gt 0 ]; do
 		case $1 in
+		--window) window=1 ;;
 		--fake) fake=1 ;;
 		--gui-path) gui=1 ;;
 		--print) print=1 ;;
@@ -358,7 +432,7 @@ start)
 			[ $# -gt 1 ] && shift
 			;;
 		*)
-			echo "dev-tern: start [--fake | --gui-path] [--shell zsh|fish|bash] [--print]" >&2
+			echo "dev-tern: start [--window] [--fake | --gui-path] [--shell zsh|fish|bash] [--print]" >&2
 			exit 2
 			;;
 		esac
@@ -393,7 +467,7 @@ start)
 	export ZDOTDIR="$zdot"
 	export SHELL="$login_shell"
 	if [ $fake = 1 ]; then
-		# The window, its daemon and its shells see the fake kubectl first;
+		# The session, its daemon and its shells see the fake kubectl first;
 		# the Explore block honors TKUBE_KUBECTL, so nothing in the
 		# sandbox reaches a cluster.
 		export TKUBE_KUBECTL="$fake_bin/kubectl"
@@ -418,6 +492,7 @@ start)
 		write_fish_config 0 "$real"
 		write_bash_rc 0 "$real"
 	fi
+	[ $window = 1 ] || pane_daemon_loopback
 	if [ $gui = 1 ]; then
 		# Tern started from the Dock/Finder: launchd's minimal PATH and no
 		# TKUBE_KUBECTL; tern-kube must find kubectl through the login shell
@@ -431,13 +506,37 @@ start)
 	fi
 	if [ $print = 1 ]; then
 		env | grep -E '^(TERN_|STENCIL_|KUBE|TKUBE_|ZDOTDIR=|SHELL=|PATH=)' | sort
-		echo "$tern_bin --control $ctl_sock $repo  (cwd $sb)"
+		if [ $window = 1 ]; then
+			echo "$tern_bin --control $ctl_sock $repo  (cwd $sb)"
+		else
+			echo "$tern_bin serve --control $ctl_sock --out $sb/out $repo, then ctl remote loopback $loop_host  (cwd $sb)"
+		fi
 		exit 0
 	fi
 	seed_omp_state
-	# Shots land in <cwd>/target/shots: keep them in the sandbox.
+	# A window's shots land in <cwd>/target/shots: keep them in the sandbox.
 	cd "$sb"
-	exec "$tern_bin" --control "$ctl_sock" "$repo"
+	if [ $window = 1 ]; then
+		echo window >"$sb/session"
+		exec "$tern_bin" --control "$ctl_sock" "$repo"
+	fi
+	echo serve >"$sb/session"
+	mkdir -p "$fixture_root/goldens" "$fixture_dir"
+	export STENCIL_FIXTURE_ROOT="$fixture_root"
+	# serve runs its own panes without a daemon, so without user plugins:
+	# attach the in-process daemon (plugins linked in TERN_CONFIG_DIR, this
+	# environment) and show it, then load the window half (see loop_host).
+	(
+		i=0
+		until ctl_within 5 ready >/dev/null 2>&1; do
+			i=$((i + 1))
+			[ $i -lt 120 ] || exit 1
+			sleep 0.25
+		done
+		ctl_within 30 remote loopback "$loop_host"
+		window_plugins
+	) </dev/null >/dev/null 2>&1 &
+	exec "$tern_bin" serve --control "$ctl_sock" --out "$sb/out" "$repo"
 	;;
 link)
 	live=0
@@ -452,17 +551,24 @@ link)
 		dir=$sb/pkg
 	fi
 	printf '%s\n' "$dir" >"$TERN_CONFIG_DIR/plugins/tern-kube.path"
-	bounded 30 "$tern_bin" plugin reload
+	if headless; then
+		mkdir -p "$fixture_dir"
+		ln -sfn "$dir" "$fixture_dir/tern-kube"
+	fi
+	plugin_cli reload
+	window_plugins
 	;;
 unlink)
-	rm -f "$TERN_CONFIG_DIR/plugins/tern-kube.path"
-	bounded 30 "$tern_bin" plugin reload
+	rm -f "$TERN_CONFIG_DIR/plugins/tern-kube.path" "$fixture_dir/tern-kube"
+	plugin_cli reload
+	window_plugins
 	;;
 reload)
-	bounded 30 "$tern_bin" plugin reload "$@"
+	plugin_cli reload "$@"
+	window_plugins
 	;;
 list)
-	bounded 30 "$tern_bin" plugin list "$@"
+	plugin_cli list "$@"
 	;;
 ctl)
 	ctl "$@"
@@ -470,9 +576,9 @@ ctl)
 wait-ready)
 	limit=${1:-30}
 	end=$(($(date +%s) + limit))
-	until ctl_within 25 ready >/dev/null 2>&1; do
+	until session_ready; do
 		if [ "$(date +%s)" -ge $end ]; then
-			echo "dev-tern: window not ready after ${limit}s" >&2
+			echo "dev-tern: session not ready after ${limit}s" >&2
 			exit 1
 		fi
 		sleep 0.25
@@ -514,9 +620,23 @@ shot)
 	fi
 	;;
 logs)
+	# A headless session logs both halves to tern-serve.log: its daemon runs
+	# in the serve process.
 	case ${1:-daemon} in
-	daemon) echo "$STENCIL_LOG_DIR/tern-daemon.log" ;;
-	window) echo "$STENCIL_LOG_DIR/tern.log" ;;
+	daemon)
+		if headless; then
+			echo "$STENCIL_LOG_DIR/tern-serve.log"
+		else
+			echo "$STENCIL_LOG_DIR/tern-daemon.log"
+		fi
+		;;
+	window)
+		if headless; then
+			echo "$STENCIL_LOG_DIR/tern-serve.log"
+		else
+			echo "$STENCIL_LOG_DIR/tern.log"
+		fi
+		;;
 	*)
 		echo "dev-tern: logs daemon|window" >&2
 		exit 2
@@ -527,8 +647,9 @@ stop)
 	# The daemon outlives its windows (it keeps their panes for the next
 	# one), and a new window attaches to whatever daemon holds the socket,
 	# with that daemon's environment: a restart (--gui-path) is only real
-	# once the old daemon is gone, so stop it and wait for it. A window
-	# that ignores `quit` (or never answers it) is terminated.
+	# once the old daemon is gone, so stop it and wait for it. A headless
+	# session's daemon ends with serve. A session that ignores `quit` (or
+	# never answers it) is terminated.
 	[ -n "$(window_pids)" ] && { ctl_within 5 quit >/dev/null 2>&1 || true; }
 	wait_gone window_pids 40
 	rc=0
@@ -545,7 +666,7 @@ env)
 		"$TERN_CONFIG_DIR" "$TERN_DAEMON_SOCKET" "$STENCIL_LOG_DIR" "$window_log" "$kubeconfig"
 	;;
 *)
-	sed -n '2,46p' "$0" | sed 's/^# \{0,1\}//'
+	sed -n '2,62p' "$0" | sed 's/^# \{0,1\}//'
 	[ -z "$cmd" ] && exit 0
 	exit 2
 	;;

@@ -25,7 +25,13 @@ xwait '3 revisions'
 eq "newest first" "$(hcol 1 7)" '["3","2","1"]'
 eq "statuses" "$(hcol 2 7)" '["deployed","superseded","superseded"]'
 eq "latest badge" "$(hcol 7 7 | jq -r '.[0]')" "latest running"
+# DESCRIPTION is prose, the first column a 1280 px split hides: the zoomed
+# pane has room for it.
+ctl zoom >/dev/null
+sleep 0.5
 contains "descriptions" "$(hcol 6 7)" "Install complete"
+ctl zoom >/dev/null
+sleep 0.5
 
 # = on r1: against the latest revision.
 xkey G

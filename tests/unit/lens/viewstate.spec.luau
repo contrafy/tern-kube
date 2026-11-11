@@ -24,6 +24,7 @@ describe("lens viewstate", function()
 			page = 3,
 			help = true,
 			expanded = { "NAMESPACE", "STATUS;x" },
+			decoded = true,
 		}
 		expect(roundTrip(vs)).toEqual(vs)
 	end)
@@ -129,6 +130,29 @@ describe("lens viewstate", function()
 		vsm.sortedBy(vs, "AGE")
 		vsm.toggledHelp(vs)
 		expect(vs).toEqual(vsm.default())
+	end)
+
+	-- Decoded Secret values must never outlive the view they were asked
+	-- for: the toggle lives only in the action, and moving to another row
+	-- (or back to the table) hides them again.
+	it("decoded round-trips as dec:1 and is off by default", function()
+		local vs = vsm.toggledDecoded(vsm.inspect(vsm.default(), "k"))
+		expect(vs.decoded).toBe(true)
+		expect(vsm.encode(vs)).toContain("dec:1")
+		expect(roundTrip(vs).decoded).toBe(true)
+		expect(vsm.toggledDecoded(vs).decoded).toBe(false)
+		expect(vsm.default().decoded).toBe(false)
+		expect(vsm.decode("dec:0").decoded).toBe(false)
+	end)
+
+	it("opening another row or going back hides decoded values", function()
+		local vs = vsm.toggledDecoded(vsm.opened(vsm.default(), "a"))
+		expect(vsm.opened(vs, "b").decoded).toBe(false)
+		expect(vsm.opened(vs, "a").decoded).toBe(false)
+		expect(vsm.back(vsm.inspect(vs, "a")).decoded).toBe(false)
+		expect(vsm.inspect(vs, "a").decoded).toBe(true)
+		expect(vsm.inspect(vs, "b").decoded).toBe(false)
+		expect(vsm.sortedBy(vs, "AGE").decoded).toBe(true)
 	end)
 end)
 

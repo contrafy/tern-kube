@@ -1,0 +1,3 @@
+NAME                          CPU(cores)   CPU(%)   MEMORY(bytes)   MEMORY(%)   
+tern-kube-dev-control-plane   8500m        85%      7800Mi          98%         
+tern-kube-dev-worker          900m         9%       1711Mi          21%         

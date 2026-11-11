@@ -8,9 +8,11 @@ local HelmTypes = require("../helm/types")
 local Kinds = require("../kubectl/kinds")
 local Objdiff = require("./objdiff")
 local Placeholder = require("../gitops/placeholder")
+local Redact = require("../model/redact")
 local RevDiff = require("../helm/revdiff")
 local Rollout = require("./rollout")
 local T = require("./types")
+local Taint = require("./taint")
 local Types = require("../model/types")
 local Yaml = require("../parse/yaml")
 
@@ -41,6 +43,21 @@ export type HelmFacts = {
 	live: Diffseg.Summary?,
 }
 
+-- taint: per node a NoExecute taint lands on, what it does to its pods;
+-- `unknown` says which nodes the preview could not cover and why.
+export type TaintFacts = {
+	nodes: { { node: string, evictions: Taint.Evictions } },
+	unknown: { string },
+}
+
+-- replace: objects of the file without metadata.resourceVersion (applied
+-- unconditionally); --force: the same replace without --force, dry-run.
+export type ReplaceFacts = {
+	noResourceVersion: { string },
+	probeOk: boolean?,
+	probeError: string?,
+}
+
 export type Facts = {
 	-- nil while the preview is running; false once any step failed.
 	previewOk: boolean?,
@@ -63,6 +80,8 @@ export type Facts = {
 	helm: HelmFacts?,
 	-- Every node (cordon/drain) and PodDisruptionBudgets (scale to 0).
 	cluster: T.ClusterFacts?,
+	taint: TaintFacts?,
+	replace: ReplaceFacts?,
 }
 
 local M = {}
@@ -100,6 +119,17 @@ local VERB_WORD: { [T.Family]: string } = {
 	drain = "drain",
 	edit = "edit",
 	["helm-rollback"] = "roll back",
+	["set-image"] = "update",
+	["set-env"] = "update",
+	["set-resources"] = "update",
+	["set-selector"] = "update",
+	["set-serviceaccount"] = "update",
+	["set-subject"] = "update",
+	replace = "replace",
+	taint = "taint",
+	create = "create",
+	run = "create",
+	expose = "create",
 }
 
 type Builder = { list: { Reason }, byId: { [string]: Reason } }
@@ -1337,6 +1367,458 @@ local function helmReasons(b: Builder, plan: Plan, facts: Facts)
 	end
 end
 
+-- New verbs of the shell guard (set/replace/taint/create/run/expose) ----------
+
+local NEW_VERBS: { [string]: boolean } = {
+	["set-image"] = true,
+	["set-env"] = true,
+	["set-resources"] = true,
+	["set-selector"] = true,
+	["set-serviceaccount"] = true,
+	["set-subject"] = true,
+	replace = true,
+	taint = true,
+	create = true,
+	run = true,
+	expose = true,
+}
+
+-- Families whose after objects are new (no live side).
+local CREATES: { [string]: boolean } = { create = true, run = true, expose = true }
+
+local function containersOf(obj: any): { any }
+	local spec = field(obj, "spec", "template", "spec") or field(obj, "spec", "jobTemplate", "spec", "template", "spec")
+	if spec == nil and field(obj, "kind") == "Pod" then
+		spec = field(obj, "spec")
+	end
+	local out: { any } = {}
+	for _, list in { field(spec, "initContainers"), field(spec, "containers") } do
+		for _, c in (if type(list) == "table" then list else {}) :: { any } do
+			if type(c) == "table" and type(c.name) == "string" then
+				table.insert(out, c)
+			end
+		end
+	end
+	return out
+end
+
+local function containerMap(obj: any): { [string]: any }
+	local out: { [string]: any } = {}
+	for _, c in containersOf(obj) do
+		out[c.name] = c
+	end
+	return out
+end
+
+-- Changed pairs of the dry run (both sides, different).
+local function changedPairs(facts: Facts): { Objdiff.Pair }
+	local o = facts.objects
+	if o == nil then
+		return {}
+	end
+	local same: { [string]: boolean } = {}
+	for _, k in o.unchanged do
+		same[k] = true
+	end
+	local out: { Objdiff.Pair } = {}
+	for _, p in o.pairs do
+		if p.before ~= nil and p.after ~= nil and not same[p.key] then
+			table.insert(out, p)
+		end
+	end
+	return out
+end
+
+local function untaggedOrLatest(image: string): boolean
+	if string.find(image, "@", 1, true) then
+		return false
+	end
+	local last = string.match(image, "([^/]+)$") or image
+	local tag = string.match(last, ":([^:]+)$")
+	return tag == nil or tag == "latest"
+end
+
+local function setImageReasons(b: Builder, plan: Plan, facts: Facts)
+	local changes: { string } = {}
+	local fresh: { string } = {}
+	for _, p in changedPairs(facts) do
+		local old = containerMap(p.before)
+		for _, c in containersOf(p.after) do
+			local was = old[c.name]
+			if was and was.image ~= c.image and type(c.image) == "string" then
+				table.insert(
+					changes,
+					string.format("%s %s: %s -> %s", objectLabel(p.after), c.name, tostring(was.image), c.image)
+				)
+				table.insert(fresh, c.image)
+			end
+		end
+	end
+	if #changes > 0 then
+		add(
+			b,
+			"set-image",
+			"info",
+			"simple",
+			string.format(
+				"Changes the image of %d container(s) and starts a rollout: %s",
+				#changes,
+				table.concat(changes, "; ")
+			)
+		)
+	end
+	for _, pos in plan.invocation.positionals do
+		local container, image = string.match(pos, "^([^=]+)=(.*)$")
+		if container == "*" then
+			add(b, "image-wildcard", "medium", "simple", "`*=` sets the image of every container of each target")
+		end
+		if image and image ~= "" and not table.find(fresh, image) then
+			table.insert(fresh, image)
+		end
+	end
+	for _, image in fresh do
+		if untaggedOrLatest(image) then
+			add(
+				b,
+				"mutable-tag",
+				"low",
+				"simple",
+				image .. " has no tag or uses :latest; the pods may run a different image later",
+				true
+			)
+			break
+		end
+	end
+end
+
+local function envKeys(plan: Plan): { string }
+	local out: { string } = {}
+	for _, e in plan.edits do
+		if not e.remove then
+			table.insert(out, e.key)
+		end
+	end
+	for _, v in plan.invocation.flags.env or {} :: { string } do
+		local key = string.match(v, "^([^=]+)=")
+		if key then
+			table.insert(out, key)
+		end
+	end
+	return out
+end
+
+-- CPU in cores, memory in bytes; nil when the quantity is not understood.
+local SUFFIX: { [string]: number } = {
+	m = 1e-3,
+	k = 1e3,
+	M = 1e6,
+	G = 1e9,
+	T = 1e12,
+	Ki = 1024,
+	Mi = 1024 ^ 2,
+	Gi = 1024 ^ 3,
+	Ti = 1024 ^ 4,
+}
+
+local function quantity(v: any): number?
+	if type(v) == "number" then
+		return v
+	elseif type(v) ~= "string" then
+		return nil
+	end
+	local n, suffix = string.match(v, "^([%d%.]+)(%a*)$")
+	local num = if n then tonumber(n) else nil
+	if num == nil then
+		return nil
+	end
+	if suffix == "" then
+		return num
+	end
+	local mult = SUFFIX[suffix :: string]
+	return if mult then num * mult else nil
+end
+
+local function limitsLowered(facts: Facts): { string }
+	local out: { string } = {}
+	for _, p in changedPairs(facts) do
+		local old = containerMap(p.before)
+		for _, c in containersOf(p.after) do
+			local was = old[c.name]
+			for _, res in { "cpu", "memory" } do
+				local before = quantity(field(was, "resources", "limits", res))
+				local now = quantity(field(c, "resources", "limits", res))
+				if before and now and now < before then
+					table.insert(
+						out,
+						string.format(
+							"%s %s %s %s -> %s",
+							objectLabel(p.after),
+							c.name,
+							res,
+							tostring(field(was, "resources", "limits", res)),
+							tostring(field(c, "resources", "limits", res))
+						)
+					)
+				end
+			end
+		end
+	end
+	return out
+end
+
+local function pausedTargets(b: Builder, facts: Facts)
+	for _, obj in liveObjects(facts) do
+		if field(obj, "kind") == "Deployment" and field(obj, "spec", "paused") == true then
+			add(
+				b,
+				"rollout-paused",
+				"info",
+				"simple",
+				objectLabel(obj) .. " is paused: the change rolls out only after `rollout resume`"
+			)
+		end
+	end
+end
+
+local function setReasons(b: Builder, plan: Plan, facts: Facts)
+	local f = plan.family
+	selectorReason(b, plan, facts, "Updates")
+	noChange(b, facts)
+	pausedTargets(b, facts)
+	if f == "set-image" then
+		setImageReasons(b, plan, facts)
+	elseif f == "set-env" then
+		local keys: { string } = {}
+		for _, k in envKeys(plan) do
+			if Redact.sensitiveKey(k) then
+				table.insert(keys, k)
+			end
+		end
+		if #keys > 0 then
+			add(
+				b,
+				"env-secret-literal",
+				"medium",
+				"simple",
+				table.concat(keys, ", ")
+					.. " looks like a credential: its value is stored in clear in the pod spec; use --from=secret/NAME",
+				true
+			)
+		end
+	elseif f == "set-resources" then
+		local lowered = limitsLowered(facts)
+		if #lowered > 0 then
+			add(
+				b,
+				"limits-lowered",
+				"medium",
+				"simple",
+				"Lowers limits (pods may be throttled or OOM-killed): " .. table.concat(lowered, "; "),
+				true
+			)
+		end
+	elseif f == "set-selector" then
+		add(
+			b,
+			"set-selector",
+			"high",
+			"typed",
+			"Replaces the selector: the pods it matched stop being selected (a Service stops routing to them)"
+		)
+	elseif f == "set-subject" then
+		add(b, "set-subject", "high", "typed", "Grants the binding's role to the given subjects")
+	end
+end
+
+local function replaceReasons(b: Builder, plan: Plan, facts: Facts)
+	local r = facts.replace
+	if plan.force then
+		add(
+			b,
+			"replace-force",
+			"high",
+			"typed",
+			"--force deletes, then re-creates: new uid, pods restart, rollout history and status are lost; "
+				.. "dependents are deleted unless --cascade=orphan; if the new object is rejected the old one "
+				.. "stays deleted (kubectl cannot dry-run --force)"
+		)
+		if r and r.probeOk == true then
+			add(
+				b,
+				"force-unneeded",
+				"medium",
+				"simple",
+				"A plain replace (without --force) would work without deleting the object"
+			)
+		elseif r and r.probeError and string.find(r.probeError, "immutable", 1, true) then
+			add(b, "force-needed", "info", "simple", "--force is needed: " .. (r.probeError :: string))
+		end
+	else
+		add(
+			b,
+			"replace",
+			"medium",
+			"simple",
+			"Replaces the whole object: fields not in the file are removed (apply merges)"
+		)
+		noChange(b, facts)
+	end
+	if r and #r.noResourceVersion > 0 then
+		add(
+			b,
+			"replace-no-rv",
+			"low",
+			"simple",
+			table.concat(r.noResourceVersion, ", ")
+				.. " has no metadata.resourceVersion: concurrent changes are overwritten"
+		)
+	end
+end
+
+local function evictionText(facts: TaintFacts): string
+	local now, later = 0, 0
+	for _, n in facts.nodes do
+		now += #n.evictions.immediate
+		later += #n.evictions.delayed
+	end
+	return string.format("evicts %d pod(s) now, %d after their tolerationSeconds", now, later)
+end
+
+local function taintReasons(b: Builder, plan: Plan, facts: Facts)
+	selectorReason(b, plan, facts, "Taints")
+	local f = facts.taint
+	for _, t in plan.taints do
+		local name = t.key .. (if t.value then "=" .. t.value else "") .. (if t.effect then ":" .. t.effect else "")
+		if t.remove then
+			add(b, "taint-remove", "info", "simple", "Removes taint " .. name)
+		elseif t.effect == "NoExecute" then
+			-- Always typed: tolerations of pods scheduled later are not known.
+			add(
+				b,
+				"taint-noexecute",
+				"high",
+				"typed",
+				"NoExecute taint "
+					.. name
+					.. (if f then " " .. evictionText(f) else "")
+					.. "; pods scheduled later without a matching toleration cannot run there"
+			)
+		elseif t.effect == "NoSchedule" then
+			add(
+				b,
+				"taint-noschedule",
+				"medium",
+				"simple",
+				"NoSchedule taint " .. name .. ": new pods without a toleration stay off"
+			)
+		elseif t.effect == "PreferNoSchedule" then
+			add(
+				b,
+				"taint-prefer",
+				"low",
+				"simple",
+				"PreferNoSchedule taint " .. name .. ": the scheduler avoids the node"
+			)
+		end
+	end
+	if f and #f.unknown > 0 then
+		add(b, "taint-evictions-unknown", "high", "typed", "Evictions unknown: " .. table.concat(f.unknown, "; "))
+	end
+	local c = facts.cluster
+	local adds = false
+	for _, t in plan.taints do
+		adds = adds or (not t.remove and t.effect == "NoSchedule")
+	end
+	if adds and c and c.nodes then
+		local targeted: { [string]: boolean } = {}
+		for _, n in nodeNames(facts) do
+			targeted[n] = true
+		end
+		for _, n in c.nodes :: { any } do
+			if not targeted[field(n, "metadata", "name")] and schedulable(n) then
+				return
+			end
+		end
+		add(
+			b,
+			"taint-noschedule-last",
+			"high",
+			"typed",
+			"The NoSchedule taint leaves no schedulable node: no other node is Ready, uncordoned and free of "
+				.. "NoSchedule/NoExecute taints, so new pods stay Pending"
+		)
+	end
+end
+
+local function createReasons(b: Builder, plan: Plan, facts: Facts)
+	local inv = plan.invocation
+	local created: { string } = {}
+	local secret = false
+	for _, p in (if facts.objects then facts.objects.pairs else {}) :: { Objdiff.Pair } do
+		if p.before == nil and p.after ~= nil then
+			table.insert(created, objectLabel(p.after))
+			secret = secret or field(p.after, "kind") == "Secret"
+		end
+	end
+	if #created > 0 then
+		add(b, "create", "low", "simple", "Creates " .. table.concat(created, ", "))
+	end
+	if secret then
+		add(
+			b,
+			"secret-masked",
+			"info",
+			"simple",
+			"Secret values are masked here, in the copied command and in the audit log"
+		)
+	end
+	local sub = plan.subverb
+	if plan.family == "create" and sub == "priorityclass" and truthy(plan, "global-default") then
+		add(
+			b,
+			"global-default-priority",
+			"high",
+			"typed",
+			"--global-default makes this the priority of every pod created without a priorityClassName"
+		)
+	elseif plan.family == "create" and sub == "quota" then
+		add(b, "quota", "medium", "simple", "A ResourceQuota can block new pods in the namespace")
+	elseif plan.family == "run" then
+		if truthy(plan, "stdin") or truthy(plan, "tty") or truthy(plan, "attach") then
+			add(b, "run-attach", "info", "simple", "Attaches your terminal; the preview ran without attaching")
+		end
+		if truthy(plan, "rm") then
+			add(b, "run-rm", "info", "simple", "--rm deletes the pod when you detach")
+		end
+		if inv.flags.overrides then
+			add(b, "run-overrides", "info", "simple", "--overrides changes the generated object (shown in the diff)")
+		end
+	elseif plan.family == "expose" and inv.flags["external-ip"] then
+		add(
+			b,
+			"external-ip",
+			"medium",
+			"typed",
+			"--external-ip "
+				.. tostring(flag(plan, "external-ip"))
+				.. ": the cluster routes that IP's traffic to these pods"
+		)
+	end
+end
+
+local function newVerbReasons(b: Builder, plan: Plan, facts: Facts)
+	local f = plan.family
+	if string.sub(f, 1, 4) == "set-" then
+		setReasons(b, plan, facts)
+	elseif f == "replace" then
+		replaceReasons(b, plan, facts)
+	elseif f == "taint" then
+		taintReasons(b, plan, facts)
+	else
+		createReasons(b, plan, facts)
+	end
+end
+
 local function familyReasons(b: Builder, plan: Plan, facts: Facts)
 	local f = plan.family
 	if f == "undo" then
@@ -1363,6 +1845,8 @@ local function familyReasons(b: Builder, plan: Plan, facts: Facts)
 		editReasons(b, plan, facts)
 	elseif f == "helm-rollback" then
 		helmReasons(b, plan, facts)
+	elseif NEW_VERBS[f] then
+		newVerbReasons(b, plan, facts)
 	end
 end
 
@@ -1436,7 +1920,14 @@ local function tokenFor(plan: Plan, facts: Facts): string
 		return (plan.helm :: T.HelmRollback).release
 	end
 	local names: { string } = {}
-	if facts.targets and plan.family ~= "apply" then
+	if CREATES[plan.family] then
+		for _, p in (if facts.objects then facts.objects.pairs else {}) :: { Objdiff.Pair } do
+			local name = field(p.after, "metadata", "name")
+			if p.before == nil and type(name) == "string" then
+				table.insert(names, name)
+			end
+		end
+	elseif facts.targets and plan.family ~= "apply" then
 		for _, r in facts.targets do
 			table.insert(names, r.name)
 		end
@@ -1464,9 +1955,11 @@ function M.assess(plan: Plan, facts: Facts): T.Assessment
 	if plan.helm then
 		helmArgvReasons(b, plan, facts)
 	end
-	if facts.manifests and (plan.family == "apply") then
+	if facts.manifests and plan.family == "apply" then
 		manifestReasons(b, facts.manifests :: { T.Manifest }, nil)
 		placeholderReasons(b, facts.manifests :: { T.Manifest })
+	elseif facts.manifests and NEW_VERBS[plan.family] then
+		manifestReasons(b, facts.manifests :: { T.Manifest }, facts.baseline)
 	end
 	if facts.previewOk ~= nil then
 		familyReasons(b, plan, facts)

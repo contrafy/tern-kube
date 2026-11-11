@@ -1,0 +1,65 @@
+name	argv	exit	kubectl_version	server_version
+rh-deploy	kubectl --context kind-tern-kube-dev -n tern-test-k9s rollout history deployment/hist	0	v1.34.1	v1.37.0
+rh-deploy-rev2	kubectl --context kind-tern-kube-dev -n tern-test-k9s rollout history deployment/hist --revision=2	0	v1.34.1	v1.37.0
+rh-deploy-rev3	kubectl --context kind-tern-kube-dev -n tern-test-k9s rollout history deployment/hist --revision=3	0	v1.34.1	v1.37.0
+rh-deploy-rev2-json	kubectl --context kind-tern-kube-dev -n tern-test-k9s rollout history deployment/hist --revision=2 -o json	0	v1.34.1	v1.37.0
+rh-deploy-rev2-yaml	kubectl --context kind-tern-kube-dev -n tern-test-k9s rollout history deployment/hist --revision=2 -o yaml	0	v1.34.1	v1.37.0
+rh-deploy-json	kubectl --context kind-tern-kube-dev -n tern-test-k9s rollout history deployment/hist -o json	0	v1.34.1	v1.37.0
+rh-deploy-name	kubectl --context kind-tern-kube-dev -n tern-test-k9s rollout history deployment/hist -o name	0	v1.34.1	v1.37.0
+rh-multi	kubectl --context kind-tern-kube-dev -n tern-test-k9s rollout history deployment/hist deployment/fresh	0	v1.34.1	v1.37.0
+rh-all-deploy	kubectl --context kind-tern-kube-dev -n tern-test-k9s rollout history deployment	0	v1.34.1	v1.37.0
+rh-selector	kubectl --context kind-tern-kube-dev -n tern-test-k9s rollout history deployment -l app=hist	0	v1.34.1	v1.37.0
+rh-ds	kubectl --context kind-tern-kube-dev -n tern-test-k9s rollout history daemonset/ds	0	v1.34.1	v1.37.0
+rh-ds-rev2	kubectl --context kind-tern-kube-dev -n tern-test-k9s rollout history ds/ds --revision=2	0	v1.34.1	v1.37.0
+rh-ds-name	kubectl --context kind-tern-kube-dev -n tern-test-k9s rollout history daemonset/ds -o name	0	v1.34.1	v1.37.0
+rh-sts	kubectl --context kind-tern-kube-dev -n tern-test-k9s rollout history statefulset/sts	0	v1.34.1	v1.37.0
+rh-sts-rev1	kubectl --context kind-tern-kube-dev -n tern-test-k9s rollout history statefulset/sts --revision=1	0	v1.34.1	v1.37.0
+rh-sts-json	kubectl --context kind-tern-kube-dev -n tern-test-k9s rollout history statefulset/sts --revision=1 -o json	0	v1.34.1	v1.37.0
+rh-notfound	kubectl --context kind-tern-kube-dev -n tern-test-k9s rollout history deployment/nope	1	v1.34.1	v1.37.0
+rh-pod	kubectl --context kind-tern-kube-dev -n tern-test-k9s rollout history pod/ds-thzzn	1	v1.34.1	v1.37.0
+rh-svc	kubectl --context kind-tern-kube-dev -n tern-test-k9s rollout history svc/web	1	v1.34.1	v1.37.0
+rh-noresource	kubectl --context kind-tern-kube-dev -n tern-test-k9s rollout history	1	v1.34.1	v1.37.0
+rh-bad-revision	kubectl --context kind-tern-kube-dev -n tern-test-k9s rollout history deployment/hist --revision=99	1	v1.34.1	v1.37.0
+rh-after-undo	kubectl --context kind-tern-kube-dev -n tern-test-k9s rollout history deployment/hist	0	v1.34.1	v1.37.0
+rh-after-undo-rev1	kubectl --context kind-tern-kube-dev -n tern-test-k9s rollout history deployment/hist --revision=1	1	v1.34.1	v1.37.0
+ctx-default	kubectl config get-contexts	0	v1.34.1	v1.37.0
+ctx-flag-context	kubectl --context tk-apps config get-contexts	0	v1.34.1	v1.37.0
+ctx-noheaders	kubectl config get-contexts --no-headers	0	v1.34.1	v1.37.0
+ctx-name	kubectl config get-contexts -o name	0	v1.34.1	v1.37.0
+ctx-one	kubectl config get-contexts tk-apps	0	v1.34.1	v1.37.0
+ctx-missing	kubectl config get-contexts nope	1	v1.34.1	v1.37.0
+ctx-yaml	kubectl config get-contexts -o yaml	1	v1.34.1	v1.37.0
+ctx-empty	kubectl config get-contexts	0	v1.34.1	v1.37.0
+ar-default	kubectl --context kind-tern-kube-dev api-resources	0	v1.34.1	v1.37.0
+ar-wide	kubectl --context kind-tern-kube-dev api-resources -o wide	0	v1.34.1	v1.37.0
+ar-name	kubectl --context kind-tern-kube-dev api-resources -o name	0	v1.34.1	v1.37.0
+ar-noheaders	kubectl --context kind-tern-kube-dev api-resources --no-headers	0	v1.34.1	v1.37.0
+ar-namespaced	kubectl --context kind-tern-kube-dev api-resources --namespaced=false	0	v1.34.1	v1.37.0
+ar-apps	kubectl --context kind-tern-kube-dev api-resources --api-group=apps -o wide	0	v1.34.1	v1.37.0
+ar-badgroup	kubectl --context kind-tern-kube-dev api-resources --api-group=nope.example.com	0	v1.34.1	v1.37.0
+ar-explore-wide	kubectl --context kind-tern-kube-dev api-resources --verbs=list -o wide	0	v1.34.1	v1.37.0
+ar-json	kubectl --context kind-tern-kube-dev api-resources -o json	0	v1.34.1	v1.37.0
+ar-cat-lens	kubectl --context kind-tern-kube-dev api-resources --categories=lens -o wide	0	v1.34.1	v1.37.0
+ci-yes	kubectl --context kind-tern-kube-dev auth can-i get pods -n tern-test-k9s	0	v1.34.1	v1.37.0
+ci-yes-as	kubectl --context kind-tern-kube-dev --as=system:serviceaccount:tern-test-k9s:viewer -n tern-test-k9s auth can-i list pods	0	v1.34.1	v1.37.0
+ci-no-as	kubectl --context kind-tern-kube-dev --as=system:serviceaccount:tern-test-k9s:viewer -n tern-test-k9s auth can-i delete pods	1	v1.34.1	v1.37.0
+ci-quiet-yes	kubectl --context kind-tern-kube-dev auth can-i list pods -q -n tern-test-k9s	0	v1.34.1	v1.37.0
+ci-quiet-no	kubectl --context kind-tern-kube-dev --as=system:serviceaccount:tern-test-k9s:viewer -n default auth can-i list pods -q	1	v1.34.1	v1.37.0
+ci-unknown	kubectl --context kind-tern-kube-dev auth can-i get frobs	0	v1.34.1	v1.37.0
+ci-unknownverb	kubectl --context kind-tern-kube-dev auth can-i frob pods	0	v1.34.1	v1.37.0
+ci-star	kubectl --context kind-tern-kube-dev auth can-i '*' '*'	0	v1.34.1	v1.37.0
+ci-star-as	kubectl --context kind-tern-kube-dev --as=system:serviceaccount:tern-test-k9s:viewer auth can-i '*' '*'	1	v1.34.1	v1.37.0
+ci-sub	kubectl --context kind-tern-kube-dev --as=system:serviceaccount:tern-test-k9s:viewer -n tern-test-k9s auth can-i get pods --subresource=log	0	v1.34.1	v1.37.0
+ci-slash	kubectl --context kind-tern-kube-dev --as=system:serviceaccount:tern-test-k9s:viewer -n tern-test-k9s auth can-i get pods/log	0	v1.34.1	v1.37.0
+ci-nonres	kubectl --context kind-tern-kube-dev --as=system:serviceaccount:tern-test-k9s:viewer auth can-i get /healthz	0	v1.34.1	v1.37.0
+ci-name-yes	kubectl --context kind-tern-kube-dev --as=system:serviceaccount:tern-test-k9s:limited -n tern-test-k9s auth can-i get configmap/cm-a	0	v1.34.1	v1.37.0
+ci-name-no	kubectl --context kind-tern-kube-dev --as=system:serviceaccount:tern-test-k9s:limited -n tern-test-k9s auth can-i get configmap/cm-c	1	v1.34.1	v1.37.0
+ci-scale-sub	kubectl --context kind-tern-kube-dev --as=system:serviceaccount:tern-test-k9s:limited -n tern-test-k9s auth can-i patch deployments --subresource=scale	0	v1.34.1	v1.37.0
+ci-group	kubectl --context kind-tern-kube-dev --as=nobody --as-group=system:authenticated auth can-i get pods	1	v1.34.1	v1.37.0
+ci-noargs	kubectl --context kind-tern-kube-dev auth can-i	1	v1.34.1	v1.37.0
+ci-list	kubectl --context kind-tern-kube-dev auth can-i --list	0	v1.34.1	v1.37.0
+ci-list-as	kubectl --context kind-tern-kube-dev --as=system:serviceaccount:tern-test-k9s:viewer -n tern-test-k9s auth can-i --list	0	v1.34.1	v1.37.0
+ci-list-names	kubectl --context kind-tern-kube-dev --as=system:serviceaccount:tern-test-k9s:limited -n tern-test-k9s auth can-i --list	0	v1.34.1	v1.37.0
+ci-list-as-noheaders	kubectl --context kind-tern-kube-dev --as=system:serviceaccount:tern-test-k9s:viewer -n tern-test-k9s auth can-i --list --no-headers	0	v1.34.1	v1.37.0
+ci-list-A	kubectl --context kind-tern-kube-dev --as=system:serviceaccount:tern-test-k9s:viewer auth can-i --list -A	1	v1.34.1	v1.37.0
+ci-list-json	kubectl --context kind-tern-kube-dev --as=system:serviceaccount:tern-test-k9s:viewer -n tern-test-k9s auth can-i --list -o json	1	v1.34.1	v1.37.0

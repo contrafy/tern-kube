@@ -8,7 +8,7 @@ three; e2e needs Tern, which is closed beta, and stays local.
 | Unit, lint, types | `make check` | `make bootstrap` | macOS arm64, Linux x86_64 |
 | Shell suites | `make test-shell-aliases test-shell-guard test-shell-drift` | zsh, bash, fish (dash optional) | macOS arm64, Linux x86_64 |
 | Integration | `tests/integration/*/` scripts | Docker, kind cluster | Linux x86_64 |
-| End to end | `make e2e` | Tern, jq, desktop session, kind cluster | no |
+| End to end | `make e2e` | Tern, jq, kind cluster (headless, no window) | no |
 
 ## Safety rules
 
@@ -77,8 +77,10 @@ sh tests/integration/mutate/rbac.sh create
 sh tests/integration/mutate/run.sh [SCENARIO...]
 sh tests/integration/drift-rbac/run.sh [--keep]
 sh tests/integration/gitops/roundtrip.sh
+sh tests/integration/gitops/cli-equivalence.sh
 sh tests/integration/logs/check.sh
 sh tests/integration/events/check.sh
+sh tests/integration/usage/check.sh
 sh tests/integration/helm/template-compat.sh
 sh scripts/cluster.sh create-peer   # tern-kube-dev2, .sandbox/kubeconfig-{dev2,mc}
 sh tests/integration/compare/run.sh [explore] [cli]   # make test-integration-compare
@@ -89,14 +91,39 @@ sh scripts/cluster.sh delete
 - `mutate/run.sh` drives the approve block's pure session through
   `harness.sh` with real kubectl results (apply, diff, scale, restart,
   typed delete, cancel, stale file, context/server drift, RBAC-denied dry
-  run, timeout, CronJob quick grant, guard round trip with a fake `tern`,
-  Secret redaction in a real apply diff, palette apply prompt, guard deny
-  with `mutations.enabled=false`).
+  run, timeout, CronJob quick grant plus the split's outcome record (real
+  `tern-kube-guard record`, same run id as the approval), guard round trip
+  with a fake `tern`, Secret redaction in a real apply diff, palette apply
+  prompt, guard deny with `mutations.enabled=false`, selection re-check at
+  confirm: `selection_unchanged`, `selection_added` and
+  `selection_recreated` refuse a guarded `delete -l` whose set changed;
+  the 1.2 guarded verbs through the real guard on the `guard12`
+  manifests: `guard_set_image`, `guard_set_noop` (unchanged, no deletion),
+  `guard_set_all_mixed` (one changed, one unchanged), `guard_set_env_stdin_refused`,
+  `guard_replace`, `guard_replace_conflict` (stale resourceVersion
+  blocked), `guard_replace_force` (typed, "field is immutable", new uid),
+  `taint_noexecute_deny` (evictions from the real pods, always denied),
+  `taint_prefer_roundtrip` (a per-run key, removed by an EXIT trap),
+  `guard_create_secret_masked` (no literal in `view.txt`, the copy, either
+  audit log or the response template), `guard_create_fromdir_fingerprint`,
+  `guard_create_job_from_cronjob`, `guard_create_exists_blocked`,
+  `guard_run`, `guard_run_attach_preview` (dry run without attach flags)
+  and `guard_expose_nodeport`).
   Evidence per scenario: `.sandbox/mutate-it/<scenario>/`.
 - `drift-rbac/run.sh` proves `examples/ci/rbac-drift-readonly.yaml` is
   sufficient and cannot mutate.
 - `gitops/roundtrip.sh` emits every real JSON fixture as YAML and checks
   `kubectl create --dry-run=client` reads back the same object.
+- `gitops/cli-equivalence.sh` proves Copy CLI command against kind:
+  `cli_driver.luau` replays Explore headless with real kubectl/git/helm
+  answers for each source it offers (clean, mixed and top directory, a
+  quoted path, a Kustomization, a configured Helm chart) and a two-context
+  matrix (a private kubeconfig copy with an alias context), and the script
+  runs each copied `tern-kube-drift` command with `--format json`: the
+  normalized changes and unmanaged keys must equal Explore's report plus
+  the objects other sources declare. The world lives in
+  `tern-test-gitops-cli` (deleted at exit) and a mktemp repository; the run
+  checks no object's resourceVersion or generation changed.
 - `logs/check.sh` applies the `tk-logmix` Deployment (`tern-test-logs`, 2
   pods x `app`/`side`/`crashy`), runs the real `kubectl logs` forms (pod,
   `deploy/x`, `-l --prefix --timestamps`, `--all-containers`, `-p`, a bad
@@ -109,6 +136,16 @@ sh scripts/cluster.sh delete
   `tern-test-apps`, and decodes the real `get events -o json` and
   `kubectl events -o json` with `lib/events/model`: every event names its
   involved object and has a parseable last-seen time.
+- `usage/check.sh` applies metrics-server and the usage world
+  (`tern-test-usage`: `sidecar-init`, `limits-only`, `pod-level`,
+  `cpu-burner`), waits until `kubectl top` lists all four pods, asks
+  `check.luau` for the plugin's own `Query.usage*` argv and runs exactly
+  those (pods and pod metrics of the namespace, nodes, node metrics, all
+  pods). Through `lib/usage/parse` and `model` it asserts: every running pod
+  has metrics, `cpu-burner` is at >= 90% of its CPU limit, `sidecar-init`'s
+  effective request is its first init's 500m/256Mi, Near limits >= 1, and
+  each node's committed requests equal `kubectl describe node` plus the
+  pod-level requests kubectl leaves out. Read-only after the apply.
 - `helm/template-compat.sh` installs the Helm fixture releases with the
   pinned `.tools/bin/helm` in `tern-test-helm-compat`, runs the release
   extras template against every revision and decodes each output with the
@@ -137,7 +174,8 @@ evidence (without kubeconfigs) and `kind export logs` are uploaded.
 ## End to end (local only)
 
 `make e2e` (`scripts/e2e.sh [--only GLOB] [--shots] [--perf] [--keep]`)
-starts an isolated Tern window (sandbox `TK_E2E_SANDBOX`, default
+starts an isolated headless Tern session (`scripts/dev-tern.sh start`:
+`tern serve`, no window; sandbox `TK_E2E_SANDBOX`, default
 `/tmp/tk-tern-e2e`) with a snapshot copy of `plugin/` and `shell/`, then runs
 `tests/e2e/scenarios/*.sh` against the kind cluster, asserting with
 `tern ctl` (`plugins expect`, `click`, `key`, `tree`). Scenarios 01-17 are
@@ -152,9 +190,10 @@ exit), Explore `e` edit approved and denied (28) and the shell guard on the
 new verbs (29). Every pane and split runs `kubectl edit` with
 `KUBE_EDITOR=<sandbox>/kube-editor` (via `TK_DEV_KUBE_EDITOR`), which runs
 the `<sandbox>/edit-script` a scenario writes and fails without one. 30
-edits only the sandbox's config file, 31 restarts the window and its daemon
-with a Dock-like `PATH`, and 32 (native editing) edits the sandbox config
-and deletes its own `tk-e2e-web`; all clean up on exit. 40-49 cover the
+edits only the sandbox's config file, 31 restarts the session with a
+Dock-like `PATH`, and 32 (native editing) edits the sandbox config
+and deletes its own `tk-e2e-web` (pasting through the session clipboard);
+all clean up on exit. 40-49 cover the
 logs lens and events (0.3.0), read-only: the logs lens on `tk-logmix` (40),
 multi-source `-l --prefix --timestamps` and `deploy/x` notices (41), `logs -f`
 raw while running and native after Ctrl-C (42), Follow in split, Run in split
@@ -176,16 +215,19 @@ the world afresh; the runner deletes both namespaces unless `--keep`. Before
 the scenarios the runner restarts `tk-logmix` when its pods are older than
 4 hours: its `app` container prints a line a second and the logs lens keeps
 the newest 20 000 lines, so 40 would no longer find the first ones. The
-sandbox window usually stays behind other windows, where Tern sends blocks
-no pane size: Explore and Settings then size their lists for Tern's default
-window (see "Block size" in [sdk-capability-matrix.md](sdk-capability-matrix.md)).
-The runner asks for a 1280x800 window and says so when the window keeps
-another size: `ctl resize` resizes the real window, which a tiling window
-manager (OmniWM, yabai, AeroSpace) keeps in its tile. Scenarios do not
-depend on it (16 clicks pane edges); 13 checks a 500 px window's columns
-when it can resize the window and otherwise the narrow column tier classes
-(the tiers are window-width `@media` rules), and `--shots` fails with the
-size it got.
+session's viewport is 1280x800 CSS px at scale 2 (2560x1600 screenshots)
+and `ctl resize` always takes: 13 and 94 check the real narrow layout at
+500 px (the tiers are viewport-width `@media` rules), and the runner fails
+when the viewport keeps another size. The headless session has a clipboard
+of its own (the user's pasteboard is never read or written): `clip` in
+`tests/e2e/lib.sh` pastes it into `cat` in a scratch tab (answering Tern's
+line-break paste question) and `clip_set` fills it. 84 drives the Explore
+`:` prompt (1.2.0, read-only): `deploy`,
+`po`, `svc`, `cm`, the CRD short name `wd` from discovery with a namespace,
+`ns NAME`, `ctx NAME` (chosen, unconfirmed), `helm` (a skip line without
+helm), `events`, an unknown word's toast, tab completion, and a second
+Explore block whose `:` runs no `api-resources` (host cache); its `:` steps
+moved out of 14.
 70-79 cover compare across contexts (0.6.0) and run only
 with `E2E_MC=1` after `scripts/cluster.sh create-peer` (otherwise each
 prints a skip line); the runner applies the compare world to both
@@ -198,7 +240,43 @@ no kubectl (73), All contexts with an unreachable third context and
 drift matrix of a throwaway repository with drill-in and the read-only
 refusal (76), the `compare.contexts` preset with an unknown name (77), no
 refresh until `r` after the peer is scaled outside Tern (78; scaled back
-on exit), and help rows and short labels with a legend (79). Scenarios that need
+on exit), and help rows and short labels with a legend (79). 90-94 cover
+resource usage (1.2.0) on `tern-test-usage`: the `top` lens footer,
+container rows, tones and Usage chips (90); `%` from the pods list with
+tiles, limit tones, the container drill-in and `Y` copying both pinned
+reads, with no run without `r` (91); the palette **Tern Kube: Resource
+usage** nodes view, `%CPU REQ` against `kubectl describe node` plus
+pod-level requests, and the `%` toggle (92); trends from two `r` reads and a
+`w` sample that reads metrics only and stops on `w` and on leaving (93);
+`allow_live_queries` off, an empty namespace, a pod of its own
+(`usage-fresh`, deleted on exit) at `<no metrics>` until its first window,
+and the narrow help (94). 85-88 run the 1.2 guarded verbs in a real pane:
+`set image` (simple), `set image -l` with one unchanged deployment
+(typed), `set env` with a sensitive key (masked, denied) and `set
+resources` (85); `replace` and `replace --force` with an immutable
+selector (typed, new uid) (86); a `NoExecute` taint on the kind node
+(evictions card, denied) and a `PreferNoSchedule` taint added and removed,
+with an EXIT trap removing the run's key (87); `create secret generic`
+masked (denied), `create job --from=cronjob`, `run` and `expose
+--type=NodePort` (denied) (88). 89 is a
+guarded `delete -l` refused at confirm because a match appeared while the
+block waited, then Run now and Debug leaving approved and outcome records
+with the same run id in the sandbox audit log. 98 and 99 decode a fake
+Secret `tk-e2e-decode` (in `tern-test-mutate`, deleted on exit): Explore's
+`z` with the config off (masked toast) and on (card, PEM code block, hex
+dump, escaped ESC; hidden again after leaving or reopening the view) (98),
+and the lens chip on `-o yaml` / `-o json`, none on describe, hidden again
+after a plugin reload (99); both restore the config stub. 95-97 cover the
+GitOps CLI copy and controller status: `Y` on a drift report copies a
+`tern-kube-drift` command with `-R -f` and `-n` for namespace-less
+documents (95, `tern-test-gitops-cli-e2e`); the matrix's Copy CLI command
+chip copies one command with a `--context` per column, base first (96,
+needs `E2E_MC=1`, skipped otherwise); and an Argo CD Application with a
+hand-written status (CRDs from `scripts/fixtures/gitops-crds.sh`, removed
+on exit only when the run installed them; `tern-test-gitops-ctl-e2e`) is
+counted in the source chooser, shown as a status card with the self-heal
+revert risk on the report, and named on the object's controller line (97).
+Scenarios that need
 output a read-only cluster cannot produce switch the pane to the fake
 `tests/bin/kubectl`. `--shots` regenerates `docs/screenshots/`
 (`E2E_SHOTS="m3b m4"` limits it to some groups; `t1` is the 0.2.0 verbs and
@@ -211,18 +289,41 @@ prints timings for [performance.md](performance.md). It exits 0 with
 
 Every `tern ctl` call through `scripts/dev-tern.sh ctl` is bounded: it is
 terminated after `TK_CTL_TIMEOUT` seconds (default 60) and says so, because
-a quitting window can accept a control connection and never answer.
-`plugin reload`/`list` are bounded at 30 s. `stop` quits the window, waits
-for it and for the sandbox daemon (which outlives its window on Tern 0.9),
-then sends TERM and finally KILL to whatever is left, and exits non-zero if a
-process survives. `start` writes `<sandbox>/cfg/omp/state.json` with Tern's
-omp management off, so a fresh sandbox never downloads or links omp.
+a quitting session can accept a control connection and never answer.
+`plugin reload`/`list` are bounded at 30 s. `stop` quits the session, waits
+for it and for a window's sandbox daemon (which outlives its window on Tern
+0.9), then sends TERM and finally KILL to whatever is left, and exits
+non-zero if a process survives. `start` writes `<sandbox>/cfg/omp/state.json`
+with Tern's omp management off, so a fresh sandbox never downloads or links
+omp.
 
 ### Manual sandbox
 
 `TK_TERN_SANDBOX=/tmp/tk-tern-<name> scripts/dev-tern.sh start` (in a
-long-lived terminal), then `link`, `reload`, `ctl ...`, `stop`. `start
---fake` puts the fake kubectl first on `PATH`.
+long-lived terminal), then `wait-ready`, `link`, `reload`, `ctl ...`,
+`shot NAME`, `stop`. `start --fake` puts the fake kubectl first on `PATH`.
+
+`start` is headless: `tern serve --control <sandbox>/ctl.sock --out
+<sandbox>/out` with the sandbox environment (rc files, `KUBECONFIG`,
+`PATH` modes, `HELM_*` homes), no window and no GUI process. `tern serve`
+runs its own panes without a daemon and so without user plugins: `start`
+attaches an in-process daemon as host `sandbox` (`ctl remote loopback
+sandbox`), which runs the host half from the sandbox's linked plugins, and
+loads the window half (`route.link`, palette commands) into serve itself
+with `ctl plugins fixtures` (`STENCIL_FIXTURE_ROOT` under
+`<sandbox>/fixture`; `link` points it at the linked copy). `wait-ready`
+waits for both. Both halves log to `<sandbox>/logs/tern-serve.log`; shots
+land in `<sandbox>/out/serve`. `start --window` opens a real Tern window
+(`tern --control`) as before; it takes focus and tiles into the desktop, so
+use it only when you mean to watch (and never from an agent without the
+user's OK).
+
+To the window, `sandbox` is a remote host: its pane ids are not the shells'
+`TERN_PANE`, and quick actions launched from its panes take the login
+environment's kubeconfig instead of the pane env record (as on any remote
+host). Nothing listens at `<sandbox>/d.sock`, so the sandbox rc files point
+`TERN_DAEMON_SOCKET` at the in-process daemon (`TERN_PANE_SOCKET`) for
+`tern open --wait` (the shell guard, `kubectl edit`).
 
 `link [DIR]` copies the checkout (or DIR) without `.git`, `.sandbox` and
 `.tools` to `<sandbox>/pkg` and links that copy; run it again after edits.
@@ -258,7 +359,9 @@ the remote without `TERN_BIN`, 66 native delete and Apply from a remote
 cwd, 67 remote Settings, 68 a local fish login shell (`dev-tern.sh start
 --shell fish`), 69 the shell matrix: rerun after `remote-host.sh up --shell
 bash` and `--shell zsh` with `--only '69-*'`. Not in CI: Tern is closed
-beta, the window needs a desktop session and the route needs the iroh relay.
+beta and the route needs the iroh relay. `--remote` and 69 are not yet
+verified against the headless session (see `local_switch` in
+`tests/e2e/lib.sh`: the local host is now `sandbox`).
 
 ## Fixtures
 

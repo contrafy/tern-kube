@@ -302,6 +302,7 @@ local TYPED_VERBS = {
 	autoscale = true,
 	expose = true,
 	set = true,
+	taint = true,
 }
 
 -- Verbs addressing a pod (or TYPE/NAME) as first positional.
@@ -311,6 +312,12 @@ local POD_VERBS = { logs = true, exec = true, attach = true, ["port-forward"] = 
 -- `KEY=VALUE` or `KEY-`.
 local function isLabelEdit(s: string): boolean
 	return string.find(s, "=", 1, true) ~= nil or string.sub(s, -1) == "-"
+end
+
+-- A `taint` positional that is a taint spec (`key[=value]:Effect`,
+-- `key[:Effect]-`); node names contain neither `:` nor `=`.
+local function isTaintSpec(s: string): boolean
+	return string.find(s, ":", 1, true) ~= nil or isLabelEdit(s)
 end
 
 local function slashed(token: string): Types.ResourceArg?
@@ -354,16 +361,30 @@ local function resourcesFor(
 		return resources, names
 	end
 	local args = positionals
-	local filtersEdits = verb == "label"
+	if verb == "taint" then
+		args = {}
+		for _, p in positionals do
+			if not isTaintSpec(p) then
+				table.insert(args, p)
+			end
+		end
+	elseif
+		verb == "label"
 		or verb == "annotate"
-		or (verb == "set" and (subverb == "env" or subverb == "image" or subverb == "resources"))
-	if filtersEdits then
+		or (
+			verb == "set"
+			and (subverb == "env" or subverb == "image" or subverb == "resources" or subverb == "selector")
+		)
+	then
 		args = {}
 		for _, p in positionals do
 			if not isLabelEdit(p) then
 				table.insert(args, p)
 			end
 		end
+	elseif verb == "set" and subverb == "serviceaccount" then
+		-- The last positional is the service account, not a target.
+		args = table.move(positionals, 1, #positionals - 1, 1, {})
 	end
 	if #args == 0 then
 		return resources, names
@@ -412,6 +433,7 @@ end
 local M = {}
 
 M.isLabelEdit = isLabelEdit
+M.isTaintSpec = isTaintSpec
 
 function M.parse(program: string, args: { string }): Invocation
 	-- Any program other than kubectl is kubecolor or a shell alias reported as
@@ -429,12 +451,18 @@ function M.parse(program: string, args: { string }): Invocation
 				verb = tok.value
 				commandTokens[tok.index] = true
 			else
-				local sub = resolveSub(verb, tok.value)
-				if sub then
-					subverb = sub
-					commandTokens[tok.index] = true
+				-- Nested groups (`create secret generic`) resolve one word at a
+				-- time, like cobra; subverb holds every resolved word.
+				local sub = resolveSub(if subverb then verb .. " " .. subverb else verb, tok.value)
+				if sub == nil then
+					break
 				end
-				break
+				local full = if subverb then subverb .. " " .. sub else sub
+				subverb = full
+				commandTokens[tok.index] = true
+				if flagTables.subcommands[verb .. " " .. full] == nil then
+					break
+				end
 			end
 		end
 	end
@@ -594,13 +622,56 @@ function M.lensSupport(inv: Invocation): LensSupport
 		return { supported = false, reason = outputReason }
 	end
 	if verb == "rollout" then
-		if NATIVE_ROLLOUTS[inv.subverb or ""] then
+		local sub = inv.subverb or ""
+		if sub == "history" then
+			if (inv.output == "json" or inv.output == "yaml") and inv.flags.revision == nil then
+				return {
+					supported = false,
+					reason = "rollout history prints one document per revision; add --revision=N for a native view.",
+				}
+			end
+			return { supported = true }
+		end
+		if NATIVE_ROLLOUTS[sub] then
 			return { supported = true }
 		end
 		return {
 			supported = false,
-			reason = string.format("kubectl rollout %s has no native view yet; showing raw output.", inv.subverb or ""),
+			reason = string.format("kubectl rollout %s has no native view yet; showing raw output.", sub),
 		}
+	end
+	if verb == "config" then
+		if inv.subverb == "get-contexts" then
+			return { supported = true }
+		end
+		return {
+			supported = false,
+			reason = string.format("kubectl config %s has no native view; showing raw output.", inv.subverb or ""),
+		}
+	end
+	if verb == "auth" then
+		if inv.subverb == "can-i" then
+			return { supported = true }
+		end
+		return {
+			supported = false,
+			reason = string.format("kubectl auth %s has no native view; showing raw output.", inv.subverb or ""),
+		}
+	end
+	if verb == "api-resources" then
+		if inv.output == "json" or inv.output == "yaml" then
+			return {
+				supported = false,
+				reason = "api-resources -o " .. inv.output .. " has no native view; use the table or -o wide.",
+			}
+		end
+		if inv.noHeaders then
+			return {
+				supported = false,
+				reason = "api-resources --no-headers leaves blank cells that cannot be split; use the table or -o wide.",
+			}
+		end
+		return { supported = true }
 	end
 	if (verb == "label" or verb == "annotate") and truthy(inv.flags.list) then
 		return {

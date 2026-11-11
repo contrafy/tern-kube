@@ -9,6 +9,8 @@ local HelmChip = require("./helm_chip")
 local Owner = require("../helm/owner")
 local Query = require("../lens/query")
 local Redact = require("../model/redact")
+local SecretData = require("../model/secretdata")
+local SecretDataView = require("./secret_data")
 local Types = require("../model/types")
 local Viewstate = require("../lens/viewstate")
 local Yaml = require("../parse/yaml")
@@ -61,10 +63,57 @@ local function helmNode(lines: { string }, doc: Doc, key: string): Node?
 	return HelmChip.node(Owner.fromYamlLines(lines, doc.startLine, doc.endLine), key .. "/helm")
 end
 
-local function docNode(lines: { string }, doc: Doc, key: string): Node
+-- Decoding needs both gates: the policy shows Secret values (otherwise
+-- they are masked and there is nothing to decode) and the user asked for
+-- it in this view (`vs.decoded`, only ever held in the action).
+local function decodePairs(capture: Capture, lines: { string }, doc: Doc): { SecretData.Pair }?
+	if not capture.policy.showSecrets then
+		return nil
+	end
+	local found = Yaml.secretData(lines, doc)
+	return if found and SecretData.hasValues(found) then found else nil
+end
+
+local function decodeChip(vs: ViewState, vsm: typeof(Viewstate)): Node
+	return ui.badge(SecretDataView.label(vs.decoded, nil), if vs.decoded then "accent" else "warning", {
+		key = "decode",
+		title = if vs.decoded
+			then "Hide the decoded values"
+			else "Show this Secret's values decoded in a separate card (display only; the YAML stays base64)",
+		actions = { click = vsm.action(vsm.toggledDecoded(vs)) },
+	})
+end
+
+local function decodedCard(found: { SecretData.Pair }): Node
+	return SecretDataView.card(SecretData.entries(found), { key = "decoded", hint = "Hide decoded" })
+end
+
+local function docNode(
+	capture: Capture,
+	lines: { string },
+	doc: Doc,
+	key: string,
+	vs: ViewState,
+	vsm: typeof(Viewstate)
+): Node
 	local code = codeNode(lines, doc, key)
+	local chips: { Node } = {}
 	local helm = helmNode(lines, doc, key)
-	return if helm then ui.col({ ui.row({ helm }, { wrap = true }), code }) else code
+	if helm then
+		table.insert(chips, helm)
+	end
+	local found = decodePairs(capture, lines, doc)
+	if found then
+		table.insert(chips, decodeChip(vs, vsm))
+	end
+	if #chips == 0 then
+		return code
+	end
+	local children = { ui.row(chips, { wrap = true }), code }
+	if found and vs.decoded then
+		table.insert(children, decodedCard(found))
+	end
+	return ui.col(children)
 end
 
 local function title(doc: Doc): { ui.SpanLike }
@@ -134,7 +183,13 @@ local function pager(vs: ViewState, vsm: typeof(Viewstate), page: number, pages:
 	return ui.row(chips, { role = "tern-kube.pager", wrap = true })
 end
 
-local function docsGrid(docs: { Doc }, lines: { string }, vs: ViewState, vsm: typeof(Viewstate)): { Node }
+local function docsGrid(
+	capture: Capture,
+	docs: { Doc },
+	lines: { string },
+	vs: ViewState,
+	vsm: typeof(Viewstate)
+): { Node }
 	local shown = Query.apply(docsTable(docs), vs)
 	local matched = #shown.rows
 	local pages = math.max(1, math.ceil(matched / M.PAGE_SIZE))
@@ -171,7 +226,7 @@ local function docsGrid(docs: { Doc }, lines: { string }, vs: ViewState, vsm: ty
 			inspector = function(rowKey: string): Node?
 				local index = docIndex(rowKey)
 				local doc = if index then docs[index] else nil
-				return if doc then docNode(lines, doc, rowKey) else nil
+				return if doc then docNode(capture, lines, doc, rowKey, vs, vsm) else nil
 			end,
 		})
 	)
@@ -202,14 +257,25 @@ function M.render(capture: Capture, vs: ViewState, vsm: typeof(Viewstate)): Node
 		local docs = split.docs
 		if #docs == 1 then
 			table.insert(children, ui.text(title(docs[1]), { key = "doc:1/title" }))
+			local chips: { Node } = {}
 			local helm = helmNode(lines, docs[1], M.docKey(1))
 			if helm then
-				table.insert(children, ui.row({ helm }, { key = "doc:1/chips", wrap = true }))
+				table.insert(chips, helm)
+			end
+			local found = decodePairs(capture, lines, docs[1])
+			if found then
+				table.insert(chips, decodeChip(vs, vsm))
+			end
+			if #chips > 0 then
+				table.insert(children, ui.row(chips, { key = "doc:1/chips", wrap = true }))
 			end
 			table.insert(children, codeNode(lines, docs[1], M.docKey(1)))
+			if found and vs.decoded then
+				table.insert(children, decodedCard(found))
+			end
 		elseif #docs > 1 then
 			table.insert(children, ui.muted(string.format("%d documents; click one to show its YAML", #docs)))
-			for _, n in docsGrid(docs, lines, vs, vsm) do
+			for _, n in docsGrid(capture, docs, lines, vs, vsm) do
 				table.insert(children, n)
 			end
 		end

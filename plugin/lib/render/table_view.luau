@@ -9,9 +9,12 @@ local Link = require("../mutation/link")
 local Quick = require("../actions/quick")
 local Grid = require("./grid")
 local HelmChip = require("./helm_chip")
+local LensChips = require("./lens_chips")
 local Objtree = require("./objtree")
 local Owner = require("../helm/owner")
 local Query = require("../lens/query")
+local SecretData = require("../model/secretdata")
+local SecretDataView = require("./secret_data")
 local Summary = require("./summary")
 local Types = require("../model/types")
 local Values = require("../model/values")
@@ -84,6 +87,17 @@ local function facet(tables: { SnapshotTable }, col: string): Facet?
 					counts[v] += 1
 				end
 			end
+		elseif tbl.facets and table.find(tbl.facets, col) then
+			for _, row in tbl.rows do
+				local tags = row.tags
+				for _, v in (if tags then tags[col] else nil) or {} :: { string } do
+					if counts[v] == nil then
+						counts[v] = 0
+						table.insert(order, v)
+					end
+					counts[v] += 1
+				end
+			end
 		end
 	end
 	-- NAMESPACE, KIND and TYPE only help when they split the rows.
@@ -111,8 +125,24 @@ end
 -- EVENT (ADDED/MODIFIED).
 local EVENT_FACETS = { "EVENT", "REASON" }
 
-local function facets(tables: { SnapshotTable }, events: boolean): { Facet }
-	local out: { Facet } = {}
+-- Tables that name their facets (lens/k9s) use those instead.
+local function facetColumns(tables: { SnapshotTable }, events: boolean): { string }
+	local own: { string }? = nil
+	for _, tbl in tables do
+		local named = tbl.facets
+		if named then
+			local list: { string } = own or {}
+			for _, c in named do
+				if not table.find(list, c) then
+					table.insert(list, c)
+				end
+			end
+			own = list
+		end
+	end
+	if own then
+		return own
+	end
 	local cols = table.clone(FACET_COLUMNS)
 	table.insert(cols, 3, Query.KIND)
 	if events then
@@ -120,6 +150,12 @@ local function facets(tables: { SnapshotTable }, events: boolean): { Facet }
 			table.insert(cols, c)
 		end
 	end
+	return cols
+end
+
+local function facets(tables: { SnapshotTable }, events: boolean): { Facet }
+	local out: { Facet } = {}
+	local cols = facetColumns(tables, events)
 	for _, col in cols do
 		local f = facet(tables, col)
 		if f then
@@ -220,6 +256,21 @@ local function chipsNode(capture: Capture, tables: { SnapshotTable }, vs: ViewSt
 				title = "The same list in the Explore block with its text filter open (runs kubectl)",
 				actions = { click = "explore-filter=1" },
 				role = "tern-kube.explore-filter",
+			})
+		)
+	end
+	if Command.exploreUsageUrl(capture.invocation) then
+		local title = "kubectl top shows usage only; Explore adds requests, limits and allocatable (runs kubectl)"
+		if capture.invocation.flags["field-selector"] then
+			title ..= "; --field-selector is not carried"
+		end
+		table.insert(
+			groups,
+			ui.badge("Usage vs requests in Explore", "accent", {
+				key = "explore-usage",
+				title = title,
+				actions = { click = "explore-usage=1" },
+				role = "tern-kube.explore-usage",
 			})
 		)
 	end
@@ -359,7 +410,12 @@ local function actionChips(
 			chip("Inspect", Viewstate.action(Viewstate.inspect(vs, row.key)), false, "All details for this row")
 		)
 	end
-	local ref = row.ref
+	-- k9s-parity rows (history, contexts, api-resources, can-i) have their own chips.
+	local own = LensChips.rowChips(capture, row.key, { mutations = mutations, quick = quick })
+	for _, n in LensChips.nodes(own or {}) do
+		table.insert(out, n)
+	end
+	local ref = if own then nil else row.ref
 	if ref then
 		table.insert(
 			out,
@@ -389,6 +445,17 @@ local function actionChips(
 				actions = { click = "explore-route=compare|" .. row.key },
 			})
 		)
+		if Command.exploreUsageUrl(capture.invocation, nil, ref) then
+			table.insert(
+				out,
+				ui.badge("Usage in Explore", "accent", {
+					title = if ref.kind == "Node"
+						then "The pods on this node against requests and allocatable (Explore, runs kubectl)"
+						else "This pod's containers against requests and limits (Explore, runs kubectl)",
+					actions = { click = "explore-route=usage|" .. row.key },
+				})
+			)
+		end
 		if capture.events then
 			local label = string.lower(ref.kind) .. "/" .. ref.name
 			table.insert(
@@ -506,6 +573,21 @@ function M.inspectView(
 	if single then
 		table.remove(chips)
 	end
+	local object = if capture.objects then capture.objects[row.key] else nil
+	-- Two gates: the policy shows Secret values, and this view asked for them.
+	local decodable = object ~= nil and capture.policy.showSecrets and SecretData.decodable(object)
+	if decodable then
+		table.insert(
+			chips,
+			ui.badge(SecretDataView.label(vs.decoded, nil), if vs.decoded then "accent" else "warning", {
+				key = "decode",
+				title = if vs.decoded
+					then "Hide the decoded values"
+					else "Show this Secret's values decoded in a separate card (display only; the tree stays base64)",
+				actions = { click = Viewstate.action(Viewstate.toggledDecoded(vs)) },
+			})
+		)
+	end
 	local children: { Node } = {
 		crumbs,
 		ui.row(chips, { key = "actions", wrap = true }),
@@ -515,7 +597,12 @@ function M.inspectView(
 	if source then
 		table.insert(children, ui.section({ "Source" }, { ui.code(source) }, { key = "source", collapsible = true }))
 	end
-	local object = if capture.objects then capture.objects[row.key] else nil
+	if decodable and vs.decoded then
+		table.insert(
+			children,
+			SecretDataView.card(SecretData.entries(object), { key = "decoded", hint = "Hide decoded" })
+		)
+	end
 	if object ~= nil then
 		table.insert(
 			children,
@@ -567,6 +654,42 @@ local function effectiveView(capture: Capture, tables: { SnapshotTable }, vs: Vi
 		end
 	end
 	return vs
+end
+
+-- `kubectl top --sum` totals as one line under the rows (`Total 101m CPU ·
+-- 835Mi memory`): kubectl's sum over the whole capture, so filters and
+-- sorting leave it alone.
+local function totalsNode(tables: { SnapshotTable }, totals: { [number]: { string } }): Node?
+	local spans: { ui.SpanLike } = { ui.span("Total", "muted") }
+	local parts = 0
+	for i, tbl in tables do
+		local cells = totals[i]
+		if cells == nil then
+			continue
+		end
+		for c, h in tbl.headers do
+			local v = cells[c] or ""
+			if v == "" then
+				continue
+			end
+			local label = string.gsub(h, "%(.*%)$", "")
+			if label ~= "CPU" then
+				label = string.lower(label)
+			end
+			table.insert(spans, ui.span(if parts == 0 then " " else " · ", "muted"))
+			table.insert(spans, ui.span(v, "strong mono"))
+			table.insert(spans, ui.span(" " .. label))
+			parts += 1
+		end
+	end
+	if parts == 0 then
+		return nil
+	end
+	return ui.text(spans, {
+		key = "totals",
+		role = "tern-kube.totals",
+		title = "kubectl top --sum over every row of the capture, whatever the filters",
+	})
 end
 
 function M.render(capture: Capture, given: ViewState, opts: Options?): (Node?, Counts)
@@ -641,7 +764,7 @@ function M.render(capture: Capture, given: ViewState, opts: Options?): (Node?, C
 				continue
 			end
 			local head: { Node } = {
-				ui.text({ ui.span(tbl.kind or ("Table " .. slice.index), "strong") }),
+				ui.text({ ui.span(tbl.title or tbl.kind or ("Table " .. slice.index), "strong") }),
 				ui.text({ ui.span(tostring(slice.matched), "muted") }),
 			}
 			for _, b in Summary.summarize(tbl) do
@@ -664,13 +787,25 @@ function M.render(capture: Capture, given: ViewState, opts: Options?): (Node?, C
 			local row = rows[i]
 			local open = vs.open == row.key
 			local note = if events and seenCol then events.notes[row.key] else nil
+			local notes: { [number]: string }? = if note and seenCol then { [seenCol] = note } else nil
+			local k9sNotes = if capture.k9s then capture.k9s.notes[row.key] else nil
+			if k9sNotes then
+				local byIndex: { [number]: string } = notes or {}
+				for col, text in k9sNotes do
+					local index = columnIndex(tbl, col)
+					if index then
+						byIndex[index] = text
+					end
+				end
+				notes = byIndex
+			end
 			gridRows[i - from + 1] = {
 				key = row.key,
 				cells = row.cells,
 				action = Viewstate.action(Viewstate.opened(vs, row.key)),
 				open = open,
 				class = if typeCol and row.cells[typeCol] == "Warning" then "tk-lvl-warn" else nil,
-				notes = if note and seenCol then { [seenCol] = note } else nil,
+				notes = notes,
 			}
 		end
 		table.insert(
@@ -691,8 +826,13 @@ function M.render(capture: Capture, given: ViewState, opts: Options?): (Node?, C
 			})
 		)
 	end
+	local totals = if capture.totals then totalsNode(tables, capture.totals) else nil
+	if totals then
+		table.insert(children, totals)
+	end
 	if matched == 0 then
-		table.insert(children, ui.text({ ui.span("No rows match the filters", "muted") }, { key = "nomatch" }))
+		local text = if total == 0 then "No rows" else "No rows match the filters"
+		table.insert(children, ui.text({ ui.span(text, "muted") }, { key = "nomatch" }))
 	end
 	if matched > size then
 		table.insert(children, pageChips(matched, Viewstate.paged(vs, page), size))

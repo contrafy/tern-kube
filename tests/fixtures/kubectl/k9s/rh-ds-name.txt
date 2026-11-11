@@ -1,0 +1,2 @@
+daemonset.apps/ds
+daemonset.apps/ds

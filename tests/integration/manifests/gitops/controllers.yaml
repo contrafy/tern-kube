@@ -14,6 +14,10 @@ spec:
   destination:
     server: https://kubernetes.default.svc
     namespace: tern-test-gitops
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
 ---
 apiVersion: argoproj.io/v1alpha1
 kind: Application
@@ -32,6 +36,9 @@ spec:
   destination:
     server: https://kubernetes.default.svc
     namespace: tern-test-drift
+  syncPolicy:
+    automated:
+      prune: false
 ---
 apiVersion: argoproj.io/v1alpha1
 kind: Application
@@ -86,6 +93,20 @@ spec:
     kind: GitRepository
     name: tern-kube
     namespace: tern-test-gitops
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: paused
+  namespace: tern-test-gitops
+spec:
+  suspend: true
+  interval: 10m
+  path: ./tests/integration/manifests/gitops/paused
+  prune: false
+  sourceRef:
+    kind: GitRepository
+    name: tern-kube
 ---
 apiVersion: helm.toolkit.fluxcd.io/v2
 kind: HelmRelease

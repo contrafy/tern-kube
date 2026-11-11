@@ -1,0 +1,6 @@
+deployment.apps/hist 
+REVISION  CHANGE-CAUSE
+2         downgrade to 3.9 (it's a test)
+3         downgrade to 3.9 (it's a test)
+4         initial pause 3.10
+

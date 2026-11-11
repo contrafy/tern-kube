@@ -78,10 +78,14 @@ function M.commandSummary(inv: Types.Invocation): string
 end
 
 -- Every named resource type is cluster-scoped (nodes, namespaces, CRDs), so
--- a namespace means nothing for this command.
+-- a namespace means nothing for this command; nor for get-contexts and
+-- api-resources.
 local function clusterScoped(inv: Types.Invocation): boolean
 	if inv.verb == "top" then
 		return inv.subverb == "node" or inv.subverb == "nodes"
+	end
+	if inv.verb == "config" or inv.verb == "api-resources" then
+		return true
 	end
 	if #inv.resources == 0 then
 		return false
@@ -199,7 +203,8 @@ local function diagnosticsNode(diagnostics: { Types.Diagnostic }): Node?
 		)
 	end
 	if #infos > 0 then
-		table.insert(out, ui.lines(infos, { key = "info" }))
+		-- Not ui.lines: Tern 0.9.16 shows the raw output for a lens view holding one.
+		table.insert(out, ui.col(infos, { key = "info", gap = "none" }))
 	end
 	if #out == 0 then
 		return nil
@@ -241,8 +246,15 @@ function M.render(capture: Capture, vs: ViewState, counts: Counts?, notes: { str
 	if vs.sort and capture.snapshot then
 		table.insert(top, ui.text({ ui.span("sorted by " .. vs.sort .. (if vs.desc then " (desc)" else ""), "muted") }))
 	end
-	-- mutation_view shows the exit status and kubectl errors in its result.
+	-- mutation_view shows the exit status and kubectl errors in its result;
+	-- the can-i card its answer (`no` exits 1) and kubectl's warnings.
 	local bodyReports = capture.mode == "mutation"
+		or (
+			capture.mode == "cani"
+			and capture.k9s ~= nil
+			and capture.k9s.cani ~= nil
+			and capture.k9s.cani.answer.answer ~= nil
+		)
 	if capture.interrupted and capture.status ~= nil and capture.status ~= 0 then
 		table.insert(top, ui.badge("stopped (Ctrl-C)", "neutral", { role = "tern-kube.stopped" }))
 	elseif capture.status ~= nil and capture.status ~= 0 and not bodyReports then
