@@ -6,6 +6,7 @@
 -- Explore list.
 
 local Command = require("../kubectl/command")
+local Controllers = require("./controllers")
 local CompareView = require("../compare/view")
 local Diffseg = require("../mutation/diffseg")
 local Gitops = require("../explore/gitops")
@@ -56,6 +57,8 @@ local M = {}
 
 M.MAX_DIFF_LINES = SegCard.MAX_LINES
 M.SENSITIVE = "Secret values in diffs are masked; set security.show_secret_values to show them"
+M.CLI_TITLE = "Copies a tern-kube-drift command that reproduces this report outside Tern "
+	.. "(needs bin/tern-kube-drift 0.4.0 or later on PATH)"
 
 local BUCKET_TONE: { [string]: string } = { changed = "info", missing = "success", unmanaged = "warning" }
 local BUCKET_TEXT: { [string]: string } = { changed = "changed", missing = "missing", unmanaged = "unmanaged" }
@@ -224,18 +227,21 @@ end
 
 -- Controller line ------------------------------------------------------------
 
--- "Managed by Argo CD app X (Synced/Healthy)" for a tracked object.
+-- "Managed by Argo CD app X (Synced/Healthy) @4f2a9c1" for a tracked object,
+-- the reconcile reason when not ready and whether the controller reverts
+-- changes applied by hand.
 function M.controllerLine(v: Ctx, obj: any): Node?
 	if obj == nil or not Gitops.tracked(obj) then
 		return nil
 	end
 	local g = v.g
-	if g.ctl.status == "loading" then
+	local ctl = Gitops.ctl(g, v.gctx)
+	if ctl and ctl.status == "loading" and ctl.set == nil then
 		return ui.muted("Checking Argo CD / Flux …", { key = "ctl" })
-	elseif g.ctl.status == "error" then
-		return ui.muted("Argo CD / Flux unknown: " .. (g.ctl.error or "?"), { key = "ctl" })
+	elseif ctl and ctl.status == "error" then
+		return ui.muted("Argo CD / Flux unknown: " .. (ctl.error or "?"), { key = "ctl" })
 	end
-	local owner = Gitops.owner(g, obj)
+	local owner = Gitops.owner(g, v.gctx, obj)
 	if owner == nil then
 		return nil
 	end
@@ -258,6 +264,13 @@ function M.controllerLine(v: Ctx, obj: any): Node?
 	elseif not owner.resolved then
 		table.insert(spans, ui.span(" (controller object not readable)", "muted"))
 	end
+	local rev = Gitops.shortRevision(owner.appliedRevision)
+	if rev then
+		table.insert(spans, ui.span(" applied " .. rev, "muted mono"))
+	end
+	if owner.ready == "False" and owner.reason then
+		table.insert(spans, ui.span(" · not ready: " .. owner.reason, "warning"))
+	end
 	local children: { Node } = { ui.text(spans, { key = "owner" }) }
 	local path = Gitops.localPath(g, owner)
 	if path then
@@ -272,7 +285,99 @@ function M.controllerLine(v: Ctx, obj: any): Node?
 	elseif owner.path then
 		table.insert(children, ui.muted("path " .. owner.path .. " (repository not checked out here)"))
 	end
+	if owner.resolved then
+		local risk = Controllers.revertRisk(owner)
+		if risk then
+			table.insert(children, ui.text({ ui.span(risk, "warning") }, { key = "ctl-risk" }))
+		end
+	end
 	return ui.row(children, { key = "ctl", wrap = true, role = "tern-kube.gitops-controller" })
+end
+
+-- One card per Argo CD / Flux controller deploying the report's source:
+-- its own verdict, what it applied against the checkout, its last
+-- operation.
+local CARD_TONE: { [string]: string } = { success = "success", warning = "warning", error = "error" }
+
+function M.controllerCards(v: Ctx, load: Gitops.DriftLoad): { Node }
+	local out: { Node } = {}
+	local head = v.g.repo.head
+	for i, c in Gitops.sourceControllers(v.g, v.gctx, load) do
+		local text, tone = Controllers.statusText(c)
+		local lines: { Node } = {
+			ui.text({
+				ui.span(Gitops.controllerLabel(c.controller) .. " " .. c.name .. ": ", "strong"),
+				ui.span(text, CARD_TONE[tone] .. " strong"),
+			}, { key = "status" }),
+		}
+		local applied = c.appliedRevision
+		if applied then
+			local spans: { SpanLike } = {
+				ui.span("applied ", "muted"),
+				ui.span(Gitops.shortRevision(applied) :: string, "mono"),
+			}
+			local sha = Controllers.commit(applied)
+			if sha and head then
+				local own = string.sub(head, 1, 7)
+				if sha == head then
+					table.insert(spans, ui.span(" · your checkout " .. own .. " (same)", "muted"))
+				else
+					table.insert(spans, ui.span(" · your checkout " .. own, "muted"))
+					table.insert(
+						spans,
+						ui.span(": this report compares your checkout, not what the controller applied", "warning")
+					)
+				end
+			end
+			local attempted = c.attemptedRevision
+			if attempted and attempted ~= applied then
+				table.insert(spans, ui.span(" · attempted " .. Gitops.shortRevision(attempted) :: string, "muted"))
+			end
+			table.insert(lines, ui.text(spans, { key = "rev" }))
+		end
+		local last: { string } = {}
+		if c.phase then
+			table.insert(
+				last,
+				"last sync " .. c.phase .. (if c.operationMessage then ": " .. c.operationMessage else "")
+			)
+		elseif c.ready ~= "True" and c.message then
+			table.insert(last, c.message :: string)
+		end
+		local errors = c.errors
+		if errors and errors.message then
+			table.insert(last, errors.message :: string)
+		end
+		if c.reconciledAt then
+			table.insert(last, "reconciled " .. c.reconciledAt)
+		end
+		if #last > 0 then
+			table.insert(lines, ui.muted(table.concat(last, " · "), { key = "op" }))
+		end
+		table.insert(out, ui.col(lines, { key = "ctl-card" .. i, role = "tern-kube.gitops-controller-status" }))
+	end
+	return out
+end
+
+-- The revert warnings of the report's controllers (above the apply chips).
+function M.revertRisks(v: Ctx, load: Gitops.DriftLoad): { Node }
+	local out: { Node } = {}
+	for i, c in Gitops.sourceControllers(v.g, v.gctx, load) do
+		local risk = Controllers.revertRisk(c)
+		if risk then
+			table.insert(
+				out,
+				ui.text({
+					ui.span(Gitops.controllerLabel(c.controller) .. " " .. c.name .. ": ", "muted"),
+					ui.span(risk, "warning"),
+				}, {
+					key = "risk" .. i,
+					role = "tern-kube.gitops-controller-risk",
+				})
+			)
+		end
+	end
+	return out
 end
 
 -- Manifest -------------------------------------------------------------------
@@ -533,8 +638,27 @@ local TYPE_TEXT: { [string]: string } = {
 local function chooserBody(v: Ctx): { Node }
 	local g = v.g
 	local out: { Node } = { M.scanLine(g) }
-	if g.ctl.status == "loading" then
+	local ctl = Gitops.ctl(g, v.gctx)
+	if ctl and ctl.status == "loading" then
 		table.insert(out, ui.muted("Reading Argo CD / Flux applications …", { key = "ctl" }))
+	elseif ctl and ctl.status == "error" then
+		table.insert(out, ui.muted("Argo CD / Flux unknown: " .. (ctl.error or "?"), { key = "ctl" }))
+	elseif ctl and ctl.set and #ctl.set.controllers > 0 then
+		local at = ctl.fetchedAt
+		table.insert(
+			out,
+			ui.muted(
+				count(#ctl.set.controllers, "Argo CD / Flux controller")
+					.. (if at then " read " .. (os.date("!%H:%M UTC", at) :: string) else "")
+					.. " · r reads them again",
+				{ key = "ctl" }
+			)
+		)
+	end
+	if ctl and ctl.set then
+		for i, note in ctl.set.notes do
+			table.insert(out, ui.muted(note, { key = "ctl-note" .. i }))
+		end
 	end
 	local releases = g.releases
 	if releases.status == "loading" then
@@ -675,6 +799,9 @@ local function reportBody(v: Ctx, load: Gitops.DriftLoad): { Node }
 			else "Rendered with " .. Gitops.rel(g, (auto.values :: { string })[1]) .. "."
 		table.insert(out, ui.muted(how, { key = "auto" }))
 	end
+	for _, card in M.controllerCards(v, load) do
+		table.insert(out, card)
+	end
 	if load.stale and (load.status == "ok" or load.status == "error") then
 		table.insert(out, staleNode())
 	end
@@ -772,6 +899,9 @@ local function reportBody(v: Ctx, load: Gitops.DriftLoad): { Node }
 			})
 		)
 	end
+	for _, risk in M.revertRisks(v, load) do
+		table.insert(out, risk)
+	end
 	local list: { { string } } = { { "Open (enter)", "gitops-key=enter" }, { "Manifest (m)", "gitops-key=m" } }
 	if v.gctx.config.mutations.enabled then
 		table.insert(
@@ -806,6 +936,7 @@ local function reportBody(v: Ctx, load: Gitops.DriftLoad): { Node }
 		})
 	end
 	table.insert(list, { "Filter (f)", "gitops-key=f" })
+	table.insert(list, { "Copy CLI command (Y)", "gitops-key=Y", "accent", M.CLI_TITLE })
 	table.insert(list, { "Across contexts (x)", "gitops-key=x", "accent", "Run this source against several contexts" })
 	table.insert(list, { "Compare again (r)", "refresh" })
 	table.insert(out, chips(v, list, "rc"))
@@ -946,6 +1077,7 @@ local function itemBody(v: Ctx, load: Gitops.DriftLoad, e: Gitops.Entry): { Node
 	if e.bucket == "unmanaged" and mutable then
 		table.insert(list, { "Delete (ctrl+d)", "mutate=delete", "warning", "Previews, then typed confirmation" })
 	end
+	table.insert(list, { "Copy CLI command (Y)", "gitops-key=Y", "accent", M.CLI_TITLE })
 	table.insert(list, { "Across contexts (x)", "gitops-key=x", "accent" })
 	table.insert(out, chips(v, list, "ic"))
 	return out
@@ -1098,6 +1230,7 @@ local function matrixBody(v: Ctx): { Node }
 			{ "Filter (f)", "gitops-key=f" },
 			{ "Choose contexts (x)", "gitops-key=x", "accent" },
 			{ "Copy commands (Y)", "gitops-key=Y" },
+			{ "Copy CLI command", "gitops-copycli=", "accent", M.CLI_TITLE },
 			{ "Compare again (r)", "refresh" },
 		}, "mc")
 	)
@@ -1524,13 +1657,13 @@ M.HINTS = {
 	["diff-none"] = "E export · r diff again · esc back",
 	["diff-helm"] = "H helm release · r diff again · esc back",
 	drift = "j/k move · enter open · r rescan · esc back",
-	["drift-report"] = "enter details · f filter · m manifest · a apply · A apply source · E export · X export all · ctrl+d delete unmanaged · x across contexts · r again",
-	["drift-report-helm"] = "enter details · f filter · m manifest · a apply · A apply source · E export unmanaged · X all unmanaged · ctrl+d delete unmanaged · x across contexts · r again",
-	["drift-item"] = "m open manifest · a apply · E export · ctrl+d delete (unmanaged) · x across contexts · esc back",
-	["drift-changed"] = "m open manifest · a apply · E export · x across contexts · esc back",
-	["drift-chart"] = "m open manifest · a apply · x across contexts · esc back",
-	["drift-unmanaged"] = "E export · ctrl+d delete · x across contexts · esc back",
-	["drift-other"] = "m open manifest · read-only: c switches context · x across contexts · esc back",
+	["drift-report"] = "enter details · f filter · m manifest · a apply · A apply source · E export · X export all · ctrl+d delete unmanaged · Y copy CLI · x across contexts · r again",
+	["drift-report-helm"] = "enter details · f filter · m manifest · a apply · A apply source · E export unmanaged · X all unmanaged · ctrl+d delete unmanaged · Y copy CLI · x across contexts · r again",
+	["drift-item"] = "m open manifest · a apply · E export · ctrl+d delete (unmanaged) · Y copy CLI · x across contexts · esc back",
+	["drift-changed"] = "m open manifest · a apply · E export · Y copy CLI · x across contexts · esc back",
+	["drift-chart"] = "m open manifest · a apply · Y copy CLI · x across contexts · esc back",
+	["drift-unmanaged"] = "E export · ctrl+d delete · Y copy CLI · x across contexts · esc back",
+	["drift-other"] = "m open manifest · read-only: c switches context · Y copy CLI · x across contexts · esc back",
 	["matrix-pick"] = "j/k move · enter choose · esc back",
 	matrix = "enter open cell · [ ] context · f filter · x contexts · Y copy commands · r again · esc back",
 	export = "j/k move · enter diff · t directory · w write · b branch & commit · r read again · esc back",

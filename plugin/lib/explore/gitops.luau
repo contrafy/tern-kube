@@ -12,6 +12,7 @@
 -- the plugin data directory; diff inputs are removed after the diff, the
 -- deployed values of an auto-detected chart right after its render.
 
+local Cli = require("../gitops/cli")
 local Command = require("../kubectl/command")
 local Config = require("../config")
 local Contexts = require("../compare/contexts")
@@ -82,15 +83,22 @@ export type ScanStatus = "idle" | "scanning" | "ok" | "error"
 
 export type Scan = { status: ScanStatus, gen: number, progress: T.Progress?, error: string?, at: number? }
 
-export type Repo = { status: "idle" | "loading" | "ok", git: boolean, remotes: { string } }
+-- `head`: `git rev-parse HEAD` of the checkout (compared with the commit a
+-- controller applied).
+export type Repo = { status: "idle" | "loading" | "ok", git: boolean, remotes: { string }, head: string? }
 
+-- The Argo CD / Flux objects of one target (kubeconfig@context).
 export type Ctl = {
 	status: "idle" | "loading" | "ok" | "error",
 	gen: number,
+	target: Query.Target,
 	pending: { [string]: boolean },
 	lists: { [string]: any },
 	set: Controllers.Set?,
 	error: string?,
+	-- Lists that failed (Forbidden, timeout): shown, never dropped silently.
+	notes: { string },
+	fetchedAt: number?,
 }
 
 -- "chart": rendering the detected chart of the object's Helm release first.
@@ -179,6 +187,11 @@ export type DriftLoad = {
 	at: number?,
 	-- An apply or export ran since: entering the report compares again.
 	stale: boolean?,
+	-- Dir sources: what `git ls-files -c -o` lists under the directory (the
+	-- -R proof of the copied CLI command); nil while unknown.
+	listed: { string }?,
+	-- Why the diff runs without -n although documents lack a namespace.
+	nsNote: string?,
 }
 
 -- `kubectl config view -o json` of one kubeconfig: the matrix picker.
@@ -278,7 +291,8 @@ export type G = {
 	index: Index.Index?,
 	repo: Repo,
 	status: { [string]: Index.GitFileStatus },
-	ctl: Ctl,
+	-- Keyed by M.targetId: controllers of one cluster never label another's objects.
+	ctls: { [string]: Ctl },
 	diffs: { [string]: DiffLoad },
 	-- Keyed by M.driftId (target and source).
 	drifts: { [string]: DriftLoad },
@@ -502,7 +516,7 @@ function M.new(cwd: string?): G
 		index = nil,
 		repo = { status = "idle", git = false, remotes = {} },
 		status = {},
-		ctl = { status = "idle", gen = 0, pending = {}, lists = {}, set = nil },
+		ctls = {},
 		diffs = {},
 		drifts = {},
 		contexts = {},
@@ -649,12 +663,51 @@ function M.tracked(obj: any): boolean
 	return false
 end
 
-function M.loadControllers(g: G, ctx: Ctx, effects: { Effect })
-	if g.ctl.status ~= "idle" or not ctx.resolved then
+local function withTarget(ctx: Ctx, target: Query.Target): Ctx
+	local c = table.clone(ctx)
+	c.target = target
+	return c
+end
+
+-- The controller cache entry of ctx's target (nil: never read).
+function M.ctl(g: G, ctx: Ctx): Ctl?
+	return g.ctls[M.targetId(ctx.target)]
+end
+
+-- The controllers known for ctx's target; never another cluster's.
+function M.ctlSet(g: G, ctx: Ctx): Controllers.Set?
+	local c = M.ctl(g, ctx)
+	return if c then c.set else nil
+end
+
+local function setCtl(g: G, id: string, c: Ctl?)
+	local all: { [string]: Ctl? } = table.clone(g.ctls)
+	all[id] = c
+	g.ctls = all :: any
+end
+
+-- Reads the Argo CD / Flux objects of ctx's target unless they are known
+-- (or being read); `force` (r) reads them again.
+function M.loadControllers(g: G, ctx: Ctx, effects: { Effect }, force: boolean?)
+	if not ctx.resolved then
+		return
+	end
+	local id = M.targetId(ctx.target)
+	local cur = g.ctls[id]
+	if cur and cur.status ~= "error" and not (force and cur.status ~= "loading") then
 		return
 	end
 	local gen = nextGen(g)
-	g.ctl = { status = "loading", gen = gen, pending = { api = true }, lists = {}, set = nil }
+	setCtl(g, id, {
+		status = "loading",
+		gen = gen,
+		target = ctx.target,
+		pending = { api = true },
+		lists = {},
+		set = if cur then cur.set else nil,
+		notes = {},
+		fetchedAt = if cur then cur.fetchedAt else nil,
+	})
 	table.insert(
 		effects,
 		runEffect(M.TAG .. "|ctl|api", gen, push(base(ctx), "api-resources", "-o", "name"), queryTimeout(ctx))
@@ -668,8 +721,18 @@ function M.noticeObject(g: G, ctx: Ctx, obj: any, effects: { Effect })
 	end
 end
 
-function M.owner(g: G, obj: any): Controllers.Owner?
-	local set = g.ctl.set
+-- r on an object view: its next read (noticeObject) reads the controllers
+-- of the target again.
+function M.forgetControllers(g: G, ctx: Ctx)
+	local id = M.targetId(ctx.target)
+	local cur = g.ctls[id]
+	if cur and cur.status ~= "loading" then
+		setCtl(g, id, nil)
+	end
+end
+
+function M.owner(g: G, ctx: Ctx, obj: any): Controllers.Owner?
+	local set = M.ctlSet(g, ctx)
 	if set == nil or type(obj) ~= "table" then
 		return nil
 	end
@@ -686,28 +749,46 @@ function M.localPath(g: G, info: { sources: { Controllers.Source } }): string?
 	return Controllers.localPath(info, { root = index.root, remotes = g.repo.remotes })
 end
 
-local function finishControllers(g: G)
-	local ctl = table.clone(g.ctl)
-	ctl.status = "ok"
-	ctl.set = Controllers.parse(ctl.lists)
-	g.ctl = ctl
+-- The controllers (of the report's own target) whose source in this
+-- checkout is the report's source: the report's controller cards.
+function M.sourceControllers(g: G, ctx: Ctx, load: DriftLoad): { Controllers.Controller }
+	local set = M.ctlSet(g, withTarget(ctx, load.target))
+	if set == nil then
+		return {}
+	end
+	return Controllers.forSource(set, function(c: Controllers.Controller): string?
+		return M.localPath(g, c)
+	end, load.source.path)
 end
 
-local function onControllers(g: G, ctx: Ctx, part: string, msg: Msg, effects: { Effect })
-	if msg.gen ~= g.ctl.gen or g.ctl.status ~= "loading" then
+local function ctlByGen(g: G, gen: number?): (string?, Ctl?)
+	for id, c in g.ctls do
+		if c.gen == gen then
+			return id, c
+		end
+	end
+	return nil, nil
+end
+
+local function onControllers(g: G, blockCtx: Ctx, part: string, msg: Msg, effects: { Effect })
+	local id, found = ctlByGen(g, msg.gen)
+	if id == nil or found == nil or found.status ~= "loading" then
 		return
 	end
-	local ctl = table.clone(g.ctl)
+	local ctx = withTarget(blockCtx, found.target)
+	local ctl = table.clone(found)
 	ctl.pending = table.clone(ctl.pending)
 	ctl.lists = table.clone(ctl.lists)
+	ctl.notes = table.clone(ctl.notes)
 	local r = msg.result :: ProcessResult
-	local okRun = msg.spawnError == nil and r.status == 0
+	local okRun = msg.spawnError == nil and r.status == 0 and not r.timed_out
 	if part == "api" then
 		ctl.pending["api"] = nil
 		if not okRun then
 			ctl.status = "error"
 			ctl.error = failText("kubectl api-resources", r, msg.spawnError)
-			g.ctl = ctl
+			ctl.set = nil
+			setCtl(g, id, ctl)
 			return
 		end
 		for _, res in Controllers.queries(string.split(r.stdout, "\n")) do
@@ -724,17 +805,33 @@ local function onControllers(g: G, ctx: Ctx, part: string, msg: Msg, effects: { 
 		end
 	elseif ctl.pending[part] then
 		ctl.pending[part] = nil
+		local ok, doc = false, nil
 		if okRun then
-			local ok, doc = pcall(ctx.decode, r.stdout)
-			if ok and type(doc) == "table" then
-				ctl.lists[part] = doc
+			ok, doc = pcall(ctx.decode, r.stdout)
+		end
+		if ok and type(doc) == "table" then
+			ctl.lists[part] = doc
+		else
+			local why = "kubectl printed invalid JSON"
+			if msg.spawnError then
+				why = "could not start: " .. msg.spawnError
+			elseif r.timed_out then
+				why = "timed out"
+			elseif not okRun then
+				local last = M.reason(r.stderr or "")
+				why = if last ~= "" then last else "exit " .. tostring(r.status)
 			end
+			table.insert(ctl.notes, "cannot list " .. part .. ": " .. why)
 		end
 	end
-	g.ctl = ctl
 	if next(ctl.pending) == nil then
-		finishControllers(g)
+		ctl.status = "ok"
+		local set = Controllers.parse(ctl.lists)
+		table.move(ctl.notes, 1, #ctl.notes, #set.notes + 1, set.notes)
+		ctl.set = set
+		ctl.fetchedAt = msg.at
 	end
+	setCtl(g, id, ctl)
 end
 
 -- Scan results ---------------------------------------------------------------
@@ -833,6 +930,21 @@ local function onRemotes(g: G, msg: Msg, effects: { Effect })
 	end
 	g.repo = { status = "ok", git = true, remotes = remotes }
 	requestStatus(g, effects)
+	local index = g.index
+	if index then
+		local argv = { "git", "-C", index.root, "rev-parse", "--verify", "-q", "HEAD" }
+		table.insert(effects, runEffect(M.TAG .. "|head", g.scan.gen, argv, 10000))
+	end
+end
+
+local function onHead(g: G, msg: Msg)
+	local r = msg.result :: ProcessResult
+	if msg.gen ~= g.scan.gen or msg.spawnError or r.status ~= 0 then
+		return
+	end
+	local repo = table.clone(g.repo)
+	repo.head = Controllers.commit(r.stdout)
+	g.repo = repo
 end
 
 local function onStatus(g: G, msg: Msg)
@@ -1309,7 +1421,7 @@ local function driftOpts(g: G, ctx: Ctx): Drift.Options
 	return {
 		defaultNamespace = ctx.target.namespace,
 		unmanagedKinds = ctx.config.gitops.unmanaged_kinds,
-		controllers = g.ctl.set,
+		controllers = M.ctlSet(g, ctx),
 		diffNotes = nil,
 	}
 end
@@ -1322,6 +1434,28 @@ local CONTROLLER_LABEL: { [string]: string } = {
 
 function M.controllerLabel(kind: string): string
 	return CONTROLLER_LABEL[kind] or kind
+end
+
+-- A revision as shown: the short commit when it holds one, else as is.
+function M.shortRevision(rev: string?): string?
+	local sha = Controllers.commit(rev)
+	return if sha then string.sub(sha, 1, 7) else rev
+end
+
+-- The chooser note of a controller's source:
+-- `Argo CD app guestbook: OutOfSync · Degraded @4f2a9c1 (deploys to ns X; n switches)`.
+function M.controllerNote(c: Controllers.Controller, namespace: string?): string
+	local text = Controllers.statusText(c)
+	local note = M.controllerLabel(c.controller) .. " " .. c.name .. ": " .. text
+	local rev = M.shortRevision(c.appliedRevision)
+	if rev then
+		note ..= " @" .. rev
+	end
+	local dest = c.destinationNamespace
+	if dest and namespace and dest ~= namespace then
+		note ..= " (deploys to ns " .. dest .. "; n switches)"
+	end
+	return note
 end
 
 -- Drift sources: directories of plain manifests (each directory and each
@@ -1402,12 +1536,12 @@ function M.sources(g: G, ctx: Ctx): { SourceEntry }
 			add(src, nil)
 		end
 	end
-	local set = g.ctl.set
+	local set = M.ctlSet(g, ctx)
 	if set then
 		for _, c in set.controllers do
 			local path = M.localPath(g, c)
 			if path then
-				local note = M.controllerLabel(c.controller) .. " " .. c.name
+				local note = M.controllerNote(c, ctx.target.namespace)
 				local k = index.kustomizations[path]
 				if k then
 					add({
@@ -1670,12 +1804,6 @@ function M.driftId(t: Query.Target, source: string): string
 	return M.targetId(t) .. "|" .. source
 end
 
-local function withTarget(ctx: Ctx, target: Query.Target): Ctx
-	local c = table.clone(ctx)
-	c.target = target
-	return c
-end
-
 -- Whether a drift route reads another context than the block's (a matrix
 -- cell): those views are read-only.
 function M.foreign(ctx: Ctx, route: Route): boolean
@@ -1774,6 +1902,9 @@ local function finishDrift(g: G, ctx: Ctx, id: string, load: DriftLoad)
 	local opts = driftOpts(g, ctx)
 	local diff = load.diff
 	local notes: { string } = if diff then table.clone(diff.notes) else {}
+	if load.nsNote then
+		table.insert(notes, load.nsNote :: string)
+	end
 	for _, e in load.liveErrors do
 		table.insert(notes, e)
 	end
@@ -1865,6 +1996,22 @@ local function compare(g: G, ctx: Ctx, id: string, load: DriftLoad, effects: { E
 			load.diffDone = true
 			load.diff = Diffseg.parse("")
 		end
+		-- The -R proof of the copied CLI command (read-only, local).
+		if #files > 0 then
+			local index = g.index :: Index.Index
+			local relPath = Index.relative(index.root, entry.path)
+			local listArgv = { "git", "-C", index.root, "ls-files", "-c", "-o", "-z", "--", relPath }
+			table.insert(effects, runEffect(M.TAG .. "|drift|listed", load.gen, listArgv, 10000))
+		end
+	end
+	if entry.type ~= "helm" then
+		-- Namespace-less documents land in the kubeconfig's namespace unless
+		-- -n names the one the report resolves them in (Cli.namespaceArg).
+		local ns, note = Cli.namespaceArg(scope.docs, ctx.target.namespace)
+		if ns then
+			push(argv, "-n", ns)
+		end
+		load.nsNote = note
 	end
 	load.argv = argv
 	load.liveArgv = {}
@@ -1903,6 +2050,8 @@ function startDrift(g: G, blockCtx: Ctx, id: string, effects: { Effect })
 	load.live = {}
 	load.liveErrors = {}
 	load.livePending = {}
+	load.listed = nil
+	load.nsNote = nil
 	local c = entry.auto
 	if c then
 		startRender(g, ctx, id, load, c, effects)
@@ -2119,6 +2268,16 @@ end
 
 local function onDrift(g: G, blockCtx: Ctx, part: string, msg: Msg, effects: { Effect })
 	local id, found = driftByGen(g, msg.gen)
+	if part == "listed" then
+		-- Arrives whenever git answers, before or after the report.
+		local r = msg.result :: ProcessResult
+		if id and found and msg.spawnError == nil and r.status == 0 and not r.timed_out and g.index then
+			local upd = table.clone(found)
+			upd.listed = Cli.listed((g.index :: Index.Index).root, r.stdout)
+			setDrift(g, id, upd)
+		end
+		return
+	end
 	local tmp = string.match(part, "^valueswrite|(.+)$") or string.match(part, "^render|(.+)$")
 	if id == nil or found == nil or found.status ~= "running" then
 		-- Superseded (r) or abandoned: its deployed values must not stay.
@@ -2644,6 +2803,161 @@ function M.matrixCommands(g: G, ctx: Ctx, route: Route): string?
 		end
 	end
 	return if #out > 0 then table.concat(out, "\n") else nil
+end
+
+-- CLI copy -----------------------------------------------------------------------
+
+export type CliCopy = { text: string, notes: { string } }
+
+M.CLI_DEPLOYED = "tern-kube-drift renders only with values files; pick the values-file variant "
+	.. "or Copy as gitops.helm entry"
+
+local MAX_NAMED = 5
+
+-- Resource keys (`group/Kind/namespace/name`) as `kind/name`, the first few.
+local function keyNames(keys: { string }): string
+	local out: { string } = {}
+	for i, k in keys do
+		if i > MAX_NAMED then
+			table.insert(out, "…")
+			break
+		end
+		local kind, name = string.match(k, "^[^/]*/([^/]+)/[^/]*/(.+)$")
+		table.insert(out, if kind and name then string.lower(kind) .. "/" .. name else k)
+	end
+	return table.concat(out, ", ")
+end
+
+-- The tern-kube-drift command that reproduces a drift report (its
+-- context) or a matrix (every column, in order), with the notes where the
+-- CLI's report still differs; nil and why when there is none to copy.
+function M.cliCommand(g: G, ctx: Ctx, route: Route): (CliCopy?, string?)
+	local index = g.index
+	local source = route.source
+	if index == nil or source == nil then
+		return nil, "Open a drift report first (ctrl+g)"
+	end
+	local target: Query.Target
+	local contexts: { string } = {}
+	local loads: { DriftLoad } = {}
+	if route.kind == "matrix" then
+		local m = M.matrixState(g, ctx, route)
+		if m == nil or m.status ~= "ok" then
+			return nil, "Choose the contexts first"
+		end
+		target = m.base
+		for _, c in m.contexts do
+			table.insert(contexts, c)
+			local d = g.drifts[M.driftId(columnTarget(m.base, c), m.source)]
+			if d then
+				table.insert(loads, d)
+			end
+		end
+	else
+		local load = M.driftLoad(g, ctx, route)
+		if load == nil or load.status ~= "ok" then
+			return nil, "Wait for the report (r compares again)"
+		end
+		target = load.target
+		if target.context then
+			contexts = { target.context :: string }
+		end
+		loads = { load }
+	end
+	if #contexts == 0 then
+		return nil, "No pinned context: pick one first (c)"
+	end
+	local own = g.drifts[M.driftId(target, source)]
+	local entry = (if own then own.source else nil) or knownEntry(g, ctx, source)
+	if entry == nil then
+		return nil, "Unknown source " .. source
+	end
+	local c = entry.auto
+	if c and c.useDeployedValues then
+		return nil, M.CLI_DEPLOYED
+	end
+	local scope = Drift.scope(entry.source :: any, index :: any, driftOpts(g, withTarget(ctx, target)))
+	local notes: { string } = {}
+	local cliSource: Cli.Source = { type = entry.type, path = entry.path }
+	local namespace: string? = nil
+	if c then
+		cliSource.helm = {
+			chart = c.chart.path,
+			release = c.release.name,
+			namespace = c.release.namespace,
+			values = table.clone(c.values or {}),
+		}
+		namespace = c.release.namespace
+	elseif entry.type == "helm" then
+		local spec = (entry.source :: Index.Source).helm :: Index.HelmSpec
+		cliSource.helm = {
+			chart = entry.path,
+			release = spec.release,
+			namespace = spec.namespace,
+			values = table.clone(spec.values),
+		}
+		namespace = spec.namespace
+	else
+		local note: string?
+		namespace, note = Cli.namespaceArg(scope.docs, target.namespace)
+		if note then
+			table.insert(notes, note)
+		end
+		if entry.type == "dir" then
+			local files = sourceFiles(scope.docs)
+			cliSource.files = files
+			cliSource.recursive = Cli.recursive(entry.path, files, if own then own.listed else nil)
+		end
+	end
+	local input: Cli.Input = {
+		source = cliSource,
+		contexts = contexts,
+		kubeconfig = target.kubeconfig,
+		namespace = namespace,
+		unmanaged = scope.kinds,
+		helmProgram = ctx.config.helm.program,
+	}
+	local elsewhere: { [string]: boolean } = {}
+	for _, d in loads do
+		local report = d.report
+		if report then
+			for _, k in report.declaredElsewhere do
+				elsewhere[k] = true
+			end
+		end
+	end
+	local keys: { string } = {}
+	for k in elsewhere do
+		table.insert(keys, k)
+	end
+	table.sort(keys)
+	if #keys > 0 then
+		table.insert(
+			notes,
+			string.format(
+				"The CLI also lists %s declared elsewhere in this repository as unmanaged: %s",
+				M.count(#keys, "object"),
+				keyNames(keys)
+			)
+		)
+	end
+	if target.kubeconfig == nil then
+		table.insert(notes, "No --kubeconfig: the command uses your shell's KUBECONFIG")
+	end
+	return { text = Cli.format(input), notes = notes }, nil
+end
+
+-- Y in a drift view, the matrix's Copy CLI command chip.
+local function copyCli(g: G, ctx: Ctx, route: Route, effects: { Effect })
+	local copy, why = M.cliCommand(g, ctx, route)
+	if copy == nil then
+		toast(effects, "error", "No tern-kube-drift command to copy", why)
+		return
+	end
+	table.insert(effects, { t = "copy", text = copy.text })
+	local body = { copy.text }
+	table.move(copy.notes, 1, #copy.notes, 2, body)
+	toast(effects, "success", "Copied tern-kube-drift command", table.concat(body, "\n"))
 end
 
 -- Export ---------------------------------------------------------------------
@@ -3231,7 +3545,7 @@ function M.enter(g: G, ctx: Ctx, route: Route, force: boolean, effects: { Effect
 	elseif kind == "drift" then
 		if route.source == nil then
 			refreshIndex(g, ctx, force, effects)
-			M.loadControllers(g, ctx, effects)
+			M.loadControllers(g, ctx, effects, force)
 			M.loadReleases(g, ctx, effects)
 		else
 			local existing = M.driftLoad(g, ctx, route)
@@ -3242,6 +3556,11 @@ function M.enter(g: G, ctx: Ctx, route: Route, force: boolean, effects: { Effect
 					refreshIndex(g, ctx, true, effects)
 				end
 				M.startDriftReport(g, withTarget(ctx, routeTarget(ctx, route)), route.source :: string, again, effects)
+			end
+			-- The report's controller card; another context's column never
+			-- reads controllers (the matrix budget stays the drift runs).
+			if route.item == nil and not M.foreign(ctx, route) then
+				M.loadControllers(g, ctx, effects, force)
 			end
 		end
 	elseif kind == "matrix" then
@@ -3574,6 +3893,9 @@ function M.onKey(
 			return true, nil
 		elseif ch == "x" then
 			return true, { push = { kind = "matrix", source = source } }
+		elseif ch == "Y" then
+			copyCli(g, ctx, route, effects)
+			return true, nil
 		end
 		if load == nil or load.status ~= "ok" then
 			return false, nil
@@ -3603,6 +3925,9 @@ function M.onKey(
 	elseif kind == "drift" then
 		if ch == "x" then
 			return true, { push = { kind = "matrix", source = route.source } }
+		elseif ch == "Y" then
+			copyCli(g, ctx, route, effects)
+			return true, nil
 		end
 		local id = M.routeDriftId(ctx, route)
 		local load = g.drifts[id]
@@ -3718,6 +4043,9 @@ function M.onAction(g: G, ctx: Ctx, route: Route, act: string, value: string, ef
 	elseif act == "gitops-rescan" then
 		M.rescan(g, ctx, effects)
 		return true, nil
+	elseif act == "gitops-copycli" and (route.kind == "matrix" or route.kind == "drift") and route.source then
+		copyCli(g, ctx, route, effects)
+		return true, nil
 	elseif act == "gitops-copyhelm" and route.kind == "drift" and route.source then
 		local entry = M.findSource(g, ctx, route.source :: string)
 		local text = if entry then M.helmEntry(g, entry) else nil
@@ -3771,6 +4099,8 @@ function M.onResult(g: G, ctx: Ctx, msg: Msg, effects: { Effect }): boolean
 		onRemotes(g, msg, effects)
 	elseif what == "status" then
 		onStatus(g, msg)
+	elseif what == "head" then
+		onHead(g, msg)
 	elseif what == "ctl" then
 		onControllers(g, ctx, part or "", msg, effects)
 	elseif what == "diff" then

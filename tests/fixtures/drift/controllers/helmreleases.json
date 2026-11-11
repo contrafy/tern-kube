@@ -8,12 +8,12 @@
                 "annotations": {
                     "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"helm.toolkit.fluxcd.io/v2\",\"kind\":\"HelmRelease\",\"metadata\":{\"annotations\":{},\"name\":\"podinfo\",\"namespace\":\"tern-test-gitops\"},\"spec\":{\"chart\":{\"spec\":{\"chart\":\"./charts/podinfo\",\"sourceRef\":{\"kind\":\"GitRepository\",\"name\":\"tern-kube\"}}},\"interval\":\"10m\"}}\n"
                 },
-                "creationTimestamp": "2026-10-08T17:13:43Z",
+                "creationTimestamp": "2026-11-11T16:24:55Z",
                 "generation": 1,
                 "name": "podinfo",
                 "namespace": "tern-test-gitops",
-                "resourceVersion": "17062",
-                "uid": "7c6f1d4d-4c4c-4ae7-97cb-739ab744355d"
+                "resourceVersion": "1039606",
+                "uid": "58ba184f-0fad-44e3-ac78-d9a8de1011e2"
             },
             "spec": {
                 "chart": {
@@ -38,6 +38,21 @@
                         "reason": "Progressing",
                         "status": "Unknown",
                         "type": "Ready"
+                    }
+                ],
+                "history": [
+                    {
+                        "appVersion": "6.6.3",
+                        "chartName": "podinfo",
+                        "chartVersion": "6.6.3",
+                        "configDigest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+                        "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+                        "firstDeployed": "2026-10-01T00:00:00Z",
+                        "lastDeployed": "2026-10-07T00:00:00Z",
+                        "name": "podinfo",
+                        "namespace": "tern-test-gitops",
+                        "status": "deployed",
+                        "version": 4
                     }
                 ],
                 "lastAttemptedRevision": "6.7.0",

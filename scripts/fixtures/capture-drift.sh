@@ -8,12 +8,14 @@
 #   manifests/**                        copy of the diffed manifests (the source)
 #   MANIFEST.tsv                        scenario, key, argv, exit, versions
 #
-#   scripts/fixtures/capture-drift.sh
+#   scripts/fixtures/capture-drift.sh              everything
+#   scripts/fixtures/capture-drift.sh controllers  only controllers/ (the gitops world)
 #
 # Writes to the sandbox kind cluster only, and only to: the tern-test-drift and
-# tern-test-gitops namespaces (recreated from scratch on every run), plus the
-# vendored GitOps CRDs (tests/integration/manifests/gitops-crds, digests
-# checked against its README). Drift is produced by applying
+# tern-test-gitops namespaces (recreated from scratch on every run; controllers
+# mode touches tern-test-gitops only), plus the vendored GitOps CRDs through
+# scripts/fixtures/gitops-crds.sh (digests checked against the README). Drift
+# is produced by applying
 # tests/integration/manifests/drift/{namespace.yaml,baseline/} and then
 # scaling/patching live objects; drift/pending/ is never applied, so it shows
 # up as "missing in cluster". No controller is installed: Argo CD Application
@@ -23,7 +25,12 @@ set -eu
 
 ROOT=$(CDPATH='' cd -- "$(dirname -- "$0")/../.." && pwd)
 MANIFESTS=$ROOT/tests/integration/manifests
-CRDS=$MANIFESTS/gitops-crds
+MODE=${1:-all}
+case $MODE in all | controllers) ;; *)
+	printf 'usage: %s [controllers]\n' "$0" >&2
+	exit 2
+	;;
+esac
 OUT=$ROOT/tests/fixtures/drift
 MANIFEST=$OUT/MANIFEST.tsv
 KUBECTL=${KUBECTL:-kubectl}
@@ -149,37 +156,26 @@ getcap() {
 	record "$dir" "$dir/$name.$ext" "$(argv_string "$@")" 0
 }
 
-check_crds() {
-	(cd "$CRDS" && for f in *.yaml; do
-		want=$(sed -n "s/^| $f | [^|]* | \([0-9a-f]\{64\}\) |\$/\1/p" README.md)
-		got=$(shasum -a 256 "$f" | cut -d' ' -f1)
-		[ -n "$want" ] || die "$f is not listed in gitops-crds/README.md"
-		[ "$want" = "$got" ] || die "$f digest $got does not match README ($want)"
-	done)
-}
-
 # ---- reset -----------------------------------------------------------------
-check_crds
-kc delete namespace "$DRIFT_NS" "$GITOPS_NS" --ignore-not-found --wait=true --timeout=180s >/dev/null
-kc apply --server-side --force-conflicts -f gitops-crds/ >/dev/null
-kc wait --for=condition=Established --timeout=60s \
-	crd/applications.argoproj.io \
-	crd/kustomizations.kustomize.toolkit.fluxcd.io \
-	crd/helmreleases.helm.toolkit.fluxcd.io \
-	crd/gitrepositories.source.toolkit.fluxcd.io >/dev/null
+"$ROOT/scripts/fixtures/gitops-crds.sh" install
+if [ "$MODE" = all ]; then
+	kc delete namespace "$DRIFT_NS" "$GITOPS_NS" --ignore-not-found --wait=true --timeout=180s >/dev/null
 
-# ---- drift world -----------------------------------------------------------
-kc apply -f drift/namespace.yaml >/dev/null
-kn "$DRIFT_NS" apply -f drift/baseline/
-kn "$DRIFT_NS" rollout status deployment/web --timeout=180s
-# unmanaged: exists only in the cluster
-kn "$DRIFT_NS" create configmap hand-made --from-literal=owner=someone
-# changed: scale, edit data, edit a CRD object, relabel the namespace
-kn "$DRIFT_NS" scale deployment/web --replicas=2
-kn "$DRIFT_NS" patch configmap app-config --type=merge -p '{"data":{"LOG_LEVEL":"debug"}}'
-kn "$DRIFT_NS" patch widgets.lens.example.com gauge --type=merge -p '{"spec":{"color":"orange","size":9}}'
-kc patch namespace "$DRIFT_NS" --type=merge -p '{"metadata":{"labels":{"team":"payments"}}}' >/dev/null
-kn "$DRIFT_NS" rollout status deployment/web --timeout=180s
+	# ---- drift world -------------------------------------------------------
+	kc apply -f drift/namespace.yaml >/dev/null
+	kn "$DRIFT_NS" apply -f drift/baseline/
+	kn "$DRIFT_NS" rollout status deployment/web --timeout=180s
+	# unmanaged: exists only in the cluster
+	kn "$DRIFT_NS" create configmap hand-made --from-literal=owner=someone
+	# changed: scale, edit data, edit a CRD object, relabel the namespace
+	kn "$DRIFT_NS" scale deployment/web --replicas=2
+	kn "$DRIFT_NS" patch configmap app-config --type=merge -p '{"data":{"LOG_LEVEL":"debug"}}'
+	kn "$DRIFT_NS" patch widgets.lens.example.com gauge --type=merge -p '{"spec":{"color":"orange","size":9}}'
+	kc patch namespace "$DRIFT_NS" --type=merge -p '{"metadata":{"labels":{"team":"payments"}}}' >/dev/null
+	kn "$DRIFT_NS" rollout status deployment/web --timeout=180s
+else
+	kc delete namespace "$GITOPS_NS" --ignore-not-found --wait=true --timeout=180s >/dev/null
+fi
 
 # ---- gitops world ----------------------------------------------------------
 kc apply -f gitops/namespace.yaml >/dev/null
@@ -189,7 +185,7 @@ for app in guestbook guestbook-drifted charted; do
 done
 kn "$GITOPS_NS" patch gitrepositories.source.toolkit.fluxcd.io tern-kube --subresource=status --type=merge \
 	--patch-file gitops/status/gitrepository-tern-kube.json
-for ks in apps drift; do
+for ks in apps drift paused; do
 	kn "$GITOPS_NS" patch kustomizations.kustomize.toolkit.fluxcd.io "$ks" --subresource=status --type=merge \
 		--patch-file "gitops/status/kustomization-$ks.json"
 done
@@ -197,21 +193,27 @@ kn "$GITOPS_NS" patch helmreleases.helm.toolkit.fluxcd.io podinfo --subresource=
 	--patch-file gitops/status/helmrelease-podinfo.json
 
 # ---- capture (read-only from here on) --------------------------------------
-rm -rf "$OUT"
-mkdir -p "$OUT"
-cp -R "$MANIFESTS/drift" "$OUT/manifests"
-printf 'scenario\tkey\targv\texit\tkubectl_version\tserver_version\n' >"$MANIFEST"
+if [ "$MODE" = all ]; then
+	rm -rf "$OUT"
+	mkdir -p "$OUT"
+	cp -R "$MANIFESTS/drift" "$OUT/manifests"
+	printf 'scenario\tkey\targv\texit\tkubectl_version\tserver_version\n' >"$MANIFEST"
+else
+	rm -rf "$OUT/controllers"
+	awk -F '\t' '$1 != "controllers"' "$MANIFEST" >"$MANIFEST.tmp" && mv "$MANIFEST.tmp" "$MANIFEST"
+fi
 
-diffcap changed 1 diff -f drift/baseline/app.yaml
-diffcap unchanged 0 diff -f drift/baseline/service.yaml
-diffcap crd 1 diff -f drift/baseline/widgets.yaml
-diffcap missing 1 diff -f drift/pending/extra.yaml
-diffcap cluster-scoped 1 diff -f drift/namespace.yaml
-diffcap source 1 diff -R -f drift
+if [ "$MODE" = all ]; then
+	diffcap changed 1 diff -f drift/baseline/app.yaml
+	diffcap unchanged 0 diff -f drift/baseline/service.yaml
+	diffcap crd 1 diff -f drift/baseline/widgets.yaml
+	diffcap missing 1 diff -f drift/pending/extra.yaml
+	diffcap cluster-scoped 1 diff -f drift/namespace.yaml
+	diffcap source 1 diff -R -f drift
 
-getcap live objects json get deployments.apps,replicasets.apps,configmaps,services,serviceaccounts,widgets.lens.example.com \
-	-n "$DRIFT_NS" -o json
-
+	getcap live objects json get deployments.apps,replicasets.apps,configmaps,services,serviceaccounts,widgets.lens.example.com \
+		-n "$DRIFT_NS" -o json
+fi
 getcap controllers api-resources list api-resources --verbs=list -o name
 getcap controllers applications json get applications.argoproj.io -n "$GITOPS_NS" -o json
 getcap controllers kustomizations json get kustomizations.kustomize.toolkit.fluxcd.io -n "$GITOPS_NS" -o json

@@ -375,7 +375,7 @@ expect_rc 0
 expect_out "usage: tern-kube-drift"
 run sh --version
 expect_rc 0
-expect_out "tern-kube-drift 0.3.0"
+expect_out "tern-kube-drift 0.4.0"
 
 # --- Markdown is safe to post as a PR comment ------------------------------
 
@@ -530,7 +530,7 @@ EOF
 diff_from "$FAKE_DIR/empty" 0
 run sh -f a.yaml --unmanaged ConfigMap,secrets --format text
 expect_rc 1
-expect_argv "kubectl [get] [secrets] [-n] [apps] [-o] [go-template={{range .items}}{{.apiVersion}}{{\"\\t\"}}{{.kind}}{{\"\\t\"}}{{.metadata.namespace}}{{\"\\t\"}}{{.metadata.name}}{{\"\\t\"}}{{if .metadata.ownerReferences}}owned{{else}}-{{end}}{{\"\\t\"}}{{if .type}}{{.type}}{{else}}-{{end}}{{\"\\t\"}}{{with .metadata.labels}}{{index . \"kubernetes.io/bootstrapping\"}}{{end}}{{\"\\t\"}}{{with .metadata.annotations}}{{index . \"helm.sh/hook\"}}{{end}}{{\"\\t\"}}{{with .metadata.annotations}}{{index . \"meta.helm.sh/release-name\"}}{{end}}{{\"\\n\"}}{{end}}]"
+expect_argv "kubectl [get] [secrets] [-n] [apps] [-o] [go-template={{range .items}}{{.apiVersion}}{{\"\\t\"}}{{.kind}}{{\"\\t\"}}{{.metadata.namespace}}{{\"\\t\"}}{{.metadata.name}}{{\"\\t\"}}{{if .metadata.ownerReferences}}owned{{else}}-{{end}}{{\"\\t\"}}{{if .type}}{{.type}}{{else}}-{{end}}{{\"\\t\"}}{{with .metadata.labels}}{{index . \"kubernetes.io/bootstrapping\"}}{{end}}{{\"\\t\"}}{{with .metadata.annotations}}{{index . \"helm.sh/hook\"}}{{end}}{{\"\\t\"}}{{with .metadata.annotations}}{{index . \"meta.helm.sh/release-name\"}}{{end}}{{\"\\t\"}}{{if .metadata.deletionTimestamp}}deleting{{else}}-{{end}}{{\"\\t\"}}{{with .metadata.labels}}{{index . \"argocd.argoproj.io/secret-type\"}}{{end}}{{\"\\n\"}}{{end}}]"
 expect_no_out 'web-pre-upgrade'
 expect_no_out 'other-config'
 expect_no_out 'other-tls'
@@ -549,6 +549,34 @@ run sh --helm ./chart --release rel -n apps --unmanaged ConfigMap --format text
 expect_rc 1
 expect_no_out 'rel-leftover'
 expect_out '  ConfigMap/hand-made (namespace apps)'
+
+# 0.4.0: the exclusions Explore's drift report applies too (docs/gitops.md
+# "Unmanaged objects"), or a copied command lists more than the report.
+fresh "--unmanaged skips terminating objects, Argo CD bookkeeping and default/kubernetes"
+t=$(printf '\t')
+printf 'v1\tConfigMap\tdefault\tapp-config\t\n' >"$FAKE_DIR/manifest.tsv"
+cat >"$FAKE_DIR/get/services.default" <<EOF
+v1${t}Service${t}default${t}kubernetes${t}-${t}-${t}${t}${t}${t}-${t}
+v1${t}Service${t}default${t}hand-svc${t}-${t}-${t}${t}${t}${t}-${t}
+EOF
+cat >"$FAKE_DIR/get/ConfigMap.default" <<EOF
+v1${t}ConfigMap${t}default${t}app-config${t}-${t}-${t}${t}${t}${t}-${t}
+v1${t}ConfigMap${t}default${t}going-away${t}-${t}-${t}${t}${t}${t}deleting${t}
+EOF
+cat >"$FAKE_DIR/get/secrets.default" <<EOF
+v1${t}Secret${t}default${t}repo-creds${t}-${t}Opaque${t}${t}${t}${t}-${t}repository
+v1${t}Secret${t}default${t}no-label${t}-${t}Opaque${t}<no value>${t}<no value>${t}<no value>${t}-${t}<no value>
+EOF
+: >"$FAKE_DIR/empty"
+diff_from "$FAKE_DIR/empty" 0
+run sh -f a.yaml -n default --unmanaged services,ConfigMap,secrets --format text
+expect_rc 1
+expect_out '  Service/hand-svc (namespace default)'
+expect_out '  Secret/no-label (namespace default)'
+expect_no_out 'kubernetes (namespace'
+expect_no_out 'going-away'
+expect_no_out 'repo-creds'
+expect_read_only
 
 # --- One context: the 0.1.0 report, byte for byte --------------------------
 # golden/single-* were written by tern-kube-drift 0.1.0, before contexts

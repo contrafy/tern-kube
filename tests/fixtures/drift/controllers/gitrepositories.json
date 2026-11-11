@@ -8,12 +8,12 @@
                 "annotations": {
                     "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"source.toolkit.fluxcd.io/v1\",\"kind\":\"GitRepository\",\"metadata\":{\"annotations\":{},\"name\":\"tern-kube\",\"namespace\":\"tern-test-gitops\"},\"spec\":{\"interval\":\"5m\",\"ref\":{\"branch\":\"master\"},\"url\":\"https://github.com/contrafy/tern-kube.git\"}}\n"
                 },
-                "creationTimestamp": "2026-10-08T17:13:43Z",
+                "creationTimestamp": "2026-11-11T16:24:55Z",
                 "generation": 1,
                 "name": "tern-kube",
                 "namespace": "tern-test-gitops",
-                "resourceVersion": "17057",
-                "uid": "b37b2ac5-2891-4a76-b5af-209e33aa347e"
+                "resourceVersion": "1039602",
+                "uid": "766de62a-55c5-4baa-ace5-e658a6e46b3b"
             },
             "spec": {
                 "interval": "5m",
