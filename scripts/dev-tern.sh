@@ -396,6 +396,16 @@ EOF
 	chmod 0755 "$sb/bash/bash"
 }
 
+# Headless: nothing listens at <sb>/d.sock; panes and splits reach the
+# session's in-process daemon at TERN_PANE_SOCKET, so `tern open --wait` (the
+# shell guard, EDITOR) needs that socket as TERN_DAEMON_SOCKET.
+# shellcheck disable=SC2016 # the rc files expand these, not this script
+pane_daemon_loopback() {
+	echo 'if [ -n "${TERN_PANE_SOCKET:-}" ]; then export TERN_DAEMON_SOCKET="$TERN_PANE_SOCKET"; fi' >>"$zdot/.zshenv"
+	echo 'set -q TERN_PANE_SOCKET; and set -gx TERN_DAEMON_SOCKET $TERN_PANE_SOCKET' >>"$sb/xdg/fish/config.fish"
+	echo 'if [ -n "${TERN_PANE_SOCKET:-}" ]; then export TERN_DAEMON_SOCKET="$TERN_PANE_SOCKET"; fi' >>"$sb/bash/bashrc"
+}
+
 # The real kubectl: first on PATH outside tests/bin.
 real_kubectl() {
 	PATH=$(printf '%s' "$PATH" | tr ':' '\n' | grep -v "^$fake_bin\$" | paste -sd: -) command -v kubectl || true
@@ -482,6 +492,7 @@ start)
 		write_fish_config 0 "$real"
 		write_bash_rc 0 "$real"
 	fi
+	[ $window = 1 ] || pane_daemon_loopback
 	if [ $gui = 1 ]; then
 		# Tern started from the Dock/Finder: launchd's minimal PATH and no
 		# TKUBE_KUBECTL; tern-kube must find kubectl through the login shell

@@ -35,7 +35,7 @@ a_ready || return
 contains "previews both" "$(atext)" "tk-e2e-sel-b"
 kc -n "$MNS" create configmap tk-e2e-sel-c >/dev/null && kc -n "$MNS" label configmap tk-e2e-sel-c tk-e2e=sel >/dev/null
 contains "typed tier" "$(atext)" "Typed confirm"
-ctl type "delete 2 resources" >/dev/null
+ctl type '"delete 2 resources"' >/dev/null
 xkey enter
 E2E_WAIT=15 wait_for "the selection refusal" a_has "The selection now matches 3 object(s) (previewed 2)" || return
 contains "names the new match" "$(atext)" "+ConfigMap $MNS/tk-e2e-sel-c"

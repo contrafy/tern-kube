@@ -74,16 +74,20 @@ eq "denied: image kept" "$(jp $MNS deploy/tk-e2e-web '{.spec.template.spec.conta
 
 guarded "$K set env deploy/tk-e2e-web DB_PASSWORD=tk-e2e-hunter2 -n $MNS" || return
 contains "sensitive env reason" "$(atext)" "use --from=secret"
-contains "masked command" "$(atext)" "DB_PASSWORD=<redacted>"
-excludes "literal not shown" "$(atext)" "tk-e2e-hunter2"
+contains "masked command" "$(alltext "$AP [data-role='tern-kube.approve-header'] *")" "DB_PASSWORD=<redacted>"
+# The argv is masked; the object diff shows the pod spec it would store,
+# which is what the reason warns about.
+excludes "literal not in the header" "$(alltext "$AP [data-role='tern-kube.approve-header'] *")" "tk-e2e-hunter2"
+excludes "literal not in the steps" "$(alltext "$AP [data-role='tern-kube.approve-steps'] *")" "tk-e2e-hunter2"
 xkey escape
 finished 1 || return
 eq "denied: no env" "$(jp $MNS deploy/tk-e2e-web '{.spec.template.spec.containers[0].env}')" ""
 
-guarded "$K set resources deploy/tk-e2e-web --limits=memory=32Mi -n $MNS" || return
-contains "resources diff" "$(atext)" "memory: 32Mi"
+# The fixture already limits memory to 32Mi (e2e_manifest).
+guarded "$K set resources deploy/tk-e2e-web --limits=memory=48Mi -n $MNS" || return
+contains "resources diff" "$(atext)" "memory: 48Mi"
 xkey enter
 finished 0 || return
-eq "set resources ran" "$(jp $MNS deploy/tk-e2e-web '{.spec.template.spec.containers[0].resources.limits.memory}')" 32Mi
+eq "set resources ran" "$(jp $MNS deploy/tk-e2e-web '{.spec.template.spec.containers[0].resources.limits.memory}')" 48Mi
 guard_tab_close
 eq "back in the first tab" "$(focused_id)" "$home_tab"
