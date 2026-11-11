@@ -61,15 +61,27 @@ eq "approved scale ran" "$(jp "$MNS" deploy/tk-e2e-web '{.spec.replicas}')" 2
 sh_line clear
 
 # Same file as the window's KUBECONFIG, spelled differently: the pin shows
-# the fish prompt hook recorded this pane's value.
+# the fish prompt hook recorded this pane's value. Headless, the session's
+# host is the in-process `sandbox` host, which the window treats as remote:
+# quick actions then use the login environment's kubeconfig (documented for
+# remote panes), so the hook's record is checked in the spool instead.
 pinned="$E2E_REPO/.sandbox/./kubeconfig"
 sh_line "set -gx KUBECONFIG '$pinned'"
+sh_line "echo \$TERN_PANE >'$E2E_SB/fish-pane'"
+fish_pane=$(cat "$E2E_SB/fish-pane")
 sh_line clear
 lens "kubectl --context kind-tern-kube-dev get pods -n $MNS -l app=tk-e2e-web"
 native
 click_text 'tk-e2e-web-*' '.tk-grid .tk-c' || return
 click_text Logs '[data-role="tern-kube.inspector"] .sf-act' || return
 E2E_WAIT=15 quick_pane "tern-kube logs pod $MNS/tk-e2e-web-" || return
-E2E_WAIT=10 wait_for "the logs process with the exact argv" \
-	pgrep -f -- "kubectl logs -f --tail=200 --kubeconfig $pinned --context kind-tern-kube-dev -n $MNS tk-e2e-web-"
+if host_current sandbox; then
+	eq "fish pane env record" "$(cat "$E2E_SB/cfg/plugin-data/tern-kube/spool/pane-$fish_pane.env")" "kubeconfig=$pinned"
+	expect_grid "tern-kube: sandbox: kubeconfig from the login environment" || return
+	E2E_WAIT=10 wait_for "the logs process" \
+		pgrep -f -- "kubectl logs -f --tail=200 --context kind-tern-kube-dev -n $MNS tk-e2e-web-"
+else
+	E2E_WAIT=10 wait_for "the logs process with the exact argv" \
+		pgrep -f -- "kubectl logs -f --tail=200 --kubeconfig $pinned --context kind-tern-kube-dev -n $MNS tk-e2e-web-"
+fi
 E2E_WAIT=10 wait_for "the split's fish login shell" pgrep -f -- "^$fish_bin -l -c sh -c "
