@@ -149,9 +149,10 @@ function M.check(o: Outputs)
 			fail("node " .. r.name .. ": no metrics")
 		end
 	end
-	-- `kubectl describe node` sums container requests only: a pod with
-	-- pod-level requests counts as its containers (none here), the usage
-	-- views count the pod-level value.
+	-- Older kubectl (1.34) `describe node` sums container requests only, so a
+	-- pod with pod-level requests counts as its containers (none here); newer
+	-- kubectl counts the pod-level value, as the usage views do. Either total
+	-- must match ours exactly.
 	local podLevel: { [string]: { cpu: number, mem: number } } = {}
 	for _, p in all do
 		if p.node and not Model.terminal(p) and (p.podReq.cpu or p.podReq.mem) then
@@ -172,8 +173,10 @@ function M.check(o: Outputs)
 			continue
 		end
 		local extra = podLevel[n.name] or { cpu = 0, mem = 0 }
-		local wantCpu, wantMem = theirs.cpu + extra.cpu, theirs.mem + extra.mem
-		if math.abs(ours.cpu - wantCpu) > 1e-6 or math.abs(ours.mem - wantMem) > 0.5 then
+		local function matches(cpu: number, mem: number): boolean
+			return math.abs(ours.cpu - cpu) <= 1e-6 and math.abs(ours.mem - mem) <= 0.5
+		end
+		if not (matches(theirs.cpu, theirs.mem) or matches(theirs.cpu + extra.cpu, theirs.mem + extra.mem)) then
 			fail(
 				string.format(
 					"node %s: committed %s/%s, describe %s/%s + pod-level %s/%s",
