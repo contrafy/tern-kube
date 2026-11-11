@@ -28,7 +28,12 @@ release (0.x minor versions could break them).
 - Explore drift passes `-n` for manifests without a namespace, so they are compared in the namespace the report names instead of `default`.
 - Controller status is read per context and re-read on `r`; a Flux HelmRelease shows the deployed chart revision, not the last attempt.
 - `tern-kube-drift` 0.4.0 skips the same system objects Explore skips (service-account tokens, `system:` names, bootstrap objects, objects being deleted).
+- Explore relations keep the VIA column (the evidence for each link) longer than RELATION when the pane narrows.
 - Development: `scripts/dev-tern.sh start` and `make e2e` run a headless `tern serve` session (no window; an in-process daemon for the host half, the window half loaded into serve); `start --window` keeps the windowed sandbox. Screenshots come out at 1280x800 and scale 2 (2560x1600), and e2e no longer touches your clipboard.
+
+### Fixed
+
+- Tern 0.9.16: output whose only content is a note, such as `No resources found`, showed raw instead of the native view (0.9.16 falls back to raw for any lens view with a `lines` node). Tested on Tern 0.9.16.
 
 ## [1.1.0] - 2026-11-10
 
