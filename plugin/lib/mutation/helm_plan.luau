@@ -285,6 +285,9 @@ function M.fromArgv(argv: { string }, env: T.Env): (Plan?, { Diagnostic })
 		patchType = nil,
 		toRevision = nil,
 		drain = nil,
+		force = false,
+		taints = {},
+		subverb = nil,
 		edit = nil,
 		helm = {
 			release = release :: string,

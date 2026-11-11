@@ -9,6 +9,7 @@ local HelmPlan = require("./helm_plan")
 local Kinds = require("../kubectl/kinds")
 local Steps = require("./steps")
 local T = require("./types")
+local Taint = require("./taint")
 local Types = require("../model/types")
 
 type Plan = T.Plan
@@ -36,6 +37,17 @@ local OPERATION: { [T.Family]: string } = {
 	drain = "drain",
 	edit = "edit",
 	["helm-rollback"] = "rollback",
+	["set-image"] = "set image",
+	["set-env"] = "set env",
+	["set-resources"] = "set resources",
+	["set-selector"] = "set selector",
+	["set-serviceaccount"] = "set serviceaccount",
+	["set-subject"] = "set subject",
+	replace = "replace",
+	taint = "taint",
+	create = "create",
+	run = "run",
+	expose = "expose",
 }
 
 local FAMILIES: { [string]: T.Family } = {
@@ -56,6 +68,17 @@ local FAMILIES: { [string]: T.Family } = {
 	uncordon = "uncordon",
 	drain = "drain",
 	edit = "edit",
+	["set-image"] = "set-image",
+	["set-env"] = "set-env",
+	["set-resources"] = "set-resources",
+	["set-selector"] = "set-selector",
+	["set-serviceaccount"] = "set-serviceaccount",
+	["set-subject"] = "set-subject",
+	replace = "replace",
+	taint = "taint",
+	create = "create",
+	run = "run",
+	expose = "expose",
 }
 
 local UNDOABLE = { Deployment = true, DaemonSet = true, StatefulSet = true }
@@ -138,12 +161,32 @@ local function familyOf(inv: Invocation, env: T.Env): (string?, Diagnostic?)
 			return "debug-node", nil
 		end
 		return "debug-pod", nil
-	elseif verb == "create" and inv.subverb == "job" and inv.flags.from then
-		local from = last(inv.flags.from) or ""
-		local typ = string.match(from, "^([^/]+)/")
-		if typ and Kinds.normalize(typ).kind == "CronJob" then
-			return "cronjob-run", nil
+	elseif verb == "create" then
+		local sub = inv.subverb
+		if sub == "job" and inv.flags.from then
+			local from = last(inv.flags.from) or ""
+			local typ = string.match(from, "^([^/]+)/")
+			if typ and Kinds.normalize(typ).kind == "CronJob" then
+				return "cronjob-run", nil
+			end
+		elseif sub == "token" then
+			return nil, info("not-mutation", "create token issues a token and stores nothing; it runs without approval")
+		elseif sub == "secret" or sub == "service" then
+			return nil, info("not-mutation", string.format("kubectl create %s without a type only prints help", sub))
 		end
+		return "create", nil
+	elseif verb == "set" then
+		local sub = inv.subverb
+		if sub == nil then
+			return nil, info("not-mutation", "kubectl set without a subcommand only prints help")
+		elseif truthy(inv.flags["local"]) then
+			return nil, info("not-mutation", "--local changes a file without contacting the cluster")
+		elseif sub == "env" and truthy(inv.flags.list) then
+			return nil, info("not-mutation", "set env --list only prints the variables")
+		end
+		return "set-" .. sub, nil
+	elseif verb == "replace" or verb == "taint" or verb == "run" or verb == "expose" then
+		return verb :: string, nil
 	end
 	return nil, info("not-mutation", string.format("kubectl %s is not a guarded mutation", verb or "(no command)"))
 end
@@ -249,6 +292,109 @@ end
 local function hasTypeOnly(inv: Invocation): boolean
 	local named = #inv.names > 0
 	return #inv.resources > 0 and not named
+end
+
+local function hasEdit(inv: Invocation): boolean
+	for _, p in inv.positionals do
+		if string.find(p, "=", 1, true) then
+			return true
+		end
+	end
+	return false
+end
+
+-- set/replace/taint/create/run/expose (plan section "New families").
+local function newVerbErrors(family: T.Family, inv: Invocation, fileInputs: boolean, selected: boolean): { Diagnostic }
+	local out: { Diagnostic } = {}
+	local name = OPERATION[family]
+	if string.sub(family, 1, 4) == "set-" then
+		if not fileInputs and #inv.resources == 0 then
+			table.insert(out, err("missing-target", name .. " needs TYPE NAME, TYPE/NAME, -f or -k"))
+		elseif not fileInputs and hasTypeOnly(inv) and not selected then
+			table.insert(
+				out,
+				err(
+					"missing-target",
+					string.format("%s %s needs a name, -l SELECTOR or --all", name, inv.positionals[1])
+				)
+			)
+		end
+	end
+	if family == "set-image" and not hasEdit(inv) then
+		table.insert(out, err("invalid", "set image needs CONTAINER=IMAGE"))
+	elseif family == "set-env" then
+		local stdin = table.find(inv.positionals, "-") ~= nil
+		for _, v in inv.flags.env or {} :: { string } do
+			stdin = stdin or v == "-"
+		end
+		if stdin then
+			table.insert(
+				out,
+				err("stdin", "set env reads variables from stdin, which cannot be previewed; pass KEY=VALUE instead")
+			)
+		end
+	elseif family == "set-resources" and inv.flags.limits == nil and inv.flags.requests == nil then
+		table.insert(out, err("invalid", "set resources needs --limits or --requests"))
+	elseif family == "set-selector" and not hasEdit(inv) then
+		table.insert(out, err("invalid", "set selector needs KEY=VALUE"))
+	elseif
+		family == "set-subject"
+		and inv.flags.user == nil
+		and inv.flags.group == nil
+		and inv.flags.serviceaccount == nil
+	then
+		table.insert(out, err("invalid", "set subject needs --user, --group or --serviceaccount"))
+	elseif family == "replace" then
+		if not fileInputs then
+			table.insert(out, err("missing-target", "replace needs -f FILE|DIR or -k DIR"))
+		end
+		if #inv.positionals > 0 then
+			table.insert(out, err("invalid", "replace takes no arguments, got " .. table.concat(inv.positionals, " ")))
+		end
+	elseif family == "taint" then
+		local specs, bad = Taint.specs(inv.positionals, Argv.isTaintSpec)
+		for _, e in bad do
+			table.insert(out, err("invalid", e))
+		end
+		if #specs == 0 and #bad == 0 then
+			table.insert(out, err("invalid", "taint needs KEY[=VALUE]:EFFECT or KEY-"))
+		end
+		if #inv.resources == 0 or (hasTypeOnly(inv) and not selected) then
+			table.insert(out, err("missing-target", "taint needs nodes NAME, node/NAME, -l SELECTOR or --all"))
+		end
+		for _, r in inv.resources do
+			if r.kind ~= "Node" then
+				table.insert(out, err("invalid", "taint applies to nodes only"))
+				break
+			end
+		end
+	elseif family == "create" then
+		if truthy(inv.flags.edit) then
+			table.insert(
+				out,
+				err("interactive", "`create --edit` opens an editor before creating; edit the file, then create it")
+			)
+		end
+		if inv.subverb == nil and not fileInputs then
+			table.insert(
+				out,
+				err("missing-target", "create needs -f FILE|DIR, -k DIR or a type (create configmap ...)")
+			)
+		end
+	elseif family == "run" then
+		if fileInputs then
+			table.insert(
+				out,
+				err("unsupported", "run -f/-k (the --rm delete inputs) is not supported by the guard; drop them")
+			)
+		end
+		if #inv.positionals == 0 then
+			table.insert(out, err("missing-target", "run needs NAME --image=IMAGE"))
+		end
+	elseif family == "expose" and not fileInputs and #inv.positionals == 0 then
+		table.insert(out, err("missing-target", "expose needs TYPE NAME, TYPE/NAME, -f or -k"))
+	end
+	return out
 end
 
 local function targetErrors(family: T.Family, inv: Invocation): { Diagnostic }
@@ -375,6 +521,10 @@ local function targetErrors(family: T.Family, inv: Invocation): { Diagnostic }
 	elseif family == "edit" then
 		if not fileInputs and #inv.positionals == 0 then
 			table.insert(out, err("missing-target", "edit needs TYPE NAME, TYPE/NAME or -f"))
+		end
+	else
+		for _, d in newVerbErrors(family, inv, fileInputs, selected) do
+			table.insert(out, d)
 		end
 	end
 	if family == "scale" then
@@ -521,7 +671,7 @@ function M.fromArgv(argv: { string }, env: T.Env): (Plan?, { Diagnostic })
 	end
 
 	local explicitNamespace = nonEmpty(inv.namespace)
-	local nodes = Steps.NODE_FAMILIES[picked.family] == true
+	local nodes = Steps.NODE_FAMILIES[picked.family] == true or picked.family == "taint"
 	local targetNamespace = if inv.allNamespaces or nodes
 		then nil
 		else explicitNamespace or nonEmpty(env.namespace) or "default"
@@ -529,9 +679,19 @@ function M.fromArgv(argv: { string }, env: T.Env): (Plan?, { Diagnostic })
 	local replicas = last(inv.flags.replicas)
 	local toRevision = last(inv.flags["to-revision"])
 	local labels = picked.family == "label" or picked.family == "annotate"
+	local force = picked.family == "replace" and truthy(inv.flags.force)
+	-- expose --selector and run/expose -l set the new object's selector and
+	-- labels; they select nothing.
+	local selects = picked.family ~= "expose" and picked.family ~= "run"
+	local operation = OPERATION[picked.family]
+	if picked.family == "create" and inv.subverb then
+		operation = "create " .. inv.subverb
+	elseif force then
+		operation = "replace --force"
+	end
 	local plan: Plan = {
 		family = picked.family,
-		operation = OPERATION[picked.family],
+		operation = operation,
 		program = program,
 		argv = table.clone(argv),
 		execArgv = {},
@@ -548,16 +708,19 @@ function M.fromArgv(argv: { string }, env: T.Env): (Plan?, { Diagnostic })
 		kustomize = inv.kustomize,
 		kinds = kindRefs(inv),
 		resources = resourcesOf(picked.family, inv, ctx, targetNamespace),
-		selector = inv.selector,
+		selector = if selects then inv.selector else nil,
 		fieldSelector = inv.fieldSelector,
 		all = inv.flags.all ~= nil and last(inv.flags.all) ~= "false",
 		replicas = if replicas then tonumber(replicas) else nil,
 		patchFiles = table.clone(inv.flags["patch-file"] or {}),
-		edits = if labels then labelEdits(inv) else {},
+		edits = if labels or picked.family == "set-env" then labelEdits(inv) else {},
 		overwrite = labels and truthy(inv.flags.overwrite),
 		patchType = if picked.family == "patch" then last(inv.flags.type) else nil,
 		toRevision = if toRevision then tonumber(toRevision) else nil,
 		drain = if picked.family == "drain" then drainOpts(inv) else nil,
+		force = force,
+		taints = if picked.family == "taint" then (Taint.specs(inv.positionals, Argv.isTaintSpec)) else {},
+		subverb = inv.subverb,
 		edit = if picked.family == "edit" then env.edit else nil,
 		steps = {},
 		invocation = inv,

@@ -1,0 +1,1465 @@
+{
+ "apiVersion": "v1",
+ "kind": "List",
+ "items": [
+  {
+   "apiVersion": "v1",
+   "kind": "Pod",
+   "metadata": {
+    "name": "coredns-559f6c778d-9b6b7",
+    "namespace": "kube-system",
+    "ownerReferences": [
+     {
+      "apiVersion": "apps/v1",
+      "kind": "ReplicaSet",
+      "name": "coredns-559f6c778d"
+     }
+    ]
+   },
+   "spec": {
+    "nodeName": "tern-kube-dev-control-plane",
+    "tolerations": [
+     {
+      "key": "CriticalAddonsOnly",
+      "operator": "Exists"
+     },
+     {
+      "effect": "NoSchedule",
+      "key": "node-role.kubernetes.io/control-plane"
+     },
+     {
+      "effect": "NoExecute",
+      "key": "node.kubernetes.io/not-ready",
+      "operator": "Exists",
+      "tolerationSeconds": 300
+     },
+     {
+      "effect": "NoExecute",
+      "key": "node.kubernetes.io/unreachable",
+      "operator": "Exists",
+      "tolerationSeconds": 300
+     }
+    ]
+   },
+   "status": {
+    "phase": "Running"
+   }
+  },
+  {
+   "apiVersion": "v1",
+   "kind": "Pod",
+   "metadata": {
+    "name": "coredns-559f6c778d-flp6g",
+    "namespace": "kube-system",
+    "ownerReferences": [
+     {
+      "apiVersion": "apps/v1",
+      "kind": "ReplicaSet",
+      "name": "coredns-559f6c778d"
+     }
+    ]
+   },
+   "spec": {
+    "nodeName": "tern-kube-dev-control-plane",
+    "tolerations": [
+     {
+      "key": "CriticalAddonsOnly",
+      "operator": "Exists"
+     },
+     {
+      "effect": "NoSchedule",
+      "key": "node-role.kubernetes.io/control-plane"
+     },
+     {
+      "effect": "NoExecute",
+      "key": "node.kubernetes.io/not-ready",
+      "operator": "Exists",
+      "tolerationSeconds": 300
+     },
+     {
+      "effect": "NoExecute",
+      "key": "node.kubernetes.io/unreachable",
+      "operator": "Exists",
+      "tolerationSeconds": 300
+     }
+    ]
+   },
+   "status": {
+    "phase": "Running"
+   }
+  },
+  {
+   "apiVersion": "v1",
+   "kind": "Pod",
+   "metadata": {
+    "name": "etcd-tern-kube-dev-control-plane",
+    "namespace": "kube-system",
+    "annotations": {
+     "kubernetes.io/config.mirror": "captured"
+    },
+    "ownerReferences": [
+     {
+      "apiVersion": "v1",
+      "kind": "Node",
+      "name": "tern-kube-dev-control-plane"
+     }
+    ]
+   },
+   "spec": {
+    "nodeName": "tern-kube-dev-control-plane",
+    "tolerations": [
+     {
+      "effect": "NoExecute",
+      "operator": "Exists"
+     }
+    ]
+   },
+   "status": {
+    "phase": "Running"
+   }
+  },
+  {
+   "apiVersion": "v1",
+   "kind": "Pod",
+   "metadata": {
+    "name": "kindnet-z8ctl",
+    "namespace": "kube-system",
+    "ownerReferences": [
+     {
+      "apiVersion": "apps/v1",
+      "kind": "DaemonSet",
+      "name": "kindnet"
+     }
+    ]
+   },
+   "spec": {
+    "nodeName": "tern-kube-dev-control-plane",
+    "tolerations": [
+     {
+      "operator": "Exists"
+     },
+     {
+      "effect": "NoExecute",
+      "key": "node.kubernetes.io/not-ready",
+      "operator": "Exists"
+     },
+     {
+      "effect": "NoExecute",
+      "key": "node.kubernetes.io/unreachable",
+      "operator": "Exists"
+     },
+     {
+      "effect": "NoSchedule",
+      "key": "node.kubernetes.io/disk-pressure",
+      "operator": "Exists"
+     },
+     {
+      "effect": "NoSchedule",
+      "key": "node.kubernetes.io/memory-pressure",
+      "operator": "Exists"
+     },
+     {
+      "effect": "NoSchedule",
+      "key": "node.kubernetes.io/pid-pressure",
+      "operator": "Exists"
+     },
+     {
+      "effect": "NoSchedule",
+      "key": "node.kubernetes.io/unschedulable",
+      "operator": "Exists"
+     },
+     {
+      "effect": "NoSchedule",
+      "key": "node.kubernetes.io/network-unavailable",
+      "operator": "Exists"
+     }
+    ]
+   },
+   "status": {
+    "phase": "Running"
+   }
+  },
+  {
+   "apiVersion": "v1",
+   "kind": "Pod",
+   "metadata": {
+    "name": "kube-apiserver-tern-kube-dev-control-plane",
+    "namespace": "kube-system",
+    "annotations": {
+     "kubernetes.io/config.mirror": "captured"
+    },
+    "ownerReferences": [
+     {
+      "apiVersion": "v1",
+      "kind": "Node",
+      "name": "tern-kube-dev-control-plane"
+     }
+    ]
+   },
+   "spec": {
+    "nodeName": "tern-kube-dev-control-plane",
+    "tolerations": [
+     {
+      "effect": "NoExecute",
+      "operator": "Exists"
+     }
+    ]
+   },
+   "status": {
+    "phase": "Running"
+   }
+  },
+  {
+   "apiVersion": "v1",
+   "kind": "Pod",
+   "metadata": {
+    "name": "kube-controller-manager-tern-kube-dev-control-plane",
+    "namespace": "kube-system",
+    "annotations": {
+     "kubernetes.io/config.mirror": "captured"
+    },
+    "ownerReferences": [
+     {
+      "apiVersion": "v1",
+      "kind": "Node",
+      "name": "tern-kube-dev-control-plane"
+     }
+    ]
+   },
+   "spec": {
+    "nodeName": "tern-kube-dev-control-plane",
+    "tolerations": [
+     {
+      "effect": "NoExecute",
+      "operator": "Exists"
+     }
+    ]
+   },
+   "status": {
+    "phase": "Running"
+   }
+  },
+  {
+   "apiVersion": "v1",
+   "kind": "Pod",
+   "metadata": {
+    "name": "kube-proxy-8mdp2",
+    "namespace": "kube-system",
+    "ownerReferences": [
+     {
+      "apiVersion": "apps/v1",
+      "kind": "DaemonSet",
+      "name": "kube-proxy"
+     }
+    ]
+   },
+   "spec": {
+    "nodeName": "tern-kube-dev-control-plane",
+    "tolerations": [
+     {
+      "operator": "Exists"
+     },
+     {
+      "effect": "NoExecute",
+      "key": "node.kubernetes.io/not-ready",
+      "operator": "Exists"
+     },
+     {
+      "effect": "NoExecute",
+      "key": "node.kubernetes.io/unreachable",
+      "operator": "Exists"
+     },
+     {
+      "effect": "NoSchedule",
+      "key": "node.kubernetes.io/disk-pressure",
+      "operator": "Exists"
+     },
+     {
+      "effect": "NoSchedule",
+      "key": "node.kubernetes.io/memory-pressure",
+      "operator": "Exists"
+     },
+     {
+      "effect": "NoSchedule",
+      "key": "node.kubernetes.io/pid-pressure",
+      "operator": "Exists"
+     },
+     {
+      "effect": "NoSchedule",
+      "key": "node.kubernetes.io/unschedulable",
+      "operator": "Exists"
+     },
+     {
+      "effect": "NoSchedule",
+      "key": "node.kubernetes.io/network-unavailable",
+      "operator": "Exists"
+     }
+    ]
+   },
+   "status": {
+    "phase": "Running"
+   }
+  },
+  {
+   "apiVersion": "v1",
+   "kind": "Pod",
+   "metadata": {
+    "name": "kube-scheduler-tern-kube-dev-control-plane",
+    "namespace": "kube-system",
+    "annotations": {
+     "kubernetes.io/config.mirror": "captured"
+    },
+    "ownerReferences": [
+     {
+      "apiVersion": "v1",
+      "kind": "Node",
+      "name": "tern-kube-dev-control-plane"
+     }
+    ]
+   },
+   "spec": {
+    "nodeName": "tern-kube-dev-control-plane",
+    "tolerations": [
+     {
+      "effect": "NoExecute",
+      "operator": "Exists"
+     }
+    ]
+   },
+   "status": {
+    "phase": "Running"
+   }
+  },
+  {
+   "apiVersion": "v1",
+   "kind": "Pod",
+   "metadata": {
+    "name": "metrics-server-84c99cb944-74zd6",
+    "namespace": "kube-system",
+    "ownerReferences": [
+     {
+      "apiVersion": "apps/v1",
+      "kind": "ReplicaSet",
+      "name": "metrics-server-84c99cb944"
+     }
+    ]
+   },
+   "spec": {
+    "nodeName": "tern-kube-dev-control-plane",
+    "tolerations": [
+     {
+      "effect": "NoExecute",
+      "key": "node.kubernetes.io/not-ready",
+      "operator": "Exists",
+      "tolerationSeconds": 300
+     },
+     {
+      "effect": "NoExecute",
+      "key": "node.kubernetes.io/unreachable",
+      "operator": "Exists",
+      "tolerationSeconds": 300
+     }
+    ]
+   },
+   "status": {
+    "phase": "Running"
+   }
+  },
+  {
+   "apiVersion": "v1",
+   "kind": "Pod",
+   "metadata": {
+    "name": "local-path-provisioner-75f7fc7dc5-h467k",
+    "namespace": "local-path-storage",
+    "ownerReferences": [
+     {
+      "apiVersion": "apps/v1",
+      "kind": "ReplicaSet",
+      "name": "local-path-provisioner-75f7fc7dc5"
+     }
+    ]
+   },
+   "spec": {
+    "nodeName": "tern-kube-dev-control-plane",
+    "tolerations": [
+     {
+      "effect": "NoSchedule",
+      "key": "node-role.kubernetes.io/control-plane",
+      "operator": "Equal"
+     },
+     {
+      "effect": "NoSchedule",
+      "key": "node-role.kubernetes.io/master",
+      "operator": "Equal"
+     },
+     {
+      "effect": "NoExecute",
+      "key": "node.kubernetes.io/not-ready",
+      "operator": "Exists",
+      "tolerationSeconds": 300
+     },
+     {
+      "effect": "NoExecute",
+      "key": "node.kubernetes.io/unreachable",
+      "operator": "Exists",
+      "tolerationSeconds": 300
+     }
+    ]
+   },
+   "status": {
+    "phase": "Running"
+   }
+  },
+  {
+   "apiVersion": "v1",
+   "kind": "Pod",
+   "metadata": {
+    "name": "broken-image-6869879767-8fqd7",
+    "namespace": "tern-test-apps",
+    "ownerReferences": [
+     {
+      "apiVersion": "apps/v1",
+      "kind": "ReplicaSet",
+      "name": "broken-image-6869879767"
+     }
+    ]
+   },
+   "spec": {
+    "nodeName": "tern-kube-dev-control-plane",
+    "tolerations": [
+     {
+      "effect": "NoExecute",
+      "key": "node.kubernetes.io/not-ready",
+      "operator": "Exists",
+      "tolerationSeconds": 300
+     },
+     {
+      "effect": "NoExecute",
+      "key": "node.kubernetes.io/unreachable",
+      "operator": "Exists",
+      "tolerationSeconds": 300
+     }
+    ]
+   },
+   "status": {
+    "phase": "Running"
+   }
+  },
+  {
+   "apiVersion": "v1",
+   "kind": "Pod",
+   "metadata": {
+    "name": "crashloop",
+    "namespace": "tern-test-apps"
+   },
+   "spec": {
+    "nodeName": "tern-kube-dev-control-plane",
+    "tolerations": [
+     {
+      "effect": "NoExecute",
+      "key": "node.kubernetes.io/not-ready",
+      "operator": "Exists",
+      "tolerationSeconds": 300
+     },
+     {
+      "effect": "NoExecute",
+      "key": "node.kubernetes.io/unreachable",
+      "operator": "Exists",
+      "tolerationSeconds": 300
+     }
+    ]
+   },
+   "status": {
+    "phase": "Running"
+   }
+  },
+  {
+   "apiVersion": "v1",
+   "kind": "Pod",
+   "metadata": {
+    "name": "db-0",
+    "namespace": "tern-test-apps",
+    "ownerReferences": [
+     {
+      "apiVersion": "apps/v1",
+      "kind": "StatefulSet",
+      "name": "db"
+     }
+    ]
+   },
+   "spec": {
+    "nodeName": "tern-kube-dev-control-plane",
+    "tolerations": [
+     {
+      "effect": "NoExecute",
+      "key": "node.kubernetes.io/not-ready",
+      "operator": "Exists",
+      "tolerationSeconds": 300
+     },
+     {
+      "effect": "NoExecute",
+      "key": "node.kubernetes.io/unreachable",
+      "operator": "Exists",
+      "tolerationSeconds": 300
+     }
+    ]
+   },
+   "status": {
+    "phase": "Running"
+   }
+  },
+  {
+   "apiVersion": "v1",
+   "kind": "Pod",
+   "metadata": {
+    "name": "node-agent-bv5fl",
+    "namespace": "tern-test-apps",
+    "ownerReferences": [
+     {
+      "apiVersion": "apps/v1",
+      "kind": "DaemonSet",
+      "name": "node-agent"
+     }
+    ]
+   },
+   "spec": {
+    "nodeName": "tern-kube-dev-control-plane",
+    "tolerations": [
+     {
+      "effect": "NoExecute",
+      "key": "node.kubernetes.io/not-ready",
+      "operator": "Exists"
+     },
+     {
+      "effect": "NoExecute",
+      "key": "node.kubernetes.io/unreachable",
+      "operator": "Exists"
+     },
+     {
+      "effect": "NoSchedule",
+      "key": "node.kubernetes.io/disk-pressure",
+      "operator": "Exists"
+     },
+     {
+      "effect": "NoSchedule",
+      "key": "node.kubernetes.io/memory-pressure",
+      "operator": "Exists"
+     },
+     {
+      "effect": "NoSchedule",
+      "key": "node.kubernetes.io/pid-pressure",
+      "operator": "Exists"
+     },
+     {
+      "effect": "NoSchedule",
+      "key": "node.kubernetes.io/unschedulable",
+      "operator": "Exists"
+     }
+    ]
+   },
+   "status": {
+    "phase": "Running"
+   }
+  },
+  {
+   "apiVersion": "v1",
+   "kind": "Pod",
+   "metadata": {
+    "name": "web-65d7d99975-6jsgc",
+    "namespace": "tern-test-apps",
+    "ownerReferences": [
+     {
+      "apiVersion": "apps/v1",
+      "kind": "ReplicaSet",
+      "name": "web-65d7d99975"
+     }
+    ]
+   },
+   "spec": {
+    "nodeName": "tern-kube-dev-control-plane",
+    "tolerations": [
+     {
+      "effect": "NoExecute",
+      "key": "node.kubernetes.io/not-ready",
+      "operator": "Exists",
+      "tolerationSeconds": 300
+     },
+     {
+      "effect": "NoExecute",
+      "key": "node.kubernetes.io/unreachable",
+      "operator": "Exists",
+      "tolerationSeconds": 300
+     }
+    ]
+   },
+   "status": {
+    "phase": "Running"
+   }
+  },
+  {
+   "apiVersion": "v1",
+   "kind": "Pod",
+   "metadata": {
+    "name": "web-65d7d99975-mtxxk",
+    "namespace": "tern-test-apps",
+    "ownerReferences": [
+     {
+      "apiVersion": "apps/v1",
+      "kind": "ReplicaSet",
+      "name": "web-65d7d99975"
+     }
+    ]
+   },
+   "spec": {
+    "nodeName": "tern-kube-dev-control-plane",
+    "tolerations": [
+     {
+      "effect": "NoExecute",
+      "key": "node.kubernetes.io/not-ready",
+      "operator": "Exists",
+      "tolerationSeconds": 300
+     },
+     {
+      "effect": "NoExecute",
+      "key": "node.kubernetes.io/unreachable",
+      "operator": "Exists",
+      "tolerationSeconds": 300
+     }
+    ]
+   },
+   "status": {
+    "phase": "Running"
+   }
+  },
+  {
+   "apiVersion": "v1",
+   "kind": "Pod",
+   "metadata": {
+    "name": "done-job-xzdg5",
+    "namespace": "tern-test-batch",
+    "ownerReferences": [
+     {
+      "apiVersion": "apps/v1",
+      "kind": "Job",
+      "name": "done-job"
+     }
+    ]
+   },
+   "spec": {
+    "nodeName": "tern-kube-dev-control-plane",
+    "tolerations": [
+     {
+      "effect": "NoExecute",
+      "key": "node.kubernetes.io/not-ready",
+      "operator": "Exists",
+      "tolerationSeconds": 300
+     },
+     {
+      "effect": "NoExecute",
+      "key": "node.kubernetes.io/unreachable",
+      "operator": "Exists",
+      "tolerationSeconds": 300
+     }
+    ]
+   },
+   "status": {
+    "phase": "Running"
+   }
+  },
+  {
+   "apiVersion": "v1",
+   "kind": "Pod",
+   "metadata": {
+    "name": "fail-job-628sv",
+    "namespace": "tern-test-batch",
+    "ownerReferences": [
+     {
+      "apiVersion": "apps/v1",
+      "kind": "Job",
+      "name": "fail-job"
+     }
+    ]
+   },
+   "spec": {
+    "nodeName": "tern-kube-dev-control-plane",
+    "tolerations": [
+     {
+      "effect": "NoExecute",
+      "key": "node.kubernetes.io/not-ready",
+      "operator": "Exists",
+      "tolerationSeconds": 300
+     },
+     {
+      "effect": "NoExecute",
+      "key": "node.kubernetes.io/unreachable",
+      "operator": "Exists",
+      "tolerationSeconds": 300
+     }
+    ]
+   },
+   "status": {
+    "phase": "Running"
+   }
+  },
+  {
+   "apiVersion": "v1",
+   "kind": "Pod",
+   "metadata": {
+    "name": "nightly-report-29903220-vmdsz",
+    "namespace": "tern-test-batch",
+    "ownerReferences": [
+     {
+      "apiVersion": "apps/v1",
+      "kind": "Job",
+      "name": "nightly-report-29903220"
+     }
+    ]
+   },
+   "spec": {
+    "nodeName": "tern-kube-dev-control-plane",
+    "tolerations": [
+     {
+      "effect": "NoExecute",
+      "key": "node.kubernetes.io/not-ready",
+      "operator": "Exists",
+      "tolerationSeconds": 300
+     },
+     {
+      "effect": "NoExecute",
+      "key": "node.kubernetes.io/unreachable",
+      "operator": "Exists",
+      "tolerationSeconds": 300
+     }
+    ]
+   },
+   "status": {
+    "phase": "Running"
+   }
+  },
+  {
+   "apiVersion": "v1",
+   "kind": "Pod",
+   "metadata": {
+    "name": "nightly-report-29904660-mpqsx",
+    "namespace": "tern-test-batch",
+    "ownerReferences": [
+     {
+      "apiVersion": "apps/v1",
+      "kind": "Job",
+      "name": "nightly-report-29904660"
+     }
+    ]
+   },
+   "spec": {
+    "nodeName": "tern-kube-dev-control-plane",
+    "tolerations": [
+     {
+      "effect": "NoExecute",
+      "key": "node.kubernetes.io/not-ready",
+      "operator": "Exists",
+      "tolerationSeconds": 300
+     },
+     {
+      "effect": "NoExecute",
+      "key": "node.kubernetes.io/unreachable",
+      "operator": "Exists",
+      "tolerationSeconds": 300
+     }
+    ]
+   },
+   "status": {
+    "phase": "Running"
+   }
+  },
+  {
+   "apiVersion": "v1",
+   "kind": "Pod",
+   "metadata": {
+    "name": "a-pod-with-a-deliberately-long-name-to-stress-column-widths-in-the-lens",
+    "namespace": "tern-test-edge"
+   },
+   "spec": {
+    "nodeName": "tern-kube-dev-control-plane",
+    "tolerations": [
+     {
+      "effect": "NoExecute",
+      "key": "node.kubernetes.io/not-ready",
+      "operator": "Exists",
+      "tolerationSeconds": 300
+     },
+     {
+      "effect": "NoExecute",
+      "key": "node.kubernetes.io/unreachable",
+      "operator": "Exists",
+      "tolerationSeconds": 300
+     }
+    ]
+   },
+   "status": {
+    "phase": "Running"
+   }
+  },
+  {
+   "apiVersion": "v1",
+   "kind": "Pod",
+   "metadata": {
+    "name": "labels-odd",
+    "namespace": "tern-test-edge"
+   },
+   "spec": {
+    "nodeName": "tern-kube-dev-control-plane",
+    "tolerations": [
+     {
+      "effect": "NoExecute",
+      "key": "node.kubernetes.io/not-ready",
+      "operator": "Exists",
+      "tolerationSeconds": 300
+     },
+     {
+      "effect": "NoExecute",
+      "key": "node.kubernetes.io/unreachable",
+      "operator": "Exists",
+      "tolerationSeconds": 300
+     }
+    ]
+   },
+   "status": {
+    "phase": "Running"
+   }
+  },
+  {
+   "apiVersion": "v1",
+   "kind": "Pod",
+   "metadata": {
+    "name": "tk-logmix-789b74d5d6-5hnww",
+    "namespace": "tern-test-logs",
+    "ownerReferences": [
+     {
+      "apiVersion": "apps/v1",
+      "kind": "ReplicaSet",
+      "name": "tk-logmix-789b74d5d6"
+     }
+    ]
+   },
+   "spec": {
+    "nodeName": "tern-kube-dev-control-plane",
+    "tolerations": [
+     {
+      "effect": "NoExecute",
+      "key": "node.kubernetes.io/not-ready",
+      "operator": "Exists",
+      "tolerationSeconds": 300
+     },
+     {
+      "effect": "NoExecute",
+      "key": "node.kubernetes.io/unreachable",
+      "operator": "Exists",
+      "tolerationSeconds": 300
+     }
+    ]
+   },
+   "status": {
+    "phase": "Running"
+   }
+  },
+  {
+   "apiVersion": "v1",
+   "kind": "Pod",
+   "metadata": {
+    "name": "tk-logmix-789b74d5d6-pxqbp",
+    "namespace": "tern-test-logs",
+    "ownerReferences": [
+     {
+      "apiVersion": "apps/v1",
+      "kind": "ReplicaSet",
+      "name": "tk-logmix-789b74d5d6"
+     }
+    ]
+   },
+   "spec": {
+    "nodeName": "tern-kube-dev-control-plane",
+    "tolerations": [
+     {
+      "effect": "NoExecute",
+      "key": "node.kubernetes.io/not-ready",
+      "operator": "Exists",
+      "tolerationSeconds": 300
+     },
+     {
+      "effect": "NoExecute",
+      "key": "node.kubernetes.io/unreachable",
+      "operator": "Exists",
+      "tolerationSeconds": 300
+     }
+    ]
+   },
+   "status": {
+    "phase": "Running"
+   }
+  },
+  {
+   "apiVersion": "v1",
+   "kind": "Pod",
+   "metadata": {
+    "name": "tkm-api-7c754c9546-2zh4b",
+    "namespace": "tern-test-mc",
+    "ownerReferences": [
+     {
+      "apiVersion": "apps/v1",
+      "kind": "ReplicaSet",
+      "name": "tkm-api-7c754c9546"
+     }
+    ]
+   },
+   "spec": {
+    "nodeName": "tern-kube-dev-control-plane",
+    "tolerations": [
+     {
+      "effect": "NoExecute",
+      "key": "node.kubernetes.io/not-ready",
+      "operator": "Exists",
+      "tolerationSeconds": 300
+     },
+     {
+      "effect": "NoExecute",
+      "key": "node.kubernetes.io/unreachable",
+      "operator": "Exists",
+      "tolerationSeconds": 300
+     }
+    ]
+   },
+   "status": {
+    "phase": "Running"
+   }
+  },
+  {
+   "apiVersion": "v1",
+   "kind": "Pod",
+   "metadata": {
+    "name": "tkm-only-a-5f7b9dd9b4-7qzhf",
+    "namespace": "tern-test-mc",
+    "ownerReferences": [
+     {
+      "apiVersion": "apps/v1",
+      "kind": "ReplicaSet",
+      "name": "tkm-only-a-5f7b9dd9b4"
+     }
+    ]
+   },
+   "spec": {
+    "nodeName": "tern-kube-dev-control-plane",
+    "tolerations": [
+     {
+      "effect": "NoExecute",
+      "key": "node.kubernetes.io/not-ready",
+      "operator": "Exists",
+      "tolerationSeconds": 300
+     },
+     {
+      "effect": "NoExecute",
+      "key": "node.kubernetes.io/unreachable",
+      "operator": "Exists",
+      "tolerationSeconds": 300
+     }
+    ]
+   },
+   "status": {
+    "phase": "Running"
+   }
+  },
+  {
+   "apiVersion": "v1",
+   "kind": "Pod",
+   "metadata": {
+    "name": "tkm-web-86d89c94d-gsmzq",
+    "namespace": "tern-test-mc",
+    "ownerReferences": [
+     {
+      "apiVersion": "apps/v1",
+      "kind": "ReplicaSet",
+      "name": "tkm-web-86d89c94d"
+     }
+    ]
+   },
+   "spec": {
+    "nodeName": "tern-kube-dev-control-plane",
+    "tolerations": [
+     {
+      "effect": "NoExecute",
+      "key": "node.kubernetes.io/not-ready",
+      "operator": "Exists",
+      "tolerationSeconds": 300
+     },
+     {
+      "effect": "NoExecute",
+      "key": "node.kubernetes.io/unreachable",
+      "operator": "Exists",
+      "tolerationSeconds": 300
+     }
+    ]
+   },
+   "status": {
+    "phase": "Running"
+   }
+  },
+  {
+   "apiVersion": "v1",
+   "kind": "Pod",
+   "metadata": {
+    "name": "tkm-web-86d89c94d-sjzjw",
+    "namespace": "tern-test-mc",
+    "ownerReferences": [
+     {
+      "apiVersion": "apps/v1",
+      "kind": "ReplicaSet",
+      "name": "tkm-web-86d89c94d"
+     }
+    ]
+   },
+   "spec": {
+    "nodeName": "tern-kube-dev-control-plane",
+    "tolerations": [
+     {
+      "effect": "NoExecute",
+      "key": "node.kubernetes.io/not-ready",
+      "operator": "Exists",
+      "tolerationSeconds": 300
+     },
+     {
+      "effect": "NoExecute",
+      "key": "node.kubernetes.io/unreachable",
+      "operator": "Exists",
+      "tolerationSeconds": 300
+     }
+    ]
+   },
+   "status": {
+    "phase": "Running"
+   }
+  },
+  {
+   "apiVersion": "v1",
+   "kind": "Pod",
+   "metadata": {
+    "name": "tk-fin-web-76f8c4fd78-ntscm",
+    "namespace": "tern-test-mutate",
+    "ownerReferences": [
+     {
+      "apiVersion": "apps/v1",
+      "kind": "ReplicaSet",
+      "name": "tk-fin-web-76f8c4fd78"
+     }
+    ]
+   },
+   "spec": {
+    "nodeName": "tern-kube-dev-control-plane",
+    "tolerations": [
+     {
+      "effect": "NoExecute",
+      "key": "node.kubernetes.io/not-ready",
+      "operator": "Exists",
+      "tolerationSeconds": 300
+     },
+     {
+      "effect": "NoExecute",
+      "key": "node.kubernetes.io/unreachable",
+      "operator": "Exists",
+      "tolerationSeconds": 300
+     }
+    ]
+   },
+   "status": {
+    "phase": "Running"
+   }
+  },
+  {
+   "apiVersion": "v1",
+   "kind": "Pod",
+   "metadata": {
+    "name": "tk-qa-shell-7999d57d76-fj874",
+    "namespace": "tern-test-mutate",
+    "ownerReferences": [
+     {
+      "apiVersion": "apps/v1",
+      "kind": "ReplicaSet",
+      "name": "tk-qa-shell-7999d57d76"
+     }
+    ]
+   },
+   "spec": {
+    "nodeName": "tern-kube-dev-control-plane",
+    "tolerations": [
+     {
+      "effect": "NoExecute",
+      "key": "node.kubernetes.io/not-ready",
+      "operator": "Exists",
+      "tolerationSeconds": 300
+     },
+     {
+      "effect": "NoExecute",
+      "key": "node.kubernetes.io/unreachable",
+      "operator": "Exists",
+      "tolerationSeconds": 300
+     }
+    ]
+   },
+   "status": {
+    "phase": "Running"
+   }
+  },
+  {
+   "apiVersion": "v1",
+   "kind": "Pod",
+   "metadata": {
+    "name": "tkm-web-c6b785c97-xjrkn",
+    "namespace": "tern-test-mutate",
+    "ownerReferences": [
+     {
+      "apiVersion": "apps/v1",
+      "kind": "ReplicaSet",
+      "name": "tkm-web-c6b785c97"
+     }
+    ]
+   },
+   "spec": {
+    "nodeName": "tern-kube-dev-control-plane",
+    "tolerations": [
+     {
+      "effect": "NoExecute",
+      "key": "node.kubernetes.io/not-ready",
+      "operator": "Exists",
+      "tolerationSeconds": 300
+     },
+     {
+      "effect": "NoExecute",
+      "key": "node.kubernetes.io/unreachable",
+      "operator": "Exists",
+      "tolerationSeconds": 300
+     }
+    ]
+   },
+   "status": {
+    "phase": "Running"
+   }
+  },
+  {
+   "apiVersion": "v1",
+   "kind": "Pod",
+   "metadata": {
+    "name": "api-79d6774654-4gjbl",
+    "namespace": "tern-test-x-d12guard",
+    "ownerReferences": [
+     {
+      "apiVersion": "apps/v1",
+      "kind": "ReplicaSet",
+      "name": "api-79d6774654"
+     }
+    ]
+   },
+   "spec": {
+    "nodeName": "tern-kube-dev-control-plane",
+    "tolerations": [
+     {
+      "effect": "NoExecute",
+      "key": "node.kubernetes.io/not-ready",
+      "operator": "Exists",
+      "tolerationSeconds": 300
+     },
+     {
+      "effect": "NoExecute",
+      "key": "node.kubernetes.io/unreachable",
+      "operator": "Exists",
+      "tolerationSeconds": 300
+     }
+    ]
+   },
+   "status": {
+    "phase": "Running"
+   }
+  },
+  {
+   "apiVersion": "v1",
+   "kind": "Pod",
+   "metadata": {
+    "name": "web-86d8686cfb-2ttx8",
+    "namespace": "tern-test-x-d12guard",
+    "ownerReferences": [
+     {
+      "apiVersion": "apps/v1",
+      "kind": "ReplicaSet",
+      "name": "web-86d8686cfb"
+     }
+    ]
+   },
+   "spec": {
+    "nodeName": "tern-kube-dev-control-plane",
+    "tolerations": [
+     {
+      "effect": "NoExecute",
+      "key": "node.kubernetes.io/not-ready",
+      "operator": "Exists",
+      "tolerationSeconds": 300
+     },
+     {
+      "effect": "NoExecute",
+      "key": "node.kubernetes.io/unreachable",
+      "operator": "Exists",
+      "tolerationSeconds": 300
+     }
+    ]
+   },
+   "status": {
+    "phase": "Running"
+   }
+  },
+  {
+   "apiVersion": "v1",
+   "kind": "Pod",
+   "metadata": {
+    "name": "web-86d8686cfb-d4tkv",
+    "namespace": "tern-test-x-d12guard",
+    "ownerReferences": [
+     {
+      "apiVersion": "apps/v1",
+      "kind": "ReplicaSet",
+      "name": "web-86d8686cfb"
+     }
+    ]
+   },
+   "spec": {
+    "nodeName": "tern-kube-dev-control-plane",
+    "tolerations": [
+     {
+      "effect": "NoExecute",
+      "key": "node.kubernetes.io/not-ready",
+      "operator": "Exists",
+      "tolerationSeconds": 300
+     },
+     {
+      "effect": "NoExecute",
+      "key": "node.kubernetes.io/unreachable",
+      "operator": "Exists",
+      "tolerationSeconds": 300
+     }
+    ]
+   },
+   "status": {
+    "phase": "Running"
+   }
+  },
+  {
+   "apiVersion": "v1",
+   "kind": "Pod",
+   "metadata": {
+    "name": "ds-7p7sl",
+    "namespace": "tern-test-x-d12k9s",
+    "ownerReferences": [
+     {
+      "apiVersion": "apps/v1",
+      "kind": "DaemonSet",
+      "name": "ds"
+     }
+    ]
+   },
+   "spec": {
+    "nodeName": "tern-kube-dev-control-plane",
+    "tolerations": [
+     {
+      "effect": "NoExecute",
+      "key": "node.kubernetes.io/not-ready",
+      "operator": "Exists"
+     },
+     {
+      "effect": "NoExecute",
+      "key": "node.kubernetes.io/unreachable",
+      "operator": "Exists"
+     },
+     {
+      "effect": "NoSchedule",
+      "key": "node.kubernetes.io/disk-pressure",
+      "operator": "Exists"
+     },
+     {
+      "effect": "NoSchedule",
+      "key": "node.kubernetes.io/memory-pressure",
+      "operator": "Exists"
+     },
+     {
+      "effect": "NoSchedule",
+      "key": "node.kubernetes.io/pid-pressure",
+      "operator": "Exists"
+     },
+     {
+      "effect": "NoSchedule",
+      "key": "node.kubernetes.io/unschedulable",
+      "operator": "Exists"
+     }
+    ]
+   },
+   "status": {
+    "phase": "Running"
+   }
+  },
+  {
+   "apiVersion": "v1",
+   "kind": "Pod",
+   "metadata": {
+    "name": "fresh-b465f7d6b-t6k9v",
+    "namespace": "tern-test-x-d12k9s",
+    "ownerReferences": [
+     {
+      "apiVersion": "apps/v1",
+      "kind": "ReplicaSet",
+      "name": "fresh-b465f7d6b"
+     }
+    ]
+   },
+   "spec": {
+    "nodeName": "tern-kube-dev-control-plane",
+    "tolerations": [
+     {
+      "effect": "NoExecute",
+      "key": "node.kubernetes.io/not-ready",
+      "operator": "Exists",
+      "tolerationSeconds": 300
+     },
+     {
+      "effect": "NoExecute",
+      "key": "node.kubernetes.io/unreachable",
+      "operator": "Exists",
+      "tolerationSeconds": 300
+     }
+    ]
+   },
+   "status": {
+    "phase": "Running"
+   }
+  },
+  {
+   "apiVersion": "v1",
+   "kind": "Pod",
+   "metadata": {
+    "name": "hist-557dbd9674-dw8nh",
+    "namespace": "tern-test-x-d12k9s",
+    "ownerReferences": [
+     {
+      "apiVersion": "apps/v1",
+      "kind": "ReplicaSet",
+      "name": "hist-557dbd9674"
+     }
+    ]
+   },
+   "spec": {
+    "nodeName": "tern-kube-dev-control-plane",
+    "tolerations": [
+     {
+      "effect": "NoExecute",
+      "key": "node.kubernetes.io/not-ready",
+      "operator": "Exists",
+      "tolerationSeconds": 300
+     },
+     {
+      "effect": "NoExecute",
+      "key": "node.kubernetes.io/unreachable",
+      "operator": "Exists",
+      "tolerationSeconds": 300
+     }
+    ]
+   },
+   "status": {
+    "phase": "Running"
+   }
+  },
+  {
+   "apiVersion": "v1",
+   "kind": "Pod",
+   "metadata": {
+    "name": "sts-0",
+    "namespace": "tern-test-x-d12k9s",
+    "ownerReferences": [
+     {
+      "apiVersion": "apps/v1",
+      "kind": "StatefulSet",
+      "name": "sts"
+     }
+    ]
+   },
+   "spec": {
+    "nodeName": "tern-kube-dev-control-plane",
+    "tolerations": [
+     {
+      "effect": "NoExecute",
+      "key": "node.kubernetes.io/not-ready",
+      "operator": "Exists",
+      "tolerationSeconds": 300
+     },
+     {
+      "effect": "NoExecute",
+      "key": "node.kubernetes.io/unreachable",
+      "operator": "Exists",
+      "tolerationSeconds": 300
+     }
+    ]
+   },
+   "status": {
+    "phase": "Running"
+   }
+  },
+  {
+   "apiVersion": "v1",
+   "kind": "Pod",
+   "metadata": {
+    "name": "limits-only",
+    "namespace": "tern-test-x-d12usage"
+   },
+   "spec": {
+    "nodeName": "tern-kube-dev-control-plane",
+    "tolerations": [
+     {
+      "effect": "NoExecute",
+      "key": "node.kubernetes.io/not-ready",
+      "operator": "Exists",
+      "tolerationSeconds": 300
+     },
+     {
+      "effect": "NoExecute",
+      "key": "node.kubernetes.io/unreachable",
+      "operator": "Exists",
+      "tolerationSeconds": 300
+     }
+    ]
+   },
+   "status": {
+    "phase": "Running"
+   }
+  },
+  {
+   "apiVersion": "v1",
+   "kind": "Pod",
+   "metadata": {
+    "name": "sidecar-init",
+    "namespace": "tern-test-x-d12usage"
+   },
+   "spec": {
+    "nodeName": "tern-kube-dev-control-plane",
+    "tolerations": [
+     {
+      "effect": "NoExecute",
+      "key": "node.kubernetes.io/not-ready",
+      "operator": "Exists",
+      "tolerationSeconds": 300
+     },
+     {
+      "effect": "NoExecute",
+      "key": "node.kubernetes.io/unreachable",
+      "operator": "Exists",
+      "tolerationSeconds": 300
+     }
+    ]
+   },
+   "status": {
+    "phase": "Running"
+   }
+  }
+ ]
+}

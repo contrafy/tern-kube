@@ -107,16 +107,68 @@ the size and sha256 of every input file. Limits:
   same window: a kubeconfig rewritten between that check and kubectl
   loading it is not detected.
 
+### Target sets are re-read at confirm
+
+A selector (`-l`, `--field-selector`), `--all`, `-A` or a bare type
+(`rollout restart deploy`, `delete pods --all`) is resolved by kubectl when
+it runs, not when it was previewed. For those targets of delete, scale,
+rollout restart/undo/pause/resume, label, annotate, cordon, uncordon,
+drain, `set image|env|resources|selector|serviceaccount|subject` and
+taint, confirming re-runs the preview's target read
+(`plugin/lib/mutation/selection.luau`: same flags and pins, `-o jsonpath`
+with API group, kind, namespace, name and uid) and refuses when the set is
+not the previewed one: an object added or gone, or deleted and re-created
+under the same name (a new uid is a different object). The message names up
+to three objects per side; `r` previews again (also for guard requests). A
+failed re-read refuses too. Named targets and `-f`/`-k` inputs are not
+re-read (the fingerprint covers files). Limits: the seconds between this
+re-read and kubectl starting (the guard's own re-checks) are not covered,
+and kubectl resolves the selector again when it runs; `apply --prune` is
+not re-checked (its pruned set would need `kubectl diff` again). Pod
+selectors on churning workloads refuse more often: preview again.
+
 ## Guarded verbs and `kubectl edit`
 
 The approve block and the shell guard cover `apply`, `delete`, `scale`,
 `patch`, `label`, `annotate`, `cordon`, `uncordon`, `drain`,
-`rollout restart|undo|pause|resume` and `edit`. Commands that cannot change
-the cluster (`--dry-run=client|server`, `--local`, `--list`) run without
-approval, but only when every flag is known to the guard's table for that
-verb (`shell/PROTOCOL.md`, "Preconditions"). A `--patch-file` is an input
-file like `-f`: hashed into the fingerprint, re-hashed before kubectl runs.
+`rollout restart|undo|pause|resume`, `set image|env|resources|selector|
+serviceaccount|subject`, `replace` (also `--force`), `taint`, `create`
+(`-f/-k` and every subcommand), `run`, `expose` and `edit`. Commands that
+cannot change the cluster (`--dry-run=client|server`, `--local`, `--list`)
+run without approval, but only when every flag is known to the guard's
+table for that verb (`shell/PROTOCOL.md`, "Preconditions"). A
+`--patch-file` is an input file like `-f`: hashed into the fingerprint,
+re-hashed before kubectl runs; so are `--from-file` (a directory: the
+regular files directly inside it), `--from-env-file`, `--cert` and `--key`.
+Input kubectl would read from stdin (`set env -e -`) and `run -f/-k` are
+refused before any request.
 
+- `create token` is not guarded: it has no dry run, persists nothing and
+  prints a credential; it runs like any read. Other mutating verbs the
+  guard does not intercept are listed in `shell/README.md`.
+- `replace --force` deletes, then re-creates: kubectl refuses
+  `--dry-run` with `--force`, so the preview is a server dry run of the
+  delete (with `--cascade` and `--grace-period`), the file's objects read
+  offline, and a soft `replace` dry run without `--force` that tells
+  whether `--force` is needed ("field is immutable") or not. It is always
+  typed: the new object gets a new uid, history and status are lost,
+  dependents go unless `--cascade=orphan`, and if the server rejects the
+  new object the old one stays deleted.
+- Plain `replace` overwrites the whole object; a file object without
+  `metadata.resourceVersion` overwrites concurrent changes (a finding).
+- `taint` evictions are computed by Tern Kube, not by kubectl (its dry run
+  returns only the node): for a new or changed `NoExecute` taint the block
+  reads the pods on each node (at most 20 nodes, else "evictions not
+  computed") and applies the Kubernetes toleration rules
+  (`plugin/lib/mutation/taint.luau`; mirror and finished pods skipped):
+  evicted now, after `tolerationSeconds`, or staying. Pods scheduled later
+  are not known, so a `NoExecute` taint is always typed. A `NoSchedule`
+  taint that leaves no other schedulable node is typed too.
+- `run -i/-t/--attach/--rm` cannot be dry-run by kubectl: the preview drops
+  those flags and says so; the approved command runs as typed, attached to
+  your terminal.
+- `set` previews that print no object mean "unchanged" (kubectl omits
+  them), never a deletion.
 - Server state is not fingerprinted (see above): the pods a `drain`
   evicts, the PodDisruptionBudgets that block it, and the objects a
   `label`/`annotate` selector matches are what the preview saw, not what
@@ -200,10 +252,35 @@ file like `-f`: hashed into the fingerprint, re-hashed before kubectl runs.
 - Logs are not redacted: the logs lens and Explore logs show what
   `kubectl logs` prints, including any secret a workload logs, and Copy
   line/JSON copy it verbatim.
+- Commands that carry secret values (`create secret generic
+  --from-literal`, `--docker-password`, `--token`, `--password`, `set env`
+  or `run` variables under a sensitive name) are masked in the approve
+  block's step rows, header and Exact command, in `y` (toast "values
+  masked"), the audit log and the guard's outcome template and waiting
+  line (`Audit.redactArgv`); dry-run Secret objects are masked like any
+  Secret. The values still travel unmasked where kubectl needs them: the
+  guard's request file (0600, removed when the guard finishes) and the
+  dry-run argv. Configmap literals stay visible.
 - GitOps export writes placeholders instead of Secret values
   (`plugin/lib/gitops/clean.luau`).
 - Test fixtures never contain Secret data: capture scripts list Secrets with
   `-o name` only (`scripts/fixtures/capture-json.sh`).
+- Decode values (`z` in Explore's object view, a chip on lens
+  `get secret -o yaml` / `-o json`) has two gates: `security.show_secret_values`
+  (otherwise the values are masked and there is nothing to decode) and a click
+  or key per view. It is off by default; the flag lives only on the Explore
+  route (never saved, dropped when another view opens) or in the lens click
+  action (a reload hides it). The decoded values appear only in a separate
+  display-only card while rendering, never in action names, toasts, the
+  clipboard, saved state, audit records or logs, and the YAML/tree keeps
+  kubectl's base64, so nothing decoded can be applied back. The decoder is
+  strict (canonical padded base64; anything else is shown as printed with a
+  warning). Control characters, DEL, C1, bidi controls and zero-width
+  characters are escaped (`\x1b`, `\u{202e}`); NUL, invalid UTF-8 or mostly
+  escaped values show as a hex dump of the first 256 bytes; values over
+  64 KiB, or past 1 MiB decoded per view, are not decoded
+  (`plugin/lib/model/secretdata.luau`). `describe` prints sizes only, so it
+  has no toggle.
 
 ## Compare across contexts
 
@@ -241,6 +318,48 @@ so a mistake there could show data from, or act on, the wrong one.
   `compare.max_parallel` the runs in flight, `compare.max_objects` the list
   size, and every run carries `explore.query_timeout_ms` (drift diffs:
   `mutations.preview_timeout_ms`). Nothing refreshes on its own.
+
+## Resource usage
+
+The Explore usage views (`%`, **Tern Kube: Resource usage**) only read.
+
+- Read-only: `get` on pods, nodes, `pods.metrics.k8s.io` and
+  `nodes.metrics.k8s.io`, with constant jsonpath templates; no exec, no
+  mutation. Mutations started from a usage row (for example `C` on a hot
+  node) go through the approve block like anywhere else; compare (`x`) is
+  not offered there.
+- Pinning: every read carries `--context` (and `--kubeconfig` when known)
+  through `Query.base`; selectors are validated and node names checked as
+  DNS-1123 subdomains before they reach `--field-selector`; pod names come
+  from parsed output only.
+- Less data in memory than lists: the templates read names, phase, node,
+  requests, limits and usage, never env, annotations or Secrets.
+- RBAC: pods usage needs `list` on `pods` and on `pods.metrics.k8s.io` in
+  the namespace (or cluster-wide for all namespaces); nodes usage needs
+  `list` on `nodes`, `nodes.metrics.k8s.io` and `pods` at cluster scope. A
+  denied read shows kubectl's message and the missing permission, and the
+  affected columns read `<forbidden>`, never zero.
+- Bounds: one read per sub-query on open and per `r`; a `w` sample reads the
+  metrics query only, at most 8 times in 2 minutes, one in flight, and
+  stops on any navigation. `explore.allow_live_queries = false` disables
+  `%` and `w`; `explore.query_timeout_ms` applies to every read. The nodes
+  view's `get pods -A` costs the API server what `kubectl get pods -A`
+  does (the jsonpath is applied client-side).
+
+## Explore `:` prompt
+
+- Nothing typed reaches kubectl verbatim (`plugin/lib/explore/command.luau`,
+  `plugin/lib/kubectl/discovery.luau`): a kind becomes the canonical
+  `plural[.group]` of discovery or kubectl's static table, a scope must be
+  a DNS-1123 label (or `-A` / `*`), and `ctx NAME` switches only to a name
+  exactly in the kubeconfig's context list; anything else opens the
+  filtered chooser. Every query stays an argv with `--context` pinned.
+- `:ctx` is the chooser: the target becomes `chosen`, unconfirmed, and
+  mutations still ask for Confirm target. A lens link with `pick=1`
+  (get-contexts rows) opens the same way. The kubeconfig is never written.
+- Discovery output is kept in the host's memory per kubeconfig and context
+  (16 targets, never on disk) and holds resource names only; a partial
+  discovery is not kept. `explore.allow_live_queries = false` refuses `:`.
 
 ## Quick actions: exec never prompts
 
@@ -286,14 +405,17 @@ kubeconfig.
 `<plugin data>/audit.log`, one JSON line per decision, appended with umask
 077 (`plugin/mutate_host.luau`). Fields (`plugin/lib/mutation/audit.luau`):
 `v`, `decided_at`, `decision` (approved, denied, cancelled, blocked,
-executed, failed), `mode` (native, guard), `op`, `family`, `context`,
+executed, failed), `mode` (native, guard, quick), `run` (quick actions),
+`op`, `family`, `context`,
 `context_source`, `namespace`, `kubeconfig` (path), `cwd`, `argv`, `tier`,
 `fingerprint`, `exit_code`, `previewed_at`, `started_at`, `finished_at`,
 `objects` (up to 50 previewed `Kind namespace/name`), `objects_total` and
 `files` (path and sha256 of each fingerprinted input file); helm rollbacks
 add `release`, `revision` (the target) and `from_revision` (the newest
 revision when previewed).
-Values of `--token` and `--password` in argv are replaced by `<redacted>`;
+Values of `--token`, `--password` and `--docker-password`, `create secret`
+`--from-literal` values (the key stays) and `set env`/`run` variables under
+a sensitive name (`DB_PASSWORD=...`) are replaced by `<redacted>` in argv;
 inline `-p` patch text stays in argv, since it is the command.
 Command output, environment values and file contents are never logged. The
 log is local, unsigned and user-writable: a record of what Tern Kube did,
@@ -305,7 +427,20 @@ commands by the guard: the block hands it the record with the outcome
 fields left open (`audit` in the response, `shell/PROTOCOL.md`), and the
 guard appends it to the same log once kubectl exits (for `kubectl edit`,
 after the last approved round). Its `namespace` is the previewed one, which
-the guard has just checked kubectl uses. Mutating quick actions (`kubectl
-debug`, CronJob run-now) record only `approved`: they run in a split the
-window opens after the block closed, possibly on another host, and their
-exit status is shown in that split, not logged.
+the guard has just checked kubectl uses.
+
+Mutating quick actions (`kubectl debug` on a pod or node, CronJob run-now)
+are logged with `mode: quick` and a `run` id: the window reads it from
+/dev/urandom with the grant token (separate bytes; the run id is not a
+capability) and hands it to the block, which logs it with `approved`. The
+window builds the split's outcome record from the same validated link
+fields as its argv (never URL text, never the token) and the split appends
+it with `tern-kube-guard record` once kubectl exits (`shell/PROTOCOL.md`
+"Quick outcome records"): `executed` for exit 0, else `failed`. For `debug
+-it` a non-zero status can be the debug shell's own after the ephemeral
+container was created; for run-now it is a create failure. The record goes
+to the audit log of the host the split ran on, which may differ from the
+block's (remote panes): join `approved` and the outcome on `run`. A split
+whose recorder is missing (an older remote install) still runs kubectl and
+prints "outcome not recorded". Any same-user process can call `record`
+and append quick records: within the trust boundary above.

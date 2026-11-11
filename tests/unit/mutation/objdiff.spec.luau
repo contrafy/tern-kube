@@ -184,4 +184,32 @@ describe("mutation.objdiff compute", function()
 	end)
 end)
 
+-- replace --force re-creates: uid, age and status cannot carry over, so the
+-- preview diff must not show them as kept or as removed by the file.
+describe("mutation.objdiff recreated and manifests", function()
+	it("drops identity, age and status from both sides of a forced replace", function()
+		local live = {
+			apiVersion = "v1",
+			kind = "ConfigMap",
+			metadata = { name = "c", namespace = "a", uid = "u1", creationTimestamp = "t", resourceVersion = "5" },
+			data = { k = "1" },
+			status = { x = 1 },
+		}
+		local out = Objdiff.recreated({ live })
+		expect(out[1].metadata).toEqual({ name = "c", namespace = "a" })
+		expect(out[1].status).toBeNil()
+		expect(live.metadata.uid).toBe("u1")
+	end)
+
+	it("renders objects as YAML documents the manifest heuristics can read", function()
+		local m = Objdiff.manifests(
+			{ { apiVersion = "v1", kind = "Service", metadata = { name = "web" }, spec = { type = "NodePort" } } },
+			HIDE
+		)
+		expect(m[1].path).toBe("v1.Service..web")
+		expect(m[1].text).toContain("kind: Service")
+		expect(m[1].text).toContain("type: NodePort")
+	end)
+end)
+
 return nil

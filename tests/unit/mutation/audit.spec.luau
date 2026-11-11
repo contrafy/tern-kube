@@ -94,6 +94,61 @@ describe("audit record", function()
 		})
 	end)
 
+	-- A create-secret literal would otherwise land in the approve block, the
+	-- clipboard and audit.log; configmap literals are shown in clear anyway.
+	it("masks secret literals, docker passwords and sensitive env values, keeping the keys", function()
+		expect(Audit.redactArgv({
+			"kubectl",
+			"create",
+			"secret",
+			"generic",
+			"s1",
+			"--from-literal=password=hunter2",
+			"--from-literal",
+			"user=admin",
+		})).toEqual({
+			"kubectl",
+			"create",
+			"secret",
+			"generic",
+			"s1",
+			"--from-literal=password=<redacted>",
+			"--from-literal",
+			"user=<redacted>",
+		})
+		expect(Audit.redactArgv({ "kubectl", "create", "secret", "docker-registry", "r", "--docker-password=pw" })[6]).toBe(
+			"--docker-password=<redacted>"
+		)
+		expect(Audit.redactArgv({ "kubectl", "create", "configmap", "c", "--from-literal=a=b" })[5]).toBe(
+			"--from-literal=a=b"
+		)
+		expect(Audit.redactArgv({
+			"kubectl",
+			"set",
+			"env",
+			"deploy/web",
+			"DB_PASSWORD=pw",
+			"LOG=debug",
+			"--env=API_TOKEN=t",
+			"-e",
+			"SECRET_KEY=k",
+		})).toEqual({
+			"kubectl",
+			"set",
+			"env",
+			"deploy/web",
+			"DB_PASSWORD=<redacted>",
+			"LOG=debug",
+			"--env=API_TOKEN=<redacted>",
+			"-e",
+			"SECRET_KEY=<redacted>",
+		})
+		local line = Audit.line(
+			Audit.record(plan({ "kubectl", "create", "secret", "generic", "s", "--from-literal=k=hunter2" }), EVENT)
+		)
+		expect((string.find(line, "hunter2", 1, true))).toBeNil()
+	end)
+
 	it("escapes JSON so odd argv cannot break the line format", function()
 		local p = plan({ "kubectl", "delete", "pod", 'we"b\n\\x\1' })
 		local line = Audit.line(Audit.record(p, EVENT))
@@ -175,6 +230,70 @@ describe("audit record: guard outcome template", function()
 			finishedAt = 1790000009,
 			objects = { "ConfigMap apps/x" },
 		})))
+	end)
+end)
+
+-- A mutating quick action (debug, CronJob run-now) runs in a split the block
+-- may not share a machine with: the window builds the outcome record from
+-- the fields that build the argv, and the split's `tern-kube-guard record`
+-- fills in what only it knows. The run id ties it to the block's approved
+-- record; the grant token never appears.
+describe("audit record: quick outcome template", function()
+	local RUN = string.rep("0f", 16)
+	local Q: Audit.QuickRun = {
+		op = "debug pod",
+		family = "debug-pod",
+		context = "kind-dev",
+		namespace = "apps",
+		kubeconfig = "/k/config",
+		argv = { "kubectl", "debug", "-it", "--context", "kind-dev", "-n", "apps", "web", "--password=hunter2" },
+		run = RUN,
+		objects = { "Pod apps/web" },
+	}
+
+	it("is one quick-mode line with the run id and each placeholder once", function()
+		local tpl = Audit.quickTemplate(Q)
+		expect((string.find(tpl, "\n", 1, true))).toBeNil()
+		expect(string.sub(tpl, 1, 7)).toBe('{"v":1,')
+		expect(tpl).toContain('"mode":"quick","run":"' .. RUN .. '","op":"debug pod","family":"debug-pod"')
+		expect(tpl).toContain('"context":"kind-dev","context_source":"flag","namespace":"apps"')
+		expect(tpl).toContain('"objects":["Pod apps/web"],"objects_total":1')
+		for _, f in Audit.OUTCOME_FIELDS do
+			local _, j = string.find(tpl, f.needle, 1, true)
+			expect(j ~= nil).toBe(true)
+			expect((string.find(tpl, f.needle, (j :: number) + 1, true))).toBeNil()
+		end
+	end)
+
+	it("has no cwd, tier or fingerprint (the approved record holds those) and masks credentials", function()
+		local tpl = Audit.quickTemplate(Q)
+		expect((string.find(tpl, '"cwd"', 1, true))).toBeNil()
+		expect((string.find(tpl, '"tier"', 1, true))).toBeNil()
+		expect((string.find(tpl, '"fingerprint"', 1, true))).toBeNil()
+		expect((string.find(tpl, "hunter2", 1, true))).toBeNil()
+	end)
+
+	it("leaves out a malformed run id instead of logging arbitrary text", function()
+		local q = table.clone(Q)
+		q.run = "not a run id"
+		expect((string.find(Audit.quickTemplate(q), '"run"', 1, true))).toBeNil()
+	end)
+
+	it("carries the run id in an approved quick record", function()
+		local line = Audit.line(Audit.record(plan({ "kubectl", "delete", "pod", "web" }), {
+			mode = "quick",
+			decision = "approved",
+			decidedAt = 1790000005,
+			run = RUN,
+		}))
+		expect(line).toContain('"mode":"quick","run":"' .. RUN .. '"')
+		local bad = Audit.line(Audit.record(plan({ "kubectl", "delete", "pod", "web" }), {
+			mode = "quick",
+			decision = "approved",
+			decidedAt = 1790000005,
+			run = "zz",
+		}))
+		expect((string.find(bad, '"run"', 1, true))).toBeNil()
 	end)
 end)
 

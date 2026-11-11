@@ -213,6 +213,34 @@ describe("mutate links", function()
 		expect(argv("cordon", podOnNode)).toEqual({ "kubectl", "cordon", "w1" })
 	end)
 
+	-- The rollout history lens offers "Roll back to N": the link carries the
+	-- revision and the approve block runs exactly `rollout undo --to-revision=N`.
+	it("undo carries an optional revision as --to-revision", function()
+		local origin: Link.Origin = { context = "kind-dev", source = "flag" }
+		local deploy: any = { kind = "Deployment", group = "apps", name = "web", namespace = "apps", source = "live" }
+		local url = Link.forRevision(deploy, 2, origin) :: string
+		expect(url).toContain("op=undo")
+		expect(url).toContain("revision=2")
+		local r = Link.decode(url) :: Link.Request
+		expect(r.revision).toBe(2)
+		expect(Link.argv(r, KUBECTL)).toEqual({
+			"kubectl",
+			"rollout",
+			"undo",
+			"deployment.apps/web",
+			"--to-revision=2",
+			"-n",
+			"apps",
+		})
+		for _, bad in { "0", "-1", "x", "1.5" } do
+			expect((Link.decode("tern-kube://mutate?op=undo&kind=deployment.apps&name=web&revision=" .. bad))).toBeNil()
+		end
+		-- Other ops still refuse a revision.
+		expect((Link.decode("tern-kube://mutate?op=restart&kind=deployment.apps&name=web&revision=2"))).toBeNil()
+		local svc: any = { kind = "Service", name = "s", namespace = "a", source = "live" }
+		expect((Link.forRevision(svc, 1, origin))).toBeNil()
+	end)
+
 	it("refuses ops on kinds they do not apply to, and parameters of other ops", function()
 		local origin: Link.Origin = {}
 		local cases: { { any } } = {
@@ -593,8 +621,14 @@ describe("quick-action grants", function()
 		return Quick.decode(url) :: Quick.Request
 	end
 
+	local RUN = string.rep("0f", 16)
+
 	local function minted(now: number?, ttl: number?): Link.Grants
-		return Link.mintGrant(nil, TOKEN, base, now or 100, ttl) :: Link.Grants
+		return Link.mintGrant(nil, TOKEN, base, now or 100, ttl, RUN) :: Link.Grants
+	end
+
+	local function passes(grants: Link.Grants, token: string?, url: string, now: number): boolean
+		return (Link.consumeGrant(grants, token, req(url), now)) ~= nil
 	end
 
 	it("lasts ten minutes from mint (preview plus review)", function()
@@ -603,18 +637,34 @@ describe("quick-action grants", function()
 	end)
 
 	it("lets the exact link through exactly once", function()
-		local ok, rest = Link.consumeGrant(minted(), TOKEN, req(base .. "&confirm=" .. TOKEN), 110)
-		expect(ok).toBe(true)
+		local g, rest = Link.consumeGrant(minted(), TOKEN, req(base .. "&confirm=" .. TOKEN), 110)
+		expect(g ~= nil).toBe(true)
 		expect(rest[TOKEN]).toBeNil()
-		expect((Link.consumeGrant(rest, TOKEN, req(base), 111))).toBe(false)
+		expect(passes(rest, TOKEN, base, 111)).toBe(false)
+	end)
+
+	-- The run id ties the block's approved record to the split's outcome
+	-- record; only the window sees both, so it travels in the grant.
+	it("hands back the run id minted with the grant", function()
+		local g = Link.consumeGrant(minted(), TOKEN, req(base), 110) :: Link.Grant
+		expect(g.run).toBe(RUN)
+		local plain = Link.mintGrant(nil, TOKEN, base, 100) :: Link.Grants
+		expect((Link.consumeGrant(plain, TOKEN, req(base), 110) :: Link.Grant).run).toBeNil()
+		expect((Link.mintGrant(nil, TOKEN, base, 100, nil, "XYZ"))).toBeNil()
+	end)
+
+	it("drops a malformed stored run id, keeping the grant", function()
+		local stored: any = { [TOKEN] = { url = base, expires = 700, run = "not hex" } }
+		local g = Link.consumeGrant(stored, TOKEN, req(base), 110) :: Link.Grant
+		expect(g.run).toBeNil()
 	end)
 
 	it("accepts what the approve block resolves: kubeconfig, image, suffix", function()
 		local url = base .. "&kubeconfig=%2Fk%2Fconfig&image=busybox%3A1.36"
-		expect((Link.consumeGrant(minted(), TOKEN, req(url), 110))).toBe(true)
+		expect(passes(minted(), TOKEN, url, 110)).toBe(true)
 		local cj = "tern-kube://act/cronjob-run?kind=CronJob&name=nightly&namespace=batch"
 		local grants = Link.mintGrant(nil, TOKEN, cj, 100) :: Link.Grants
-		expect((Link.consumeGrant(grants, TOKEN, req(cj .. "&context=kind-dev&suffix=3e8"), 110))).toBe(true)
+		expect(passes(grants, TOKEN, cj .. "&context=kind-dev&suffix=3e8", 110)).toBe(true)
 		for field in Link.RESOLVED_FIELDS do
 			expect(table.find({ "context", "kubeconfig", "image", "suffix" }, field) ~= nil).toBe(true)
 		end
@@ -631,18 +681,18 @@ describe("quick-action grants", function()
 				"tern-kube://act/debug-pod?kind=Pod&name=web&namespace=apps",
 			}
 		do
-			local ok, rest, why = Link.consumeGrant(minted(), TOKEN, req(url), 110)
-			expect(ok).toBe(false)
+			local g, rest, why = Link.consumeGrant(minted(), TOKEN, req(url), 110)
+			expect(g).toBeNil()
 			expect(why).toContain("different action")
 			expect(rest[TOKEN]).toBeNil()
 		end
 	end)
 
 	it("refuses expired and malformed tokens", function()
-		expect((Link.consumeGrant(minted(100, 30), TOKEN, req(base), 131))).toBe(false)
-		expect((Link.consumeGrant(minted(), TOKEN, req(base), 701))).toBe(false)
-		expect((Link.consumeGrant(minted(), "nothex", req(base), 101))).toBe(false)
-		expect((Link.consumeGrant(minted(), nil, req(base), 101))).toBe(false)
+		expect(passes(minted(100, 30), TOKEN, base, 131)).toBe(false)
+		expect(passes(minted(), TOKEN, base, 701)).toBe(false)
+		expect(passes(minted(), "nothex", base, 101)).toBe(false)
+		expect(passes(minted(), nil, base, 101)).toBe(false)
 		expect((Link.mintGrant(nil, "short", base, 100))).toBeNil()
 		expect((Link.mintGrant(nil, string.upper(TOKEN), base, 100))).toBeNil()
 	end)

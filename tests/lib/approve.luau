@@ -3,6 +3,7 @@
 -- scripted responder, records every other effect, and offers a fake cluster
 -- whose answers follow the argv the session built (context, names).
 local Fingerprint = require("../../plugin/lib/mutation/fingerprint")
+local Objdiff = require("../../plugin/lib/mutation/objdiff")
 local Quick = require("../../plugin/lib/actions/quick")
 local Session = require("../../plugin/lib/mutation/session")
 local json = require("./json")
@@ -94,6 +95,8 @@ export type Opts = {
 	-- Quick links get the window-minted grant token as args[2] (M.TOKEN);
 	-- `token = false` opens without one, a string replaces it.
 	token: (string | boolean)?,
+	-- The window's run id as args[3] (none by default).
+	run: string?,
 	-- <plugin data>/tmp (default M.TMP): apply bundles the block deletes.
 	tmp: string?,
 }
@@ -103,6 +106,9 @@ function M.init(arg: string, opts: Opts?): (State, { Effect })
 	local args = { arg }
 	if string.sub(arg, 1, #Quick.SCHEME) == Quick.SCHEME and o.token ~= false then
 		table.insert(args, if type(o.token) == "string" then o.token else M.TOKEN)
+		if o.run then
+			table.insert(args, o.run)
+		end
 	end
 	return Session.init({
 		args = args,
@@ -215,6 +221,26 @@ function M.cluster(world: World?): (Effect) -> Result?
 			return M.ok('{"kind":"List","items":[]}')
 		elseif tag == "kc-check" then
 			return M.ok()
+		elseif tag == "v-selection" then
+			-- The set the targets read answers, as kubectl's jsonpath prints it
+			-- (a single object counts as a one-item list here).
+			local targets = M.cluster(w)({ t = "run", tag = "step:targets", argv = argv } :: any)
+			if targets == nil or targets.status ~= 0 then
+				return targets
+			end
+			local lines: { string } = {}
+			local objects: { any } = Objdiff.decodeStream(targets.stdout, json.decode) or {}
+			for _, o in objects do
+				local meta = o.metadata or {}
+				table.insert(
+					lines,
+					table.concat(
+						{ o.apiVersion or "", o.kind or "", meta.namespace or "", meta.name or "", meta.uid or "" },
+						"\t"
+					)
+				)
+			end
+			return M.ok(table.concat(lines, "\n") .. (if #lines > 0 then "\n" else ""))
 		elseif tag == "exec" then
 			return M.ok('deployment.apps "web" deleted\n')
 		elseif tag == "respond" then

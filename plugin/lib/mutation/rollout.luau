@@ -8,6 +8,8 @@
 -- pause/resume and cordon/uncordon have no dry run that prints the object;
 -- their change is one field.
 
+local RolloutHistory = require("../parse/rollout_history")
+
 export type History = { kind: string, group: string?, name: string, revisions: { number } }
 export type UndoTarget = { key: string, name: string, from: number, to: number }
 
@@ -32,36 +34,19 @@ local function deepCopy(v: any): any
 	return out
 end
 
--- `rollout history` text, one block per object:
---   deployment.apps/web
---   REVISION  CHANGE-CAUSE
---   1         <none>
--- Revisions come back ascending whatever order kubectl printed.
+-- `rollout history` text (parse/rollout_history), per object its resource
+-- (`deployment`), group and revisions, ascending whatever order kubectl
+-- printed.
 function M.parseHistory(text: string): { History }
 	local out: { History } = {}
-	local current: History? = nil
-	for _, raw in string.split(text, "\n") do
-		local line = string.match(raw, "^%s*(.-)%s*$") or raw
-		local resource, name = string.match(line, "^([%w%.%-]+)/(%S+)$")
-		if resource and name then
-			local dot = string.find(resource, ".", 1, true)
-			local entry: History = {
-				kind = if dot then string.sub(resource, 1, dot - 1) else resource,
-				group = if dot then string.sub(resource, dot + 1) else nil,
-				name = name,
-				revisions = {},
-			}
-			table.insert(out, entry)
-			current = entry
-		elseif current then
-			local rev = string.match(line, "^(%d+)%s") or string.match(line, "^(%d+)$")
-			if rev then
-				table.insert(current.revisions, tonumber(rev) :: number)
-			end
+	for _, obj in RolloutHistory.parseList(string.split(text, "\n")).objects do
+		local resource, group = string.match(obj.type, "^([^.]+)%.(.+)$")
+		local revisions: { number } = table.create(#obj.revisions)
+		for i, r in obj.revisions do
+			revisions[i] = r.revision
 		end
-	end
-	for _, h in out do
-		table.sort(h.revisions)
+		table.sort(revisions)
+		table.insert(out, { kind = resource or obj.type, group = group, name = obj.name, revisions = revisions })
 	end
 	return out
 end

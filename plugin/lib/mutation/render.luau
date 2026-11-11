@@ -2,6 +2,7 @@
 -- View of the approve block (plugin/lib/mutation/session.luau state): what
 -- will run where, what the preview found, how risky it looks and what the
 -- user must do to confirm. Plain `{k, p, c}` tables only (no `tern`).
+local Audit = require("./audit")
 local Capture = require("../lens/capture")
 local Command = require("../kubectl/command")
 local Confirm = require("./confirm")
@@ -216,7 +217,12 @@ local function header(s: State): Node
 		local ns: string
 		if plan.helm then
 			ns = (plan.helm :: T.HelmRollback).namespace .. " (release namespace)"
-		elseif plan.family == "cordon" or plan.family == "uncordon" or plan.family == "drain" then
+		elseif
+			plan.family == "cordon"
+			or plan.family == "uncordon"
+			or plan.family == "drain"
+			or plan.family == "taint"
+		then
 			ns = "cluster-scoped (nodes)"
 		elseif plan.family == "edit" then
 			ns = "as in the edited objects"
@@ -279,7 +285,10 @@ local function stepRow(run: Session.StepRun, i: number, showArgv: boolean): Node
 	end
 	local children: { Node } = { ui.row({ icon, ui.text(spans) }, { key = "line" }) }
 	if showArgv then
-		table.insert(children, ui.text({ ui.span(Command.format(run.step.argv), "mono muted") }, { key = "argv" }))
+		table.insert(
+			children,
+			ui.text({ ui.span(Command.format(Audit.redactArgv(run.step.argv)), "mono muted") }, { key = "argv" })
+		)
 	end
 	return ui.col(children, { key = "s" .. i, gap = "none" })
 end
@@ -324,6 +333,15 @@ local TARGET_WORD: { [string]: string } = {
 	uncordon = "to uncordon",
 	drain = "to drain",
 	edit = "edited",
+	["set-image"] = "to update",
+	["set-env"] = "to update",
+	["set-resources"] = "to update",
+	["set-selector"] = "to update",
+	["set-serviceaccount"] = "to update",
+	["set-subject"] = "to update",
+	replace = "to replace",
+	taint = "to taint",
+	expose = "to expose",
 }
 
 local OBJECT_VERB: { [string]: string } = {
@@ -340,6 +358,15 @@ local OBJECT_VERB: { [string]: string } = {
 	uncordon = "uncordoned",
 	drain = "drained",
 	edit = "edited",
+	["set-image"] = "updated",
+	["set-env"] = "updated",
+	["set-resources"] = "updated",
+	["set-selector"] = "updated",
+	["set-serviceaccount"] = "updated",
+	["set-subject"] = "updated",
+	replace = "replaced",
+	taint = "tainted",
+	expose = "exposed",
 }
 
 local function countBadges(s: State): { Node }
@@ -393,6 +420,18 @@ local function countBadges(s: State): { Node }
 	if d then
 		add(#d.evictions, "to evict", "error")
 		add(#d.pdbBlocked, "PDB-blocked", "error")
+	end
+	local tf = s.taintFacts
+	if tf then
+		local now, later, stay = 0, 0, 0
+		for _, n in tf.nodes do
+			now += #n.evictions.immediate
+			later += #n.evictions.delayed
+			stay += #n.evictions.stays
+		end
+		add(now, "evicted now", "error")
+		add(later, "evicted later", "warning")
+		add(stay, "stay", "muted")
 	end
 	return out
 end
@@ -712,6 +751,66 @@ local function drainCard(s: State): Node?
 	end
 	local title = string.format("%d pod(s) to evict", #d.evictions)
 	return ui.card({ title }, rows, { key = "drain", role = "tern-kube.approve-drain" })
+end
+
+-- Pods the NoExecute taint evicts, by namespace (drain card style); the
+-- server dry run says nothing about them, tern-kube computes them.
+local function taintCard(s: State): Node?
+	local f = s.taintFacts
+	if f == nil or (#f.nodes == 0 and #f.unknown == 0) then
+		return nil
+	end
+	local byNs: { [string]: { { name: string, mark: string, tone: string } } } = {}
+	local order: { string } = {}
+	local immediate = 0
+	local function addPod(p: { namespace: string, name: string }, mark: string, tone: string)
+		if byNs[p.namespace] == nil then
+			byNs[p.namespace] = {}
+			table.insert(order, p.namespace)
+		end
+		table.insert(byNs[p.namespace], { name = p.name, mark = mark, tone = tone })
+	end
+	for _, n in f.nodes do
+		local e = n.evictions
+		immediate += #e.immediate
+		for _, p in e.immediate do
+			addPod(p, "evicted now", "error")
+		end
+		for _, p in e.delayed do
+			addPod(p, string.format("evicted after %ds", p.seconds), "warning")
+		end
+	end
+	table.sort(order)
+	local rows: { Node } = {}
+	for _, why in f.unknown do
+		table.insert(rows, ui.text({ ui.span("Not computed: " .. why, "warning") }, { key = "u" .. #rows }))
+	end
+	for i, ns in order do
+		local pods = byNs[ns]
+		table.sort(pods, function(a, b): boolean
+			return a.name < b.name
+		end)
+		local line: { Node } = { ui.text({ ui.span(ns, "strong") }, { key = "ns" }) }
+		for j, p in pods do
+			line[#line + 1] = ui.row({
+				ui.text({ ui.span(p.name, "mono") }, { key = "n" }),
+				ui.badge(p.mark, p.tone, { key = "b" }),
+			}, { key = "p" .. j, wrap = true })
+		end
+		table.insert(rows, ui.col(line, { key = "g" .. i, gap = "none" }))
+	end
+	if #order == 0 and #f.unknown == 0 then
+		table.insert(rows, ui.muted("No running pod is evicted: every pod tolerates the taint.", { key = "none" }))
+	end
+	local stays = 0
+	for _, n in f.nodes do
+		stays += #n.evictions.stays
+	end
+	if stays > 0 then
+		table.insert(rows, ui.muted(string.format("%d pod(s) tolerate it and stay.", stays), { key = "stays" }))
+	end
+	local title = string.format("Pods evicted by the taint: %d now", immediate)
+	return ui.card({ title }, rows, { key = "taint", role = "tern-kube.approve-drain" })
 end
 
 local function editCard(s: State): Node?
@@ -1260,6 +1359,7 @@ function M.view(s: State): View
 	add(noDiffNote(s))
 	add(objectsCard(s))
 	add(drainCard(s))
+	add(taintCard(s))
 	add(editCard(s))
 	add(risksCard(s))
 	if s.phase == "done" and s.launched then

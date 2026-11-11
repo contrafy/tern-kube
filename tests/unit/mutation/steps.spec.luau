@@ -566,11 +566,22 @@ describe("mutation preview stage 2", function()
 		expect(err).toBeNil()
 	end)
 
-	it("other families have no stage 2; only undo re-reads at confirm", function()
+	it("other families have no stage 2; only undo and target sets re-read at confirm", function()
 		expect((Steps.followUp(plan("kubectl label configmap/cm a=b"), {}, 15000, json.decode))).toBeNil()
 		expect(#Steps.verifySteps(plan("kubectl label configmap/cm a=b"))).toBe(0)
 		local again = Steps.verifySteps(plan("kubectl rollout undo deployment/web"))
+		expect(#again).toBe(1)
 		expect(again[1].id).toBe("history")
+	end)
+
+	it("re-reads a selected set at confirm: kubectl resolves it again when it runs", function()
+		local sel = Steps.verifySteps(plan("kubectl delete pods -l app=web"))
+		expect(#sel).toBe(1)
+		expect(sel[1].kind).toBe("selection")
+		-- Undo by selector: the history and the set both decide the preview.
+		local both = Steps.verifySteps(plan("kubectl rollout undo deployment -l app=web"))
+		expect(both[1].kind).toBe("history")
+		expect(both[2].kind).toBe("selection")
 	end)
 
 	it("reads a drain probe that ends on a disruption budget as a finding", function()
@@ -583,6 +594,128 @@ describe("mutation preview stage 2", function()
 		expect(blocked.ok).toBe(true)
 		local broken = Steps.outcome(evict, { code = 1, stderr = 'error: nodes "x" not found' })
 		expect(broken.ok).toBe(false)
+	end)
+end)
+
+describe("mutation preview steps: v1.2 verbs", function()
+	it("set reads the targets without the edits, then dry-runs the set with -o json", function()
+		local p = plan("kubectl set image deployment/web app=nginx:1.27")
+		expect(summary(p)).toEqual({ "targets:targets", "after:after" })
+		expect(p.steps[1].argv).toEqual(withNs("get", "deployment/web", "-o", "json"))
+		expect(p.steps[2].argv).toEqual(
+			withNs("set", "image", "deployment/web", "app=nginx:1.27", "--dry-run=server", "-o", "json")
+		)
+		local sa = plan("kubectl set sa deployment web robot")
+		expect(sa.steps[1].argv).toEqual(withNs("get", "deployment", "web", "-o", "json"))
+	end)
+
+	it("replace dry-runs the file; --force never pairs --force with --dry-run", function()
+		local r = plan("kubectl replace -f web.yaml")
+		expect(summary(r)).toEqual({ "targets:targets", "convert:convert", "after:after" })
+		expect(r.steps[2].soft).toBe(true)
+		expect(r.steps[3].argv).toEqual(pinned("replace", "--filename=web.yaml", "--dry-run=server", "-o", "json"))
+		local f = plan("kubectl replace --force --grace-period=5 -f web.yaml")
+		expect(summary(f)).toEqual({ "targets:targets", "convert:convert", "dry-run:dry-run", "probe:probe" })
+		expect(f.steps[2].argv).toEqual({
+			"kubectl",
+			"patch",
+			"--local",
+			"--type=merge",
+			"-p",
+			"{}",
+			"-f",
+			"web.yaml",
+			"-o",
+			"json",
+		})
+		expect(f.steps[3].argv).toEqual(pinned("delete", "--filename=web.yaml", "--grace-period=5", "--dry-run=server"))
+		expect(f.steps[4].argv).toEqual(pinned("replace", "--filename=web.yaml", "--dry-run=server", "-o", "json"))
+		expect(f.steps[4].soft).toBe(true)
+		for _, s in f.steps do
+			local force = table.find(s.argv, "--force=true") ~= nil
+			local dry = table.find(s.argv, "--dry-run=server") ~= nil
+			expect(force and dry).toBe(false)
+		end
+	end)
+
+	it("taint reads the nodes, dry-runs the taint, and reads every node for NoSchedule", function()
+		local p = plan("kubectl taint nodes n1 dedicated=gpu:NoSchedule")
+		expect(summary(p)).toEqual({ "targets:targets", "after:after", "nodes:nodes" })
+		expect(p.steps[1].argv).toEqual(pinned("get", "nodes", "n1", "-o", "json"))
+		expect(p.steps[2].argv).toEqual(
+			pinned("taint", "nodes", "n1", "dedicated=gpu:NoSchedule", "--dry-run=server", "-o", "json")
+		)
+		local all = plan("kubectl taint nodes --all k:NoExecute")
+		expect(all.steps[1].argv).toEqual(pinned("get", "nodes", "-o", "json"))
+		expect(summary(all)).toEqual({ "targets:targets", "after:after" })
+	end)
+
+	it("run drops the attach flags kubectl refuses with a dry run and keeps the command", function()
+		local p = plan("kubectl run tmp --image=busybox -it --rm --restart=Never -- sh -c date")
+		expect(summary(p)).toEqual({ "after:after" })
+		expect(p.steps[1].argv).toEqual(
+			withNs(
+				"run",
+				"tmp",
+				"--image=busybox",
+				"--restart=Never",
+				"--dry-run=server",
+				"-o",
+				"json",
+				"--",
+				"sh",
+				"-c",
+				"date"
+			)
+		)
+	end)
+
+	it("create dry-runs the subcommand; expose reads the exposed object first", function()
+		local c = plan("kubectl create secret generic s1 --from-literal=a=b")
+		expect(c.steps[1].argv).toEqual(
+			withNs("create", "secret", "generic", "s1", "--from-literal=a=b", "--dry-run=server", "-o", "json")
+		)
+		local e = plan("kubectl expose deploy web --port=80 --selector=app=web")
+		expect(summary(e)).toEqual({ "targets:targets", "after:after" })
+		-- --selector is the Service's selector: it must not filter the read.
+		expect(e.steps[1].argv).toEqual(withNs("get", "deploy", "web", "-o", "json"))
+	end)
+
+	it("taint stage 2 reads the pods of each node a NoExecute taint lands on, at most 20", function()
+		local p = plan("kubectl taint nodes --all k:NoExecute")
+		local function nodes(n: number, tainted: boolean): string
+			local items: { string } = {}
+			for i = 1, n do
+				table.insert(
+					items,
+					string.format(
+						'{"apiVersion":"v1","kind":"Node","metadata":{"name":"n%d"},"spec":{%s}}',
+						i,
+						if tainted then '"taints":[{"key":"k","effect":"NoExecute"}]' else ""
+					)
+				)
+			end
+			return '{"kind":"List","apiVersion":"v1","items":[' .. table.concat(items, ",") .. "]}"
+		end
+		local more =
+			Steps.followUp(p, results({ targets = nodes(2, false), after = nodes(2, true) }), 15000, json.decode)
+		expect(more and #more).toBe(2)
+		local first = (more :: { T.Step })[1]
+		expect(first.id).toBe("pods:n1")
+		expect(first.soft).toBe(true)
+		expect(first.argv).toEqual(
+			pinned("get", "pods", "--all-namespaces", "--field-selector", "spec.nodeName=n1", "-o", "json")
+		)
+		expect(
+			(Steps.followUp(p, results({ targets = nodes(21, false), after = nodes(21, true) }), 15000, json.decode))
+		).toBeNil()
+		expect((Steps.followUp(p, results({ targets = nodes(2, true), after = nodes(2, true) }), 15000, json.decode))).toBeNil()
+	end)
+
+	it("re-reads set and taint target sets at confirm", function()
+		expect(Steps.verifySteps(plan("kubectl set image deployment --all app=x:1"))[1].kind).toBe("selection")
+		expect(Steps.verifySteps(plan("kubectl taint nodes -l pool=a k=v:NoSchedule"))[1].kind).toBe("selection")
+		expect(#Steps.verifySteps(plan("kubectl set image deployment/web app=x:1"))).toBe(0)
 	end)
 end)
 

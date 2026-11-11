@@ -32,6 +32,7 @@ ALIASES = {
         "service": ["svc"],
         "serviceaccount": ["sa"],
     },
+    "set": {"serviceaccount": ["sa"]},
 }
 
 
@@ -70,7 +71,8 @@ def walk(path, depth, commands, subs):
     children = subcommands(text)
     if path and children:
         subs[" ".join(path)] = children
-    if depth < 2:
+    # Three levels: `create secret generic`, `create service nodeport`.
+    if depth < 3:
         for child in children:
             walk(path + [child], depth + 1, commands, subs)
 

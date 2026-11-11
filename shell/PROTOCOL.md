@@ -10,36 +10,55 @@ decision. Every failure is a refusal: nothing runs.
 
 A guarded invocation (`apply`, `delete`, `scale`, `patch`, `label`,
 `annotate`, `cordon`, `uncordon`, `drain`, `rollout restart`, `rollout undo`,
-`rollout pause`, `rollout resume`, and `edit` (see "Edit approvals"), with
-any global flags before the verb) needs all of:
+`rollout pause`, `rollout resume`, `set image|env|resources|selector|
+serviceaccount|subject`, `replace`, `taint`, `run`, `expose`, `create` (bare
+`create -f/-k`, and every `create` subcommand but `token`, including
+`create secret generic|tls|docker-registry` and `create service
+clusterip|externalname|loadbalancer|nodeport`), and `edit` (see "Edit
+approvals"), with any global flags before the verb) needs all of:
 
 - `TERM_PROGRAM=tern` and a non-empty `TERN_PANE` (any process that can reach
   the Tern daemon could raise an approval otherwise);
 - `TKUBE_SPOOL`: absolute path, injected into new panes by the plugin's
   `spawn` hook (`<plugin data>/spool`). Panes started before the plugin
   loaded lack it: "open a new Tern pane";
-- no stdin input (`-f -`, `--patch-file -`, `/dev/stdin`, any non-regular
-  file), no remote `-f URL` or `--patch-file URL`, no newline in an input
-  path, no `"` in an `-f` value;
+- no stdin input (`-f -`, `--patch-file -`, `--from-file -`,
+  `--from-env-file -`, `--cert -`, `--key -`, `/dev/stdin`, any non-regular
+  file; `set env -e -`, `--env=-` or a `-` argument), no remote URL as an
+  input value, no newline in an input path, no `"` in an `-f`, `--from-file`
+  or `--from-env-file` value; no `-f/-k` on `run` (its `--rm` delete inputs);
 - a resolvable context: `--context` (last occurrence wins), else
   `command kubectl [--kubeconfig K] config current-context` in the user's
   environment.
 
+The command is found as cobra finds it: global flags before the verb; after
+`create`, create's own flags (`kubectl create -f job.yaml` is a bare
+`create`); after `set`, `create secret` and `create service`, the global
+flags only. Cobra aliases count (`create cm|cj|deploy|ing|ns|pdb|pc|
+resourcequota|svc|sa`, `set sa`). A positional after `create` that is not a
+subcommand makes a bare `create`.
+
 Not guarded (executed immediately with `exec kubectl "$@"`): every other
-verb, and, when no flag is unknown to the embedded table of the verb,
-invocations that cannot change the cluster:
+verb, `create token` (prints a credential; nothing is stored), `create
+secret` / `create service` without a known child and `set` without a known
+subcommand (kubectl prints help or an error), and, when no flag is unknown to
+the embedded table of the command, invocations that cannot change the
+cluster:
 
 - `--dry-run=client|server` on `apply`, `delete`, `scale`, `patch`, `label`,
-  `annotate`, `cordon`, `uncordon`, `drain` and `rollout undo` (kubectl has
-  no `--dry-run` for `rollout restart|pause|resume` or `edit`: there it is an
-  unknown flag and the command is guarded as typed);
-- `--local` on `patch`, `label` and `annotate`;
-- `--list` on `label` and `annotate`.
+  `annotate`, `cordon`, `uncordon`, `drain`, `rollout undo` and every `set`,
+  `replace`, `taint`, `run`, `expose` and `create` command above (kubectl
+  has no `--dry-run` for `rollout restart|pause|resume` or `edit`: there it
+  is an unknown flag and the command is guarded as typed);
+- `--local` on `patch`, `label`, `annotate` and every `set` command;
+- `--list` on `label`, `annotate` and `set env`.
 
 Boolean flags count only when true (`--local=false` is guarded). An unknown
-flag before the verb when `apply`, `delete`, `scale`, `rollout`, `patch`,
-`label`, `annotate`, `cordon`, `uncordon`, `drain` or `edit` appears anywhere
-in the argv is refused (it may have swallowed the verb).
+flag before the command name when `apply`, `delete`, `scale`, `rollout`,
+`patch`, `label`, `annotate`, `cordon`, `uncordon`, `drain`, `edit`, `set`,
+`replace`, `taint`, `create`, `run` or `expose` appears anywhere in the argv
+is refused unless a guarded command was still found (it may have swallowed
+the command name or subcommand).
 
 ## Spool
 
@@ -107,16 +126,24 @@ passed through too).
 ### Input files
 
 From each `-f/--filename` value (split on commas, as kubectl's string-slice
-flag does), the `-k/--kustomize` value and each `--patch-file` value;
-relative paths are joined to `cwd`:
+flag does), the `-k/--kustomize` value, each `--patch-file` value, and on
+`create configmap|secret generic|secret docker-registry` each `--from-file`
+source, on `create configmap|secret generic` each `--from-env-file` value
+(both split on commas: string slices in kubectl) and on `create secret tls`
+the `--cert` and `--key` values; relative paths are joined to `cwd`:
 
 - regular file: itself (no extension filter);
 - `-f DIR`: files directly in DIR named `*.json`, `*.yaml`, `*.yml`; with
   `-R/--recursive`, the same at any depth (symlinked subdirectories are not
   followed, as in kubectl);
 - `-k DIR`: every non-directory entry under DIR, at any depth;
-- `--patch-file`: exactly that regular file, never split on commas; a
-  directory, stdin or device is refused;
+- `--from-file [KEY=]SOURCE`: the source is everything after the first `=`
+  when the element contains one; a directory source lists every regular file
+  directly inside it (no extension filter, no recursion; subdirectories and
+  symlinks skipped, as in kubectl); a file source lists itself;
+- `--patch-file`, `--from-env-file`, `--cert`, `--key`: exactly that regular
+  file (`--patch-file` never split on commas); a directory, stdin or device
+  is refused;
 - listed path = `<value without trailing slashes>/<relative path>`.
 
 The block hashes exactly the listed paths (fresh `size` and `sha256`) to
@@ -286,6 +313,47 @@ kubectl runs `<dir>/hook FILE` for every round (FILE is kubectl's
 A block that does not know the `edit` key plans `kubectl edit` as not
 previewable and writes no response, so an older plugin fails closed; the
 protocol version stays 1.
+
+## Quick outcome records
+
+Mutating quick actions (`kubectl debug` on a pod or node, CronJob run-now)
+are approved in the approve block, but kubectl runs in a split the window
+opens afterwards, possibly on another host than the block. The split
+reports kubectl's outcome through the core:
+
+```
+tern-kube-guard record TEMPLATE STARTED STATUS
+```
+
+- `TEMPLATE`: the outcome record with the five needles of the response's
+  `audit` template (`"decided_at":@`, `"decision":"@"`, `"exit_code":@`,
+  `"started_at":@`, `"finished_at":@`). The window builds it from the same
+  validated link fields as the split's argv (`Audit.quickTemplate`,
+  `plugin/lib/mutation/audit.luau`): `"mode":"quick"`, the window's
+  `run` id (also in the block's `approved` record), no `cwd`, `tier` or
+  `fingerprint`, argv with credentials masked. It never holds the grant
+  token.
+- `STARTED`: unix seconds before kubectl started; `STATUS`: kubectl's exit
+  status. Digits only.
+
+The core refuses (exit 1, "outcome not recorded: ..."), appending nothing,
+unless `TKUBE_SPOOL` is an absolute path, the template has no control
+character, starts with `{"v":1,`, ends with `}`, contains `"mode":"quick"`
+and each needle exactly once. It then fills the needles as for a guarded
+command (`decision` `executed` for status 0, else `failed`; `decided_at` and
+`finished_at` now) and appends the line to `${TKUBE_SPOOL%/*}/audit.log`
+(umask 077; refused when that path is a symlink). Exit 0 recorded, 2 usage.
+It never runs kubectl.
+
+The split (`plugin/lib/actions/quick.luau`) runs kubectl as a child under
+`trap : INT TERM HUP`, so Ctrl-C and a closed pane (kubectl exits 129 on
+SIGHUP) still reach the record, then calls the recorder: the plugin's
+`shell/tern-kube-guard` on a local pane, `$TKUBE_GUARD_CORE` (exported by
+the host's spawn hook) on a remote one. When the recorder is missing or
+refuses, the split prints `tern-kube: outcome not recorded in the audit
+log` and keeps kubectl's status: the audit log is a record, not policy.
+Run-now then waits for Enter as before; debug exits with kubectl's status.
+A block from an older window gets no run id and logs none.
 
 ## Pane env record
 

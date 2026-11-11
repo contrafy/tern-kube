@@ -12,7 +12,8 @@
 # Inputs (env): TK_KUBECONFIG (host kubeconfig the block resolves),
 # TK_PREVIEW_MS, TK_EXEC_MS, TK_MUTATIONS_ENABLED (true|false),
 # TK_SHOW_SECRETS (true|false), TK_REQUEST (guard request file), TK_GRANT
-# (window-minted grant token, args[2] of a quick action), TK_PANES,
+# (window-minted grant token, args[2] of a quick action), TK_RUN (its run
+# id, args[3]), TK_PANES,
 # TK_HELM (helm program; "none" = not found), TK_HELM_TIMEOUT_S, TK_HELM_WAIT.
 
 TK_REPO=${TK_REPO:?}
@@ -69,6 +70,9 @@ tk_begin() { # NAME ARG
 	tk_grant=
 	if [ -n "${TK_GRANT:-}" ]; then
 		tk_grant="grant = \"$(printf '%s' "$TK_GRANT" | tk_hex)\","
+		if [ -n "${TK_RUN:-}" ]; then
+			tk_grant="$tk_grant run = \"$(printf '%s' "$TK_RUN" | tk_hex)\","
+		fi
 	fi
 	panes=${TK_PANES:-'"7"'}
 	cat >"$TK_W/head.part" <<EOF

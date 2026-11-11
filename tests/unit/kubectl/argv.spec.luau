@@ -301,4 +301,58 @@ describe("argv.isLabelEdit", function()
 	end)
 end)
 
+-- The guard previews `create secret generic --from-literal=...`: without the
+-- nested table its flags would be unknown and the command refused.
+describe("argv.parse nested subcommands and taint", function()
+	it("resolves create secret generic with its own flag table", function()
+		local inv = parse("create secret generic s1 --from-literal=a=b -n web")
+		expect(inv.verb).toBe("create")
+		expect(inv.subverb).toBe("secret generic")
+		expect(inv.unknownFlags).toEqual({})
+		expect(inv.positionals).toEqual({ "s1" })
+		expect(inv.flags["from-literal"]).toEqual({ "a=b" })
+	end)
+
+	it("resolves create service nodeport and the svc alias", function()
+		local inv = parse("create svc nodeport web --tcp=80:8080 --node-port=30080")
+		expect(inv.subverb).toBe("service nodeport")
+		expect(inv.unknownFlags).toEqual({})
+		expect(inv.positionals).toEqual({ "web" })
+	end)
+
+	it("stops at a group without a known child and keeps one-level verbs", function()
+		expect(parse("create secret foo").subverb).toBe("secret")
+		expect(parse("create cm cfg --from-literal=a=b").subverb).toBe("configmap")
+		expect(parse("rollout restart deploy web").subverb).toBe("restart")
+		-- -f takes the next word: `job.yaml` is a file, not a subcommand.
+		local inv = parse("create -f job.yaml")
+		expect(inv.subverb).toBe(nil)
+		expect(inv.filenames).toEqual({ "job.yaml" })
+	end)
+
+	it("reads taint targets without the taint specs", function()
+		local inv = parse("taint node n1 k=v:NoSchedule k2- k3:NoExecute-")
+		expect(inv.resources).toEqual({ { kind = "Node", name = "n1" } })
+		expect(inv.names).toEqual({ "n1" })
+		local all = parse("taint nodes --all k:NoExecute")
+		expect(all.resources).toEqual({ { kind = "Node" } })
+		expect(all.flags.all).toEqual({ "true" })
+	end)
+
+	it("reads set selector and set serviceaccount targets", function()
+		expect(parse("set selector svc web app=web").resources).toEqual({ { kind = "Service", name = "web" } })
+		local sa = parse("set serviceaccount deployment web robot")
+		expect(sa.resources).toEqual({ { kind = "Deployment", group = "apps", name = "web" } })
+	end)
+
+	it("tells taint specs from node names", function()
+		for _, spec in { "k=v:NoSchedule", "k:NoExecute", "k-", "k:NoSchedule-", "k=v" } do
+			expect(argv.isTaintSpec(spec)).toBe(true)
+		end
+		for _, name in { "kind-control-plane", "node/n1", "nodes" } do
+			expect(argv.isTaintSpec(name)).toBe(false)
+		end
+	end)
+end)
+
 return nil

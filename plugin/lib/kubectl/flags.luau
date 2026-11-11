@@ -346,7 +346,56 @@ M.commands = {
 		},
 	},
 	["create secret"] = { bool = {}, value = {} },
+	["create secret docker-registry"] = {
+		bool = { "allow-missing-template-keys", "append-hash", "save-config", "show-managed-fields" },
+		value = {
+			"docker-email",
+			"docker-password",
+			"docker-server",
+			"docker-username",
+			"dry-run",
+			"field-manager",
+			"from-file",
+			"output/o",
+			"template",
+			"validate",
+		},
+	},
+	["create secret generic"] = {
+		bool = { "allow-missing-template-keys", "append-hash", "save-config", "show-managed-fields" },
+		value = {
+			"dry-run",
+			"field-manager",
+			"from-env-file",
+			"from-file",
+			"from-literal",
+			"output/o",
+			"template",
+			"type",
+			"validate",
+		},
+	},
+	["create secret tls"] = {
+		bool = { "allow-missing-template-keys", "append-hash", "save-config", "show-managed-fields" },
+		value = { "cert", "dry-run", "field-manager", "key", "output/o", "template", "validate" },
+	},
 	["create service"] = { bool = {}, value = {} },
+	["create service clusterip"] = {
+		bool = { "allow-missing-template-keys", "save-config", "show-managed-fields" },
+		value = { "clusterip", "dry-run", "field-manager", "output/o", "tcp", "template", "validate" },
+	},
+	["create service externalname"] = {
+		bool = { "allow-missing-template-keys", "save-config", "show-managed-fields" },
+		value = { "dry-run", "external-name", "field-manager", "output/o", "tcp", "template", "validate" },
+	},
+	["create service loadbalancer"] = {
+		bool = { "allow-missing-template-keys", "save-config", "show-managed-fields" },
+		value = { "dry-run", "field-manager", "output/o", "tcp", "template", "validate" },
+	},
+	["create service nodeport"] = {
+		bool = { "allow-missing-template-keys", "save-config", "show-managed-fields" },
+		value = { "dry-run", "field-manager", "node-port", "output/o", "tcp", "template", "validate" },
+	},
 	["create serviceaccount"] = {
 		bool = { "allow-missing-template-keys", "save-config", "show-managed-fields" },
 		value = { "dry-run", "field-manager", "output/o", "template", "validate" },
@@ -847,6 +896,9 @@ M.subcommandAliases = {
 		["pc"] = "priorityclass",
 		["resourcequota"] = "quota",
 		["svc"] = "service",
+		["sa"] = "serviceaccount",
+	},
+	["set"] = {
 		["sa"] = "serviceaccount",
 	},
 	["top"] = {
