@@ -698,9 +698,50 @@ local function redact(source: { string }, docs: { Doc }, policy: Redact.Policy?)
 	return out
 end
 
+-- Key/value pairs of a Secret document's `data` as printed (base64), or nil
+-- when the document is not a Secret. A plain scalar continued on more lines
+-- is folded the way YAML folds it, so a strict base64 decoder rejects it
+-- rather than guessing.
+local function secretData(source: { string }, doc: Doc): { { key: string, value: string } }?
+	if doc.kind ~= "Secret" then
+		return nil
+	end
+	local out: { { key: string, value: string } } = {}
+	local entries = scanEntries(source, doc.startLine, doc.endLine, doc.indent, undash(source[doc.startLine]))
+	local k = find(entries, "data")
+	if k == nil then
+		return out
+	end
+	local values = children(source, entries, k, doc.endLine)
+	if values == nil then
+		local flow: { [string]: string } = flowMapping(entries[k].value) or {}
+		local keys: { string } = {}
+		for key in flow do
+			table.insert(keys, key)
+		end
+		table.sort(keys)
+		for _, key in keys do
+			table.insert(out, { key = key, value = flow[key] })
+		end
+		return out
+	end
+	local stop = blockLast(entries, k, doc.endLine)
+	for j, entry in values do
+		local value = scalar(entry.value) or ""
+		for i = entry.line + 1, blockLast(values, j, stop) do
+			if contentIndent(source[i]) then
+				value ..= " " .. trim(source[i])
+			end
+		end
+		table.insert(out, { key = entry.key, value = value })
+	end
+	return out
+end
+
 return {
 	split = split,
 	splitLines = splitLines,
 	lines = lines,
 	redact = redact,
+	secretData = secretData,
 }

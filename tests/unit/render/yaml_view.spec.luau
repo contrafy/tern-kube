@@ -1,4 +1,5 @@
 --!strict
+local View = require("../../../plugin/lib/lens/view")
 local Viewstate = require("../../../plugin/lib/lens/viewstate")
 local YamlView = require("../../../plugin/lib/render/yaml_view")
 local captures = require("../../lib/captures")
@@ -301,6 +302,125 @@ describe("yaml view: Helm release chip", function()
 	it("objects Helm does not manage show no chip", function()
 		local capture = captures.fromLines("kubectl get -f mutate/app.yaml -o yaml", MANIFEST, 0)
 		expect(#chips(render(capture, Viewstate.opened(Viewstate.default(), YamlView.docKey(2))))).toBe(0)
+	end)
+end)
+
+-- Decoding is a second, per-view gate on top of security.show_secret_values:
+-- without the setting there is nothing to decode (values are masked) and no
+-- chip; with it the YAML stays base64 and only the separate card decodes.
+describe("yaml view Secret decode", function()
+	local SECRET = "real/ns-apps/get_secret_app-secret_-o_yaml"
+	local SECRET_CMD = "kubectl get secret app-secret -n tern-test-apps -o yaml"
+	local SHOW = { showSecrets = true, strict = false }
+	local PLAIN = "kube-lens-test-not-a-secret"
+
+	local function decodeChip(view: Node): Node?
+		return nodes.find(view, nodes.key("decode"))
+	end
+
+	local function card(view: Node): Node?
+		return nodes.find(view, nodes.role("tern-kube.secret-decoded"))
+	end
+
+	local function noActionLeaks(view: Node)
+		for _, a in nodes.actions(view) do
+			expect((string.find(a, PLAIN, 1, true))).toBeNil()
+		end
+	end
+
+	it("offers nothing while Secret values are masked", function()
+		local capture = captures.build(SECRET, SECRET_CMD)
+		expect(decodeChip(render(capture))).toBeNil()
+		local forced = Viewstate.toggledDecoded(Viewstate.default())
+		local view = render(capture, forced)
+		expect(card(view)).toBeNil()
+		expect((string.find(nodes.text(view), PLAIN, 1, true))).toBeNil()
+	end)
+
+	it("never decodes by default, even with values shown", function()
+		local view = render(captures.build(SECRET, SECRET_CMD, SHOW))
+		local chip = decodeChip(view) :: Node
+		expect(nodes.text(chip)).toBe("Decode values")
+		expect(nodes.action(chip)).toBe(Viewstate.action(Viewstate.toggledDecoded(Viewstate.default())))
+		expect(card(view)).toBeNil()
+		expect((string.find(nodes.text(view), PLAIN, 1, true))).toBeNil()
+	end)
+
+	it("the chip shows a separate card and leaves the YAML base64", function()
+		local capture = captures.build(SECRET, SECRET_CMD, SHOW)
+		local view = render(capture, Viewstate.toggledDecoded(Viewstate.default()))
+		local found = card(view) :: Node
+		expect(nodes.text(found)).toContain(PLAIN)
+		expect(nodes.text(found)).toContain("kube-lens-test-user")
+		expect(nodes.text(decodeChip(view) :: Node)).toBe("Hide decoded")
+		expect(nodes.action(decodeChip(view) :: Node)).toBe(Viewstate.action(Viewstate.default()))
+		local yaml = codeText(codes(view)[1])
+		expect(yaml).toContain("password: a3ViZS1sZW5zLXRlc3Qtbm90LWEtc2VjcmV0")
+		expect((string.find(yaml, PLAIN, 1, true))).toBeNil()
+		noActionLeaks(view)
+	end)
+
+	it("other kinds get no chip", function()
+		local capture = captures.fromLines("kubectl get -f mutate/app.yaml -o yaml", MANIFEST, 0, SHOW)
+		local vs = Viewstate.opened(Viewstate.default(), YamlView.docKey(1))
+		expect(decodeChip(render(capture, vs))).toBeNil()
+	end)
+
+	it("a List decodes only the opened Secret, inside its inspector", function()
+		local list = {
+			"apiVersion: v1",
+			"items:",
+			"- apiVersion: v1",
+			"  data:",
+			"    token: a3ViZS1sZW5zLXRlc3Qtbm90LWEtc2VjcmV0",
+			"  kind: Secret",
+			"  metadata:",
+			"    name: one",
+			"    namespace: ns",
+			"- apiVersion: v1",
+			"  data:",
+			"    other: eA==",
+			"  kind: Secret",
+			"  metadata:",
+			"    name: two",
+			"    namespace: ns",
+			"kind: List",
+			"metadata:",
+			'  resourceVersion: ""',
+		}
+		local capture = captures.fromLines("kubectl get secrets -n ns -o yaml", list, 0, SHOW)
+		expect(decodeChip(render(capture))).toBeNil()
+		local opened = Viewstate.opened(Viewstate.default(), YamlView.docKey(1))
+		local view = render(capture, opened)
+		local chip = decodeChip(view) :: Node
+		expect(nodes.action(chip)).toBe(Viewstate.action(Viewstate.toggledDecoded(opened)))
+		expect(card(view)).toBeNil()
+		local decoded = render(capture, Viewstate.toggledDecoded(opened))
+		expect(nodes.text(card(decoded) :: Node)).toContain(PLAIN)
+		noActionLeaks(decoded)
+		local second = render(capture, Viewstate.opened(Viewstate.toggledDecoded(opened), YamlView.docKey(2)))
+		expect(card(second)).toBeNil()
+	end)
+
+	-- kubectl describe prints sizes only; the lens never fetches values a
+	-- command did not print, so there is nothing to offer.
+	it("describe output gets no chip", function()
+		local capture = captures.fromLines("kubectl describe secret app-secret -n tern-test-apps", {
+			"Name:         app-secret",
+			"Namespace:    tern-test-apps",
+			"Labels:       app=web",
+			"Annotations:  <none>",
+			"",
+			"Type:  Opaque",
+			"",
+			"Data",
+			"====",
+			"password:  27 bytes",
+			"username:  19 bytes",
+		}, 0, SHOW)
+		local view = View.render(capture, Viewstate.toggledDecoded(Viewstate.default())) :: any
+		expect(decodeChip(view)).toBeNil()
+		expect(card(view)).toBeNil()
 	end)
 end)
 
