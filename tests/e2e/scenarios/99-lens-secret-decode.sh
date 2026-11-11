@@ -1,8 +1,8 @@
 # Live: the lens offers Decode values on `get secret -o yaml` and `-o json`
 # only with security.show_secret_values, never on describe (kubectl prints
 # sizes only). The card is display-only, the YAML/tree keeps base64, and the
-# choice lives only in the click action: a plugin reload rebuilds the view
-# from the capture with the values hidden. Secret tk-e2e-decode (fake values)
+# choice lives only in the click action: after a plugin reload the same
+# command starts hidden. Secret tk-e2e-decode (fake values)
 # lives in tern-test-mutate and is deleted at the end; the config goes back
 # to the stub.
 DSEC=tk-e2e-decode
@@ -30,6 +30,11 @@ chips() {
 card_gone() {
 	lacks "$CARD"
 }
+# Every text node of the block: `blocktext` reads only the block's own text,
+# which the tree cuts at 200 characters.
+btext() {
+	ltext '.sf-block *'
+}
 
 # Config off: masked, no chip on any output.
 config_reset
@@ -47,20 +52,25 @@ lens "kubectl get secret $DSEC -n $MNS -o yaml"
 native
 contains "yaml chip" "$(chips)" "Decode values"
 lacks "$CARD" || fail "yaml decoded before the click"
-excludes "yaml not decoded by default" "$(blocktext)" "hunter2-fake-e2e"
+excludes "yaml not decoded by default" "$(btext)" "hunter2-fake-e2e"
 click_text 'Decode values' || return
 has "$CARD" || fail "yaml chip did not decode"
 contains "yaml decoded value" "$(alltext "$CARD *")" "hunter2-fake-e2e"
-contains "yaml banner" "$(blocktext)" "display only: not copied, saved or logged"
+contains "yaml banner" "$(btext)" "display only: not copied, saved or logged"
 contains "yaml stays base64" "$(alltext '.sf-block-body .sf-code')" "$B64"
 contains "yaml hide chip" "$(chips)" "Hide decoded"
 
-# A plugin reload rebuilds the view from the capture: hidden again.
+# The choice lives only in the block's click actions: no plugin state keeps
+# it, so after a plugin reload the same command starts hidden. (Tern 0.9.16
+# does not redraw an existing lens block on reload; a card already shown
+# stays until Hide decoded.) Nothing decoded reaches the log.
 dev reload >/dev/null 2>&1
 sleep 1.5
-top
-E2E_WAIT=10 wait_for "the decoded card to go after a reload" card_gone ||
-	fail "decoded values survived a plugin reload"
+lens "kubectl get secret $DSEC -n $MNS -o yaml"
+native
+contains "yaml chip after a reload" "$(chips)" "Decode values"
+lacks "$CARD" || fail "decoded values shown again after a plugin reload"
+excludes "nothing decoded in the log" "$(cat "$(daemon_log)")" "hunter2-fake-e2e"
 
 # -o json (one object: its tree directly): chip, card above the tree.
 lens "kubectl get secret $DSEC -n $MNS -o json"
@@ -70,7 +80,7 @@ lacks "$CARD" || fail "json decoded before the click"
 click_text 'Decode values' || return
 has "$CARD" || fail "json chip did not decode"
 contains "json decoded value" "$(alltext "$CARD *")" "hunter2-fake-e2e"
-contains "json tree stays base64" "$(alltext '.sf-block-body .sf-tree')" "$B64"
+contains "json tree stays base64" "$(alltext '.sf-block-body .sf-tree *')" "$B64"
 click_text 'Hide decoded' || return
 lacks "$CARD" || fail "json Hide decoded did not hide"
 
@@ -79,4 +89,4 @@ lens "kubectl describe secret $DSEC -n $MNS"
 native
 excludes "no chip on describe" "$(chips)" "Decode values"
 lacks "$CARD" || fail "decoded card on describe"
-excludes "describe never decodes" "$(blocktext)" "hunter2-fake-e2e"
+excludes "describe never decodes" "$(btext)" "hunter2-fake-e2e"

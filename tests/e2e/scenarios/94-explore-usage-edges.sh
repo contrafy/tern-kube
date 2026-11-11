@@ -29,17 +29,38 @@ eq "no run while disabled" "$(runs_now)" "$runs"
 config_reset
 explore_close_all
 
+# The lens shows the empty listing natively, as a note: no rows, so no row
+# inspector and no Explore live. Explore gets there with `:ns`.
 lens 'kubectl --context kind-tern-kube-dev get pods -n tern-test-empty'
 native || return
+contains "empty listing note" "$(ltext '[data-role="tern-kube.header"] *')" "No resources found in tern-test-empty namespace."
+lens "kubectl --context kind-tern-kube-dev get pods -n $uns"
+native || return
+click_text cpu-burner '.tk-grid .tk-c' || return
 click_text 'Explore live' || return
 explore_open || return
+xwait 'Object pod/cpu-burner'
+xkey escape
+xwait 'cpu-burner' "$XT"
+# `tern ctl type` re-splits its words: the text goes quoted.
+xkey :
+xwait 'Kinds'
+ctl type '"ns tern-test-empty"' >/dev/null
+xkey enter
+xwait 'ns tern-test-empty' || return
 xkey %
 E2E_WAIT=20 xwait "usage · pods · ns tern-test-empty" || return
 contains "empty namespace" "$(xtext)" "No pods"
 explore_close_all
 
 kc run "$fresh" -n "$uns" --image=busybox:1.37 --restart=Never -- sh -c 'sleep 600' >/dev/null || fail "cannot create $fresh"
-E2E_WAIT=60 wait_for "$fresh running" sh -c "[ \"\$(kubectl --context kind-tern-kube-dev get pod -n $uns $fresh -o jsonpath='{.status.phase}')\" = Running ]" || return
+fresh_running() {
+	[ "$(jp "$uns" "pod/$fresh" '{.status.phase}')" = Running ]
+}
+fresh_metrics() {
+	kc top pod -n "$uns" "$fresh" >/dev/null 2>&1
+}
+E2E_WAIT=60 wait_for "$fresh running" fresh_running || return
 lens "kubectl --context kind-tern-kube-dev get pods -n $uns"
 native || return
 click_text "$fresh" '.tk-grid .tk-c' || return
@@ -52,7 +73,7 @@ xkey %
 E2E_WAIT=20 xwait "usage · pods · ns $uns" || return
 xselect "$fresh" || return
 contains "fresh pod without metrics" "$(texts "$EX .sf-tbl-row.sel > .sf-tbl-c" | jq -r 'join(" ")')" "<no metrics>"
-E2E_WAIT=90 wait_for "a metrics window for $fresh" sh -c "kubectl --context kind-tern-kube-dev top pod -n $uns $fresh >/dev/null 2>&1" || return
+E2E_WAIT=90 wait_for "a metrics window for $fresh" fresh_metrics || return
 xkey r
 sleep 3
 xselect "$fresh" || return

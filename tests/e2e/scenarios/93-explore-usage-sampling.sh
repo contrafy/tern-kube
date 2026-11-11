@@ -33,13 +33,17 @@ log=$(daemon_log)
 lines=$(wc -l <"$log")
 runs=$(runs_now)
 xkey w
-xwait 'Sampling' '[data-role="tern-kube.sampling"] *' || return
-contains "badge says how to stop" "$(xtext '[data-role="tern-kube.sampling"] *')" "w stops"
+# The badge is a single span carrying the role (no child elements).
+xwait 'Sampling' '[data-role="tern-kube.sampling"]' || return
+contains "badge says how to stop" "$(xtext '[data-role="tern-kube.sampling"]')" "w stops"
 sleep 35
 grown=$(($(runs_now) - runs))
 [ "$grown" -ge 2 ] && [ "$grown" -le 3 ] || fail "sampling ran $grown reads in 35 s (want 2-3)"
+# The log names a run by its tag, not its argv: sample reads are tagged
+# `usage-sample|GEN` and read only pods.metrics.k8s.io (tests/unit/explore/
+# usage.spec.luau "sampling"); a full re-read (pods + metrics) is `usage|...`.
 sampled=$(tail -n +"$((lines + 1))" "$log" | grep 'tern-kube explore.run')
-excludes "samples read metrics only" "$(printf '%s\n' "$sampled" | grep -v 'pods.metrics.k8s.io')" "explore.run"
+excludes "samples read metrics only" "$(printf '%s\n' "$sampled" | grep -v 'explore.run.usage-sample|')" "explore.run"
 eq "CPU cells unchanged while sampling" "$(hcol 2)" "$cpu"
 
 xkey w
@@ -49,7 +53,7 @@ sleep 20
 eq "no runs after w stops" "$(runs_now)" "$runs"
 
 xkey w
-xwait 'Sampling' '[data-role="tern-kube.sampling"] *' || return
+xwait 'Sampling' '[data-role="tern-kube.sampling"]' || return
 xkey escape
 runs=$(runs_now)
 sleep 20

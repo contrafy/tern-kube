@@ -2,8 +2,8 @@
 # list opens the usage view with tiles; cpu-burner sits at its CPU limit
 # (error tone), limits-only has a request percentage (requests default to
 # limits), enter on pod-level notes its pod-level requests, enter on
-# sidecar-init lists the sidecar and the finished init; Y copies both pinned
-# reads; nothing re-reads without r.
+# sidecar-init lists the sidecar and the finished init; Y copies both reads
+# pinned to the pane's kubeconfig and context; nothing re-reads without r.
 uns=tern-test-usage
 
 E2E_WAIT=120 wait_for "metrics for $uns" kc top pods -n "$uns" || return
@@ -29,7 +29,7 @@ t=$(xtext)
 contains "Pods tile" "$t" "4 / 4"
 contains "Near limits tile" "$t" "Near limits"
 contains "No requests tile" "$t" "No requests"
-eq "pod columns" "$(texts "$EX .sf-tbl-row.head > .sf-tbl-c" | jq -c '.[0:2]')" '["NAME","CPU"]'
+eq "pod columns" "$(texts "$EX .sf-tbl-row.head > .sf-tbl-h" | jq -c '.[0:2]')" '["NAME","CPU"]'
 has "$EX $XT .sf-t-error" || fail "cpu-burner %CPU/L is not error-toned"
 eq "the opened pod is selected" "$(xsel)" "cpu-burner"
 
@@ -56,8 +56,9 @@ xwait "usage · pods · ns $uns" || return
 xkey Y
 copied=$(clip)
 eq "Y copies the pods and metrics reads" "$(printf '%s\n' "$copied" | grep -c '^kubectl ')" 2
-contains "pods read pinned" "$copied" "--context kind-tern-kube-dev get pods -n $uns -o jsonpath="
-contains "metrics read pinned" "$copied" "--context kind-tern-kube-dev get pods.metrics.k8s.io -n $uns -o jsonpath="
+pin="kubectl --kubeconfig $E2E_REPO/.sandbox/kubeconfig --context kind-tern-kube-dev"
+contains "pods read pinned" "$copied" "$pin get pods -n $uns -o 'jsonpath="
+contains "metrics read pinned" "$copied" "$pin get pods.metrics.k8s.io -n $uns -o 'jsonpath="
 
 runs=$(runs_now)
 sleep 20

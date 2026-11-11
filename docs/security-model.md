@@ -270,7 +270,9 @@ refused before any request.
   (otherwise the values are masked and there is nothing to decode) and a click
   or key per view. It is off by default; the flag lives only on the Explore
   route (never saved, dropped when another view opens) or in the lens click
-  action (a reload hides it). The decoded values appear only in a separate
+  action (a new run starts hidden; Tern does not redraw an existing lens block
+  when the plugin reloads, so a card already shown stays until Hide decoded).
+  The decoded values appear only in a separate
   display-only card while rendering, never in action names, toasts, the
   clipboard, saved state, audit records or logs, and the YAML/tree keeps
   kubectl's base64, so nothing decoded can be applied back. The decoder is

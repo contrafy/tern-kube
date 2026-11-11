@@ -8,14 +8,15 @@ E2E_WAIT=120 wait_for "metrics for $uns" kc top pods -n "$uns" || return
 
 lens 'kubectl top pods -A --sum'
 native || return
-rows=$(count '.tk-grid .tk-r')
+# Rows are `display: contents` (no box of their own): count their first cells.
+rows=$(count '.tk-grid .tk-r .tk-c:first-child')
 contains "header counts the pods only" "$(ltext '[data-role="tern-kube.header"] .sf-text')" "$rows rows"
 excludes "no separator row" "$(ltext '.tk-grid *')" "________"
 contains "totals footer" "$(ltext '[data-role="tern-kube.totals"]')" "Total "
 click_text 'CPU(cores)' '.tk-grid .tk-h' || return
 eq "sorted by CPU" "$(texts '.tk-grid .tk-h' | jq -r '.[2]')" "CPU(cores) ▼"
 footer_y=$(ctl tree '[data-role="tern-kube.totals"]' | jq '.nodes[0].rect[1] // 0')
-last_y=$(ctl tree '.tk-grid .tk-r' | jq '[.nodes[]?.rect[1]] | max // 0')
+last_y=$(ctl tree '.tk-grid .tk-r .tk-c' | jq '[.nodes[]?.rect[1]] | max // 0')
 eq "footer stays after the sorted rows" "$(jq -n --argjson f "$footer_y" --argjson l "$last_y" '$f > $l')" true
 
 lens "kubectl top pods -n $uns --containers"

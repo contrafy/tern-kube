@@ -10,10 +10,14 @@ E2E_WAIT=120 wait_for "metrics for $uns" kc top pods -n "$uns" || return
 ctl plugins run plugin.tern-kube.usage >/dev/null
 explore_open || return
 E2E_WAIT=20 xwait "usage · nodes" || return
+# The header shows the route while the context still resolves; the rows land
+# with the metrics read.
+E2E_WAIT=20 xwait 'metrics' '[data-role="tern-kube.metrics-at"] *' || return
 t=$(xtext)
 contains "Nodes tile" "$t" "1 / 1"
 contains "Pods tile against allocatable" "$t" "/ 110"
-contains "node row" "$(xnames)" "$node"
+# The NAME cell is middle-cut at 1280 px; its title keeps the whole name.
+hsel_has "$node" || fail "node row $node is not selected"
 
 # The shell's %CPU REQ: describe's millicores plus pod-level pods' requests,
 # over allocatable, rounded like the view.
@@ -30,7 +34,9 @@ contains "%CPU REQ matches describe + pod-level" "$(texts "$EX .sf-tbl-row.sel >
 
 xkey enter
 E2E_WAIT=20 xwait "usage · pods · node $node" || return
-contains "the node's pods" "$(xtext "$XT *")" "cpu-burner"
+# The node's pods span every namespace and the list mounts only the rows near
+# the scroll position, so walk the selection down to it.
+xselect cpu-burner || return
 xkey %
 E2E_WAIT=20 xwait "usage · nodes" || return
 xkey %
