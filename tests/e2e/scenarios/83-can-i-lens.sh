@@ -26,13 +26,13 @@ YAML
 lens "kubectl --context kind-tern-kube-dev auth can-i get pods -n tern-test-apps"
 native
 has '[data-role="tern-kube.cani-yes"]' || fail "admin get pods is not YES"
-contains "explore chip on yes" "$(alltext)" "Explore pods"
+contains "explore chip on yes" "$(alltext '.sf-block *')" "Explore pods"
 
 lens "kubectl --context kind-tern-kube-dev --as=system:serviceaccount:tern-test-apps:default auth can-i delete pods -n tern-test-apps"
 native
 has '[data-role="tern-kube.cani-no"]' || fail "default SA delete pods is not NO"
 lacks '[data-role="tern-kube.exit"]' || fail "a no answer shows an exit badge"
-contains "impersonation note" "$(alltext)" "Explore runs as the context's own user"
+contains "impersonation note" "$(alltext '.sf-block *')" "Explore runs as the context's own user"
 
 lens "kubectl --context kind-tern-kube-dev auth can-i list pods -q"
 native
@@ -41,17 +41,19 @@ has '[data-role="tern-kube.cani-yes"]' || fail "-q yes not read from the exit st
 lens "kubectl --context kind-tern-kube-dev auth can-i frob pods"
 native
 has '[data-role="tern-kube.cani-yes"]' || fail "unknown verb not answered"
-contains "unknown verb warning" "$(alltext)" "not a known verb"
+contains "unknown verb warning" "$(alltext '.sf-block *')" "not a known verb"
 
 lens "kubectl --context kind-tern-kube-dev --as=system:serviceaccount:$MNS:tk-e2e-limited auth can-i --list -n $MNS"
 native
 contains "resource names column" "$(column_texts 3 4)" "[tk-e2e-cm]"
-has '[data-key="facet-VERB"]' || fail "no VERB facet"
-contains "explore hidden note" "$(alltext)" "Explore runs as the context's own user"
+# Facet groups carry a role, not their key, in the DOM: name them by label.
+contains "VERB facet" "$(texts '[data-role="tern-kube.facet-label"]')" '"VERB"'
+contains "explore hidden note" "$(alltext '.sf-block *')" "Explore runs as the context's own user"
 click_text configmaps '.tk-grid .tk-c'
 excludes "no explore chip when impersonating" "$(texts '[data-role="tern-kube.inspector"] .sf-act')" "Explore"
 
 lens "kubectl --context kind-tern-kube-dev auth can-i --list"
 native
-contains "admin wildcard" "$(column_texts 1 4)" '"*.*"'
-contains "all note" "$(alltext)" "all"
+# The note is a muted span inside the cell: the cell reads "*.* all".
+contains "admin wildcard noted all" "$(column_texts 1 4)" '"*.* all"'
+contains "all note" "$(texts '.tk-grid .tk-c .sf-t-muted')" '"all"'

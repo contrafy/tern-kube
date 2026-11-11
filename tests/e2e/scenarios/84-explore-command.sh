@@ -7,11 +7,12 @@
 # host's discovery cache: no new api-resources run.
 ns=tern-test-apps
 
-# prompt TEXT: open the prompt, type TEXT, run it.
+# prompt TEXT: open the prompt, type TEXT, run it. `tern ctl` re-splits its
+# words: TEXT goes quoted so `ns NAME` keeps its space.
 prompt() {
 	xkey :
 	xwait 'Kinds'
-	ctl type "$1" >/dev/null
+	ctl type "\"$1\"" >/dev/null
 	xkey enter
 }
 
@@ -64,7 +65,8 @@ prompt 'ctx kind-tern-kube-dev'
 xwait '(chosen)'
 excludes "ctx leaves the target unconfirmed" "$(xtext '[data-role="tern-kube.explore-header"] *')" " confirmed"
 contains "Confirm target offered" "$(xtext)" "Confirm target"
-prompt "ns $ns"
+# ns and ctx keep the kind (widgets): back to the pods of the namespace.
+prompt "po $ns"
 xwait 'crashloop' "$XT"
 
 # helm: the releases root, or the helm-not-found toast without helm.

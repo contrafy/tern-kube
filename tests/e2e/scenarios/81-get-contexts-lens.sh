@@ -16,7 +16,7 @@ sum=$(cksum <"$KCFG")
 
 lens "kubectl --kubeconfig $KCFG config get-contexts"
 native
-contains "current context noted" "$(alltext)" "current"
+contains "current context noted" "$(alltext '.sf-block *')" "current"
 eq "spaced name is one row" "$(column_texts 2 5)" '["kind-tern-kube-dev","tk e2e spaced","tk-e2e-apps"]'
 
 click_text tk-e2e-apps '.tk-grid .tk-c'
@@ -26,7 +26,7 @@ explore_open || return
 contains "Explore on the picked context" "$(xtext)" "tk-e2e-apps"
 contains "picked, not confirmed" "$(xtext)" "chosen"
 contains "row namespace" "$(xtext)" "tern-test-apps"
-E2E_WAIT=20 xwait "web" '.tk-grid *' || return
+E2E_WAIT=20 xwait "web" "$XT *" || return
 explore_close
 
 lens "kubectl --kubeconfig $KCFG config get-contexts -o name"
@@ -34,5 +34,5 @@ native
 eq "-o name rows" "$(column_texts 1 1)" '["kind-tern-kube-dev","tk e2e spaced","tk-e2e-apps"]'
 lens "kubectl --kubeconfig $KCFG config get-contexts nope"
 native
-contains "missing context error" "$(alltext)" "context nope not found"
+contains "missing context error" "$(alltext '.sf-block *')" "context nope not found"
 eq "kubeconfig unchanged" "$(cksum <"$KCFG")" "$sum"

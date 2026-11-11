@@ -65,7 +65,7 @@ shots_explore() {
 	xwait 'Describe deployment/web'
 	m2_shot describe
 	xkey escape escape
-	xwait 'broken-image' '.tk-grid *'
+	xwait 'broken-image' "$XT *"
 	m2_shot list
 	xkey '?'
 	m2_shot help
@@ -330,7 +330,7 @@ shots_t2() {
 	explore_open || return
 	xwait 'Object pod/crashloop'
 	xkey escape
-	xwait 'crashloop' '.tk-grid *'
+	xwait 'crashloop' "$XT *"
 	xkey v
 	xwait "events · ns tern-test-apps"
 	t2_shot explore-events
@@ -381,7 +381,7 @@ shots_t3() {
 	explore_open || return
 	xwait 'Object deployment/web-b-web'
 	xkey escape
-	xwait 'web-b-web' '.tk-grid *'
+	xwait 'web-b-web' "$XT *"
 	xkey :
 	xwait 'Kinds'
 	ctl type helm >/dev/null
@@ -395,7 +395,7 @@ shots_t3() {
 	xkey v
 	xwait 'Values shop-a (changed)'
 	# changed mode: each overridden key beside its chart default.
-	E2E_WAIT=20 xwait 'image.tag' '.tk-grid *' || return
+	E2E_WAIT=20 xwait 'image.tag' "$XT *" || return
 	t3_shot values-defaults
 	explore_close_all
 
@@ -450,7 +450,7 @@ shots_m6() {
 
 	mc_object "$MCA" deploy tkm-web deployment || return
 	xkey escape
-	xwait tkm-api '.tk-grid *' || return
+	xwait tkm-api "$XT *" || return
 	mc_pick_first || return
 	E2E_WAIT=20 xwait changed "[data-role='tern-kube.compare-matrix'] *" || return
 	m6_shot list
